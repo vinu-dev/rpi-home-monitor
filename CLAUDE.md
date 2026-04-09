@@ -125,5 +125,6 @@ ssh root@<rpi4b-ip> systemctl restart monitor
 | [docs/architecture.md](docs/architecture.md) | Software architecture, security design, threat model, data model |
 | [docs/development-guide.md](docs/development-guide.md) | **Mandatory rules** for all development (git, Yocto, app, security) |
 | [docs/testing-guide.md](docs/testing-guide.md) | **Mandatory** — how to write tests, run tests, measure coverage |
+| [docs/build-setup.md](docs/build-setup.md) | Build machine setup, prerequisites, distro details, troubleshooting |
 | [docs/hardware-setup.md](docs/hardware-setup.md) | Shopping list, assembly, flashing, first boot, troubleshooting |
-| [README.md](README.md) | Build instructions, project overview |
+| [README.md](README.md) | Quick start, build targets, doc index |
