@@ -1,0 +1,48 @@
+# mediamtx configuration for Home Monitor
+# Receives RTSP pushes from cameras, republishes for server consumption
+
+###############################################
+# General
+###############################################
+logLevel: info
+logDestinations: [stdout]
+
+# API disabled (not needed)
+api: no
+
+###############################################
+# RTSP server
+###############################################
+# Accept RTSP streams from cameras
+rtspAddress: :8554
+rtsp: yes
+
+# TCP only (reliable over WiFi)
+protocols: [tcp]
+
+# No authentication for Phase 1 (cameras on LAN, firewall restricts)
+# Phase 2: add mTLS authentication
+
+###############################################
+# HLS server
+###############################################
+# Disable built-in HLS — we use ffmpeg for more control
+hls: no
+
+###############################################
+# WebRTC
+###############################################
+webrtc: no
+
+###############################################
+# Recording
+###############################################
+# Disable built-in recording — we use ffmpeg for 3-min segments
+record: no
+
+###############################################
+# Paths
+###############################################
+# Accept any stream path (cameras push to their own cam-ID path)
+paths:
+  all_others:

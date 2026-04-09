@@ -1,7 +1,7 @@
 [Unit]
 Description=Home Monitor Server
-After=network-online.target nginx.service
-Wants=network-online.target
+After=network-online.target nginx.service mediamtx.service
+Wants=network-online.target mediamtx.service
 
 [Service]
 Type=simple

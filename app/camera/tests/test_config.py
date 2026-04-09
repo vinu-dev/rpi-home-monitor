@@ -31,7 +31,8 @@ class TestConfigManager:
 
     def test_rtsp_url(self, camera_config):
         """Should build correct RTSP URL."""
-        assert camera_config.rtsp_url == "rtsp://192.168.1.100:8554/stream"
+        # Camera ID is used as stream path for multi-camera support
+        assert camera_config.rtsp_url == "rtsp://192.168.1.100:8554/cam-test001"
 
     def test_rtsp_url_empty_when_no_server(self, unconfigured_config):
         """RTSP URL should be empty when server not configured."""

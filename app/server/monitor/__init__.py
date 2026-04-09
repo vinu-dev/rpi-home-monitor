@@ -8,6 +8,7 @@ import os
 from flask import Flask
 
 from monitor.services.audit import AuditLogger
+from monitor.services.streaming import StreamingService
 from monitor.store import Store
 
 
@@ -92,6 +93,17 @@ def create_app(config=None):
     if not app.config.get("TESTING"):
         _ensure_default_admin(app.store)
 
+    # Initialize streaming service (manages ffmpeg pipelines per camera)
+    app.streaming = StreamingService(
+        live_dir=app.config["LIVE_DIR"],
+        recordings_dir=app.config["RECORDINGS_DIR"],
+        clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
+    )
+    if not app.config.get("TESTING"):
+        app.streaming.start()
+        # Resume pipelines for any already-confirmed online cameras
+        _resume_camera_pipelines(app)
+
     # Register blueprints
     from monitor.api.cameras import cameras_bp
     from monitor.api.recordings import recordings_bp
@@ -116,3 +128,14 @@ def create_app(config=None):
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
 
     return app
+
+
+def _resume_camera_pipelines(app):
+    """Start streaming pipelines for cameras that were online before restart."""
+    try:
+        cameras = app.store.get_cameras()
+        for cam in cameras:
+            if cam.status == "online" and cam.recording_mode == "continuous":
+                app.streaming.start_camera(cam.id)
+    except Exception:
+        pass  # Don't crash on startup if cameras.json has issues

@@ -80,7 +80,7 @@ class TestConfirmCamera:
         _add_camera(app, "cam-001", "pending", ip="192.168.1.50")
         client.post("/api/v1/cameras/cam-001/confirm")
         camera = app.store.get_camera("cam-001")
-        assert camera.rtsp_url == "rtsps://192.168.1.50:8554/stream"
+        assert camera.rtsp_url == "rtsp://127.0.0.1:8554/cam-001"
 
     def test_cannot_confirm_already_confirmed(self, app, client):
         _login(app, client)

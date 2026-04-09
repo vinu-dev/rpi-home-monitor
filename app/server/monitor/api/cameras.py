@@ -59,9 +59,16 @@ def confirm_camera(camera_id):
     camera.location = data.get("location", camera.location)
     camera.status = "online"
     camera.paired_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    camera.rtsp_url = f"rtsps://{camera.ip}:8554/stream"
+    # RTSP URL points to mediamtx on localhost — camera pushes to mediamtx,
+    # server pulls from mediamtx using the camera ID as stream path
+    camera.rtsp_url = f"rtsp://127.0.0.1:8554/{camera.id}"
 
     current_app.store.save_camera(camera)
+
+    # Start video pipelines (HLS + recording) for this camera
+    streaming = getattr(current_app, "streaming", None)
+    if streaming and camera.recording_mode == "continuous":
+        streaming.start_camera(camera.id)
 
     audit = getattr(current_app, "audit", None)
     if audit:
@@ -113,10 +120,20 @@ def update_camera(camera_id):
         if not isinstance(name, str) or len(name) < 1 or len(name) > 64:
             return jsonify({"error": "name must be 1-64 characters"}), 400
 
+    old_recording_mode = camera.recording_mode
+
     for key, value in data.items():
         setattr(camera, key, value)
 
     current_app.store.save_camera(camera)
+
+    # Handle recording mode changes
+    streaming = getattr(current_app, "streaming", None)
+    if streaming and "recording_mode" in data:
+        if data["recording_mode"] == "continuous" and old_recording_mode == "off":
+            streaming.start_camera(camera_id)
+        elif data["recording_mode"] == "off" and old_recording_mode == "continuous":
+            streaming.stop_camera(camera_id)
 
     audit = getattr(current_app, "audit", None)
     if audit:
@@ -134,6 +151,11 @@ def update_camera(camera_id):
 @admin_required
 def delete_camera(camera_id):
     """Remove a camera. Admin only."""
+    # Stop video pipelines before deleting
+    streaming = getattr(current_app, "streaming", None)
+    if streaming:
+        streaming.stop_camera(camera_id)
+
     deleted = current_app.store.delete_camera(camera_id)
     if not deleted:
         return jsonify({"error": "Camera not found"}), 404

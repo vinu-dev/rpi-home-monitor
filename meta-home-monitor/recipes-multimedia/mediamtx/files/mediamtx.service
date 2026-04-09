@@ -1,0 +1,19 @@
+[Unit]
+Description=MediaMTX RTSP Server
+After=network-online.target
+Wants=network-online.target
+Before=monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

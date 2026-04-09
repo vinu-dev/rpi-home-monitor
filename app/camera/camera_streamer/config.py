@@ -75,10 +75,16 @@ class ConfigManager:
 
     @property
     def rtsp_url(self):
-        """Build the RTSP URL for streaming to server."""
+        """Build the RTSP URL for streaming to server.
+
+        Uses camera_id as the stream path so the server can identify
+        which camera is sending the stream (multi-camera support).
+        """
         if not self.server_ip:
             return ""
-        return f"rtsp://{self.server_ip}:{self.server_port}/{self.stream_name}"
+        # Use camera_id as stream path for server-side identification
+        path = self.camera_id or self.stream_name
+        return f"rtsp://{self.server_ip}:{self.server_port}/{path}"
 
     @property
     def certs_dir(self):

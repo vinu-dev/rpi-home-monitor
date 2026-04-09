@@ -50,7 +50,7 @@ class TestStreamManager:
         assert "25" in cmd
         assert "-c:v" in cmd
         assert "copy" in cmd
-        assert "rtsp://192.168.1.100:8554/stream" in cmd
+        assert "rtsp://192.168.1.100:8554/cam-test001" in cmd
 
     def test_stop_terminates_ffmpeg(self, camera_config):
         """stop() should terminate the ffmpeg process."""
