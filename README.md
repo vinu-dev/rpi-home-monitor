@@ -75,4 +75,4 @@ cd app/camera && pytest     # Camera: 21 tests
 
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](LICENSE). Commercial licensing available on request.

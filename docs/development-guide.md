@@ -438,10 +438,10 @@ Since this is a public GitHub repository:
 
 ### 8.1 License
 
-- **MIT License** for all custom code in this repository.
+- **AGPL-3.0 License** for all custom code in this repository. Commercial licensing available on request.
 - **Every recipe must declare `LICENSE` and `LIC_FILES_CHKSUM`.**
 - **Yocto generates SPDX license manifests** (enabled in distro config). These ship with the image and list every package and its license.
-- **Before adding a new package:** Check its license is compatible. No GPL-3.0 in the base image if avoidable (it creates obligations for the binary distribution).
+- **Before adding a new package:** Check its license is compatible.
 
 ### 8.2 What Never Goes in the Repo
 
