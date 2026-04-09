@@ -1,16 +1,13 @@
-"""Tests for camera_streamer main entry point."""
+"""Tests for main.py setup-mode and edge cases."""
 import signal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
-from camera_streamer.main import main, _handle_signal
+from camera_streamer.main import main
 import camera_streamer.main as main_module
 
 
-class TestMain:
-    """Test the main entry point."""
-
-    def test_main_callable(self):
-        assert callable(main)
+class TestMainSetupMode:
+    """Test main() behavior during first-boot setup."""
 
     @patch("camera_streamer.wifi_setup.WifiSetupServer")
     @patch("camera_streamer.health.HealthMonitor")
@@ -18,11 +15,91 @@ class TestMain:
     @patch("camera_streamer.discovery.DiscoveryService")
     @patch("camera_streamer.capture.CaptureManager")
     @patch("camera_streamer.config.ConfigManager")
-    def test_main_startup_sequence(
+    def test_main_waits_for_setup(
         self, MockConfig, MockCapture, MockDiscovery,
         MockStream, MockHealth, MockSetup
     ):
-        """Main should initialize all components in order."""
+        """Main should block while waiting for setup to complete."""
+        config = MagicMock()
+        config.is_configured = True
+        config.camera_id = "cam-test"
+        config.data_dir = "/tmp/test"
+        MockConfig.return_value = config
+        config.load.return_value = config
+
+        # needs_setup returns True first time, then False (setup completes)
+        call_count = [0]
+        def needs_setup_side_effect():
+            call_count[0] += 1
+            return call_count[0] < 3
+
+        setup = MagicMock()
+        setup.needs_setup.side_effect = needs_setup_side_effect
+        setup.start.return_value = True
+        MockSetup.return_value = setup
+
+        capture = MagicMock()
+        MockCapture.return_value = capture
+
+        discovery = MagicMock()
+        MockDiscovery.return_value = discovery
+
+        stream = MagicMock()
+        MockStream.return_value = stream
+
+        health = MagicMock()
+        MockHealth.return_value = health
+        health.start.side_effect = lambda: setattr(main_module, '_shutdown', True)
+
+        main_module._shutdown = False
+        main()
+
+        # Setup was started and stopped
+        setup.start.assert_called_once()
+        setup.stop.assert_called_once()
+        # Config was reloaded after setup
+        assert config.load.call_count >= 2
+
+    @patch("camera_streamer.wifi_setup.WifiSetupServer")
+    @patch("camera_streamer.config.ConfigManager")
+    def test_main_shutdown_during_setup(self, MockConfig, MockSetup):
+        """Shutdown signal during setup should exit cleanly."""
+        config = MagicMock()
+        config.camera_id = "cam-test"
+        config.data_dir = "/tmp/test"
+        MockConfig.return_value = config
+        config.load.return_value = config
+
+        # needs_setup always True but we shut down
+        def needs_and_shutdown():
+            main_module._shutdown = True
+            return True
+
+        setup = MagicMock()
+        setup.needs_setup.side_effect = needs_and_shutdown
+        setup.start.return_value = True
+        MockSetup.return_value = setup
+
+        main_module._shutdown = False
+        main()
+
+        setup.stop.assert_called_once()
+
+
+class TestMainCaptureFailure:
+    """Test main() when camera device isn't available."""
+
+    @patch("camera_streamer.wifi_setup.WifiSetupServer")
+    @patch("camera_streamer.health.HealthMonitor")
+    @patch("camera_streamer.stream.StreamManager")
+    @patch("camera_streamer.discovery.DiscoveryService")
+    @patch("camera_streamer.capture.CaptureManager")
+    @patch("camera_streamer.config.ConfigManager")
+    def test_continues_without_camera(
+        self, MockConfig, MockCapture, MockDiscovery,
+        MockStream, MockHealth, MockSetup
+    ):
+        """Should continue running even if camera check fails."""
         config = MagicMock()
         config.is_configured = True
         config.camera_id = "cam-test"
@@ -35,94 +112,22 @@ class TestMain:
         MockSetup.return_value = setup
 
         capture = MagicMock()
-        capture.check.return_value = True
+        capture.check.return_value = False  # Camera not available
         MockCapture.return_value = capture
 
         discovery = MagicMock()
         MockDiscovery.return_value = discovery
 
         stream = MagicMock()
-        stream.start.return_value = True
         MockStream.return_value = stream
 
         health = MagicMock()
         MockHealth.return_value = health
-
-        def trigger_shutdown(*args, **kwargs):
-            main_module._shutdown = True
-        health.start.side_effect = trigger_shutdown
+        health.start.side_effect = lambda: setattr(main_module, '_shutdown', True)
 
         main_module._shutdown = False
         main()
 
-        # Verify startup order
-        config.load.assert_called()
-        setup.needs_setup.assert_called()
-        capture.check.assert_called_once()
+        # Should still start discovery and streaming
         discovery.start.assert_called_once()
         stream.start.assert_called_once()
-        health.start.assert_called_once()
-
-        # Verify shutdown
-        health.stop.assert_called_once()
-        stream.stop.assert_called_once()
-        discovery.stop.assert_called_once()
-
-    @patch("camera_streamer.wifi_setup.WifiSetupServer")
-    @patch("camera_streamer.health.HealthMonitor")
-    @patch("camera_streamer.stream.StreamManager")
-    @patch("camera_streamer.discovery.DiscoveryService")
-    @patch("camera_streamer.capture.CaptureManager")
-    @patch("camera_streamer.config.ConfigManager")
-    def test_main_skips_stream_when_unconfigured(
-        self, MockConfig, MockCapture, MockDiscovery,
-        MockStream, MockHealth, MockSetup
-    ):
-        """Should not start streaming if server not configured."""
-        config = MagicMock()
-        config.is_configured = False
-        config.camera_id = "cam-test"
-        config.data_dir = "/tmp/test"
-        MockConfig.return_value = config
-        config.load.return_value = config
-
-        setup = MagicMock()
-        setup.needs_setup.return_value = False
-        MockSetup.return_value = setup
-
-        capture = MagicMock()
-        MockCapture.return_value = capture
-
-        discovery = MagicMock()
-        MockDiscovery.return_value = discovery
-
-        stream = MagicMock()
-        MockStream.return_value = stream
-
-        health = MagicMock()
-        MockHealth.return_value = health
-
-        def trigger_shutdown(*args, **kwargs):
-            main_module._shutdown = True
-        health.start.side_effect = trigger_shutdown
-
-        main_module._shutdown = False
-        main()
-
-        stream.start.assert_not_called()
-
-
-class TestSignalHandler:
-    """Test signal handling."""
-
-    def test_handle_signal_sets_shutdown(self):
-        """Signal handler should set _shutdown flag."""
-        main_module._shutdown = False
-        _handle_signal(signal.SIGTERM, None)
-        assert main_module._shutdown is True
-
-    def test_handle_sigint(self):
-        """Should handle SIGINT same as SIGTERM."""
-        main_module._shutdown = False
-        _handle_signal(signal.SIGINT, None)
-        assert main_module._shutdown is True

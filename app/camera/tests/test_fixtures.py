@@ -18,17 +18,30 @@ class TestDataDir:
 
 
 class TestCameraConfig:
-    """Test the camera_config fixture."""
+    """Test the camera_config fixture (returns ConfigManager)."""
 
-    def test_config_file_exists(self, camera_config):
-        assert camera_config.exists()
+    def test_config_loaded(self, camera_config):
+        assert camera_config is not None
 
     def test_config_has_server_ip(self, camera_config):
-        content = camera_config.read_text()
-        assert "SERVER_IP=192.168.1.100" in content
+        assert camera_config.server_ip == "192.168.1.100"
 
     def test_config_has_camera_id(self, camera_config):
-        content = camera_config.read_text()
+        assert camera_config.camera_id == "cam-test001"
+
+    def test_config_is_configured(self, camera_config):
+        assert camera_config.is_configured is True
+
+
+class TestCameraConfigFile:
+    """Test the camera_config_file fixture (returns path)."""
+
+    def test_config_file_exists(self, camera_config_file):
+        assert camera_config_file.exists()
+
+    def test_config_file_has_content(self, camera_config_file):
+        content = camera_config_file.read_text()
+        assert "SERVER_IP=192.168.1.100" in content
         assert "CAMERA_ID=cam-test001" in content
 
 

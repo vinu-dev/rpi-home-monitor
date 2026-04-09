@@ -42,3 +42,11 @@ class TestModuleImports:
     def test_import_ota_agent(self):
         from camera_streamer import ota_agent
         assert ota_agent is not None
+
+    def test_import_health(self):
+        from camera_streamer import health
+        assert health is not None
+
+    def test_import_wifi_setup(self):
+        from camera_streamer import wifi_setup
+        assert wifi_setup is not None

@@ -26,9 +26,9 @@ RDEPENDS:${PN} = " \
     ffmpeg \
     v4l-utils \
     avahi-daemon \
+    avahi-utils \
     openssl \
     nftables \
-    bash \
     "
 
 inherit systemd useradd
@@ -49,10 +49,6 @@ do_install() {
 
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default
-
-    # Create data directories (will be on /data partition in production)
-    install -d ${D}/opt/camera/data/config
-    install -d ${D}/opt/camera/data/certs
 
     # Systemd service
     install -d ${D}${systemd_system_unitdir}
