@@ -1,0 +1,95 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  server-tests:
+    name: Server Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: app/server/requirements-test.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -e . -r requirements-test.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
+
+      - name: Upload coverage to GitHub Summary
+        if: always()
+        run: |
+          echo "## Server Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          pytest --cov-report=term --no-header -q 2>&1 | tail -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Coverage report as PR comment
+        if: github.event_name == 'pull_request'
+        uses: orgoro/coverage@v3.2
+        with:
+          coverageFile: app/server/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.80
+
+  camera-tests:
+    name: Camera Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/camera
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: app/camera/requirements-test.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -e . -r requirements-test.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
+
+      - name: Upload coverage to GitHub Summary
+        if: always()
+        run: |
+          echo "## Camera Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          pytest --cov-report=term --no-header -q 2>&1 | tail -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Coverage report as PR comment
+        if: github.event_name == 'pull_request'
+        uses: orgoro/coverage@v3.2
+        with:
+          coverageFile: app/camera/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.80
