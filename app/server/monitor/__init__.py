@@ -7,6 +7,8 @@ records video clips, and provides a mobile-friendly web dashboard.
 import os
 from flask import Flask
 
+from monitor.store import Store
+
 
 def create_app(config=None):
     """Application factory.
@@ -31,6 +33,9 @@ def create_app(config=None):
 
     if config:
         app.config.update(config)
+
+    # Initialize data store
+    app.store = Store(app.config["CONFIG_DIR"])
 
     # Register blueprints
     from monitor.api.cameras import cameras_bp
