@@ -62,7 +62,7 @@ meta-home-monitor/   — Custom Yocto layer
   wic/               — A/B partition layouts
 config/              — Yocto build configs (minimal local.conf per machine)
 scripts/             — Build, setup, and signing scripts
-docs/                — requirements.md, architecture.md
+docs/                — requirements.md, architecture.md, development-guide.md
 ```
 
 ## Build Commands
@@ -76,6 +76,26 @@ docs/                — requirements.md, architecture.md
 ./scripts/build.sh server-prod
 ./scripts/build.sh camera-prod
 ```
+
+## ⚠️ MANDATORY: Development Rules
+
+**Before making ANY changes, read [`docs/development-guide.md`](docs/development-guide.md).**
+
+This document defines ALL rules for:
+- **Git workflow** — branch naming, commit messages, PR process, release process
+- **Yocto rules** — distro policy, layer structure, recipe conventions, image rules
+- **App development** — code organization, Python style, security, API design, testing
+- **File/directory conventions** — naming, where things go
+- **Security rules** — TLS, secrets, input validation, firewall
+- **Deployment/operations** — systemd, logging, OTA
+
+**Key rules summary (read the full guide for details):**
+1. Never commit directly to `main` — use feature branches + PRs
+2. Never put distro policy in `local.conf` — use `home-monitor.conf`
+3. Never add packages directly to image recipes — use packagegroups
+4. Never store secrets in code or config files
+5. Always verify Yocto changes parse: `bitbake -p` before committing
+6. Always follow the branch naming convention: `feature/`, `fix/`, `recipe/`, `docs/`, `release/`
 
 ## Development Workflow
 
@@ -96,3 +116,12 @@ ssh root@<rpi4b-ip> systemctl restart monitor
 - User: vinu_emailme
 - Access: `ssh vinu_emailme@35.230.155.87`
 - Repo on VM: `~/yocto/`
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [docs/requirements.md](docs/requirements.md) | User needs, software requirements, security requirements, API spec |
+| [docs/architecture.md](docs/architecture.md) | Software architecture, security design, threat model, data model |
+| [docs/development-guide.md](docs/development-guide.md) | **Mandatory rules** for all development (git, Yocto, app, security) |
+| [README.md](README.md) | Build instructions, project overview |
