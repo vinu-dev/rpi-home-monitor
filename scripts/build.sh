@@ -49,7 +49,7 @@ build_image() {
     source "$YOCTO_DIR/poky/oe-init-build-env" "$builddir"
 
     cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
-    cp "$YOCTO_DIR/config/$configdir/bblayers.conf" "$builddir/conf/bblayers.conf"
+    cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"
