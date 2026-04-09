@@ -1,0 +1,29 @@
+[Unit]
+Description=Camera RTSP Streamer
+After=network-online.target avahi-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=camera
+Group=camera
+WorkingDirectory=/opt/camera
+ExecStart=/usr/bin/python3 -m camera_streamer.main
+Restart=always
+RestartSec=5
+WatchdogSec=60
+Environment=CAMERA_DATA_DIR=/data
+Environment=CAMERA_CONFIG_DIR=/data/config
+Environment=CAMERA_CERTS_DIR=/data/certs
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data
+PrivateTmp=true
+# Camera device access
+SupplementaryGroups=video
+
+[Install]
+WantedBy=multi-user.target

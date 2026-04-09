@@ -1,0 +1,2 @@
+# Camera streamer has minimal Python dependencies.
+# ffmpeg and avahi are system packages installed via Yocto.

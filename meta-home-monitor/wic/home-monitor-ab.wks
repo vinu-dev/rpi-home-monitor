@@ -1,0 +1,11 @@
+# Partition layout for RPi 4B Home Monitor Server (A/B OTA)
+#
+# Part 1: boot    (100MB, vfat)  - kernel, DTBs, config.txt
+# Part 2: rootfsA (2GB, ext4)    - active root filesystem
+# Part 3: rootfsB (2GB, ext4)    - standby root (OTA target)
+# Part 4: data    (remaining)    - recordings, config, certs, logs (LUKS in production)
+
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 100M
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfsA --align 4096 --size 2048M
+part --ondisk mmcblk0 --fstype=ext4 --label rootfsB --align 4096 --size 2048M
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --grow

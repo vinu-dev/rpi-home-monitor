@@ -21,6 +21,7 @@ IMAGE_INSTALL += " \
     dhcpcd \
     iw \
     networkmanager \
+    avahi-daemon \
     "
 
 # --- Camera & Video streaming ---
@@ -31,11 +32,19 @@ IMAGE_INSTALL += " \
     libcamera-apps \
     "
 
+# --- Security ---
+IMAGE_INSTALL += " \
+    openssl \
+    nftables \
+    cryptsetup \
+    "
+
 # --- System utilities (minimal) ---
 IMAGE_INSTALL += " \
     htop \
     nano \
     curl \
+    python3 \
     tzdata \
     "
 

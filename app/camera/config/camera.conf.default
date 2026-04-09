@@ -1,0 +1,15 @@
+# Camera configuration — edit after first boot or via pairing
+# This file is stored on /data partition and survives OTA updates.
+
+# Server connection
+SERVER_IP="192.168.1.100"
+SERVER_PORT="8554"
+STREAM_NAME="stream"
+
+# Camera settings
+WIDTH="1920"
+HEIGHT="1080"
+FPS="25"
+
+# Camera ID — auto-derived from hardware serial if empty
+CAMERA_ID=""

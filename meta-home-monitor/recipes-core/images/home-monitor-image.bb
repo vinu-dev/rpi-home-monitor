@@ -23,6 +23,7 @@ IMAGE_INSTALL += " \
     iw \
     iptables \
     networkmanager \
+    avahi-daemon \
     "
 
 # --- Video / Streaming ---
@@ -42,6 +43,7 @@ IMAGE_INSTALL += " \
     python3 \
     python3-flask \
     python3-pip \
+    python3-bcrypt \
     "
 
 # --- Storage & filesystem ---
@@ -49,6 +51,13 @@ IMAGE_INSTALL += " \
     e2fsprogs \
     dosfstools \
     util-linux \
+    "
+
+# --- Security ---
+IMAGE_INSTALL += " \
+    openssl \
+    nftables \
+    cryptsetup \
     "
 
 # --- System utilities ---
@@ -72,6 +81,7 @@ IMAGE_INSTALL += " \
 # --- Our custom monitor server ---
 IMAGE_INSTALL += " \
     monitor-server \
+    monitor-certs \
     "
 
 # --- Image type: SD card image ---
