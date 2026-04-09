@@ -3,8 +3,8 @@
 # =============================================================
 SUMMARY = "First boot setup for Home Monitor OS"
 DESCRIPTION = "Creates the /data directory structure on first boot."
-LICENSE = "AGPL-3.0-or-later"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-or-later;md5=4b3573a05bdd5507a4cba53e4e878345"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 SRC_URI = "file://first-boot-setup.sh"
 
