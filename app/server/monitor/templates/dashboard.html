@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Home Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Dashboard</h1>
+
+<!-- System Health -->
+<div class="section-header">System Health</div>
+<div class="grid grid--health" id="health-grid">
+    <div class="card health-card">
+        <div class="health-card__value" id="health-temp">--</div>
+        <div class="health-card__label">CPU Temp</div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" id="health-cpu">--</div>
+        <div class="health-card__label">CPU Usage</div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" id="health-mem">--</div>
+        <div class="health-card__label">Memory</div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" id="health-disk">--</div>
+        <div class="health-card__label">Disk Usage</div>
+    </div>
+</div>
+
+<!-- Warnings -->
+<div class="warnings-list" id="health-warnings"></div>
+
+<!-- Uptime -->
+<div class="card mt-16" id="uptime-card" style="text-align:center;">
+    <span class="text-muted text-small">Uptime: </span>
+    <span id="health-uptime" class="text-small">--</span>
+</div>
+
+<!-- Cameras -->
+<div class="section-header">Cameras</div>
+<div class="grid" id="cameras-grid">
+    <div class="empty-state" id="cameras-empty">
+        <div class="empty-state__title">No cameras found</div>
+        <div class="empty-state__text">Waiting for cameras to connect via mDNS discovery.</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var healthInterval = null;
+
+    function tempColor(celsius) {
+        if (celsius < 60) return 'health-card__value--green';
+        if (celsius < 75) return 'health-card__value--yellow';
+        return 'health-card__value--red';
+    }
+
+    function usageColor(percent) {
+        if (percent < 70) return 'health-card__value--green';
+        if (percent < 85) return 'health-card__value--yellow';
+        return 'health-card__value--red';
+    }
+
+    function loadHealth() {
+        window.HM.api.get('/api/v1/system/health')
+            .then(function(data) {
+                var tempEl = document.getElementById('health-temp');
+                var cpuEl = document.getElementById('health-cpu');
+                var memEl = document.getElementById('health-mem');
+                var diskEl = document.getElementById('health-disk');
+
+                var temp = data.cpu_temp || 0;
+                tempEl.textContent = window.HM.formatTemp(temp);
+                tempEl.className = 'health-card__value ' + tempColor(temp);
+
+                var cpu = data.cpu_percent || 0;
+                cpuEl.textContent = cpu.toFixed(0) + '%';
+                cpuEl.className = 'health-card__value ' + usageColor(cpu);
+
+                var mem = data.memory_percent || 0;
+                memEl.textContent = mem.toFixed(0) + '%';
+                memEl.className = 'health-card__value ' + usageColor(mem);
+
+                var disk = 0;
+                if (data.disk && data.disk.percent !== undefined) {
+                    disk = data.disk.percent;
+                }
+                diskEl.textContent = disk.toFixed(0) + '%';
+                diskEl.className = 'health-card__value ' + usageColor(disk);
+
+                // Warnings
+                var warningsEl = document.getElementById('health-warnings');
+                warningsEl.innerHTML = '';
+                if (data.warnings && data.warnings.length > 0) {
+                    data.warnings.forEach(function(w) {
+                        var div = document.createElement('div');
+                        div.className = 'warning-item';
+                        div.textContent = w;
+                        warningsEl.appendChild(div);
+                    });
+                }
+            })
+            .catch(function() {});
+
+        window.HM.api.get('/api/v1/system/info')
+            .then(function(data) {
+                var uptimeEl = document.getElementById('health-uptime');
+                uptimeEl.textContent = data.uptime || '--';
+            })
+            .catch(function() {});
+    }
+
+    function loadCameras() {
+        window.HM.api.get('/api/v1/cameras')
+            .then(function(cameras) {
+                var grid = document.getElementById('cameras-grid');
+                var empty = document.getElementById('cameras-empty');
+
+                if (!cameras || cameras.length === 0) {
+                    grid.innerHTML = '';
+                    grid.appendChild(empty);
+                    empty.style.display = '';
+                    return;
+                }
+
+                grid.innerHTML = '';
+                cameras.forEach(function(cam) {
+                    var card = document.createElement('div');
+                    card.className = 'card card--clickable camera-card';
+                    card.addEventListener('click', function() {
+                        window.location.href = '/live?camera=' + encodeURIComponent(cam.id);
+                    });
+
+                    var statusClass = 'badge--offline';
+                    if (cam.status === 'online') statusClass = 'badge--online';
+                    else if (cam.status === 'pending') statusClass = 'badge--pending';
+
+                    var lastSeen = cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : '';
+
+                    card.innerHTML =
+                        '<div class="camera-card__info">' +
+                            '<div class="camera-card__name">' + window.HM.escapeHtml(cam.name || cam.id) + '</div>' +
+                            '<div class="camera-card__location">' + window.HM.escapeHtml(cam.location || 'No location set') + '</div>' +
+                            '<div class="camera-card__last-seen">' + window.HM.escapeHtml(lastSeen) + '</div>' +
+                        '</div>' +
+                        '<span class="badge ' + statusClass + '">' + window.HM.escapeHtml(cam.status) + '</span>';
+
+                    grid.appendChild(card);
+                });
+            })
+            .catch(function() {});
+    }
+
+    function init() {
+        loadHealth();
+        loadCameras();
+        healthInterval = setInterval(loadHealth, 30000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}

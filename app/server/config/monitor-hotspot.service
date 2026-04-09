@@ -1,0 +1,17 @@
+[Unit]
+Description=Home Monitor WiFi Setup Hotspot
+Documentation=https://github.com/your-org/rpi-home-monitor
+After=NetworkManager.service
+Before=monitor.service
+
+# Only start if initial setup has not been completed
+ConditionPathExists=!/data/.setup-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/monitor/scripts/monitor-hotspot.sh start
+ExecStop=/opt/monitor/scripts/monitor-hotspot.sh stop
+
+[Install]
+WantedBy=multi-user.target

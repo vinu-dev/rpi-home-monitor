@@ -66,6 +66,12 @@ class TestBlueprintRegistration:
     def test_ota_blueprint_registered(self, app):
         assert "ota" in app.blueprints
 
+    def test_views_blueprint_registered(self, app):
+        assert "views" in app.blueprints
+
+    def test_setup_blueprint_registered(self, app):
+        assert "provisioning" in app.blueprints
+
     def test_all_blueprints_count(self, app):
-        """We expect exactly 8 blueprints."""
-        assert len(app.blueprints) == 8
+        """We expect exactly 10 blueprints (8 API + views + setup)."""
+        assert len(app.blueprints) == 10

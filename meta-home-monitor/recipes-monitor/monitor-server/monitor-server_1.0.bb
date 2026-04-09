@@ -14,6 +14,8 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/server:"
 SRC_URI = " \
     file://monitor/ \
     file://config/monitor.service \
+    file://config/monitor-hotspot.service \
+    file://config/monitor-hotspot.sh \
     file://config/nginx-monitor.conf \
     file://config/nftables-server.conf \
     file://config/logrotate-monitor.conf \
@@ -37,7 +39,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "monitor.service"
+SYSTEMD_SERVICE:${PN} = "monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -59,9 +61,14 @@ do_install() {
     install -d ${D}/opt/monitor/data/certs
     install -d ${D}/opt/monitor/data/logs
 
-    # Systemd service
+    # Hotspot setup script
+    install -d ${D}/opt/monitor/scripts
+    install -m 0755 ${WORKDIR}/config/monitor-hotspot.sh ${D}/opt/monitor/scripts/monitor-hotspot.sh
+
+    # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/monitor.service ${D}${systemd_system_unitdir}/monitor.service
+    install -m 0644 ${WORKDIR}/config/monitor-hotspot.service ${D}${systemd_system_unitdir}/monitor-hotspot.service
 
     # Nginx config
     install -d ${D}${sysconfdir}/nginx/sites-enabled
@@ -79,6 +86,7 @@ do_install() {
 FILES:${PN} = " \
     /opt/monitor \
     ${systemd_system_unitdir}/monitor.service \
+    ${systemd_system_unitdir}/monitor-hotspot.service \
     ${sysconfdir}/nginx/sites-enabled/monitor.conf \
     ${sysconfdir}/nftables.d/monitor.conf \
     ${sysconfdir}/logrotate.d/monitor \

@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Recordings - Home Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Recordings</h1>
+
+<!-- Filters -->
+<div class="card mb-16">
+    <div class="inline-form__row">
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="rec-camera-select">Camera</label>
+            <select id="rec-camera-select" class="form-input">
+                <option value="">Loading cameras...</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="rec-date-input">Date</label>
+            <input type="date" id="rec-date-input" class="form-input">
+        </div>
+    </div>
+    <div id="rec-available-dates" class="text-small text-muted mt-8" style="display:none;">
+        Available dates: <span id="rec-dates-list"></span>
+    </div>
+</div>
+
+<!-- Inline Player -->
+<div class="inline-player" id="rec-player">
+    <video id="rec-video" controls playsinline preload="metadata">
+        Your browser does not support the video tag.
+    </video>
+    <div class="flex-between mt-8">
+        <span id="rec-playing-label" class="text-small text-muted"></span>
+        <button class="btn btn--secondary btn--small" id="btn-close-player">Close</button>
+    </div>
+</div>
+
+<!-- Clip List -->
+<div id="rec-clip-list" class="clip-list"></div>
+
+<!-- Empty State -->
+<div class="empty-state" id="rec-empty" style="display:none;">
+    <div class="empty-state__title">No recordings found</div>
+    <div class="empty-state__text">Select a camera and date to browse recordings.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var cameraSelect = document.getElementById('rec-camera-select');
+    var dateInput = document.getElementById('rec-date-input');
+    var clipList = document.getElementById('rec-clip-list');
+    var emptyState = document.getElementById('rec-empty');
+    var playerWrap = document.getElementById('rec-player');
+    var videoEl = document.getElementById('rec-video');
+    var playingLabel = document.getElementById('rec-playing-label');
+    var btnClose = document.getElementById('btn-close-player');
+    var datesWrap = document.getElementById('rec-available-dates');
+    var datesList = document.getElementById('rec-dates-list');
+    var cameras = [];
+    var availableDates = [];
+    var userRole = '';
+
+    function init() {
+        var user = window.HM.auth.getUser();
+        userRole = user ? user.role : '';
+        loadCameras();
+    }
+
+    function loadCameras() {
+        window.HM.api.get('/api/v1/cameras')
+            .then(function(data) {
+                cameras = (data || []).filter(function(c) { return c.status !== 'pending'; });
+                cameraSelect.innerHTML = '';
+
+                if (cameras.length === 0) {
+                    var opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No cameras available';
+                    cameraSelect.appendChild(opt);
+                    return;
+                }
+
+                cameras.forEach(function(cam) {
+                    var opt = document.createElement('option');
+                    opt.value = cam.id;
+                    opt.textContent = cam.name || cam.id;
+                    cameraSelect.appendChild(opt);
+                });
+
+                // Check URL params
+                var params = new URLSearchParams(window.location.search);
+                var camParam = params.get('camera');
+                if (camParam) cameraSelect.value = camParam;
+
+                if (cameraSelect.value) {
+                    loadDates(cameraSelect.value);
+                }
+            })
+            .catch(function() {
+                window.HM.toast('Failed to load cameras', 'error');
+            });
+    }
+
+    function loadDates(cameraId) {
+        if (!cameraId) return;
+        window.HM.api.get('/api/v1/recordings/' + encodeURIComponent(cameraId) + '/dates')
+            .then(function(data) {
+                availableDates = data.dates || [];
+                if (availableDates.length > 0) {
+                    datesWrap.style.display = '';
+                    datesList.textContent = availableDates.slice(-10).join(', ');
+
+                    // Set date to URL param or latest available
+                    var params = new URLSearchParams(window.location.search);
+                    var dateParam = params.get('date');
+                    if (dateParam && availableDates.indexOf(dateParam) >= 0) {
+                        dateInput.value = dateParam;
+                    } else {
+                        dateInput.value = availableDates[availableDates.length - 1];
+                    }
+                    loadClips(cameraId, dateInput.value);
+                } else {
+                    datesWrap.style.display = 'none';
+                    dateInput.value = '';
+                    showEmpty();
+                }
+            })
+            .catch(function() {
+                datesWrap.style.display = 'none';
+                showEmpty();
+            });
+    }
+
+    function loadClips(cameraId, date) {
+        if (!cameraId || !date) {
+            showEmpty();
+            return;
+        }
+
+        clipList.innerHTML = '';
+        emptyState.style.display = 'none';
+
+        window.HM.api.get('/api/v1/recordings/' + encodeURIComponent(cameraId) + '?date=' + encodeURIComponent(date))
+            .then(function(clips) {
+                if (!clips || clips.length === 0) {
+                    showEmpty();
+                    return;
+                }
+
+                clips.forEach(function(clip) {
+                    var card = document.createElement('div');
+                    card.className = 'card clip-card';
+
+                    var actionsHtml =
+                        '<button class="btn btn--primary btn--small btn-play-clip" ' +
+                        'data-url="/clips/' + encodeURIComponent(clip.camera_id) + '/' +
+                        encodeURIComponent(clip.date) + '/' + encodeURIComponent(clip.filename) + '" ' +
+                        'data-label="' + window.HM.escapeHtml(clip.start_time) + '">Play</button>';
+
+                    if (userRole === 'admin') {
+                        actionsHtml +=
+                            '<button class="btn btn--danger btn--small btn-delete-clip" ' +
+                            'data-camera="' + window.HM.escapeHtml(clip.camera_id) + '" ' +
+                            'data-date="' + window.HM.escapeHtml(clip.date) + '" ' +
+                            'data-filename="' + window.HM.escapeHtml(clip.filename) + '">Delete</button>';
+                    }
+
+                    card.innerHTML =
+                        '<div class="clip-card__info">' +
+                            '<div class="clip-card__time">' + window.HM.escapeHtml(clip.start_time) + '</div>' +
+                            '<div class="clip-card__meta">' +
+                                window.HM.formatDuration(clip.duration_seconds) + ' / ' +
+                                window.HM.formatBytes(clip.size_bytes) +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="clip-card__actions">' + actionsHtml + '</div>';
+
+                    clipList.appendChild(card);
+                });
+
+                // Bind play buttons
+                clipList.querySelectorAll('.btn-play-clip').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        playClip(btn.getAttribute('data-url'), btn.getAttribute('data-label'));
+                    });
+                });
+
+                // Bind delete buttons
+                clipList.querySelectorAll('.btn-delete-clip').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        deleteClip(
+                            btn.getAttribute('data-camera'),
+                            btn.getAttribute('data-date'),
+                            btn.getAttribute('data-filename')
+                        );
+                    });
+                });
+            })
+            .catch(function() {
+                showEmpty();
+                window.HM.toast('Failed to load recordings', 'error');
+            });
+    }
+
+    function showEmpty() {
+        clipList.innerHTML = '';
+        emptyState.style.display = '';
+    }
+
+    function playClip(url, label) {
+        videoEl.src = url;
+        videoEl.load();
+        videoEl.play().catch(function() {});
+        playingLabel.textContent = 'Playing: ' + label;
+        playerWrap.classList.add('visible');
+        playerWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function deleteClip(cameraId, date, filename) {
+        if (!confirm('Delete recording ' + filename + '? This cannot be undone.')) {
+            return;
+        }
+        window.HM.api.del(
+            '/api/v1/recordings/' + encodeURIComponent(cameraId) + '/' +
+            encodeURIComponent(date) + '/' + encodeURIComponent(filename)
+        )
+        .then(function() {
+            window.HM.toast('Recording deleted', 'success');
+            loadClips(cameraSelect.value, dateInput.value);
+        })
+        .catch(function(err) {
+            window.HM.toast(err.message || 'Failed to delete recording', 'error');
+        });
+    }
+
+    btnClose.addEventListener('click', function() {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        playerWrap.classList.remove('visible');
+        playingLabel.textContent = '';
+    });
+
+    cameraSelect.addEventListener('change', function() {
+        closePlayer();
+        if (cameraSelect.value) {
+            loadDates(cameraSelect.value);
+            updateUrl();
+        }
+    });
+
+    dateInput.addEventListener('change', function() {
+        closePlayer();
+        if (cameraSelect.value && dateInput.value) {
+            loadClips(cameraSelect.value, dateInput.value);
+            updateUrl();
+        }
+    });
+
+    function closePlayer() {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        playerWrap.classList.remove('visible');
+        playingLabel.textContent = '';
+    }
+
+    function updateUrl() {
+        var url = new URL(window.location);
+        if (cameraSelect.value) url.searchParams.set('camera', cameraSelect.value);
+        if (dateInput.value) url.searchParams.set('date', dateInput.value);
+        history.replaceState(null, '', url.toString());
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}

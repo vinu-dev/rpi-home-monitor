@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a1a">
+    <title>{% block title %}Home Monitor{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% set hide_nav = hide_nav|default(false) %}
+
+    {% if not hide_nav %}
+    <!-- Top Bar -->
+    <header class="top-bar">
+        <span class="top-bar__title">Home Monitor</span>
+        <div class="top-bar__right">
+            <span class="top-bar__user" id="topbar-username"></span>
+            <button class="top-bar__logout" id="btn-logout" type="button">Logout</button>
+        </div>
+    </header>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" id="bottom-nav">
+        <a href="/dashboard" class="bottom-nav__item" data-page="dashboard">
+            <span class="bottom-nav__icon">[H]</span>
+            <span>Dashboard</span>
+        </a>
+        <a href="/live" class="bottom-nav__item" data-page="live">
+            <span class="bottom-nav__icon">[L]</span>
+            <span>Live</span>
+        </a>
+        <a href="/recordings" class="bottom-nav__item" data-page="recordings">
+            <span class="bottom-nav__icon">[R]</span>
+            <span>Recordings</span>
+        </a>
+        <a href="/settings" class="bottom-nav__item" data-page="settings">
+            <span class="bottom-nav__icon">[S]</span>
+            <span>Settings</span>
+        </a>
+    </nav>
+    {% endif %}
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Page Content -->
+    {% if not hide_nav %}
+    <main class="content">
+    {% endif %}
+        {% block content %}{% endblock %}
+    {% if not hide_nav %}
+    </main>
+    {% endif %}
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

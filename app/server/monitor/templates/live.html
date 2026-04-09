@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}Live View - Home Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Live View</h1>
+
+<!-- Camera Selector -->
+<div class="form-group">
+    <label for="live-camera-select">Camera</label>
+    <select id="live-camera-select" class="form-input">
+        <option value="">Loading cameras...</option>
+    </select>
+</div>
+
+<!-- Video Player -->
+<div class="video-container" id="live-video-container">
+    <video id="live-video" autoplay muted playsinline></video>
+    <div class="video-overlay" id="live-overlay">
+        <span id="live-overlay-text">Select a camera</span>
+    </div>
+</div>
+
+<!-- Controls -->
+<div class="flex-between mt-8">
+    <span id="live-stream-status" class="text-muted text-small"></span>
+    <button class="btn btn--secondary btn--small" id="btn-snapshot" disabled>Snapshot</button>
+</div>
+
+<!-- Camera Info -->
+<div class="card mt-16 camera-info" id="live-camera-info" style="display:none;">
+    <div class="camera-info__row">
+        <span class="camera-info__label">Name</span>
+        <span class="camera-info__value" id="info-name">--</span>
+    </div>
+    <div class="camera-info__row">
+        <span class="camera-info__label">Resolution</span>
+        <span class="camera-info__value" id="info-resolution">--</span>
+    </div>
+    <div class="camera-info__row">
+        <span class="camera-info__label">FPS</span>
+        <span class="camera-info__value" id="info-fps">--</span>
+    </div>
+    <div class="camera-info__row">
+        <span class="camera-info__label">IP Address</span>
+        <span class="camera-info__value" id="info-ip">--</span>
+    </div>
+    <div class="camera-info__row">
+        <span class="camera-info__label">Status</span>
+        <span class="camera-info__value" id="info-status">--</span>
+    </div>
+    <div class="camera-info__row" style="border-bottom:none;">
+        <span class="camera-info__label">Recording Mode</span>
+        <span class="camera-info__value" id="info-recording">--</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var videoEl = document.getElementById('live-video');
+    var overlay = document.getElementById('live-overlay');
+    var overlayText = document.getElementById('live-overlay-text');
+    var selectEl = document.getElementById('live-camera-select');
+    var btnSnapshot = document.getElementById('btn-snapshot');
+    var statusEl = document.getElementById('live-stream-status');
+    var infoPanel = document.getElementById('live-camera-info');
+    var hlsInstance = null;
+    var cameras = [];
+
+    function showOverlay(msg) {
+        overlayText.textContent = msg;
+        overlay.classList.remove('hidden');
+    }
+
+    function hideOverlay() {
+        overlay.classList.add('hidden');
+    }
+
+    function loadCameras() {
+        window.HM.api.get('/api/v1/cameras')
+            .then(function(data) {
+                cameras = data || [];
+                selectEl.innerHTML = '';
+
+                if (cameras.length === 0) {
+                    var opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No cameras available';
+                    selectEl.appendChild(opt);
+                    showOverlay('No cameras available');
+                    return;
+                }
+
+                cameras.forEach(function(cam) {
+                    var opt = document.createElement('option');
+                    opt.value = cam.id;
+                    opt.textContent = (cam.name || cam.id) + ' (' + cam.status + ')';
+                    selectEl.appendChild(opt);
+                });
+
+                // Check URL param for pre-selected camera
+                var params = new URLSearchParams(window.location.search);
+                var camParam = params.get('camera');
+                if (camParam) {
+                    selectEl.value = camParam;
+                }
+
+                // Start playing selected or first
+                if (selectEl.value) {
+                    startStream(selectEl.value);
+                } else {
+                    selectEl.selectedIndex = 0;
+                    startStream(cameras[0].id);
+                }
+            })
+            .catch(function() {
+                showOverlay('Failed to load cameras');
+            });
+    }
+
+    function findCamera(id) {
+        for (var i = 0; i < cameras.length; i++) {
+            if (cameras[i].id === id) return cameras[i];
+        }
+        return null;
+    }
+
+    function updateCameraInfo(cam) {
+        if (!cam) {
+            infoPanel.style.display = 'none';
+            return;
+        }
+        infoPanel.style.display = '';
+        document.getElementById('info-name').textContent = cam.name || cam.id;
+        document.getElementById('info-resolution').textContent = cam.resolution || '--';
+        document.getElementById('info-fps').textContent = cam.fps || '--';
+        document.getElementById('info-ip').textContent = cam.ip || '--';
+        document.getElementById('info-status').textContent = cam.status || '--';
+        document.getElementById('info-recording').textContent = cam.recording_mode || '--';
+    }
+
+    function destroyStream() {
+        if (hlsInstance) {
+            hlsInstance.destroy();
+            hlsInstance = null;
+        }
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        btnSnapshot.disabled = true;
+        statusEl.textContent = '';
+    }
+
+    function startStream(cameraId) {
+        destroyStream();
+
+        var cam = findCamera(cameraId);
+        updateCameraInfo(cam);
+
+        if (!cam) {
+            showOverlay('Camera not found');
+            return;
+        }
+
+        if (cam.status !== 'online') {
+            showOverlay('Camera offline');
+            return;
+        }
+
+        var streamUrl = '/live/' + encodeURIComponent(cameraId) + '/stream.m3u8';
+        statusEl.textContent = 'Connecting...';
+
+        // Safari has native HLS support
+        if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            videoEl.src = streamUrl;
+            videoEl.addEventListener('loadedmetadata', function onLoaded() {
+                videoEl.removeEventListener('loadedmetadata', onLoaded);
+                hideOverlay();
+                btnSnapshot.disabled = false;
+                statusEl.textContent = 'Live';
+            });
+            videoEl.addEventListener('error', function onErr() {
+                videoEl.removeEventListener('error', onErr);
+                showOverlay('Stream unavailable');
+                statusEl.textContent = 'Error';
+            });
+            videoEl.play().catch(function() {});
+            return;
+        }
+
+        // Use HLS.js for other browsers
+        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            hlsInstance = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+            });
+            hlsInstance.loadSource(streamUrl);
+            hlsInstance.attachMedia(videoEl);
+
+            hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+                hideOverlay();
+                btnSnapshot.disabled = false;
+                statusEl.textContent = 'Live';
+                videoEl.play().catch(function() {});
+            });
+
+            hlsInstance.on(Hls.Events.ERROR, function(event, data) {
+                if (data.fatal) {
+                    showOverlay('Stream unavailable');
+                    statusEl.textContent = 'Error';
+                    hlsInstance.destroy();
+                    hlsInstance = null;
+                }
+            });
+        } else {
+            showOverlay('HLS playback not supported in this browser');
+            statusEl.textContent = 'Unsupported';
+        }
+    }
+
+    selectEl.addEventListener('change', function() {
+        if (selectEl.value) {
+            startStream(selectEl.value);
+            // Update URL without reload
+            var url = new URL(window.location);
+            url.searchParams.set('camera', selectEl.value);
+            history.replaceState(null, '', url.toString());
+        }
+    });
+
+    btnSnapshot.addEventListener('click', function() {
+        var cameraId = selectEl.value;
+        if (cameraId) {
+            window.open('/api/v1/live/' + encodeURIComponent(cameraId) + '/snapshot', '_blank');
+        }
+    });
+
+    function init() {
+        loadCameras();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}

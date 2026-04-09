@@ -110,6 +110,15 @@ ssh root@<rpi4b-ip> systemctl restart monitor
 ./scripts/build.sh server-dev
 ```
 
+## Yocto Builds on VM
+
+- Always use `./scripts/build.sh` to build images — it sets up the correct MACHINE, build directory, and local.conf per board
+- Server builds use `build/` dir with `config/rpi4b/local.conf`
+- Camera builds use `build-zero2w/` dir with `config/zero2w/local.conf`
+- Never manually run `bitbake` with `MACHINE=` env var overrides — `local.conf` takes precedence and silently ignores it
+- Always run builds inside `tmux` on the VM so they survive SSH disconnects
+- Recipe LICENSE fields use MIT (Yocto recipe metadata convention) — don't change them to match the project AGPL-3.0
+
 ## Build VM
 
 Set up your own build VM following [docs/build-setup.md](docs/build-setup.md).

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Home Monitor Setup</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 16px;
+            line-height: 1.5;
+        }
+        .container {
+            width: 100%;
+            max-width: 420px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        h2 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        p {
+            color: #b0b0c0;
+            margin-bottom: 16px;
+            font-size: 0.95rem;
+        }
+        .step {
+            display: none;
+        }
+        .step.active {
+            display: block;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 24px;
+            padding-top: 20px;
+        }
+        .logo-icon {
+            width: 72px;
+            height: 72px;
+            background: #0f3460;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin-bottom: 12px;
+        }
+        .logo-text {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        /* Progress bar */
+        .progress {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .progress-dot {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: #0f3460;
+            transition: background 0.3s;
+        }
+        .progress-dot.done {
+            background: #e94560;
+        }
+        .progress-dot.current {
+            background: #e94560;
+        }
+
+        /* Buttons */
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: #e94560;
+            color: #fff;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #d63851;
+        }
+        .btn-secondary {
+            background: #0f3460;
+            color: #e0e0e0;
+            margin-top: 8px;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: #133a6a;
+        }
+
+        /* Inputs */
+        .input-group {
+            margin-bottom: 16px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #8090b0;
+            margin-bottom: 6px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 12px 14px;
+            background: #1a1a2e;
+            border: 1px solid #2a3a5e;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus {
+            border-color: #e94560;
+        }
+        .input-group input::placeholder {
+            color: #506080;
+        }
+        .input-hint {
+            font-size: 0.8rem;
+            color: #607090;
+            margin-top: 4px;
+        }
+
+        /* WiFi network list */
+        .network-list {
+            max-height: 320px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+        .network-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 2px solid transparent;
+        }
+        .network-item:hover {
+            background: #1e2440;
+        }
+        .network-item.selected {
+            border-color: #e94560;
+            background: #1e2440;
+        }
+        .network-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+        .network-ssid {
+            font-weight: 500;
+            color: #e0e0e0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .network-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Signal strength bars */
+        .signal-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 16px;
+        }
+        .signal-bar {
+            width: 4px;
+            border-radius: 1px;
+            background: #2a3a5e;
+            transition: background 0.2s;
+        }
+        .signal-bar:nth-child(1) { height: 4px; }
+        .signal-bar:nth-child(2) { height: 8px; }
+        .signal-bar:nth-child(3) { height: 12px; }
+        .signal-bar:nth-child(4) { height: 16px; }
+        .signal-bar.active {
+            background: #4ade80;
+        }
+
+        /* Lock icon for secured networks */
+        .lock-icon {
+            font-size: 14px;
+            color: #8090b0;
+        }
+
+        /* WiFi password section */
+        .wifi-password-section {
+            display: none;
+            margin-top: 16px;
+        }
+        .wifi-password-section.visible {
+            display: block;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform 0.3s, opacity 0.3s;
+            z-index: 100;
+            max-width: 90%;
+            text-align: center;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+        .toast.error {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Loading overlay for scan */
+        .scan-loading {
+            text-align: center;
+            padding: 40px 0;
+            color: #8090b0;
+        }
+
+        /* Done step */
+        .done-icon {
+            text-align: center;
+            font-size: 56px;
+            margin-bottom: 16px;
+        }
+        .ip-display {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            margin: 16px 0;
+            font-family: monospace;
+            font-size: 1.1rem;
+            color: #4ade80;
+        }
+
+        /* Step label */
+        .step-label {
+            font-size: 0.8rem;
+            color: #607090;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        /* Scrollbar styling for network list */
+        .network-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .network-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .network-list::-webkit-scrollbar-thumb {
+            background: #2a3a5e;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="progress" id="progress">
+            <div class="progress-dot current" data-step="0"></div>
+            <div class="progress-dot" data-step="1"></div>
+            <div class="progress-dot" data-step="2"></div>
+            <div class="progress-dot" data-step="3"></div>
+        </div>
+
+        <!-- Step 1: Welcome -->
+        <div class="step active" id="step-0">
+            <div class="logo">
+                <div class="logo-icon">&#127909;</div>
+                <div class="logo-text">Home Monitor</div>
+            </div>
+            <div class="card">
+                <h1>Welcome to Home Monitor</h1>
+                <p>Your self-hosted security camera system. This wizard will help you connect your server to WiFi and secure your admin account.</p>
+                <p>You will need your WiFi network name and password.</p>
+                <button class="btn btn-primary" onclick="goToStep(1)">Get Started</button>
+            </div>
+        </div>
+
+        <!-- Step 2: WiFi -->
+        <div class="step" id="step-1">
+            <div class="card">
+                <div class="step-label">Step 1 of 3</div>
+                <h2>Connect to WiFi</h2>
+                <p>Select your WiFi network below.</p>
+
+                <div id="wifi-scan-loading" class="scan-loading">
+                    <div class="spinner"></div>
+                    <div>Scanning for networks...</div>
+                </div>
+
+                <div id="wifi-network-list" class="network-list" style="display:none;"></div>
+
+                <div id="wifi-password-section" class="wifi-password-section">
+                    <div class="input-group">
+                        <label>Password for <strong id="wifi-selected-ssid"></strong></label>
+                        <input type="password" id="wifi-password" placeholder="Enter WiFi password"
+                               onkeydown="if(event.key==='Enter')connectWifi()">
+                    </div>
+                    <button class="btn btn-primary" id="btn-wifi-connect" onclick="connectWifi()">Connect</button>
+                </div>
+
+                <button class="btn btn-secondary" onclick="scanWifi()" id="btn-rescan">
+                    Rescan Networks
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 3: Admin Password -->
+        <div class="step" id="step-2">
+            <div class="card">
+                <div class="step-label">Step 2 of 3</div>
+                <h2>Set Admin Password</h2>
+                <p>Change the default admin password to secure your system.</p>
+
+                <div class="input-group">
+                    <label>Current password</label>
+                    <input type="text" value="admin (default)" disabled
+                           style="opacity: 0.5;">
+                </div>
+                <div class="input-group">
+                    <label>New password</label>
+                    <input type="password" id="admin-password" placeholder="Enter new password"
+                           oninput="validatePasswords()">
+                    <div class="input-hint">Minimum 8 characters</div>
+                </div>
+                <div class="input-group">
+                    <label>Confirm password</label>
+                    <input type="password" id="admin-password-confirm" placeholder="Confirm new password"
+                           oninput="validatePasswords()"
+                           onkeydown="if(event.key==='Enter')saveAdminPassword()">
+                </div>
+                <button class="btn btn-primary" id="btn-admin-save" onclick="saveAdminPassword()" disabled>
+                    Save Password
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 4: Done -->
+        <div class="step" id="step-3">
+            <div class="card">
+                <div class="done-icon">&#9989;</div>
+                <h1 style="text-align:center;">Setup Complete!</h1>
+                <p style="text-align:center;">Your Home Monitor server is ready. Connect to your WiFi network and open the dashboard at the address below.</p>
+
+                <div class="ip-display" id="done-ip-display">
+                    Loading...
+                </div>
+
+                <p style="text-align:center;font-size:0.85rem;">
+                    Disconnect from the HomeMonitor-Setup hotspot and connect to your regular WiFi network, then open the address above.
+                </p>
+
+                <a id="done-dashboard-link" href="#" class="btn btn-primary"
+                   style="text-decoration:none;text-align:center;">
+                    Open Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        var currentStep = 0;
+        var selectedSSID = '';
+        var finalIP = '';
+        var API_BASE = '/api/v1/setup';
+
+        function goToStep(step) {
+            document.querySelectorAll('.step').forEach(function(el) {
+                el.classList.remove('active');
+            });
+            document.getElementById('step-' + step).classList.add('active');
+
+            document.querySelectorAll('.progress-dot').forEach(function(dot, i) {
+                dot.classList.remove('current', 'done');
+                if (i < step) dot.classList.add('done');
+                else if (i === step) dot.classList.add('current');
+            });
+
+            currentStep = step;
+
+            if (step === 1) {
+                scanWifi();
+            }
+        }
+
+        function showToast(message, type) {
+            var toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type;
+            setTimeout(function() { toast.classList.add('show'); }, 10);
+            setTimeout(function() { toast.classList.remove('show'); }, 3500);
+        }
+
+        function setButtonLoading(btn, loading, text) {
+            if (loading) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>' + (text || 'Loading...');
+            } else {
+                btn.disabled = false;
+                btn.textContent = text || btn.textContent;
+            }
+        }
+
+        function getSignalBars(signal) {
+            var level = 0;
+            if (signal >= 80) level = 4;
+            else if (signal >= 60) level = 3;
+            else if (signal >= 40) level = 2;
+            else level = 1;
+
+            var html = '<div class="signal-bars">';
+            for (var i = 1; i <= 4; i++) {
+                html += '<div class="signal-bar' + (i <= level ? ' active' : '') + '"></div>';
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function scanWifi() {
+            var loading = document.getElementById('wifi-scan-loading');
+            var list = document.getElementById('wifi-network-list');
+            var pwSection = document.getElementById('wifi-password-section');
+            var rescanBtn = document.getElementById('btn-rescan');
+
+            loading.style.display = 'block';
+            list.style.display = 'none';
+            pwSection.classList.remove('visible');
+            rescanBtn.disabled = true;
+            selectedSSID = '';
+
+            fetch(API_BASE + '/wifi/scan')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    loading.style.display = 'none';
+                    rescanBtn.disabled = false;
+
+                    if (data.error) {
+                        showToast(data.error, 'error');
+                        return;
+                    }
+
+                    var networks = data.networks || [];
+                    if (networks.length === 0) {
+                        list.innerHTML = '<div style="text-align:center;padding:24px;color:#607090;">No networks found. Try rescanning.</div>';
+                        list.style.display = 'block';
+                        return;
+                    }
+
+                    var html = '';
+                    networks.forEach(function(net) {
+                        var isSecured = net.security && net.security !== '' && net.security !== '--';
+                        html += '<div class="network-item" data-ssid="' + escapeAttr(net.ssid) + '" onclick="selectNetwork(this)">';
+                        html += '<div class="network-info">';
+                        html += '<span class="network-ssid">' + escapeHtml(net.ssid) + '</span>';
+                        html += '</div>';
+                        html += '<div class="network-meta">';
+                        if (isSecured) {
+                            html += '<span class="lock-icon">&#128274;</span>';
+                        }
+                        html += getSignalBars(net.signal);
+                        html += '</div>';
+                        html += '</div>';
+                    });
+
+                    list.innerHTML = html;
+                    list.style.display = 'block';
+                })
+                .catch(function(err) {
+                    loading.style.display = 'none';
+                    rescanBtn.disabled = false;
+                    showToast('Failed to scan networks', 'error');
+                });
+        }
+
+        function selectNetwork(el) {
+            document.querySelectorAll('.network-item').forEach(function(item) {
+                item.classList.remove('selected');
+            });
+            el.classList.add('selected');
+
+            selectedSSID = el.getAttribute('data-ssid');
+            document.getElementById('wifi-selected-ssid').textContent = selectedSSID;
+            document.getElementById('wifi-password').value = '';
+
+            var pwSection = document.getElementById('wifi-password-section');
+            pwSection.classList.add('visible');
+
+            setTimeout(function() {
+                document.getElementById('wifi-password').focus();
+            }, 100);
+        }
+
+        function connectWifi() {
+            if (!selectedSSID) {
+                showToast('Please select a network', 'error');
+                return;
+            }
+
+            var password = document.getElementById('wifi-password').value;
+            if (!password) {
+                showToast('Please enter the WiFi password', 'error');
+                return;
+            }
+
+            var btn = document.getElementById('btn-wifi-connect');
+            setButtonLoading(btn, true, 'Connecting...');
+
+            fetch(API_BASE + '/wifi/connect', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ssid: selectedSSID, password: password})
+            })
+            .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+            .then(function(res) {
+                setButtonLoading(btn, false, 'Connect');
+                if (res.status === 200) {
+                    showToast('Connected to ' + selectedSSID, 'success');
+                    setTimeout(function() { goToStep(2); }, 1200);
+                } else {
+                    showToast(res.data.error || 'Connection failed', 'error');
+                }
+            })
+            .catch(function(err) {
+                setButtonLoading(btn, false, 'Connect');
+                showToast('Connection failed', 'error');
+            });
+        }
+
+        function validatePasswords() {
+            var pw = document.getElementById('admin-password').value;
+            var confirm = document.getElementById('admin-password-confirm').value;
+            var btn = document.getElementById('btn-admin-save');
+
+            btn.disabled = !(pw.length >= 8 && pw === confirm);
+        }
+
+        function saveAdminPassword() {
+            var pw = document.getElementById('admin-password').value;
+            var confirm = document.getElementById('admin-password-confirm').value;
+
+            if (pw.length < 8) {
+                showToast('Password must be at least 8 characters', 'error');
+                return;
+            }
+            if (pw !== confirm) {
+                showToast('Passwords do not match', 'error');
+                return;
+            }
+
+            var btn = document.getElementById('btn-admin-save');
+            setButtonLoading(btn, true, 'Saving...');
+
+            fetch(API_BASE + '/admin', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: pw})
+            })
+            .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+            .then(function(res) {
+                setButtonLoading(btn, false, 'Save Password');
+                if (res.status === 200) {
+                    showToast('Password updated', 'success');
+                    setTimeout(function() { completeSetup(); }, 1000);
+                } else {
+                    showToast(res.data.error || 'Failed to update password', 'error');
+                }
+            })
+            .catch(function(err) {
+                setButtonLoading(btn, false, 'Save Password');
+                showToast('Failed to update password', 'error');
+            });
+        }
+
+        function completeSetup() {
+            fetch(API_BASE + '/complete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                finalIP = data.ip || '';
+
+                if (finalIP) {
+                    document.getElementById('done-ip-display').textContent = 'https://' + finalIP + '/';
+                    document.getElementById('done-dashboard-link').href = 'https://' + finalIP + '/';
+                } else {
+                    document.getElementById('done-ip-display').textContent = 'IP address unavailable';
+                    document.getElementById('done-dashboard-link').style.display = 'none';
+                }
+
+                goToStep(3);
+            })
+            .catch(function(err) {
+                showToast('Setup completion failed', 'error');
+            });
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+    </script>
+</body>
+</html>

@@ -101,7 +101,11 @@ def create_app(config=None):
     from monitor.api.users import users_bp
     from monitor.api.ota import ota_bp
     from monitor.auth import auth_bp
+    from monitor.provisioning import provisioning_bp as setup_bp
+    from monitor.views import views_bp
 
+    app.register_blueprint(views_bp)
+    app.register_blueprint(setup_bp, url_prefix="/api/v1/setup")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
     app.register_blueprint(cameras_bp, url_prefix="/api/v1/cameras")
     app.register_blueprint(recordings_bp, url_prefix="/api/v1/recordings")

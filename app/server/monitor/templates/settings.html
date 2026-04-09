@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Home Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Settings</h1>
+
+<!-- System Settings (admin only) -->
+<div class="settings-section" id="section-system-settings" style="display:none;">
+    <div class="settings-section__title">System Settings</div>
+    <div class="card">
+        <form id="form-settings">
+            <div class="form-group">
+                <label for="set-hostname">Hostname</label>
+                <input type="text" id="set-hostname" class="form-input" maxlength="63">
+            </div>
+            <div class="form-group">
+                <label for="set-timezone">Timezone</label>
+                <input type="text" id="set-timezone" class="form-input" placeholder="e.g. Europe/Dublin">
+            </div>
+            <div class="form-group">
+                <label for="set-storage">Storage Threshold (%)</label>
+                <input type="number" id="set-storage" class="form-input" min="50" max="99">
+            </div>
+            <div class="form-group">
+                <label for="set-clip-duration">Clip Duration (seconds)</label>
+                <input type="number" id="set-clip-duration" class="form-input" min="30" max="600">
+            </div>
+            <div class="form-group">
+                <label for="set-session-timeout">Session Timeout (minutes)</label>
+                <input type="number" id="set-session-timeout" class="form-input" min="5" max="1440">
+            </div>
+            <button type="submit" class="btn btn--primary">Save Settings</button>
+        </form>
+    </div>
+</div>
+
+<!-- User Management (admin only) -->
+<div class="settings-section" id="section-user-mgmt" style="display:none;">
+    <div class="flex-between">
+        <div class="settings-section__title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">User Management</div>
+        <button class="btn btn--secondary btn--small" id="btn-toggle-add-user">Add User</button>
+    </div>
+
+    <!-- Add User Inline Form -->
+    <div class="inline-form" id="form-add-user-wrap">
+        <form id="form-add-user">
+            <div class="inline-form__row">
+                <div class="form-group">
+                    <label for="new-username">Username</label>
+                    <input type="text" id="new-username" class="form-input" minlength="3" maxlength="32" required>
+                </div>
+                <div class="form-group">
+                    <label for="new-password">Password</label>
+                    <input type="password" id="new-password" class="form-input" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <label for="new-role">Role</label>
+                    <select id="new-role" class="form-input">
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-8">
+                <button type="submit" class="btn btn--primary btn--small">Create User</button>
+                <button type="button" class="btn btn--secondary btn--small" id="btn-cancel-add-user">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- User Table -->
+    <div class="card mt-16">
+        <div class="user-table-wrap">
+            <table class="user-table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Created</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="user-table-body">
+                    <tr><td colspan="4" class="text-muted text-center">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- System Info (all users) -->
+<div class="settings-section">
+    <div class="settings-section__title">System Info</div>
+    <div class="card">
+        <div class="info-row">
+            <span class="info-row__label">Firmware Version</span>
+            <span class="info-row__value" id="sysinfo-firmware">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Uptime</span>
+            <span class="info-row__value" id="sysinfo-uptime">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Disk Total</span>
+            <span class="info-row__value" id="sysinfo-disk-total">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Disk Used</span>
+            <span class="info-row__value" id="sysinfo-disk-used">--</span>
+        </div>
+        <div class="info-row" style="border-bottom:none;">
+            <span class="info-row__label">Disk Free</span>
+            <span class="info-row__value" id="sysinfo-disk-free">--</span>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password (all users) -->
+<div class="settings-section">
+    <div class="settings-section__title">Change Password</div>
+    <div class="card">
+        <form id="form-change-password">
+            <div class="form-group">
+                <label for="pw-current">Current Password</label>
+                <input type="password" id="pw-current" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label for="pw-new">New Password</label>
+                <input type="password" id="pw-new" class="form-input" minlength="8" required>
+            </div>
+            <div class="form-group">
+                <label for="pw-confirm">Confirm New Password</label>
+                <input type="password" id="pw-confirm" class="form-input" minlength="8" required>
+            </div>
+            <button type="submit" class="btn btn--primary">Change Password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var currentUser = null;
+
+    function init() {
+        currentUser = window.HM.auth.getUser();
+        var isAdmin = currentUser && currentUser.role === 'admin';
+
+        if (isAdmin) {
+            document.getElementById('section-system-settings').style.display = '';
+            document.getElementById('section-user-mgmt').style.display = '';
+            loadSettings();
+            loadUsers();
+        }
+
+        loadSystemInfo();
+        bindEvents();
+    }
+
+    /* --- System Settings --- */
+    function loadSettings() {
+        window.HM.api.get('/api/v1/settings')
+            .then(function(data) {
+                document.getElementById('set-hostname').value = data.hostname || '';
+                document.getElementById('set-timezone').value = data.timezone || '';
+                document.getElementById('set-storage').value = data.storage_threshold_percent || 90;
+                document.getElementById('set-clip-duration').value = data.clip_duration_seconds || 180;
+                document.getElementById('set-session-timeout').value = data.session_timeout_minutes || 30;
+            })
+            .catch(function() {
+                window.HM.toast('Failed to load settings', 'error');
+            });
+    }
+
+    /* --- System Info --- */
+    function loadSystemInfo() {
+        window.HM.api.get('/api/v1/system/info')
+            .then(function(data) {
+                document.getElementById('sysinfo-firmware').textContent = data.firmware_version || '--';
+                document.getElementById('sysinfo-uptime').textContent = data.uptime || '--';
+            })
+            .catch(function() {});
+
+        window.HM.api.get('/api/v1/system/health')
+            .then(function(data) {
+                if (data.disk) {
+                    document.getElementById('sysinfo-disk-total').textContent =
+                        window.HM.formatBytes(data.disk.total || 0);
+                    document.getElementById('sysinfo-disk-used').textContent =
+                        window.HM.formatBytes(data.disk.used || 0);
+                    document.getElementById('sysinfo-disk-free').textContent =
+                        window.HM.formatBytes(data.disk.free || 0);
+                }
+            })
+            .catch(function() {});
+    }
+
+    /* --- User Management --- */
+    function loadUsers() {
+        window.HM.api.get('/api/v1/users')
+            .then(function(users) {
+                var tbody = document.getElementById('user-table-body');
+                tbody.innerHTML = '';
+
+                if (!users || users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No users found</td></tr>';
+                    return;
+                }
+
+                users.forEach(function(u) {
+                    var tr = document.createElement('tr');
+                    var isSelf = currentUser && currentUser.id === u.id;
+                    var created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '--';
+
+                    var deleteBtn = '';
+                    if (!isSelf) {
+                        deleteBtn = '<button class="btn btn--danger btn--icon btn-delete-user" ' +
+                            'data-id="' + window.HM.escapeHtml(u.id) + '" ' +
+                            'data-name="' + window.HM.escapeHtml(u.username) + '">X</button>';
+                    }
+
+                    tr.innerHTML =
+                        '<td>' + window.HM.escapeHtml(u.username) + (isSelf ? ' (you)' : '') + '</td>' +
+                        '<td>' + window.HM.escapeHtml(u.role) + '</td>' +
+                        '<td>' + created + '</td>' +
+                        '<td>' + deleteBtn + '</td>';
+
+                    tbody.appendChild(tr);
+                });
+
+                // Bind delete buttons
+                tbody.querySelectorAll('.btn-delete-user').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        deleteUser(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
+                    });
+                });
+            })
+            .catch(function() {
+                window.HM.toast('Failed to load users', 'error');
+            });
+    }
+
+    function deleteUser(userId, username) {
+        if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+
+        window.HM.api.del('/api/v1/users/' + encodeURIComponent(userId))
+            .then(function() {
+                window.HM.toast('User deleted', 'success');
+                loadUsers();
+            })
+            .catch(function(err) {
+                window.HM.toast(err.message || 'Failed to delete user', 'error');
+            });
+    }
+
+    /* --- Event Bindings --- */
+    function bindEvents() {
+        // Save Settings
+        var formSettings = document.getElementById('form-settings');
+        if (formSettings) {
+            formSettings.addEventListener('submit', function(e) {
+                e.preventDefault();
+                var payload = {
+                    hostname: document.getElementById('set-hostname').value.trim(),
+                    timezone: document.getElementById('set-timezone').value.trim(),
+                    storage_threshold_percent: parseInt(document.getElementById('set-storage').value, 10),
+                    clip_duration_seconds: parseInt(document.getElementById('set-clip-duration').value, 10),
+                    session_timeout_minutes: parseInt(document.getElementById('set-session-timeout').value, 10),
+                };
+                window.HM.api.put('/api/v1/settings', payload)
+                    .then(function() {
+                        window.HM.toast('Settings saved', 'success');
+                    })
+                    .catch(function(err) {
+                        window.HM.toast(err.message || 'Failed to save settings', 'error');
+                    });
+            });
+        }
+
+        // Toggle add user form
+        var btnToggle = document.getElementById('btn-toggle-add-user');
+        var addUserWrap = document.getElementById('form-add-user-wrap');
+        var btnCancel = document.getElementById('btn-cancel-add-user');
+
+        if (btnToggle) {
+            btnToggle.addEventListener('click', function() {
+                addUserWrap.classList.toggle('visible');
+            });
+        }
+        if (btnCancel) {
+            btnCancel.addEventListener('click', function() {
+                addUserWrap.classList.remove('visible');
+                document.getElementById('form-add-user').reset();
+            });
+        }
+
+        // Create user
+        var formAddUser = document.getElementById('form-add-user');
+        if (formAddUser) {
+            formAddUser.addEventListener('submit', function(e) {
+                e.preventDefault();
+                var username = document.getElementById('new-username').value.trim();
+                var password = document.getElementById('new-password').value;
+                var role = document.getElementById('new-role').value;
+
+                if (!username || username.length < 3) {
+                    window.HM.toast('Username must be at least 3 characters', 'error');
+                    return;
+                }
+                if (!password || password.length < 8) {
+                    window.HM.toast('Password must be at least 8 characters', 'error');
+                    return;
+                }
+
+                window.HM.api.post('/api/v1/users', { username: username, password: password, role: role })
+                    .then(function() {
+                        window.HM.toast('User created', 'success');
+                        formAddUser.reset();
+                        addUserWrap.classList.remove('visible');
+                        loadUsers();
+                    })
+                    .catch(function(err) {
+                        window.HM.toast(err.message || 'Failed to create user', 'error');
+                    });
+            });
+        }
+
+        // Change password
+        var formPw = document.getElementById('form-change-password');
+        if (formPw) {
+            formPw.addEventListener('submit', function(e) {
+                e.preventDefault();
+                var newPw = document.getElementById('pw-new').value;
+                var confirmPw = document.getElementById('pw-confirm').value;
+
+                if (newPw.length < 8) {
+                    window.HM.toast('New password must be at least 8 characters', 'error');
+                    return;
+                }
+                if (newPw !== confirmPw) {
+                    window.HM.toast('Passwords do not match', 'error');
+                    return;
+                }
+
+                if (!currentUser) return;
+
+                window.HM.api.put('/api/v1/users/' + encodeURIComponent(currentUser.id) + '/password', {
+                    new_password: newPw,
+                })
+                .then(function() {
+                    window.HM.toast('Password changed', 'success');
+                    formPw.reset();
+                })
+                .catch(function(err) {
+                    window.HM.toast(err.message || 'Failed to change password', 'error');
+                });
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}
