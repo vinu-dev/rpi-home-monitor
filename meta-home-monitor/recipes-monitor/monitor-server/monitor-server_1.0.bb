@@ -35,10 +35,15 @@ RDEPENDS:${PN} = " \
     avahi-daemon \
     "
 
-inherit systemd
+inherit systemd useradd
 
 SYSTEMD_SERVICE:${PN} = "monitor.service"
 SYSTEMD_AUTO_ENABLE = "enable"
+
+# Create monitor system user/group
+USERADD_PACKAGES = "${PN}"
+USERADD_PARAM:${PN} = "-r -d /opt/monitor -s /bin/false -G video monitor"
+GROUPADD_PARAM:${PN} = "-r monitor"
 
 do_install() {
     # Install the Python application

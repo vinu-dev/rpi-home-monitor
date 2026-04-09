@@ -24,10 +24,13 @@ IMAGE_INSTALL += " \
 # --- Application ---
 IMAGE_INSTALL += " \
     camera-streamer \
+    first-boot \
     "
 
 # --- Image output ---
 IMAGE_FSTYPES = "wic.bz2 wic.bmap"
+WKS_FILE = "home-camera-ab.wks"
+WKS_FILE_DEPENDS = "e2fsprogs-native dosfstools-native mtools-native"
 
 # --- Keep image small ---
 IMAGE_ROOTFS_EXTRA_SPACE = "262144"

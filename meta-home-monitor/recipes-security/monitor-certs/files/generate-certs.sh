@@ -40,13 +40,17 @@ chmod 600 "$SERVER_KEY"
 openssl req -new -key "$SERVER_KEY" -out "$SERVER_CSR" \
     -subj "/CN=home-monitor/O=HomeMonitor"
 
+# Create SAN extension file
+SAN_EXT="$CERTS_DIR/san.cnf"
+printf "subjectAltName=DNS:home-monitor,DNS:localhost,IP:127.0.0.1\n" > "$SAN_EXT"
+
 # Sign server cert with CA (1 year)
 openssl x509 -req -in "$SERVER_CSR" -CA "$CA_CERT" -CAkey "$CA_KEY" \
     -CAcreateserial -out "$SERVER_CERT" -days 365 \
-    -extfile <(printf "subjectAltName=DNS:home-monitor,DNS:localhost,IP:127.0.0.1")
+    -extfile "$SAN_EXT"
 
-# Cleanup CSR
-rm -f "$SERVER_CSR"
+# Cleanup temporary files
+rm -f "$SERVER_CSR" "$SAN_EXT"
 
 echo "Certificates generated successfully:"
 echo "  CA:     $CA_CERT"

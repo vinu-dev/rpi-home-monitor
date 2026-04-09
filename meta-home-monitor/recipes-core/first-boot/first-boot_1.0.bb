@@ -1,0 +1,42 @@
+# =============================================================
+# first-boot — Create /data directory structure on first boot
+# =============================================================
+SUMMARY = "First boot setup for Home Monitor OS"
+DESCRIPTION = "Creates the /data directory structure on first boot."
+LICENSE = "AGPL-3.0-or-later"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-or-later;md5=4b3573a05bdd5507a4cba53e4e878345"
+
+SRC_URI = "file://first-boot-setup.sh"
+
+S = "${WORKDIR}"
+
+inherit systemd
+
+do_install() {
+    install -d ${D}/opt/monitor/scripts
+    install -m 0755 ${WORKDIR}/first-boot-setup.sh ${D}/opt/monitor/scripts/first-boot-setup.sh
+
+    install -d ${D}${systemd_system_unitdir}
+    cat > ${D}${systemd_system_unitdir}/first-boot-setup.service << 'UNIT'
+[Unit]
+Description=First boot data directory setup
+Before=monitor.service camera-streamer.service monitor-certs.service
+ConditionPathExists=!/data/.first-boot-done
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/scripts/first-boot-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+SYSTEMD_SERVICE:${PN} = "first-boot-setup.service"
+SYSTEMD_AUTO_ENABLE = "enable"
+
+FILES:${PN} = " \
+    /opt/monitor/scripts/first-boot-setup.sh \
+    ${systemd_system_unitdir}/first-boot-setup.service \
+    "

@@ -31,10 +31,15 @@ RDEPENDS:${PN} = " \
     bash \
     "
 
-inherit systemd
+inherit systemd useradd
 
 SYSTEMD_SERVICE:${PN} = "camera-streamer.service"
 SYSTEMD_AUTO_ENABLE = "enable"
+
+# Create camera system user/group
+USERADD_PACKAGES = "${PN}"
+USERADD_PARAM:${PN} = "-r -d /opt/camera -s /bin/false -G video camera"
+GROUPADD_PARAM:${PN} = "-r camera"
 
 do_install() {
     # Install the Python application
