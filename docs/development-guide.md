@@ -255,57 +255,22 @@ These rules apply to ALL code, whether application or recipe:
 
 ### 3.6 Testing Rules
 
-#### Unit Testing (Mandatory)
+**Full details: [`docs/testing-guide.md`](testing-guide.md)** — setup, writing tests, running tests, coverage reports, examples, checklists.
 
-- **Every code change must include unit tests.** No PR is merged without tests for the changed code.
-- **Framework:** `pytest` for both server and camera apps.
-- **Coverage tool:** `pytest-cov` (wraps coverage.py).
-- **Minimum code coverage: 80%.** PRs that drop coverage below 80% are blocked.
-- **Target code coverage: 90%+.** Aim higher for security-critical code (auth, pairing, TLS).
-- **Test file naming:** `test_<module>.py` — mirrors the module it tests.
-- **Test location:** `app/server/tests/` and `app/camera/tests/` (never inside the package itself).
-- **Fixtures:** Shared fixtures go in `conftest.py` at the tests root.
-- **Run tests before every commit:**
+**Key rules (non-negotiable):**
+
+1. **Every code change must include unit tests.** No PR is merged without tests for the changed code.
+2. **Minimum coverage: 80%.** PRs that drop coverage below 80% are blocked. Target 90%+.
+3. **Security-critical code (auth, pairing, TLS, certs) must aim for 95%+ coverage.**
+4. **Run tests before every commit.** If tests fail, do not commit.
+5. **Test file naming:** `test_<module>.py` — mirrors the module it tests.
+6. **Test location:** `app/server/tests/` and `app/camera/tests/`.
 
 ```bash
-# Server tests
-cd app/server
-pytest --cov=monitor --cov-report=term-missing --cov-fail-under=80
-
-# Camera tests
-cd app/camera
-pytest --cov=camera_streamer --cov-report=term-missing --cov-fail-under=80
+# Run before every commit
+cd app/server && pytest     # Server: coverage + tests
+cd app/camera && pytest     # Camera: coverage + tests
 ```
-
-#### What to Test
-
-| Layer | What to test | How |
-|-------|-------------|-----|
-| Models | Dataclass creation, serialization, defaults | Direct instantiation |
-| API endpoints | HTTP methods, status codes, response JSON, error cases | Flask test client |
-| Auth | Login, logout, session, CSRF, rate limiting, role checks | Flask test client + mocks |
-| Services | Business logic, edge cases, error handling | Unit test with mocked I/O |
-| Config | Config loading, defaults, environment overrides | Monkeypatch env vars |
-| Camera modules | Config parsing, stream lifecycle, discovery, pairing | Unit test with mocked hardware |
-
-#### What NOT to Mock
-
-- **Dataclasses and pure logic** — test these directly, no mocks needed.
-- **Flask test client** — use `app.test_client()`, don't mock HTTP.
-
-#### What to Mock
-
-- **File system** (`/data/*` paths) — use `tmp_path` fixture.
-- **External processes** (ffmpeg, libcamera) — mock `subprocess`.
-- **System calls** (CPU temp, disk usage) — mock `os`/`shutil`/`psutil`.
-- **Network** (Avahi/mDNS, RTSP) — mock socket/dbus calls.
-- **Time** — mock `datetime.now()` for deterministic tests.
-
-#### Coverage Reports
-
-- **Terminal:** `--cov-report=term-missing` shows uncovered lines.
-- **HTML:** `--cov-report=html` generates `htmlcov/` (gitignored).
-- **CI:** Coverage is checked automatically. Build fails if below 80%.
 
 #### Integration / Hardware Testing
 
