@@ -39,11 +39,31 @@ led_off() {
     led_write brightness 0
 }
 
+wait_for_wifi() {
+    # Wait until wlan0 is recognized by NetworkManager as a wifi device.
+    # The WiFi firmware/driver may still be loading at early boot.
+    MAX_WAIT=30
+    WAITED=0
+    echo "Waiting for WiFi interface ${IFACE} to be ready..."
+    while [ "$WAITED" -lt "$MAX_WAIT" ]; do
+        # Check NM sees it as a wifi device (not just that the interface exists)
+        DEVTYPE=$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | grep "^${IFACE}:" | cut -d: -f2)
+        if [ "$DEVTYPE" = "wifi" ]; then
+            echo "WiFi interface ${IFACE} ready after ${WAITED}s"
+            return 0
+        fi
+        sleep 1
+        WAITED=$((WAITED + 1))
+    done
+    echo "WiFi interface ${IFACE} not ready after ${MAX_WAIT}s"
+    return 1
+}
+
 start_hotspot() {
     echo "Starting WiFi hotspot: ${HOTSPOT_SSID}"
 
-    # Check if WiFi interface exists
-    if ! nmcli -t -f DEVICE device status 2>/dev/null | grep -q "^${IFACE}$"; then
+    # Wait for WiFi hardware to be ready (firmware may still be loading)
+    if ! wait_for_wifi; then
         echo "WiFi interface ${IFACE} not found — skipping hotspot (ethernet-only setup)"
         exit 0
     fi
@@ -66,8 +86,32 @@ start_hotspot() {
         wifi-sec.psk "${HOTSPOT_PASS}" \
         ipv4.method shared
 
-    # Bring up the connection
-    nmcli connection up "${CONN_NAME}"
+    # Bring up the connection with explicit interface binding + retry.
+    # Even after NM sees wlan0, AP mode activation can fail briefly
+    # while the driver finishes initialization.
+    # Note: temporarily disable set -e for the retry loop.
+    MAX_RETRIES=5
+    RETRY=0
+    ACTIVATED=false
+    set +e
+    while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+        OUTPUT=$(nmcli connection up "${CONN_NAME}" ifname "${IFACE}" 2>&1)
+        if [ $? -eq 0 ]; then
+            echo "$OUTPUT"
+            ACTIVATED=true
+            break
+        fi
+        RETRY=$((RETRY + 1))
+        echo "Hotspot activation attempt ${RETRY}/${MAX_RETRIES} failed: ${OUTPUT}"
+        echo "Retrying in 2s..."
+        sleep 2
+    done
+    set -e
+
+    if [ "$ACTIVATED" = false ]; then
+        echo "ERROR: Failed to activate hotspot after ${MAX_RETRIES} attempts"
+        exit 1
+    fi
 
     # Get the actual IP assigned (shared mode uses 10.42.0.1 by default)
     ACTUAL_IP=$(nmcli -t -f IP4.ADDRESS dev show "${IFACE}" 2>/dev/null | head -n 1 | cut -d: -f2 | cut -d/ -f1)

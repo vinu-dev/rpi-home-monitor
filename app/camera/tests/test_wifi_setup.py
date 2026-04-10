@@ -293,25 +293,64 @@ class TestRescan:
         assert server.get_cached_networks()[0]["ssid"] == "NewNet"
 
 
+class TestWaitForWifi:
+    """Test WiFi interface readiness check."""
+
+    @patch("camera_streamer.wifi_setup.time.sleep")
+    @patch("subprocess.run")
+    def test_wait_immediate_ready(self, mock_run, mock_sleep, unconfigured_config):
+        """Should return True immediately if wlan0 is ready."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="wlan0:wifi\n"
+        )
+        server = WifiSetupServer(unconfigured_config)
+        assert server._wait_for_wifi(max_wait=5) is True
+        mock_sleep.assert_not_called()
+
+    @patch("camera_streamer.wifi_setup.time.sleep")
+    @patch("subprocess.run")
+    def test_wait_becomes_ready(self, mock_run, mock_sleep, unconfigured_config):
+        """Should retry until wlan0 appears."""
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="eth0:ethernet\n"),
+            MagicMock(returncode=0, stdout="eth0:ethernet\n"),
+            MagicMock(returncode=0, stdout="wlan0:wifi\neth0:ethernet\n"),
+        ]
+        server = WifiSetupServer(unconfigured_config)
+        assert server._wait_for_wifi(max_wait=5) is True
+        assert mock_sleep.call_count == 2
+
+    @patch("camera_streamer.wifi_setup.time.sleep")
+    @patch("subprocess.run")
+    def test_wait_timeout(self, mock_run, mock_sleep, unconfigured_config):
+        """Should return False after max_wait seconds."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="eth0:ethernet\n")
+        server = WifiSetupServer(unconfigured_config)
+        assert server._wait_for_wifi(max_wait=3) is False
+        assert mock_sleep.call_count == 3
+
+
 class TestHotspot:
     """Test hotspot start/stop."""
 
+    @patch("camera_streamer.wifi_setup.time.sleep")
     @patch("subprocess.run")
-    def test_start_hotspot_success(self, mock_run, unconfigured_config):
+    def test_start_hotspot_success(self, mock_run, mock_sleep, unconfigured_config):
         """Should start hotspot via nmcli."""
         mock_run.return_value = MagicMock(
-            returncode=0, stdout="wlan0\n", stderr=""
+            returncode=0, stdout="wlan0:wifi\n", stderr=""
         )
         server = WifiSetupServer(unconfigured_config)
         result = server._start_hotspot()
         assert result is True
         assert server._hotspot_active is True
 
+    @patch("camera_streamer.wifi_setup.time.sleep")
     @patch("subprocess.run")
-    def test_start_hotspot_no_wlan0(self, mock_run, unconfigured_config):
-        """Should return False when wlan0 missing."""
+    def test_start_hotspot_no_wlan0(self, mock_run, mock_sleep, unconfigured_config):
+        """Should return False when wlan0 never appears."""
         mock_run.return_value = MagicMock(
-            returncode=0, stdout="eth0\n", stderr=""
+            returncode=0, stdout="eth0:ethernet\n", stderr=""
         )
         server = WifiSetupServer(unconfigured_config)
         result = server._start_hotspot()
@@ -333,8 +372,9 @@ class TestHotspot:
         server._stop_hotspot()
         mock_run.assert_not_called()
 
+    @patch("camera_streamer.wifi_setup.time.sleep")
     @patch("subprocess.run")
-    def test_start_hotspot_nmcli_error(self, mock_run, unconfigured_config):
+    def test_start_hotspot_nmcli_error(self, mock_run, mock_sleep, unconfigured_config):
         """Should return False and not crash on nmcli error."""
         import subprocess
         mock_run.side_effect = subprocess.CalledProcessError(1, "nmcli")
@@ -342,6 +382,25 @@ class TestHotspot:
         result = server._start_hotspot()
         assert result is False
         assert server._hotspot_active is False
+
+    @patch("camera_streamer.wifi_setup.time.sleep")
+    @patch("subprocess.run")
+    def test_start_hotspot_retries_activation(self, mock_run, mock_sleep, unconfigured_config):
+        """Should retry connection up if first attempt fails."""
+        import subprocess as sp
+        # wait_for_wifi succeeds, delete succeeds, add succeeds,
+        # first 'up' fails, second 'up' succeeds
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="wlan0:wifi\n"),  # wait_for_wifi
+            MagicMock(returncode=0),  # delete
+            MagicMock(returncode=0),  # add
+            sp.CalledProcessError(1, "nmcli", stderr="No suitable device"),  # up attempt 1
+            MagicMock(returncode=0),  # up attempt 2
+        ]
+        server = WifiSetupServer(unconfigured_config)
+        result = server._start_hotspot()
+        assert result is True
+        assert server._hotspot_active is True
 
 
 class TestSetupHTTPHandler:
