@@ -320,6 +320,48 @@
             margin-bottom: 4px;
         }
 
+        /* Review summary items */
+        .review-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .review-label {
+            font-size: 0.85rem;
+            color: #8090b0;
+        }
+        .review-value {
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+
+        /* Warning box */
+        .warning-box {
+            background: #1a1a2e;
+            border-left: 3px solid #e94560;
+            border-radius: 4px;
+            padding: 14px;
+            margin: 16px 0;
+        }
+        .warning-box p {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        .warning-box p:last-child {
+            margin-bottom: 0;
+        }
+        .warning-step {
+            margin-bottom: 6px;
+        }
+        .warning-step-num {
+            color: #e94560;
+            font-weight: 600;
+        }
+
         /* Scrollbar styling for network list */
         .network-list::-webkit-scrollbar {
             width: 4px;
@@ -342,7 +384,7 @@
             <div class="progress-dot" data-step="3"></div>
         </div>
 
-        <!-- Step 1: Welcome -->
+        <!-- Step 0: Welcome -->
         <div class="step active" id="step-0">
             <div class="logo">
                 <div class="logo-icon">&#127909;</div>
@@ -356,12 +398,12 @@
             </div>
         </div>
 
-        <!-- Step 2: WiFi -->
+        <!-- Step 1: WiFi (save only, don't connect) -->
         <div class="step" id="step-1">
             <div class="card">
                 <div class="step-label">Step 1 of 3</div>
-                <h2>Connect to WiFi</h2>
-                <p>Select your WiFi network below.</p>
+                <h2>Select WiFi Network</h2>
+                <p>Choose the WiFi network your server should connect to.</p>
 
                 <div id="wifi-scan-loading" class="scan-loading">
                     <div class="spinner"></div>
@@ -374,9 +416,9 @@
                     <div class="input-group">
                         <label>Password for <strong id="wifi-selected-ssid"></strong></label>
                         <input type="password" id="wifi-password" placeholder="Enter WiFi password"
-                               onkeydown="if(event.key==='Enter')connectWifi()">
+                               onkeydown="if(event.key==='Enter')saveWifi()">
                     </div>
-                    <button class="btn btn-primary" id="btn-wifi-connect" onclick="connectWifi()">Connect</button>
+                    <button class="btn btn-primary" id="btn-wifi-save" onclick="saveWifi()">Next</button>
                 </div>
 
                 <button class="btn btn-secondary" onclick="scanWifi()" id="btn-rescan">
@@ -385,18 +427,13 @@
             </div>
         </div>
 
-        <!-- Step 3: Admin Password -->
+        <!-- Step 2: Admin Password -->
         <div class="step" id="step-2">
             <div class="card">
                 <div class="step-label">Step 2 of 3</div>
                 <h2>Set Admin Password</h2>
-                <p>Change the default admin password to secure your system.</p>
+                <p>Change the default admin password to secure your dashboard.</p>
 
-                <div class="input-group">
-                    <label>Current password</label>
-                    <input type="text" value="admin (default)" disabled
-                           style="opacity: 0.5;">
-                </div>
                 <div class="input-group">
                     <label>New password</label>
                     <input type="password" id="admin-password" placeholder="Enter new password"
@@ -410,30 +447,84 @@
                            onkeydown="if(event.key==='Enter')saveAdminPassword()">
                 </div>
                 <button class="btn btn-primary" id="btn-admin-save" onclick="saveAdminPassword()" disabled>
-                    Save Password
+                    Next
                 </button>
             </div>
         </div>
 
-        <!-- Step 4: Done -->
+        <!-- Step 3: Review & Apply -->
         <div class="step" id="step-3">
-            <div class="card">
-                <div class="done-icon">&#9989;</div>
-                <h1 style="text-align:center;">Setup Complete!</h1>
-                <p style="text-align:center;">Your Home Monitor server is ready. Connect to your WiFi network and open the dashboard at the address below.</p>
+            <!-- Before applying -->
+            <div id="review-panel">
+                <div class="card">
+                    <div class="step-label">Step 3 of 3</div>
+                    <h2>Review & Apply</h2>
 
-                <div class="ip-display" id="done-ip-display">
-                    Loading...
+                    <div class="review-item">
+                        <span class="review-label">WiFi Network</span>
+                        <span class="review-value" id="review-ssid"></span>
+                    </div>
+                    <div class="review-item">
+                        <span class="review-label">Admin Password</span>
+                        <span class="review-value">Changed</span>
+                    </div>
+
+                    <div class="warning-box">
+                        <p style="color:#e94560;font-weight:600;">What happens when you tap Apply:</p>
+                        <div class="warning-step">
+                            <span class="warning-step-num">1.</span>
+                            Server connects to your home WiFi
+                        </div>
+                        <div class="warning-step">
+                            <span class="warning-step-num">2.</span>
+                            This setup hotspot turns off
+                        </div>
+                        <div class="warning-step">
+                            <span class="warning-step-num">3.</span>
+                            Your phone will disconnect
+                        </div>
+                        <p style="color:#fff;margin-top:12px;font-weight:500;">After that:</p>
+                        <div class="warning-step">
+                            <span class="warning-step-num">4.</span>
+                            Connect your phone back to your home WiFi
+                        </div>
+                        <div class="warning-step">
+                            <span class="warning-step-num">5.</span>
+                            Open <strong style="color:#4ade80;">https://homemonitor.local/</strong>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="btn-apply" onclick="applySettings()">
+                        Apply & Finish
+                    </button>
+                    <button class="btn btn-secondary" onclick="goToStep(1)">
+                        Back to WiFi
+                    </button>
                 </div>
+            </div>
 
-                <p style="text-align:center;font-size:0.85rem;">
-                    Disconnect from the HomeMonitor-Setup hotspot and connect to your regular WiFi network, then open the address above.
-                </p>
+            <!-- After applying (may not be seen if hotspot dies) -->
+            <div id="done-panel" style="display:none;">
+                <div class="card">
+                    <div class="done-icon">&#9989;</div>
+                    <h1 style="text-align:center;">Setup Complete!</h1>
+                    <p style="text-align:center;">Your server is now on your home WiFi.</p>
 
-                <a id="done-dashboard-link" href="#" class="btn btn-primary"
-                   style="text-decoration:none;text-align:center;">
-                    Open Dashboard
-                </a>
+                    <div class="ip-display" id="done-ip-display" style="font-size:1.15rem;">
+                        https://homemonitor.local/
+                    </div>
+                    <div id="done-ip-fallback" style="text-align:center;font-size:0.8rem;color:#607090;margin-top:-8px;margin-bottom:12px;display:none;">
+                        Or try: <span id="done-ip-raw" style="color:#4ade80;"></span>
+                    </div>
+
+                    <p style="text-align:center;font-size:0.9rem;color:#fff;">
+                        Connect your phone to your home WiFi,<br>
+                        then open the address above.
+                    </p>
+                    <p style="text-align:center;font-size:0.85rem;">
+                        Login: <strong>admin</strong> / your new password
+                    </p>
+                </div>
             </div>
         </div>
     </div>
@@ -443,7 +534,8 @@
     <script>
         var currentStep = 0;
         var selectedSSID = '';
-        var finalIP = '';
+        var savedSSID = '';
+        var savedWifiPassword = '';
         var API_BASE = '/api/v1/setup';
 
         function goToStep(step) {
@@ -462,6 +554,11 @@
 
             if (step === 1) {
                 scanWifi();
+            }
+            if (step === 3) {
+                document.getElementById('review-ssid').textContent = savedSSID;
+                document.getElementById('review-panel').style.display = 'block';
+                document.getElementById('done-panel').style.display = 'none';
             }
         }
 
@@ -572,7 +669,9 @@
             }, 100);
         }
 
-        function connectWifi() {
+        function saveWifi() {
+            /* Save WiFi credentials to the server (in memory only).
+               Does NOT connect yet — that happens at Apply & Finish. */
             if (!selectedSSID) {
                 showToast('Please select a network', 'error');
                 return;
@@ -584,27 +683,29 @@
                 return;
             }
 
-            var btn = document.getElementById('btn-wifi-connect');
-            setButtonLoading(btn, true, 'Connecting...');
+            var btn = document.getElementById('btn-wifi-save');
+            setButtonLoading(btn, true, 'Saving...');
 
-            fetch(API_BASE + '/wifi/connect', {
+            fetch(API_BASE + '/wifi/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ssid: selectedSSID, password: password})
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {
-                setButtonLoading(btn, false, 'Connect');
+                setButtonLoading(btn, false, 'Next');
                 if (res.status === 200) {
-                    showToast('Connected to ' + selectedSSID, 'success');
-                    setTimeout(function() { goToStep(2); }, 1200);
+                    savedSSID = selectedSSID;
+                    savedWifiPassword = password;
+                    showToast('WiFi saved: ' + selectedSSID, 'success');
+                    setTimeout(function() { goToStep(2); }, 600);
                 } else {
-                    showToast(res.data.error || 'Connection failed', 'error');
+                    showToast(res.data.error || 'Failed to save WiFi', 'error');
                 }
             })
             .catch(function(err) {
-                setButtonLoading(btn, false, 'Connect');
-                showToast('Connection failed', 'error');
+                setButtonLoading(btn, false, 'Next');
+                showToast('Failed to save WiFi settings', 'error');
             });
         }
 
@@ -639,41 +740,56 @@
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {
-                setButtonLoading(btn, false, 'Save Password');
+                setButtonLoading(btn, false, 'Next');
                 if (res.status === 200) {
-                    showToast('Password updated', 'success');
-                    setTimeout(function() { completeSetup(); }, 1000);
+                    showToast('Password saved', 'success');
+                    setTimeout(function() { goToStep(3); }, 600);
                 } else {
                     showToast(res.data.error || 'Failed to update password', 'error');
                 }
             })
             .catch(function(err) {
-                setButtonLoading(btn, false, 'Save Password');
+                setButtonLoading(btn, false, 'Next');
                 showToast('Failed to update password', 'error');
             });
         }
 
-        function completeSetup() {
+        function applySettings() {
+            /* The big moment: calls /complete which connects WiFi,
+               writes stamp, and schedules hotspot stop.
+               The phone WILL disconnect after this. */
+            var btn = document.getElementById('btn-apply');
+            setButtonLoading(btn, true, 'Connecting to WiFi...');
+
             fetch(API_BASE + '/complete', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                finalIP = data.ip || '';
-
-                if (finalIP) {
-                    document.getElementById('done-ip-display').textContent = 'https://' + finalIP + '/';
-                    document.getElementById('done-dashboard-link').href = 'https://' + finalIP + '/';
+            .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+            .then(function(res) {
+                if (res.status === 200) {
+                    /* Success — show the done panel.
+                       User may or may not see this (hotspot is dying). */
+                    var ip = res.data.ip || '';
+                    if (ip) {
+                        document.getElementById('done-ip-raw').textContent = 'https://' + ip + '/';
+                        document.getElementById('done-ip-fallback').style.display = 'block';
+                    }
+                    document.getElementById('review-panel').style.display = 'none';
+                    document.getElementById('done-panel').style.display = 'block';
                 } else {
-                    document.getElementById('done-ip-display').textContent = 'IP address unavailable';
-                    document.getElementById('done-dashboard-link').style.display = 'none';
+                    /* WiFi connection failed — user can fix and retry.
+                       Hotspot is still alive. */
+                    setButtonLoading(btn, false, 'Apply & Finish');
+                    showToast(res.data.error || 'Setup failed', 'error');
                 }
-
-                goToStep(3);
             })
             .catch(function(err) {
-                showToast('Setup completion failed', 'error');
+                /* Network error — likely the hotspot died mid-request.
+                   This is expected. The setup probably succeeded.
+                   User should reconnect to home WiFi. */
+                document.getElementById('review-panel').style.display = 'none';
+                document.getElementById('done-panel').style.display = 'block';
             });
         }
 
