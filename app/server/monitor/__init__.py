@@ -4,12 +4,16 @@ RPi Home Monitor - Server Application
 Flask-based web server that manages RTSP camera streams,
 records video clips, and provides a mobile-friendly web dashboard.
 """
+import logging
 import os
+
 from flask import Flask
 
 from monitor.services.audit import AuditLogger
 from monitor.services.streaming import StreamingService
 from monitor.store import Store
+
+log = logging.getLogger("monitor")
 
 
 def _load_or_create_secret_key(config_dir):
@@ -60,6 +64,16 @@ def create_app(config=None):
     Creates and configures the Flask application with all blueprints,
     background services, and security middleware.
     """
+    # Configure logging — LOG_LEVEL env controls verbosity
+    # Dev builds set LOG_LEVEL=DEBUG via systemd drop-in
+    # Prod defaults to WARNING
+    log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.WARNING),
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+    log.info("Monitor server starting (log_level=%s)", log_level)
+
     app = Flask(__name__)
 
     config_dir = os.environ.get("MONITOR_CONFIG_DIR", "/data/config")
@@ -80,11 +94,14 @@ def create_app(config=None):
     if config:
         app.config.update(config)
 
+    log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s", app.config["DATA_DIR"], config_dir)
+
     # Load persistent secret key (unless overridden by test config)
     if not config or "SECRET_KEY" not in config:
         app.config["SECRET_KEY"] = _load_or_create_secret_key(app.config["CONFIG_DIR"])
 
     # Initialize data store and audit logger
+    log.debug("Initializing data store at %s", app.config["CONFIG_DIR"])
     app.store = Store(app.config["CONFIG_DIR"])
     logs_dir = os.path.join(app.config["DATA_DIR"], "logs")
     app.audit = AuditLogger(logs_dir)
@@ -92,6 +109,7 @@ def create_app(config=None):
     # Create default admin user on first boot (skip in test mode)
     if not app.config.get("TESTING"):
         _ensure_default_admin(app.store)
+        log.debug("Default admin user ensured")
 
     # Initialize streaming service (manages ffmpeg pipelines per camera)
     app.streaming = StreamingService(
@@ -127,6 +145,7 @@ def create_app(config=None):
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
 
+    log.info("Monitor server ready — blueprints registered")
     return app
 
 

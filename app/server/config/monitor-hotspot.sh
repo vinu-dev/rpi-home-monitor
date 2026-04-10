@@ -44,8 +44,9 @@ start_hotspot() {
     nmcli connection up "${CONN_NAME}"
 
     # Get the actual IP assigned (shared mode uses 10.42.0.1 by default)
-    ACTUAL_IP=$(nmcli -t -f IP4.ADDRESS dev show "${IFACE}" 2>/dev/null | head -1 | cut -d: -f2 | cut -d/ -f1)
-    echo "Hotspot active on ${IFACE} — SSID: ${HOTSPOT_SSID}, IP: ${ACTUAL_IP:-unknown}"
+    ACTUAL_IP=$(nmcli -t -f IP4.ADDRESS dev show "${IFACE}" 2>/dev/null | head -n 1 | cut -d: -f2 | cut -d/ -f1)
+    echo "Hotspot active on ${IFACE} — SSID: ${HOTSPOT_SSID}, IP: ${ACTUAL_IP:-10.42.0.1}"
+    echo "Setup wizard available at http://${ACTUAL_IP:-10.42.0.1}/"
 }
 
 stop_hotspot() {

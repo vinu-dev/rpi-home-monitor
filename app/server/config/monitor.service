@@ -1,6 +1,6 @@
 [Unit]
 Description=Home Monitor Server
-After=network-online.target nginx.service mediamtx.service
+After=network-online.target nginx.service mediamtx.service local-fs.target
 Wants=network-online.target mediamtx.service
 
 [Service]
@@ -11,7 +11,6 @@ WorkingDirectory=/opt/monitor
 ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
 Restart=always
 RestartSec=5
-WatchdogSec=60
 Environment=PYTHONPATH=/opt/monitor
 Environment=FLASK_APP=monitor
 Environment=MONITOR_DATA_DIR=/data

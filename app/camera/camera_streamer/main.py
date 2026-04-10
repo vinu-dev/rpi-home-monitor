@@ -16,8 +16,12 @@ import logging
 import time
 import os
 
+# LOG_LEVEL env controls verbosity:
+# Dev builds set LOG_LEVEL=DEBUG via systemd drop-in
+# Prod defaults to WARNING
+_log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, _log_level, logging.WARNING),
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 log = logging.getLogger("camera-streamer")
@@ -37,16 +41,19 @@ def main():
     """Entry point for camera-streamer service."""
     global _shutdown
 
-    log.info("Camera streamer starting...")
+    log.info("Camera streamer starting (log_level=%s)", _log_level)
 
     # Register signal handlers
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
     # 1. Load configuration
+    log.debug("Loading config...")
     from camera_streamer.config import ConfigManager
     config = ConfigManager()
     config.load()
+    log.debug("Config loaded: data_dir=%s server_ip=%s camera_id=%s",
+              config.data_dir, getattr(config, 'server_ip', 'N/A'), config.camera_id)
 
     # 2. Check if setup is needed (first boot)
     from camera_streamer.wifi_setup import WifiSetupServer

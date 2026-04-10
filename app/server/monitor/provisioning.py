@@ -8,6 +8,7 @@ from their phone and configure WiFi credentials + admin password.
 All setup endpoints require that /data/.setup-done does NOT exist. Once setup
 is complete, the stamp file is written and all endpoints return 403.
 """
+import logging
 import os
 import subprocess
 
@@ -18,6 +19,8 @@ from flask import (
     render_template,
     request,
 )
+
+log = logging.getLogger("monitor.provisioning")
 
 provisioning_bp = Blueprint("provisioning", __name__)
 
@@ -32,7 +35,10 @@ def _setup_done_path():
 
 def _is_setup_complete():
     """Check whether initial setup has already been completed."""
-    return os.path.exists(_setup_done_path())
+    path = _setup_done_path()
+    done = os.path.exists(path)
+    log.debug("Setup complete check: %s exists=%s", path, done)
+    return done
 
 
 def _require_setup_mode():
@@ -63,9 +69,12 @@ def setup_status():
     No authentication required. Used by the setup wizard and the main
     dashboard to determine which mode to show.
     """
+    complete = _is_setup_complete()
+    hotspot = _is_hotspot_active()
+    log.debug("GET /status — setup_complete=%s hotspot_active=%s", complete, hotspot)
     return jsonify({
-        "setup_complete": _is_setup_complete(),
-        "hotspot_active": _is_hotspot_active(),
+        "setup_complete": complete,
+        "hotspot_active": hotspot,
     }), 200
 
 
@@ -80,6 +89,7 @@ def wifi_scan():
     if blocked:
         return blocked
 
+    log.info("WiFi scan requested")
     try:
         result = subprocess.run(
             ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list",
@@ -89,11 +99,14 @@ def wifi_scan():
             timeout=30,
         )
     except subprocess.TimeoutExpired:
+        log.error("WiFi scan timed out")
         return jsonify({"error": "WiFi scan timed out"}), 504
     except (FileNotFoundError, OSError) as exc:
+        log.error("WiFi scan failed: %s", exc)
         return jsonify({"error": f"WiFi scan failed: {exc}"}), 500
 
     if result.returncode != 0:
+        log.error("WiFi scan nmcli error: %s", result.stderr.strip())
         return jsonify({"error": "WiFi scan failed", "detail": result.stderr.strip()}), 500
 
     # Parse nmcli output: "SSID:SIGNAL:SECURITY"
@@ -122,6 +135,8 @@ def wifi_scan():
     # Sort by signal strength descending
     network_list = sorted(networks.values(), key=lambda n: n["signal"], reverse=True)
 
+    log.info("WiFi scan found %d networks", len(network_list))
+    log.debug("Networks: %s", [n["ssid"] for n in network_list])
     return jsonify({"networks": network_list}), 200
 
 
@@ -148,6 +163,7 @@ def wifi_connect():
     if not password:
         return jsonify({"error": "Password is required"}), 400
 
+    log.info("WiFi connect requested: SSID=%s", ssid)
     try:
         result = subprocess.run(
             ["nmcli", "dev", "wifi", "connect", ssid,
@@ -157,17 +173,21 @@ def wifi_connect():
             timeout=30,
         )
     except subprocess.TimeoutExpired:
+        log.error("WiFi connect timed out for SSID=%s", ssid)
         return jsonify({"error": "WiFi connection timed out"}), 504
     except (FileNotFoundError, OSError) as exc:
+        log.error("WiFi connect failed for SSID=%s: %s", ssid, exc)
         return jsonify({"error": f"WiFi connection failed: {exc}"}), 500
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
+        log.error("WiFi connect failed for SSID=%s: %s", ssid, stderr)
         # Common failure: wrong password
         if "secrets were required" in stderr.lower() or "no suitable" in stderr.lower():
             return jsonify({"error": "Incorrect WiFi password"}), 401
         return jsonify({"error": "WiFi connection failed", "detail": stderr}), 500
 
+    log.info("WiFi connected to %s", ssid)
     return jsonify({"message": f"Connected to {ssid}"}), 200
 
 
@@ -214,26 +234,31 @@ def setup_complete():
     if blocked:
         return blocked
 
+    log.info("Marking setup as complete")
+
     # Write the setup-done stamp file
     stamp = _setup_done_path()
     try:
         os.makedirs(os.path.dirname(stamp), exist_ok=True)
         with open(stamp, "w") as f:
             f.write("setup completed\n")
+        log.info("Stamp file written: %s", stamp)
     except OSError as exc:
+        log.error("Failed to write stamp file %s: %s", stamp, exc)
         return jsonify({"error": f"Failed to mark setup complete: {exc}"}), 500
 
     # Stop the hotspot
+    log.info("Stopping hotspot...")
     try:
-        subprocess.run(
+        result = subprocess.run(
             [HOTSPOT_SCRIPT, "stop"],
             capture_output=True,
             text=True,
             timeout=30,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        # Non-fatal: hotspot may already be stopped
-        pass
+        log.debug("Hotspot stop: rc=%d stdout=%s", result.returncode, result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        log.warning("Hotspot stop failed (non-fatal): %s", exc)
 
     # Get the new WiFi IP address
     ip_address = ""
@@ -257,6 +282,7 @@ def setup_complete():
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
+    log.info("Setup complete! New WiFi IP: %s", ip_address or "unknown")
     return jsonify({
         "message": "Setup complete",
         "ip": ip_address,
@@ -266,4 +292,5 @@ def setup_complete():
 @provisioning_bp.route("/wizard", methods=["GET"])
 def setup_wizard():
     """Serve the setup wizard HTML page."""
+    log.debug("Serving setup wizard")
     return render_template("setup.html")

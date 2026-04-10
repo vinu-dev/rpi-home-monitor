@@ -14,9 +14,16 @@ if [ -f "$STAMP" ]; then
     exit 0
 fi
 
-echo "Running first boot setup..."
+echo "=== First boot setup starting ==="
+echo "Checking /data mount..."
+if mountpoint -q /data; then
+    echo "/data is mounted"
+else
+    echo "WARNING: /data is NOT mounted — dirs will be on rootfs"
+fi
 
 # Create directory structure
+echo "Creating /data directory structure..."
 mkdir -p /data/config
 mkdir -p /data/recordings
 mkdir -p /data/live
@@ -26,19 +33,29 @@ mkdir -p /data/logs
 
 # Set ownership — monitor user for server, camera user for camera
 if id monitor >/dev/null 2>&1; then
+    echo "Setting ownership for monitor user (server)"
+    chown monitor:monitor /data
     chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs
     chown -R monitor:monitor /data/certs
 fi
 
 if id camera >/dev/null 2>&1; then
-    chown -R camera:camera /data/config /data/certs
+    echo "Setting ownership for camera user (camera)"
+    chown camera:camera /data
+    chown -R camera:camera /data/config /data/certs /data/logs
 fi
 
 # Permissions
+chmod 755 /data
 chmod 750 /data/config /data/certs /data/logs
 chmod 755 /data/recordings /data/live
 
 # Mark first boot as done
 touch "$STAMP"
 
-echo "First boot setup complete."
+echo "=== First boot setup complete ==="
+echo "  /data/config      — app configuration"
+echo "  /data/certs       — TLS certificates"
+echo "  /data/recordings  — video clips"
+echo "  /data/live        — HLS live segments"
+echo "  /data/logs        — app logs"

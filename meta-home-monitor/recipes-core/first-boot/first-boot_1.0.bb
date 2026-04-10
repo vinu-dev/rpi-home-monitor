@@ -20,7 +20,9 @@ do_install() {
     cat > ${D}${systemd_system_unitdir}/first-boot-setup.service << 'UNIT'
 [Unit]
 Description=First boot data directory setup
-Before=monitor.service camera-streamer.service monitor-certs.service
+After=local-fs.target
+Requires=local-fs.target
+Before=monitor.service camera-streamer.service monitor-certs.service monitor-hotspot.service
 ConditionPathExists=!/data/.first-boot-done
 
 [Service]

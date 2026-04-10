@@ -1,12 +1,10 @@
 # =============================================================
-# base-files customization — add /data partition to fstab
+# base-files customization
 # =============================================================
 # OS branding is handled by os-release.bbappend — do not add
 # /etc/os-release here as it conflicts with the os-release package.
-
-# Mount the /data partition (label=data) at boot.
-# This partition holds recordings, config, certs, and logs.
-# It persists across OTA rootfs updates.
-do_install:append() {
-    echo "LABEL=data  /data  ext4  defaults,noatime  0  2" >> ${D}${sysconfdir}/fstab
-}
+#
+# NOTE: /data partition fstab entry is generated automatically by
+# wic from the "part /data" line in the .wks layout file.
+# Do NOT add a duplicate entry here — it causes systemd-fstab-generator
+# to fail with "Duplicate entry in /etc/fstab".

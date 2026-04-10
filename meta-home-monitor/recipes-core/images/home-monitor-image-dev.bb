@@ -21,3 +21,6 @@ IMAGE_INSTALL += " \
     strace \
     tcpdump \
     "
+
+# --- Debug logging (LOG_LEVEL=DEBUG for app services) ---
+IMAGE_INSTALL += "monitor-dev-config"

@@ -1,7 +1,7 @@
 [Unit]
 Description=Home Monitor WiFi Setup Hotspot
-Documentation=https://github.com/your-org/rpi-home-monitor
-After=NetworkManager.service
+Documentation=https://github.com/vinu-engineer/rpi-home-monitor
+After=NetworkManager.service local-fs.target
 Wants=NetworkManager.service
 Before=monitor.service
 
