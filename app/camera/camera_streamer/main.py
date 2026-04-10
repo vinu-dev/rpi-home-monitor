@@ -97,10 +97,23 @@ def main():
         _resolve_server(config)
 
     # 3. Validate camera device
+    log.info("--- Camera Hardware Check ---")
     from camera_streamer.capture import CaptureManager
     capture = CaptureManager()
     if not capture.check():
-        log.error("Camera device not available — will retry via health monitor")
+        log.error(
+            "Camera device not available. Troubleshooting:\n"
+            "  1. Check ribbon cable is seated firmly (blue side to board)\n"
+            "  2. Check config.txt has: start_x=1 and gpu_mem=128\n"
+            "  3. For PiHut ZeroCam (OV5647): dtoverlay=ov5647\n"
+            "  4. Run: vcgencmd get_camera\n"
+            "  5. Run: ls -la /dev/video*\n"
+            "  6. Run: dmesg | grep -i camera\n"
+            "Will retry via health monitor..."
+        )
+    else:
+        log.info("Camera hardware OK: device=%s h264=%s",
+                 capture.device, capture.supports_h264())
 
     # 4. Start mDNS advertisement
     from camera_streamer.discovery import DiscoveryService

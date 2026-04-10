@@ -44,25 +44,52 @@ class CaptureManager:
 
         Returns True if the device is ready to use.
         """
+        log.info("Checking camera device %s ...", self._device)
+
+        # List all video devices for debugging
+        video_devs = [
+            f"/dev/{d}" for d in os.listdir("/dev")
+            if d.startswith("video")
+        ] if os.path.isdir("/dev") else []
+        log.info("Video devices found: %s", video_devs or "NONE")
+
         # Check device node exists
         if not os.path.exists(self._device):
-            log.error("Camera device %s not found", self._device)
+            log.error(
+                "Camera device %s not found. Available: %s. "
+                "Check ribbon cable is connected and camera overlay is enabled "
+                "(dtoverlay=ov5647 for PiHut ZeroCam in config.txt)",
+                self._device,
+                video_devs or "none",
+            )
             self._available = False
             return False
 
         # Check it's a character device (video device)
-        if not os.stat(self._device).st_mode & 0o020000:
+        mode = os.stat(self._device).st_mode
+        if not mode & 0o020000:
             # Not a char device — might be in test env
-            log.warning("%s exists but is not a character device", self._device)
+            log.warning("%s exists but is not a character device (mode=%o)", self._device, mode)
 
         # Try to query formats via v4l2-ctl
         self._formats = self._query_formats()
-        self._available = True
+        if self._formats:
+            log.info("Camera formats:\n  %s", "\n  ".join(self._formats[:20]))
+        else:
+            log.warning(
+                "No formats detected for %s — v4l2-ctl may not be installed "
+                "or camera driver not loaded. Check: lsmod | grep ov5647",
+                self._device,
+            )
+
+        h264_ok = self.supports_h264()
         log.info(
-            "Camera device %s ready (%d format(s) detected)",
+            "Camera device %s ready — %d format(s), H.264=%s",
             self._device,
             len(self._formats),
+            "YES" if h264_ok else "NO (will try anyway)",
         )
+        self._available = True
         return True
 
     def supports_h264(self):

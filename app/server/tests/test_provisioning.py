@@ -199,10 +199,11 @@ class TestSetupComplete:
         stamp = os.path.join(app.config["DATA_DIR"], ".setup-done")
         assert os.path.isfile(stamp)
 
-        # Verify response has IP + hostname
+        # Verify response has IP + hostname (dynamic, not hardcoded)
         data = response.get_json()
         assert data["ip"] == "192.168.1.42"
-        assert data["hostname"] == "homemonitor.local"
+        assert data["hostname"].endswith(".local")
+        assert len(data["hostname"]) > len(".local")
 
     @patch("monitor.provisioning.threading.Timer")
     @patch("monitor.provisioning.subprocess.run")
