@@ -217,14 +217,31 @@ class WifiSetupServer:
         except Exception as e:
             return False, str(e)
 
+    def _wait_for_wifi(self, max_wait=30):
+        """Wait until wlan0 is recognized by NetworkManager as a wifi device."""
+        log.info("Waiting for WiFi interface %s to be ready...", IFACE)
+        for waited in range(max_wait):
+            try:
+                result = subprocess.run(
+                    ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                for line in result.stdout.strip().splitlines():
+                    parts = line.split(":")
+                    if len(parts) >= 2 and parts[0] == IFACE and parts[1] == "wifi":
+                        log.info("WiFi interface %s ready after %ds", IFACE, waited)
+                        return True
+            except Exception:
+                pass
+            time.sleep(1)
+        log.warning("WiFi interface %s not ready after %ds", IFACE, max_wait)
+        return False
+
     def _start_hotspot(self):
         """Start WiFi AP via NetworkManager."""
         try:
-            result = subprocess.run(
-                ["nmcli", "-t", "-f", "DEVICE", "device", "status"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if IFACE not in result.stdout:
+            # Wait for WiFi hardware to be ready (firmware may still load at boot)
+            if not self._wait_for_wifi():
                 log.warning("WiFi interface %s not found", IFACE)
                 return False
 
@@ -252,10 +269,27 @@ class WifiSetupServer:
                 capture_output=True, text=True, timeout=15, check=True,
             )
 
-            subprocess.run(
-                ["nmcli", "connection", "up", CONN_NAME],
-                capture_output=True, text=True, timeout=15, check=True,
-            )
+            # Activate with explicit interface binding + retry.
+            # Even after NM sees wlan0, AP mode can fail briefly while
+            # the driver finishes initialization.
+            max_retries = 5
+            for attempt in range(1, max_retries + 1):
+                try:
+                    subprocess.run(
+                        ["nmcli", "connection", "up", CONN_NAME,
+                         "ifname", IFACE],
+                        capture_output=True, text=True, timeout=15, check=True,
+                    )
+                    break  # success
+                except subprocess.CalledProcessError as e:
+                    log.warning(
+                        "Hotspot activation attempt %d/%d failed: %s",
+                        attempt, max_retries,
+                        e.stderr.strip() if e.stderr else str(e),
+                    )
+                    if attempt >= max_retries:
+                        raise
+                    time.sleep(2)
 
             self._hotspot_active = True
             log.info("Hotspot started: SSID=%s", HOTSPOT_SSID)
