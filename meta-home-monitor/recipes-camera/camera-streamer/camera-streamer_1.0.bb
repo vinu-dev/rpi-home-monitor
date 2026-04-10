@@ -15,6 +15,7 @@ SRC_URI = " \
     file://camera_streamer/ \
     file://config/camera-streamer.service \
     file://config/nftables-camera.conf \
+    file://config/captive-portal-dnsmasq.conf \
     file://config/camera.conf.default \
     file://setup.py \
     "
@@ -57,10 +58,15 @@ do_install() {
     # Firewall rules
     install -d ${D}${sysconfdir}/nftables.d
     install -m 0644 ${WORKDIR}/config/nftables-camera.conf ${D}${sysconfdir}/nftables.d/camera.conf
+
+    # Captive portal DNS redirect (NM shared-mode dnsmasq config)
+    install -d ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d
+    install -m 0644 ${WORKDIR}/config/captive-portal-dnsmasq.conf ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf
 }
 
 FILES:${PN} = " \
     /opt/camera \
     ${systemd_system_unitdir}/camera-streamer.service \
     ${sysconfdir}/nftables.d/camera.conf \
+    ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     "

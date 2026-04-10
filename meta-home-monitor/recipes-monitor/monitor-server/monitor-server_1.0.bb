@@ -18,6 +18,7 @@ SRC_URI = " \
     file://config/monitor-hotspot.sh \
     file://config/nginx-monitor.conf \
     file://config/nftables-server.conf \
+    file://config/captive-portal-dnsmasq.conf \
     file://config/logrotate-monitor.conf \
     file://setup.py \
     file://requirements.txt \
@@ -81,6 +82,10 @@ do_install() {
     # Logrotate
     install -d ${D}${sysconfdir}/logrotate.d
     install -m 0644 ${WORKDIR}/config/logrotate-monitor.conf ${D}${sysconfdir}/logrotate.d/monitor
+
+    # Captive portal DNS redirect (NM shared-mode dnsmasq config)
+    install -d ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d
+    install -m 0644 ${WORKDIR}/config/captive-portal-dnsmasq.conf ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf
 }
 
 FILES:${PN} = " \
@@ -90,4 +95,5 @@ FILES:${PN} = " \
     ${sysconfdir}/nginx/sites-enabled/monitor.conf \
     ${sysconfdir}/nftables.d/monitor.conf \
     ${sysconfdir}/logrotate.d/monitor \
+    ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     "

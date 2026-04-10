@@ -8,6 +8,8 @@ Type=simple
 User=camera
 Group=camera
 WorkingDirectory=/opt/camera
+# Allow camera user to control the onboard ACT LED for status feedback
+ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds/ACT/brightness /sys/class/leds/ACT/delay_on /sys/class/leds/ACT/delay_off 2>/dev/null || true'
 ExecStart=/usr/bin/python3 -m camera_streamer.main
 Restart=always
 RestartSec=5
