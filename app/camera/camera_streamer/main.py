@@ -100,6 +100,9 @@ def main():
     health = HealthMonitor(config, capture, stream)
     health.start()
 
+    # LED: solid on = running
+    from camera_streamer import led
+    led.connected()
     log.info("Camera streamer running (camera=%s)", config.camera_id)
 
     # 7. Main loop — wait for shutdown

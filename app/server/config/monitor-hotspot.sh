@@ -13,6 +13,32 @@ IFACE="wlan0"
 HOTSPOT_SSID="HomeMonitor-Setup"
 HOTSPOT_PASS="homemonitor"
 
+# --- LED control (ACT LED on RPi) ---
+LED_PATH="/sys/class/leds/ACT"
+
+led_write() {
+    echo "$2" > "${LED_PATH}/$1" 2>/dev/null || true
+}
+
+led_setup_mode() {
+    # Slow blink — waiting for setup
+    chmod 0666 ${LED_PATH}/trigger ${LED_PATH}/brightness ${LED_PATH}/delay_on ${LED_PATH}/delay_off 2>/dev/null || true
+    led_write trigger timer
+    led_write delay_on 1000
+    led_write delay_off 1000
+}
+
+led_connected() {
+    # Solid on — running normally
+    led_write trigger none
+    led_write brightness 1
+}
+
+led_off() {
+    led_write trigger none
+    led_write brightness 0
+}
+
 start_hotspot() {
     echo "Starting WiFi hotspot: ${HOTSPOT_SSID}"
 
@@ -47,6 +73,10 @@ start_hotspot() {
     ACTUAL_IP=$(nmcli -t -f IP4.ADDRESS dev show "${IFACE}" 2>/dev/null | head -n 1 | cut -d: -f2 | cut -d/ -f1)
     echo "Hotspot active on ${IFACE} — SSID: ${HOTSPOT_SSID}, IP: ${ACTUAL_IP:-10.42.0.1}"
     echo "Setup wizard available at http://${ACTUAL_IP:-10.42.0.1}/"
+    echo "Captive portal: phone should auto-open setup page on connect"
+
+    # LED: slow blink = setup mode
+    led_setup_mode
 }
 
 stop_hotspot() {
@@ -55,6 +85,9 @@ stop_hotspot() {
     # Bring down and remove the hotspot connection
     nmcli connection down "${CONN_NAME}" 2>/dev/null || true
     nmcli connection delete "${CONN_NAME}" 2>/dev/null || true
+
+    # LED: solid on = normal operation
+    led_connected
 
     echo "Hotspot stopped"
 }

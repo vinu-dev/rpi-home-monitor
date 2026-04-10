@@ -20,6 +20,8 @@ import threading
 import time
 import logging
 
+from camera_streamer import led
+
 log = logging.getLogger("camera-streamer.wifi-setup")
 
 HOTSPOT_SSID = "HomeCam-Setup"
@@ -72,6 +74,9 @@ class WifiSetupServer:
         if not self._start_hotspot():
             log.warning("Could not start hotspot — setup via ethernet")
 
+        # LED: slow blink = waiting for setup
+        led.setup_mode()
+
         # Start HTTP server
         handler = _make_handler(self._config, self)
         self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
@@ -88,6 +93,7 @@ class WifiSetupServer:
             self._server.shutdown()
             self._server = None
         self._stop_hotspot()
+        led.off()
         log.info("Setup server stopped")
 
     def save_and_connect(self, ssid, password, server_ip, server_port="8554"):
@@ -111,6 +117,7 @@ class WifiSetupServer:
         time.sleep(CONNECT_DELAY)
 
         log.info("Tearing down hotspot, connecting to WiFi: %s", ssid)
+        led.connecting()
 
         # Tear down hotspot
         self._stop_hotspot()
@@ -126,12 +133,15 @@ class WifiSetupServer:
             self._config.update(SERVER_IP=server_ip, SERVER_PORT=server_port)
             mark_setup_complete(self._config.data_dir)
             self._connect_result = True
+            led.connected()
         else:
             log.error("WiFi connection failed: %s — restarting hotspot", err)
             self._connect_result = err or "Connection failed"
+            led.error()
             # Restart hotspot so user can retry
             time.sleep(2)
             self._start_hotspot()
+            led.setup_mode()
 
     def get_status(self):
         """Return current connection attempt status."""
@@ -307,7 +317,14 @@ def _make_handler(config, setup_server):
                     "camera_id": config.camera_id,
                 })
             else:
-                self.send_error(404)
+                # Captive portal: redirect ANY unknown path to setup page.
+                # When phone connects to hotspot and checks connectivity
+                # (Apple, Android, Windows all probe different URLs),
+                # this redirect triggers the "Sign in to network" popup.
+                log.debug("Captive portal redirect: %s → /setup", self.path)
+                self.send_response(302)
+                self.send_header("Location", "http://10.42.0.1/setup")
+                self.end_headers()
 
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length", 0))
