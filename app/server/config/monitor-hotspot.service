@@ -2,6 +2,7 @@
 Description=Home Monitor WiFi Setup Hotspot
 Documentation=https://github.com/your-org/rpi-home-monitor
 After=NetworkManager.service
+Wants=NetworkManager.service
 Before=monitor.service
 
 # Only start if initial setup has not been completed
