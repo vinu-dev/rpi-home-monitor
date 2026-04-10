@@ -22,13 +22,27 @@ else
     echo "WARNING: /data is NOT mounted — dirs will be on rootfs"
 fi
 
-# Set hostname to 'homemonitor' for mDNS — cameras reach server at homemonitor.local
-DESIRED_HOSTNAME="homemonitor"
+# Set unique hostname using RPi serial suffix — avoids mDNS conflicts.
+# Format: homemonitor-XXXX where XXXX = last 4 hex digits of CPU serial.
+# The camera setup wizard shows this hostname so the user knows exactly
+# what to enter, or they can use the IP address instead.
+SERIAL=$(grep -oP 'Serial\s*:\s*\K[0-9a-f]+' /proc/cpuinfo 2>/dev/null || echo "")
+if [ -n "$SERIAL" ]; then
+    SUFFIX=$(echo "$SERIAL" | tail -c 5)
+    DESIRED_HOSTNAME="homemonitor-${SUFFIX}"
+else
+    DESIRED_HOSTNAME="homemonitor"
+fi
+
 CURRENT_HOSTNAME=$(hostname 2>/dev/null)
 if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
     echo "Setting hostname: ${CURRENT_HOSTNAME} -> ${DESIRED_HOSTNAME}"
     hostnamectl set-hostname "$DESIRED_HOSTNAME" 2>/dev/null || \
         echo "$DESIRED_HOSTNAME" > /etc/hostname
+    # Restart avahi so it picks up the new hostname immediately
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl restart avahi-daemon 2>/dev/null || true
+    fi
     echo "Hostname set to ${DESIRED_HOSTNAME} (reachable at ${DESIRED_HOSTNAME}.local)"
 fi
 

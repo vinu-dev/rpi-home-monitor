@@ -511,7 +511,7 @@
                     <p style="text-align:center;">Your server is now on your home WiFi.</p>
 
                     <div class="ip-display" id="done-ip-display" style="font-size:1.15rem;">
-                        https://homemonitor.local/
+                        Connecting...
                     </div>
                     <div id="done-ip-fallback" style="text-align:center;font-size:0.8rem;color:#607090;margin-top:-8px;margin-bottom:12px;display:none;">
                         Or try: <span id="done-ip-raw" style="color:#4ade80;"></span>
@@ -771,6 +771,15 @@
                     /* Success — show the done panel.
                        User may or may not see this (hotspot is dying). */
                     var ip = res.data.ip || '';
+                    var hostname = res.data.hostname || '';
+
+                    /* Show the mDNS hostname as primary address */
+                    if (hostname) {
+                        document.getElementById('done-ip-display').textContent = 'https://' + hostname + '/';
+                    } else if (ip) {
+                        document.getElementById('done-ip-display').textContent = 'https://' + ip + '/';
+                    }
+                    /* Show IP as fallback */
                     if (ip) {
                         document.getElementById('done-ip-raw').textContent = 'https://' + ip + '/';
                         document.getElementById('done-ip-fallback').style.display = 'block';

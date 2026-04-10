@@ -70,22 +70,20 @@
                 var memEl = document.getElementById('health-mem');
                 var diskEl = document.getElementById('health-disk');
 
-                var temp = data.cpu_temp || 0;
-                tempEl.textContent = window.HM.formatTemp(temp);
+                // API returns: cpu_temp_c, cpu_usage_percent, memory.percent, disk.percent
+                var temp = data.cpu_temp_c || 0;
+                tempEl.textContent = temp.toFixed(1) + '\u00B0C';
                 tempEl.className = 'health-card__value ' + tempColor(temp);
 
-                var cpu = data.cpu_percent || 0;
+                var cpu = data.cpu_usage_percent || 0;
                 cpuEl.textContent = cpu.toFixed(0) + '%';
                 cpuEl.className = 'health-card__value ' + usageColor(cpu);
 
-                var mem = data.memory_percent || 0;
+                var mem = (data.memory && data.memory.percent) || 0;
                 memEl.textContent = mem.toFixed(0) + '%';
                 memEl.className = 'health-card__value ' + usageColor(mem);
 
-                var disk = 0;
-                if (data.disk && data.disk.percent !== undefined) {
-                    disk = data.disk.percent;
-                }
+                var disk = (data.disk && data.disk.percent) || 0;
                 diskEl.textContent = disk.toFixed(0) + '%';
                 diskEl.className = 'health-card__value ' + usageColor(disk);
 
@@ -106,7 +104,12 @@
         window.HM.api.get('/api/v1/system/info')
             .then(function(data) {
                 var uptimeEl = document.getElementById('health-uptime');
-                uptimeEl.textContent = data.uptime || '--';
+                // uptime is {seconds, display} from API
+                if (data.uptime && data.uptime.display) {
+                    uptimeEl.textContent = data.uptime.display;
+                } else {
+                    uptimeEl.textContent = data.uptime || '--';
+                }
             })
             .catch(function() {});
     }

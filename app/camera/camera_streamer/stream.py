@@ -121,6 +121,25 @@ class StreamManager:
         """Launch the ffmpeg process."""
         cmd = self._build_ffmpeg_cmd()
         log.info("Starting ffmpeg: %s", " ".join(cmd))
+        log.info(
+            "Stream config: device=/dev/video0 resolution=%dx%d fps=%d "
+            "server=%s:%s camera_id=%s",
+            self._config.width, self._config.height, self._config.fps,
+            self._config.server_ip, self._config.server_port,
+            self._config.camera_id,
+        )
+        log.info("RTSP target URL: %s", self._config.rtsp_url)
+
+        # Check if ffmpeg is installed
+        import shutil
+        if not shutil.which("ffmpeg"):
+            log.error("ffmpeg binary not found in PATH — cannot stream")
+            return
+
+        # Check if video device exists before starting
+        if not os.path.exists("/dev/video0"):
+            log.error("/dev/video0 not found — camera not detected")
+            return
 
         with self._lock:
             self._process = subprocess.Popen(

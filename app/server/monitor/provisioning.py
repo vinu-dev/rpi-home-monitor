@@ -332,10 +332,15 @@ def setup_complete():
         ip_address or "unknown",
     )
 
+    # Get the actual hostname for mDNS address
+    import socket
+    hostname = socket.gethostname()
+    mdns_address = f"{hostname}.local"
+
     return jsonify({
         "message": "Setup complete",
         "ip": ip_address,
-        "hostname": "homemonitor.local",
+        "hostname": mdns_address,
     }), 200
 
 
