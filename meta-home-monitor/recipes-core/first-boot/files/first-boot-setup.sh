@@ -37,6 +37,10 @@ if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
     if command -v systemctl >/dev/null 2>&1; then
         systemctl restart avahi-daemon 2>/dev/null || true
     fi
+    # Set DHCP hostname so routers display the name
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli general hostname "$DESIRED_HOSTNAME" 2>/dev/null || true
+    fi
     echo "Hostname set to ${DESIRED_HOSTNAME} (reachable at ${DESIRED_HOSTNAME}.local)"
 fi
 

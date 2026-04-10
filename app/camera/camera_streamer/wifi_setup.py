@@ -132,6 +132,7 @@ class WifiSetupServer:
             log.info("WiFi connected! Saving config and completing setup.")
             self._config.update(SERVER_IP=server_ip, SERVER_PORT=server_port)
             mark_setup_complete(self._config.data_dir)
+            self._set_unique_hostname()
             self._connect_result = True
             led.connected()
         else:
@@ -142,6 +143,43 @@ class WifiSetupServer:
             time.sleep(2)
             self._start_hotspot()
             led.setup_mode()
+
+    def _set_unique_hostname(self):
+        """Set unique hostname using CPU serial suffix.
+
+        Format: rpi-divinu-cam-XXXX where XXXX = last 4 hex of serial.
+        This avoids collisions when multiple cameras are on the network.
+        Also sends the hostname in DHCP so routers display it.
+        """
+        try:
+            serial = ""
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if line.startswith("Serial"):
+                        serial = line.split(":")[-1].strip()
+            suffix = serial[-4:] if serial else "0000"
+            hostname = f"rpi-divinu-cam-{suffix}"
+
+            # Set OS hostname
+            subprocess.run(["hostname", hostname], capture_output=True, timeout=5)
+            with open("/etc/hostname", "w") as f:
+                f.write(hostname + "\n")
+
+            # Tell NetworkManager so it sends hostname in DHCP requests
+            subprocess.run(
+                ["nmcli", "general", "hostname", hostname],
+                capture_output=True, timeout=5,
+            )
+
+            # Restart avahi so mDNS advertises the new name
+            subprocess.run(
+                ["systemctl", "restart", "avahi-daemon"],
+                capture_output=True, timeout=10,
+            )
+
+            log.info("Hostname set to %s", hostname)
+        except Exception as e:
+            log.warning("Failed to set hostname: %s", e)
 
     def get_status(self):
         """Return current connection attempt status."""
