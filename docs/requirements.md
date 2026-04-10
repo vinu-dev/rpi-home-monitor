@@ -308,17 +308,29 @@ Camera Node                    Server                     Client
 #### SR-CAM-04: WiFi Configuration
 
 - NetworkManager for WiFi management
-- First-boot: if no WiFi configured, start a temporary AP (`HomeMonitor-Setup-XXXX`) for configuration
-- Persist WiFi credentials to `/data/config/` (survives OTA updates)
+- First-boot: if no WiFi configured, start hotspot `HomeCam-Setup` (password: `homecamera`) with captive portal
+- Setup wizard collects: WiFi SSID/password, server address, camera admin username/password
+- Persist WiFi credentials and admin credentials to `/data/config/camera.conf` (survives OTA updates)
+- Post-setup: camera hostname set to `rpi-divinu-cam-XXXX` (last 4 hex of CPU serial), advertised via mDNS
 
-#### SR-CAM-05: OTA Update Support
+#### SR-CAM-05: Camera Local Authentication
+
+- Camera status page (port 80) requires login with credentials set during provisioning
+- Password hashing: PBKDF2-SHA256, 100,000 iterations, random 16-byte salt
+- Session management: in-memory sessions, `cam_session` HttpOnly cookie, 2-hour timeout with activity refresh
+- Authenticated endpoints: `/` (status), `/api/status`, `/api/networks`, `/api/wifi`, `/api/password`
+- Public endpoints: `/login` (GET/POST), `/logout`
+- Status page shows: device info, WiFi status, server connection, CPU temp, memory, uptime
+- Users can change WiFi network and admin password from the status page
+
+#### SR-CAM-06: OTA Update Support
 
 - Dual rootfs partitions (A/B layout) using swupdate
 - Accept update images pushed from server over HTTP
 - Automatic rollback if new rootfs fails to boot (3-attempt threshold)
 - Report current firmware version to server via mDNS TXT record
 
-#### SR-CAM-06: System Watchdog
+#### SR-CAM-07: System Watchdog
 
 - Enable hardware watchdog timer
 - camera-streamer service restarts on failure (systemd `Restart=always`)

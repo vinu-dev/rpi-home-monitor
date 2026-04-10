@@ -299,16 +299,16 @@ https://home-monitor.local
 
 ### 5.2 Connect Camera to WiFi
 
-The camera needs WiFi to reach the server. On first boot, connect via SSH:
+On first boot, the camera starts a WiFi hotspot for provisioning:
 
-```bash
-# Find the camera — it advertises via mDNS
-ssh root@home-camera.local
-# Dev image: no password
-
-# Connect to your WiFi network (same network as the server)
-nmcli device wifi connect "YOUR_SSID" password "YOUR_PASSWORD"
-```
+1. Connect your phone to WiFi: **HomeCam-Setup** (password: `homecamera`)
+2. The setup wizard opens automatically (captive portal). If not, go to `http://10.42.0.1`
+3. Enter your **home WiFi SSID** and **password**
+4. Enter the **server address** (default: `rpi-divinu.local`)
+5. Set **camera login credentials** — username (default: `admin`) and password (min 4 characters). These protect the camera's status page.
+6. Click **Save & Connect**
+7. The camera LED changes: fast blink (connecting) → solid (connected)
+8. On success, the wizard shows the camera's `.local` URL (e.g., `http://rpi-divinu-cam-d8ee.local`)
 
 ### 5.3 Verify Camera Hardware
 
@@ -335,6 +335,8 @@ discovers it automatically.
 2. Click **"Confirm"** to pair the camera.
 3. The server issues a client certificate (mTLS) to the camera.
 4. The camera begins streaming to the server over RTSPS.
+
+The camera also has its own status page at `http://rpi-divinu-cam-XXXX.local` (where XXXX is derived from the camera's serial number). Login with the credentials you set during setup to view device status, change WiFi, or update the password.
 
 ### 5.5 Verify Streaming
 
@@ -387,6 +389,7 @@ Internet ─── Router ─── Switch ─── RPi 4B Server (wired)
 | 443 | HTTPS | Server | Web dashboard |
 | 8554 | RTSPS | Server | Receives camera streams |
 | 22 | SSH | Both | Remote access (dev images only) |
+| 80 | HTTP | Camera | First-boot setup wizard + authenticated status page |
 | 5353 | mDNS | Both | Auto-discovery |
 
 ### 6.4 Static IP (Recommended for Server)

@@ -39,13 +39,14 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 
 ## First Boot Setup
 
-Both the server and camera use a **captive portal** with **LED status feedback** for zero-config WiFi provisioning. Full step-by-step instructions are in [CHANGELOG.md](CHANGELOG.md#setup-guide).
+Both the server and camera use a **captive portal** for zero-config WiFi provisioning. Cameras also have **LED status feedback**. Full step-by-step instructions are in [CHANGELOG.md](CHANGELOG.md#setup-guide).
 
 **Quick version:**
-1. **Power on** — LED starts slow blinking = setup mode
+1. **Power on** — Camera LED starts slow blinking = setup mode
 2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`)
-3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address (camera)
-4. **Done** — LED goes solid = running. Camera finds server automatically via `homemonitor.local`
+3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address + camera login (camera)
+4. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
+5. **Access camera** at `http://rpi-divinu-cam-XXXX.local` (shown after setup completes)
 
 ### LED Status Indicators
 
@@ -59,7 +60,7 @@ Both the server and camera use a **captive portal** with **LED status feedback**
 
 ### Server Discovery (mDNS)
 
-The server advertises itself as `homemonitor.local` on the local network via Avahi/mDNS. Cameras find the server automatically — no need to know the server's IP address. The camera setup page pre-fills `homemonitor.local` as the default. If mDNS doesn't work on your network, enter the server IP manually.
+The server advertises itself as `rpi-divinu.local` on the local network via Avahi/mDNS. Cameras find the server automatically — no need to know the server's IP address. Each camera also gets its own `.local` address (e.g., `http://rpi-divinu-cam-d8ee.local`) for direct access to its status page. If mDNS doesn't work on your network, enter IPs manually.
 
 ## Key Features
 
@@ -68,7 +69,7 @@ The server advertises itself as `homemonitor.local` on the local network via Ava
 | Live View | HLS streaming in any mobile browser |
 | Recording | Continuous 3-minute MP4 clips, organized by camera/date |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
-| User Auth | bcrypt passwords, session management, CSRF protection, rate limiting |
+| User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions |
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
@@ -110,11 +111,11 @@ First build takes 2-4 hours. Subsequent builds use cached artifacts and are much
 ## Run Tests
 
 ```bash
-cd app/server && pytest
-cd app/camera && pytest
+cd app/server && pytest    # 371 tests, 88% coverage (threshold: 80%)
+cd app/camera && pytest    # 164 tests, 63% coverage (threshold: 55%)
 ```
 
-Test results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
+**535 total tests.** Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
 
 ## Documentation
 

@@ -117,45 +117,83 @@ They are separate codebases because they run on different hardware with differen
 ### 2.3 Camera Application Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│            Camera Node (Zero 2W)              │
-│                                              │
-│  ┌────────────────────────────────────────┐  │
-│  │        camera-streamer (Python)         │  │
-│  │                                        │  │
-│  │  ┌──────────┐    ┌─────────────────┐  │  │
-│  │  │ Capture  │    │ StreamManager   │  │  │
-│  │  │ Manager  │───>│                 │  │  │
-│  │  │          │    │ ffmpeg process  │  │  │
-│  │  │ v4l2     │    │ RTSPS output    │──┼──┼──> Server (:8554)
-│  │  │ /dev/    │    │ auto-reconnect  │  │  │    (mTLS)
-│  │  │ video0   │    │ health check    │  │  │
-│  │  └──────────┘    └─────────────────┘  │  │
-│  │                                        │  │
-│  │  ┌──────────────────────────────────┐  │  │
-│  │  │ DiscoveryService (avahi)         │  │  │
-│  │  │ Advertise _rtsp._tcp             │  │  │
-│  │  │ TXT: id, version, resolution     │  │  │
-│  │  └──────────────────────────────────┘  │  │
-│  │                                        │  │
-│  │  ┌──────────────────────────────────┐  │  │
-│  │  │ ConfigManager                    │  │  │
-│  │  │ /data/config/camera.conf         │  │  │
-│  │  │ /data/certs/client.crt + key     │  │  │
-│  │  └──────────────────────────────────┘  │  │
-│  │                                        │  │
-│  │  ┌──────────────────────────────────┐  │  │
-│  │  │ OTA Agent                        │  │  │
-│  │  │ Listen for update push from       │  │  │
-│  │  │ server, trigger swupdate          │  │  │
-│  │  └──────────────────────────────────┘  │  │
-│  └────────────────────────────────────────┘  │
-│                                              │
-│  nftables: only server IP allowed            │
-│  /data: LUKS encrypted                       │
-│  SSH: key-only, from server only             │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│            Camera Node (Zero 2W)                  │
+│                                                  │
+│  ┌────────────────────────────────────────────┐  │
+│  │        camera-streamer (Python)             │  │
+│  │                                            │  │
+│  │  ┌──────────┐    ┌─────────────────────┐  │  │
+│  │  │ Capture  │    │ StreamManager       │  │  │
+│  │  │ Manager  │───>│ ffmpeg pipeline     │  │  │
+│  │  │ v4l2     │    │ RTSP push output    │──┼──┼──> Server (:8554)
+│  │  │ /dev/    │    │ auto-reconnect      │  │  │
+│  │  │ video0   │    │ backoff retry       │  │  │
+│  │  └──────────┘    └─────────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────────────────────────────┐  │  │
+│  │  │ WiFi Setup (first boot, port 80)     │  │  │
+│  │  │ Hotspot "HomeCam-Setup" → wizard     │  │  │
+│  │  │ Collects: WiFi, server, admin creds  │  │  │
+│  │  └──────────────────────────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────────────────────────────┐  │  │
+│  │  │ Status Server (post-setup, port 80)  │  │  │
+│  │  │ Login: PBKDF2-SHA256 + sessions      │  │  │
+│  │  │ Pages: /login, /, /api/status        │  │  │
+│  │  │ Actions: WiFi change, password change│  │  │
+│  │  └──────────────────────────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────┐  ┌───────────────────┐  │  │
+│  │  │ Discovery    │  │ HealthMonitor     │  │  │
+│  │  │ Avahi mDNS   │  │ CPU, RAM, uptime  │  │  │
+│  │  │ _rtsp._tcp   │  │ Device watchdog   │  │  │
+│  │  └──────────────┘  └───────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────┐  ┌───────────────────┐  │  │
+│  │  │ LED Control  │  │ ConfigManager     │  │  │
+│  │  │ setup/conn/  │  │ camera.conf       │  │  │
+│  │  │ error/solid  │  │ admin credentials │  │  │
+│  │  └──────────────┘  └───────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────────────────────────────┐  │  │
+│  │  │ Templates (HTML)                     │  │  │
+│  │  │ login.html | setup.html | status.html│  │  │
+│  │  └──────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────┘  │
+│                                                  │
+│  mDNS: rpi-divinu-cam-XXXX.local                │
+│  nftables: only server IP allowed                │
+│  /data: LUKS encrypted                           │
+└──────────────────────────────────────────────────┘
 ```
+
+### 2.4 Camera Authentication
+
+Camera nodes have their own local authentication system, independent of the server:
+
+| Aspect | Detail |
+|--------|--------|
+| **Hashing** | PBKDF2-SHA256, 100k iterations, random 16-byte salt |
+| **Sessions** | In-memory dict, `cam_session` HttpOnly cookie, 2-hour timeout |
+| **Default user** | `admin` (set during first-boot provisioning) |
+| **Storage** | `ADMIN_USERNAME` and `ADMIN_PASSWORD` (salt:hash) in `/data/config/camera.conf` |
+| **Endpoints** | `/login` (GET/POST), `/logout`, `/api/status`, `/api/networks`, `/api/wifi`, `/api/password` |
+
+This protects the camera's status page and WiFi settings from unauthorized access on the LAN.
+
+### 2.5 mDNS Discovery
+
+Both server and cameras advertise via Avahi/mDNS:
+
+| Device | Hostname | URL | Service |
+|--------|----------|-----|---------|
+| Server | `rpi-divinu` | `https://rpi-divinu.local` | `_homemonitor._tcp`, `_https._tcp` |
+| Camera | `rpi-divinu-cam-XXXX` | `http://rpi-divinu-cam-XXXX.local` | `_rtsp._tcp` |
+
+Camera hostnames are derived from the CPU serial number: last 4 hex chars become the suffix (e.g., serial `...351ad8ee` → hostname `rpi-divinu-cam-d8ee`). This ensures uniqueness in multi-camera deployments.
+
+The server dashboard shows clickable `.local` links for each camera's status page.
 
 ---
 

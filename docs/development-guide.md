@@ -183,7 +183,14 @@ Before any Yocto change is committed:
   ```
   app/camera/camera_streamer/
     main.py              ← Entry point
-    <module>.py          ← One file per responsibility
+    config.py            ← Config + PBKDF2 password management
+    capture.py           ← V4L2 camera detection
+    stream.py            ← FFmpeg RTSP streaming
+    wifi_setup.py        ← Setup wizard + status server + sessions
+    discovery.py         ← Avahi mDNS advertisement
+    health.py            ← CPU/RAM/uptime monitoring
+    led.py               ← ACT LED patterns
+    templates/           ← HTML templates (login, setup, status)
   ```
 
 ### 3.2 Python Rules
@@ -209,7 +216,7 @@ Before any Yocto change is committed:
 
 These rules apply to ALL code, whether application or recipe:
 
-- **Never store passwords in plaintext.** Always bcrypt hash (cost 12).
+- **Never store passwords in plaintext.** Server uses bcrypt (cost 12). Camera uses PBKDF2-SHA256 (100k iterations, random salt).
 - **Never log passwords, tokens, or certificates.** Redact in log messages.
 - **Never hardcode secrets** (passwords, keys, tokens) in source code or recipes.
 - **All user input is untrusted.** Validate and sanitize everything from HTTP requests.
@@ -260,8 +267,8 @@ These rules apply to ALL code, whether application or recipe:
 **Key rules (non-negotiable):**
 
 1. **Every code change must include unit tests.** No PR is merged without tests for the changed code.
-2. **Minimum coverage: 80%.** PRs that drop coverage below 80% are blocked. Target 90%+.
-3. **Security-critical code (auth, pairing, TLS, certs) must aim for 95%+ coverage.**
+2. **Minimum coverage: Server 80%, Camera 55%.** PRs that drop coverage below these thresholds are blocked. Target: server 90%+, camera 70%+.
+3. **Security-critical code (auth, sessions, passwords, pairing, TLS, certs) must aim for 95%+ coverage.** This includes camera PBKDF2 password hashing and session management.
 4. **Run tests before every commit.** If tests fail, do not commit.
 5. **Test file naming:** `test_<module>.py` — mirrors the module it tests.
 6. **Test location:** `app/server/tests/` and `app/camera/tests/`.
