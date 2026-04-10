@@ -499,27 +499,29 @@ function showForm() { showView('view-form'); }
 function loadNetworks() {
   var wrap = $('net-list-wrap');
   var list = $('net-list');
-  list.innerHTML = '<div class="msg msg-info"><div class="spinner"></div> Scanning...</div>';
+  list.innerHTML = '<div class="msg msg-warn"><div class="spinner"></div> Scanning... hotspot will drop briefly, please wait.</div>';
   wrap.style.display = 'block';
 
-  fetch('/api/networks')
+  fetch('/api/rescan', {method: 'POST'})
     .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var nets = d.networks || [];
-      if (nets.length === 0) {
-        list.innerHTML = '<div class="msg msg-info">No networks found. Type SSID manually.</div>';
-        return;
-      }
-      var html = '';
-      nets.forEach(function(n) {
-        html += '<div class="net" onclick="pickNet(\\''+esc(n.ssid)+'\\')"><span class="net-ssid">'
-          +esc(n.ssid)+'</span><span class="net-signal">'+n.signal+'%</span></div>';
-      });
-      list.innerHTML = html;
-    })
+    .then(function(d) { renderNetworks(d.networks || []); })
     .catch(function() {
-      list.innerHTML = '<div class="msg msg-err">Scan failed. Type SSID manually.</div>';
+      list.innerHTML = '<div class="msg msg-err">Scan failed — you may need to reconnect to HomeCam-Setup and try again.</div>';
     });
+}
+
+function renderNetworks(nets) {
+  var list = $('net-list');
+  if (nets.length === 0) {
+    list.innerHTML = '<div class="msg msg-info">No networks found. Type SSID manually.</div>';
+    return;
+  }
+  var html = '';
+  nets.forEach(function(n) {
+    html += '<div class="net" onclick="pickNet(\\''+esc(n.ssid)+'\\')"><span class="net-ssid">'
+      +esc(n.ssid)+'</span><span class="net-signal">'+n.signal+'%</span></div>';
+  });
+  list.innerHTML = html;
 }
 
 function pickNet(ssid) {
@@ -576,20 +578,14 @@ fetch('/api/status')
       showView('view-result');
       $('result-msg').textContent = 'WiFi connection failed: ' + d.error + '. Try again.';
     } else {
-      // Load cached networks
+      // Load cached networks from pre-hotspot scan
       fetch('/api/networks')
         .then(function(r) { return r.json(); })
         .then(function(nd) {
           var nets = nd.networks || [];
           if (nets.length > 0) {
-            var list = $('net-list');
-            var html = '';
-            nets.forEach(function(n) {
-              html += '<div class="net" onclick="pickNet(\\''+esc(n.ssid)+'\\')"><span class="net-ssid">'
-                +esc(n.ssid)+'</span><span class="net-signal">'+n.signal+'%</span></div>';
-            });
-            list.innerHTML = html;
             $('net-list-wrap').style.display = 'block';
+            renderNetworks(nets);
           }
         });
     }
