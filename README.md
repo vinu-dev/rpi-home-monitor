@@ -39,21 +39,15 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 
 ## First Boot Setup
 
-Both the server and camera use a **captive portal** for zero-config WiFi provisioning:
+Both the server and camera use a **captive portal** with **LED status feedback** for zero-config WiFi provisioning. Full step-by-step instructions are in [CHANGELOG.md](CHANGELOG.md#setup-guide).
 
-1. **Power on** the device. The onboard LED starts **slow blinking** (1s on/off) = setup mode.
-2. **Connect your phone** to the WiFi hotspot:
-   - Server: `HomeMonitor-Setup` (password: `homemonitor`)
-   - Camera: `HomeCam-Setup` (password: `homecamera`)
-3. **Captive portal auto-opens** — your phone shows a "Sign in to network" popup with the setup wizard. If it doesn't, open `http://10.42.0.1` manually in a browser.
-4. **Configure WiFi** credentials and (for camera) the server address. Default server address is `homemonitor.local` (auto-discovery via mDNS).
-5. **Save & Connect** — the LED switches to **fast blinking** (connecting), then **solid on** (connected). The hotspot disappears.
-
-If WiFi connection fails, the LED blinks rapidly (error) and the hotspot restarts automatically for retry.
+**Quick version:**
+1. **Power on** — LED starts slow blinking = setup mode
+2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`)
+3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address (camera)
+4. **Done** — LED goes solid = running. Camera finds server automatically via `homemonitor.local`
 
 ### LED Status Indicators
-
-The onboard ACT LED provides visual feedback on both server and camera devices:
 
 | LED Pattern | Meaning |
 |-------------|---------|
@@ -65,9 +59,7 @@ The onboard ACT LED provides visual feedback on both server and camera devices:
 
 ### Server Discovery (mDNS)
 
-The server advertises itself as `homemonitor.local` on the local network using Avahi/mDNS. Cameras use this to find the server automatically — no need to know or type the server's IP address. The camera setup page pre-fills `homemonitor.local` as the default server address.
-
-If mDNS is not available on your network, you can enter the server's IP address manually during camera setup.
+The server advertises itself as `homemonitor.local` on the local network via Avahi/mDNS. Cameras find the server automatically — no need to know the server's IP address. The camera setup page pre-fills `homemonitor.local` as the default. If mDNS doesn't work on your network, enter the server IP manually.
 
 ## Key Features
 
