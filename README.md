@@ -37,6 +37,38 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 | **Camera Node** | Raspberry Pi Zero 2W + ZeroCam | Captures 1080p video, streams to server over RTSPS |
 | **Dashboard** | Any phone/laptop on LAN | Live view (HLS), clip playback, camera management, system admin |
 
+## First Boot Setup
+
+Both the server and camera use a **captive portal** for zero-config WiFi provisioning:
+
+1. **Power on** the device. The onboard LED starts **slow blinking** (1s on/off) = setup mode.
+2. **Connect your phone** to the WiFi hotspot:
+   - Server: `HomeMonitor-Setup` (password: `homemonitor`)
+   - Camera: `HomeCam-Setup` (password: `homecamera`)
+3. **Captive portal auto-opens** — your phone shows a "Sign in to network" popup with the setup wizard. If it doesn't, open `http://10.42.0.1` manually in a browser.
+4. **Configure WiFi** credentials and (for camera) the server address. Default server address is `homemonitor.local` (auto-discovery via mDNS).
+5. **Save & Connect** — the LED switches to **fast blinking** (connecting), then **solid on** (connected). The hotspot disappears.
+
+If WiFi connection fails, the LED blinks rapidly (error) and the hotspot restarts automatically for retry.
+
+### LED Status Indicators
+
+The onboard ACT LED provides visual feedback on both server and camera devices:
+
+| LED Pattern | Meaning |
+|-------------|---------|
+| **Slow blink** (1s on / 1s off) | Setup mode — waiting for WiFi configuration |
+| **Fast blink** (200ms on / 200ms off) | Connecting — attempting to join WiFi network |
+| **Very fast blink** (100ms on / 100ms off) | Error — WiFi connection failed, hotspot restarting |
+| **Solid on** | Running normally — connected and operational |
+| **Off** | Service stopped |
+
+### Server Discovery (mDNS)
+
+The server advertises itself as `homemonitor.local` on the local network using Avahi/mDNS. Cameras use this to find the server automatically — no need to know or type the server's IP address. The camera setup page pre-fills `homemonitor.local` as the default server address.
+
+If mDNS is not available on your network, you can enter the server's IP address manually during camera setup.
+
 ## Key Features
 
 | Feature | Details |

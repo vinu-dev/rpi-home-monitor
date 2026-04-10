@@ -1,0 +1,33 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Avahi static service file — advertises the Home Monitor server on the LAN.
+  Cameras and browsers can find the server via mDNS:
+    - homemonitor.local (hostname)
+    - _homemonitor._tcp (service type for camera auto-discovery)
+-->
+<service-group>
+  <name replace-wildcards="yes">Home Monitor Server on %h</name>
+
+  <!-- Main web dashboard (HTTPS) -->
+  <service>
+    <type>_https._tcp</type>
+    <port>443</port>
+    <txt-record>path=/</txt-record>
+  </service>
+
+  <!-- HTTP (setup wizard, fallback) -->
+  <service>
+    <type>_http._tcp</type>
+    <port>80</port>
+    <txt-record>path=/</txt-record>
+  </service>
+
+  <!-- Custom service type for camera auto-discovery -->
+  <service>
+    <type>_homemonitor._tcp</type>
+    <port>8554</port>
+    <txt-record>version=1.0</txt-record>
+    <txt-record>role=server</txt-record>
+  </service>
+</service-group>

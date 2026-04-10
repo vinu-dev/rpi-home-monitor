@@ -22,6 +22,16 @@ else
     echo "WARNING: /data is NOT mounted — dirs will be on rootfs"
 fi
 
+# Set hostname to 'homemonitor' for mDNS — cameras reach server at homemonitor.local
+DESIRED_HOSTNAME="homemonitor"
+CURRENT_HOSTNAME=$(hostname 2>/dev/null)
+if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
+    echo "Setting hostname: ${CURRENT_HOSTNAME} -> ${DESIRED_HOSTNAME}"
+    hostnamectl set-hostname "$DESIRED_HOSTNAME" 2>/dev/null || \
+        echo "$DESIRED_HOSTNAME" > /etc/hostname
+    echo "Hostname set to ${DESIRED_HOSTNAME} (reachable at ${DESIRED_HOSTNAME}.local)"
+fi
+
 # Create directory structure
 echo "Creating /data directory structure..."
 mkdir -p /data/config
