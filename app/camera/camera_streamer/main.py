@@ -37,6 +37,22 @@ def _handle_signal(signum, frame):
     _shutdown = True
 
 
+def _resolve_server(config):
+    """Resolve server address — handles mDNS names like homemonitor.local."""
+    import socket
+    addr = config.server_ip
+    if not addr:
+        return
+    try:
+        ip = socket.gethostbyname(addr)
+        log.info("Server address resolved: %s -> %s", addr, ip)
+    except socket.gaierror:
+        log.warning(
+            "Cannot resolve server address '%s' — mDNS may not be ready yet. "
+            "Will retry when streaming starts.", addr
+        )
+
+
 def main():
     """Entry point for camera-streamer service."""
     global _shutdown
@@ -75,6 +91,10 @@ def main():
         # Reload config after setup
         config.load()
         log.info("Setup complete, continuing with startup")
+
+    # 2b. Resolve server address (mDNS: homemonitor.local → IP)
+    if config.is_configured:
+        _resolve_server(config)
 
     # 3. Validate camera device
     from camera_streamer.capture import CaptureManager

@@ -496,9 +496,9 @@ input:focus { border-color: #e94560; }
 
     <div class="card">
       <h3>Server Connection</h3>
-      <label>Server IP Address</label>
-      <input type="text" id="in-server" placeholder="192.168.1.100">
-      <div class="hint">The IP of your RPi 4B running Home Monitor</div>
+      <label>Server Address</label>
+      <input type="text" id="in-server" value="homemonitor.local" placeholder="homemonitor.local or 192.168.1.x">
+      <div class="hint">Default: homemonitor.local (auto-discovery). Or enter server IP manually.</div>
       <label>RTSP Port</label>
       <input type="text" id="in-port" value="8554">
     </div>

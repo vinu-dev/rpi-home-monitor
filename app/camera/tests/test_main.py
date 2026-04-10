@@ -12,6 +12,7 @@ class TestMain:
     def test_main_callable(self):
         assert callable(main)
 
+    @patch("camera_streamer.main._resolve_server")
     @patch("camera_streamer.wifi_setup.WifiSetupServer")
     @patch("camera_streamer.health.HealthMonitor")
     @patch("camera_streamer.stream.StreamManager")
@@ -20,13 +21,14 @@ class TestMain:
     @patch("camera_streamer.config.ConfigManager")
     def test_main_startup_sequence(
         self, MockConfig, MockCapture, MockDiscovery,
-        MockStream, MockHealth, MockSetup
+        MockStream, MockHealth, MockSetup, mock_resolve
     ):
         """Main should initialize all components in order."""
         config = MagicMock()
         config.is_configured = True
         config.camera_id = "cam-test"
         config.data_dir = "/tmp/test"
+        config.server_ip = "homemonitor.local"
         MockConfig.return_value = config
         config.load.return_value = config
 
@@ -68,6 +70,7 @@ class TestMain:
         stream.stop.assert_called_once()
         discovery.stop.assert_called_once()
 
+    @patch("camera_streamer.main._resolve_server")
     @patch("camera_streamer.wifi_setup.WifiSetupServer")
     @patch("camera_streamer.health.HealthMonitor")
     @patch("camera_streamer.stream.StreamManager")
@@ -76,7 +79,7 @@ class TestMain:
     @patch("camera_streamer.config.ConfigManager")
     def test_main_skips_stream_when_unconfigured(
         self, MockConfig, MockCapture, MockDiscovery,
-        MockStream, MockHealth, MockSetup
+        MockStream, MockHealth, MockSetup, mock_resolve
     ):
         """Should not start streaming if server not configured."""
         config = MagicMock()

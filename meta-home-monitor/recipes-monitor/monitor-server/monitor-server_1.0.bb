@@ -19,6 +19,7 @@ SRC_URI = " \
     file://config/nginx-monitor.conf \
     file://config/nftables-server.conf \
     file://config/captive-portal-dnsmasq.conf \
+    file://config/avahi-homemonitor.service \
     file://config/logrotate-monitor.conf \
     file://setup.py \
     file://requirements.txt \
@@ -86,6 +87,10 @@ do_install() {
     # Captive portal DNS redirect (NM shared-mode dnsmasq config)
     install -d ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d
     install -m 0644 ${WORKDIR}/config/captive-portal-dnsmasq.conf ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf
+
+    # Avahi mDNS service advertisement (cameras find server at homemonitor.local)
+    install -d ${D}${sysconfdir}/avahi/services
+    install -m 0644 ${WORKDIR}/config/avahi-homemonitor.service ${D}${sysconfdir}/avahi/services/homemonitor.service
 }
 
 FILES:${PN} = " \
@@ -96,4 +101,5 @@ FILES:${PN} = " \
     ${sysconfdir}/nftables.d/monitor.conf \
     ${sysconfdir}/logrotate.d/monitor \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
+    ${sysconfdir}/avahi/services/homemonitor.service \
     "
