@@ -490,7 +490,7 @@
                         </div>
                         <div class="warning-step">
                             <span class="warning-step-num">5.</span>
-                            Open <strong style="color:#4ade80;">https://homemonitor.local/</strong>
+                            Open the address shown on the next screen
                         </div>
                     </div>
 
@@ -524,6 +524,15 @@
                     <p style="text-align:center;font-size:0.85rem;">
                         Login: <strong>admin</strong> / your new password
                     </p>
+
+                    <div style="background:#0f3460;border-radius:8px;padding:12px;margin-top:12px;">
+                        <p style="text-align:center;font-size:0.85rem;color:#e94560;font-weight:600;margin-bottom:4px;">
+                            Setting up cameras?
+                        </p>
+                        <p style="text-align:center;font-size:0.85rem;margin:0;">
+                            Use <strong id="done-cam-address" style="color:#4ade80;">this address</strong> as the server address in the camera setup wizard.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -783,6 +792,11 @@
                     if (ip) {
                         document.getElementById('done-ip-raw').textContent = 'https://' + ip + '/';
                         document.getElementById('done-ip-fallback').style.display = 'block';
+                    }
+                    /* Show camera address hint — hostname or IP */
+                    var camAddr = hostname || ip || '';
+                    if (camAddr) {
+                        document.getElementById('done-cam-address').textContent = camAddr;
                     }
                     document.getElementById('review-panel').style.display = 'none';
                     document.getElementById('done-panel').style.display = 'block';

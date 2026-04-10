@@ -497,8 +497,8 @@ input:focus { border-color: #e94560; }
     <div class="card">
       <h3>Server Connection</h3>
       <label>Server Address</label>
-      <input type="text" id="in-server" value="" placeholder="homemonitor-XXXX.local or 192.168.1.x">
-      <div class="hint">Enter your server's address. Find it on the server setup complete screen (e.g. homemonitor-a1b2.local) or use the server's IP address.</div>
+      <input type="text" id="in-server" value="" placeholder="e.g. homemonitor-a1b2.local or 192.168.1.x">
+      <div class="hint">Enter the address shown on your server's setup complete screen.</div>
       <label>RTSP Port</label>
       <input type="text" id="in-port" value="8554">
     </div>
