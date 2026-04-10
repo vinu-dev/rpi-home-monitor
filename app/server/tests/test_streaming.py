@@ -58,8 +58,9 @@ class TestStreamingService:
         assert mock_popen.call_count == 2
         svc.stop()
 
+    @patch("monitor.services.streaming.StreamingService._take_snapshot")
     @patch("subprocess.Popen")
-    def test_start_camera_creates_dirs(self, mock_popen, tmp_path):
+    def test_start_camera_creates_dirs(self, mock_popen, mock_snap, tmp_path):
         """start_camera should create live and recording directories."""
         proc = MagicMock()
         proc.pid = 1234
@@ -86,8 +87,9 @@ class TestStreamingService:
         result = svc.start_camera("cam-abc123")
         assert result is False
 
+    @patch("monitor.services.streaming.StreamingService._take_snapshot")
     @patch("subprocess.Popen")
-    def test_stop_camera(self, mock_popen, tmp_path):
+    def test_stop_camera(self, mock_popen, mock_snap, tmp_path):
         """stop_camera should terminate ffmpeg processes."""
         proc = MagicMock()
         proc.pid = 1234
@@ -107,8 +109,9 @@ class TestStreamingService:
         proc.terminate.assert_called()
         svc.stop()
 
+    @patch("monitor.services.streaming.StreamingService._take_snapshot")
     @patch("subprocess.Popen")
-    def test_is_camera_active(self, mock_popen, tmp_path):
+    def test_is_camera_active(self, mock_popen, mock_snap, tmp_path):
         """is_camera_active should reflect HLS process state."""
         proc = MagicMock()
         proc.pid = 1234
@@ -134,8 +137,9 @@ class TestStreamingService:
         )
         svc.stop_camera("nonexistent")  # Should not raise
 
+    @patch("monitor.services.streaming.StreamingService._take_snapshot")
     @patch("subprocess.Popen")
-    def test_stop_cleans_hls_segments(self, mock_popen, tmp_path):
+    def test_stop_cleans_hls_segments(self, mock_popen, mock_snap, tmp_path):
         """stop_camera should remove stale HLS segment files."""
         proc = MagicMock()
         proc.pid = 1234

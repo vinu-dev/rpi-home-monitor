@@ -74,6 +74,7 @@ class WifiSetupServer:
         """Stop HTTP server and hotspot."""
         if self._server:
             self._server.shutdown()
+            self._server.server_close()
             self._server = None
         self._stop_hotspot()
         log.info("Setup server stopped")

@@ -72,6 +72,7 @@ class TestHLSPlaylist:
         response = client.get("/api/v1/live/cam-001/stream.m3u8")
         assert response.status_code == 200
         assert b"#EXTM3U" in response.data
+        response.close()
 
 
 class TestSnapshot:
@@ -101,3 +102,4 @@ class TestSnapshot:
         response = client.get("/api/v1/live/cam-001/snapshot")
         assert response.status_code == 200
         assert response.content_type == "image/jpeg"
+        response.close()
