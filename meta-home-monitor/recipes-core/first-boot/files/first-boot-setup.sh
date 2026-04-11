@@ -35,13 +35,12 @@ if [ -n "$DATA_DEV" ]; then
 
         # Grow partition to fill remaining disk space
         if command -v growpart >/dev/null 2>&1; then
-            growpart "$DISK" "$PARTNUM" 2>/dev/null || true
+            growpart "$DISK" "$PARTNUM" || true
         elif command -v parted >/dev/null 2>&1; then
-            # Fallback: use parted resizepart
-            DISK_SIZE=$(blockdev --getsize64 "$DISK" 2>/dev/null || echo 0)
-            if [ "$DISK_SIZE" -gt 0 ]; then
-                parted -s "$DISK" resizepart "$PARTNUM" 100% 2>/dev/null || true
-            fi
+            # parted -s won't auto-confirm on mounted partitions;
+            # pipe Yes to ---pretend-input-tty to handle the prompt.
+            echo Yes | parted ---pretend-input-tty "$DISK" resizepart "$PARTNUM" 100% || true
+            partprobe "$DISK" 2>/dev/null || true
         fi
 
         # Resize filesystem to match partition
