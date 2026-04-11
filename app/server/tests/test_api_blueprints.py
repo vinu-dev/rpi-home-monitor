@@ -10,8 +10,6 @@ class TestURLPrefixes:
     """Verify all blueprints are mounted at correct URL prefixes."""
 
     def test_auth_prefix(self, app):
-        rules = [r.rule for r in app.url_map.iter_rules()]
-        auth_rules = [r for r in rules if r.startswith("/api/v1/auth")]
         # Blueprint registered even if no routes yet
         assert "auth" in app.blueprints
 

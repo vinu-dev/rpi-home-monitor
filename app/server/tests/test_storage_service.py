@@ -6,8 +6,6 @@ Mocks target the module-level usb import (monitor.services.storage_service.usb).
 """
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from monitor.services.storage_service import StorageService
 
 # Patch target: StorageService imports usb at module level

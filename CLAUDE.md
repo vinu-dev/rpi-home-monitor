@@ -62,11 +62,13 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 **Patterns we follow:**
 - **Single Responsibility** — one class per file, one concern per class. No god files (>300 lines).
+- **Service Layer** — business logic in service classes (`CameraService`, `StorageService`), routes are thin HTTP adapters.
+- **State Machine** — camera lifecycle as explicit states (`INIT → SETUP → CONNECTING → VALIDATING → RUNNING → SHUTDOWN`).
 - **Platform Provider** — `camera/platform.py` provides all hardware paths. Never hardcode `/dev/video0`, `/sys/class/leds/ACT`, `wlan0`, `thermal_zone0`.
 - **Strategy** — swappable backends via `typing.Protocol` (streaming, capture, detection, player).
 - **Constructor Injection** — pass deps in `__init__()`. No DI frameworks, no global registries.
 - **Fail-Silent Adapter** — all hardware access wrapped in try/except, fails gracefully.
-- **App Factory** — Flask `create_app()`, blueprints, service layer.
+- **App Factory** — Flask `create_app()` decomposed into `_init_infrastructure`, `_init_services`, `_startup`, `_register_blueprints`.
 - **Repository** — `Store` class for JSON persistence with atomic writes.
 - **Observer/Callback** — simple callback for cross-service notifications (e.g., StorageManager → StreamingService dir change).
 
@@ -88,13 +90,14 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 | Component | File(s) | Status | What It Does |
 |-----------|---------|--------|--------------|
-| App factory | `__init__.py` | COMPLETE | Creates Flask app, registers 10 blueprints, creates default admin user |
+| App factory | `__init__.py` | COMPLETE | Creates Flask app, decomposes into _init_infrastructure, _init_services, _startup, _register_blueprints |
 | Auth/CSRF | `auth.py` | COMPLETE | bcrypt (cost 12), sessions (30min idle/24hr max), rate limit (5/min), CSRF tokens |
 | Data models | `models.py` | COMPLETE | Camera, User, Settings, Clip dataclasses — no DB, JSON files |
 | JSON store | `store.py` | COMPLETE | Thread-safe JSON persistence with atomic writes (cameras.json, users.json, settings.json) |
 | Setup wizard | `provisioning.py` | COMPLETE | WiFi scan → save creds → admin password → apply all at once (PR #11 fix) |
 | Page routes | `views.py` | COMPLETE | /setup, /login, /dashboard, /live, /recordings, /settings — all auth-gated |
-| Camera API | `api/cameras.py` | COMPLETE | CRUD + confirm (starts streaming) + status |
+| Camera API | `api/cameras.py` | COMPLETE | Thin routes → delegates to CameraService |
+| Camera svc | `services/camera_service.py` | COMPLETE | Camera CRUD, lifecycle, streaming coordination, audit |
 | Auth API | `api/auth.py` (in __init__) | COMPLETE | Login/logout/me |
 | Live API | `api/live.py` | COMPLETE | `/live/<id>/stream.m3u8` (HLS playlist), `/live/<id>/snapshot` (JPEG) |
 | Recordings API | `api/recordings.py` | COMPLETE | List clips, filter by date, get latest, delete clip |
@@ -109,7 +112,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | Discovery svc | `services/discovery.py` | PARTIAL | Camera online/offline tracking, pending camera reports |
 | Storage svc | `services/storage.py` | COMPLETE | FIFO loop recording, background cleanup, USB/internal dir switching |
 | USB svc | `services/usb.py` | COMPLETE | USB detection (lsblk), mount/unmount, format to ext4, auto-mount |
-| Storage API | `api/storage.py` | COMPLETE | USB device list, select, format, eject, storage stats |
+| Storage API | `api/storage.py` | COMPLETE | Thin routes → delegates to StorageService |
+| Storage svc | `services/storage_service.py` | COMPLETE | USB select, format, eject orchestration with audit |
+| Logging | `logging_config.py` | COMPLETE | RotatingFileHandler (10MB×5), console + file output |
 
 ### Server Templates (`app/server/monitor/templates/`)
 
@@ -140,7 +145,8 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 | Component | File | Status | What It Does |
 |-----------|------|--------|--------------|
-| Entry point | `main.py` | COMPLETE | Config → platform detect → setup check → stream → health |
+| Entry point | `main.py` | COMPLETE | Thin: config load → platform detect → CameraLifecycle.run() |
+| Lifecycle | `lifecycle.py` | COMPLETE | State machine: INIT→SETUP→CONNECTING→VALIDATING→RUNNING→SHUTDOWN |
 | Platform | `platform.py` | COMPLETE | Hardware abstraction — detects device paths, LED, thermal, WiFi interface |
 | Config | `config.py` | COMPLETE | /data/config/camera.conf, auto-generates cam ID from hardware serial |
 | V4L2 capture | `capture.py` | COMPLETE | Detects camera device, queries H.264 support, validates resolution |
@@ -224,9 +230,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 ## Tests
 
-- **Server:** 479 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
-- **Camera:** 38 tests (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 517 tests
+- **Server:** 549 tests, 84.5% coverage (`python -m pytest app/server/tests/ -v`)
+- **Camera:** 255 tests, 70.6% coverage (`python -m pytest app/camera/tests/ -v`)
+- **Total:** 804 tests
 
 ## PR History
 
@@ -298,5 +304,15 @@ Never commit VM credentials to the repo.
 | [docs/testing-guide.md](docs/testing-guide.md) | How to write tests, run tests, measure coverage |
 | [docs/build-setup.md](docs/build-setup.md) | Build machine setup, prerequisites, troubleshooting |
 | [docs/hardware-setup.md](docs/hardware-setup.md) | Shopping list, assembly, flashing, first boot |
+| [docs/adr/](docs/adr/) | Architecture Decision Records (6 ADRs) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes + detailed setup walkthrough |
 | [README.md](README.md) | Quick start, build targets, doc index |
+
+## Tooling
+
+| Tool | Config | Purpose |
+|------|--------|---------|
+| ruff | `pyproject.toml` | Linting + formatting (replaces flake8/black/isort) |
+| pre-commit | `.pre-commit-config.yaml` | Git hooks: lint, format, trailing whitespace, no main commits |
+| GitHub Actions | `.github/workflows/test.yml` | CI: lint + server tests + camera tests on every push/PR |
+| CODEOWNERS | `.github/CODEOWNERS` | Auto-assign reviewers for PRs |

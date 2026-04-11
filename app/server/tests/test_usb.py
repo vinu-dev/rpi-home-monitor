@@ -1,24 +1,21 @@
 """Tests for monitor.services.usb — USB storage detection and management."""
 import json
 import subprocess
-from unittest.mock import patch, MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from monitor.services.usb import (
-    SUPPORTED_FS,
     DEFAULT_MOUNT_POINT,
     RECORDINGS_FOLDER,
-    detect_devices,
+    SUPPORTED_FS,
     _device_info,
     _human_size,
+    detect_devices,
+    format_device,
     is_mounted,
     mount_device,
-    unmount_device,
-    format_device,
     prepare_recordings_dir,
+    unmount_device,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -688,7 +685,7 @@ def test_prepare_recordings_dir_returns_correct_path(mock_makedirs):
 
 def test_supported_fs_values():
     """Verify the supported filesystem set."""
-    assert SUPPORTED_FS == {"ext4", "ext3", "ntfs", "vfat", "exfat"}
+    assert {"ext4", "ext3", "ntfs", "vfat", "exfat"} == SUPPORTED_FS
 
 
 def test_default_mount_point():

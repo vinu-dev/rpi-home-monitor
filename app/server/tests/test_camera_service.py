@@ -1,6 +1,6 @@
 """Tests for the camera management service."""
-from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from monitor.services.camera_service import CameraService
 

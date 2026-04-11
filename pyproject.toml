@@ -1,0 +1,43 @@
+# RPi Home Monitor — project-wide tool configuration
+# Individual apps have their own setup.cfg/pyproject.toml for packaging.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific
+]
+ignore = [
+    "E501",   # line too long — let formatter handle it
+    "B008",   # function call in default argument (common in Flask)
+    "SIM108", # ternary operator — readability preference
+    "RUF012", # mutable class variable annotations
+    "N803",   # mock parameter names like MockCapture (uppercase for clarity)
+    "RUF059", # unused mock parameters (needed for patch argument positions)
+    "SIM105", # contextlib.suppress — try/except is clearer in our codebase
+    "SIM115", # open-file-with-context-handler — some cases need manual control
+    "RUF002", # ambiguous unicode in docstrings (false positives with arrows)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "SIM300"]  # assert True/False, yoda conditions in tests
+"**/conftest.py" = ["F811"]       # fixture redefinitions
+"**/wifi_setup.py" = ["I001"]     # backward compat re-exports need manual import order
+
+[tool.ruff.lint.isort]
+known-first-party = ["monitor", "camera_streamer"]
+
+[tool.pytest.ini_options]
+# Shared pytest config — individual apps override in their own pytest.ini
+testpaths = ["tests"]
+addopts = "-v --tb=short"

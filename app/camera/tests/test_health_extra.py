@@ -1,8 +1,8 @@
 """Additional tests for health module to boost coverage."""
 import os
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
-from camera_streamer.health import HealthMonitor, _get_disk_free_mb
+from camera_streamer.health import HealthMonitor
 
 
 class TestHealthRunCheck:

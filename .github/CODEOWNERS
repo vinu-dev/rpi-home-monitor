@@ -1,0 +1,23 @@
+# CODEOWNERS — auto-assign reviewers for PRs
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: project maintainer reviews everything
+* @vinu-engineer
+
+# Server application
+app/server/ @vinu-engineer
+
+# Camera application
+app/camera/ @vinu-engineer
+
+# Yocto layer
+meta-home-monitor/ @vinu-engineer
+
+# CI/CD and tooling
+.github/ @vinu-engineer
+pyproject.toml @vinu-engineer
+.pre-commit-config.yaml @vinu-engineer
+
+# Documentation
+docs/ @vinu-engineer
+CLAUDE.md @vinu-engineer

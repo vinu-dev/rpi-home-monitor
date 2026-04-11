@@ -4,8 +4,8 @@ Camera streamer entry point.
 Thin wrapper — loads config, detects platform, and delegates to
 CameraLifecycle for the full startup/streaming/shutdown state machine.
 """
-import signal
 import logging
+import signal
 
 from camera_streamer.logging_config import configure_logging
 

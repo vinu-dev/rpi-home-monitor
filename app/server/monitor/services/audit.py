@@ -29,7 +29,7 @@ Rotation: max 50MB, retained 90 days.
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger("audit")
@@ -60,7 +60,7 @@ class AuditLogger:
             detail: Additional detail string
         """
         entry = {
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "event": event,
             "user": user,
             "ip": ip,

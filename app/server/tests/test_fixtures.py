@@ -3,7 +3,6 @@
 Verifies that the test infrastructure itself works correctly.
 """
 import json
-from pathlib import Path
 
 
 class TestDataDir:

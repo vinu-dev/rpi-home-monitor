@@ -1,8 +1,7 @@
 """Tests for camera_streamer.discovery module."""
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from camera_streamer.discovery import DiscoveryService, SERVICE_TYPE, SERVICE_PORT
+from camera_streamer.discovery import SERVICE_PORT, SERVICE_TYPE, DiscoveryService
 
 
 class TestDiscoveryService:

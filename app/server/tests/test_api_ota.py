@@ -1,8 +1,9 @@
 """Tests for the OTA update API."""
 import io
+
+from monitor.api.ota import _ota_status
 from monitor.auth import hash_password
 from monitor.models import Camera
-from monitor.api.ota import _ota_status
 
 
 def _login(app, client, role="admin"):

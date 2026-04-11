@@ -19,8 +19,8 @@ Usage:
   import camera_streamer.led as led
   led.setup_mode()
 """
-import os
 import logging
+import os
 
 log = logging.getLogger("camera-streamer.led")
 
@@ -51,7 +51,7 @@ class LedController:
             path = os.path.join(self._path, filename)
             with open(path, "w") as f:
                 f.write(str(value))
-        except (OSError, IOError) as e:
+        except OSError as e:
             log.debug("LED write failed (%s=%s): %s", filename, value, e)
 
     def setup_mode(self) -> None:

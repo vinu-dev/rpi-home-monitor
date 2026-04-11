@@ -16,7 +16,7 @@ import functools
 import hashlib
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import bcrypt
 from flask import (
@@ -101,7 +101,7 @@ def _is_session_valid() -> bool:
         return False
 
     # Absolute timeout (24 hours)
-    if created_at and (now - created_at) > 86400:
+    if created_at and (now - created_at) > 86400:  # noqa: SIM103
         return False
 
     return True
@@ -175,7 +175,7 @@ def login():
         return jsonify({"error": "Invalid username or password"}), 401
 
     # Update last login
-    user.last_login = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    user.last_login = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     store.save_user(user)
 
     # Create session

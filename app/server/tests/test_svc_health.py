@@ -1,13 +1,14 @@
 """Tests for the health monitoring service."""
 from collections import namedtuple
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
+
 from monitor.services.health import (
     get_cpu_temperature,
     get_cpu_usage,
-    get_memory_info,
     get_disk_usage,
-    get_uptime,
     get_health_summary,
+    get_memory_info,
+    get_uptime,
 )
 
 

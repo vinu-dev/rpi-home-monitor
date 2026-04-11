@@ -10,9 +10,7 @@ Files:
   /data/config/users.json    - user accounts
   /data/config/settings.json - system settings
 """
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -27,8 +25,8 @@ class Camera:
     recording_mode: str = "continuous"  # continuous | off | motion (Phase 2)
     resolution: str = "1080p"        # 720p | 1080p
     fps: int = 25
-    paired_at: Optional[str] = None
-    last_seen: Optional[str] = None
+    paired_at: str | None = None
+    last_seen: str | None = None
     firmware_version: str = ""
     cert_serial: str = ""
 
@@ -41,7 +39,7 @@ class User:
     password_hash: str               # bcrypt, cost 12
     role: str = "viewer"             # admin | viewer
     created_at: str = ""
-    last_login: Optional[str] = None
+    last_login: str | None = None
 
 
 @dataclass

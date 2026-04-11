@@ -24,7 +24,7 @@ def _load_or_create_secret_key(config_dir):
     """Load persistent secret key, or create one on first boot."""
     key_file = os.path.join(config_dir, ".secret_key")
     try:
-        with open(key_file, "r") as f:
+        with open(key_file) as f:
             key = f.read().strip()
             if key:
                 return key
@@ -48,16 +48,17 @@ def _ensure_default_admin(store):
     if users:
         return
 
+    from datetime import UTC, datetime
+
     from monitor.auth import hash_password
     from monitor.models import User
-    from datetime import datetime, timezone
 
     admin = User(
         id="user-admin-default",
         username="admin",
         password_hash=hash_password("admin"),
         role="admin",
-        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     store.save_user(admin)
 
@@ -230,13 +231,13 @@ def _resume_camera_pipelines(app):
 def _register_blueprints(app):
     """Register all Flask blueprints."""
     from monitor.api.cameras import cameras_bp
-    from monitor.api.recordings import recordings_bp
     from monitor.api.live import live_bp
-    from monitor.api.system import system_bp
-    from monitor.api.settings import settings_bp
-    from monitor.api.users import users_bp
     from monitor.api.ota import ota_bp
+    from monitor.api.recordings import recordings_bp
+    from monitor.api.settings import settings_bp
     from monitor.api.storage import storage_bp
+    from monitor.api.system import system_bp
+    from monitor.api.users import users_bp
     from monitor.auth import auth_bp
     from monitor.provisioning import provisioning_bp as setup_bp
     from monitor.views import views_bp

@@ -1,5 +1,6 @@
 """Tests for the recordings API."""
 import os
+
 from monitor.auth import hash_password
 from monitor.models import Camera
 

@@ -14,9 +14,9 @@ Config values:
   CAMERA_ID      - Derived from hardware serial if not set
 """
 import hashlib
+import logging
 import os
 import secrets
-import logging
 
 log = logging.getLogger("camera-streamer.config")
 
@@ -183,7 +183,7 @@ class ConfigManager:
             return
         if os.path.isfile(self._default_path):
             os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
-            with open(self._default_path, "r") as src:
+            with open(self._default_path) as src:
                 content = src.read()
             with open(self._config_path, "w") as dst:
                 dst.write(content)
@@ -191,7 +191,7 @@ class ConfigManager:
 
     def _parse_config(self, path):
         """Parse KEY=VALUE config file (shell-style, ignoring comments)."""
-        with open(path, "r") as f:
+        with open(path) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -208,7 +208,7 @@ class ConfigManager:
 def _get_hardware_serial():
     """Read the RPi hardware serial from /proc/cpuinfo."""
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo") as f:
             for line in f:
                 if line.startswith("Serial"):
                     serial = line.split(":")[-1].strip()

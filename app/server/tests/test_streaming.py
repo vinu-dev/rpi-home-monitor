@@ -1,18 +1,16 @@
 """Tests for monitor.services.streaming module."""
 import os
 import time
-import pytest
-from unittest.mock import patch, MagicMock, call
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from monitor.services.streaming import (
+    CLIP_DURATION,
+    HLS_LIST_SIZE,
+    HLS_SEGMENT_DURATION,
+    MEDIAMTX_URL,
+    SNAPSHOT_INTERVAL,
     StreamingService,
     create_recording_dirs,
-    MEDIAMTX_URL,
-    HLS_SEGMENT_DURATION,
-    HLS_LIST_SIZE,
-    CLIP_DURATION,
-    SNAPSHOT_INTERVAL,
 )
 
 

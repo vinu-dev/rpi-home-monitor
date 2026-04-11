@@ -1,5 +1,6 @@
 """Tests for the system API."""
 from unittest.mock import patch
+
 from monitor.auth import hash_password
 
 

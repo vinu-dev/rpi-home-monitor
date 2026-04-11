@@ -2,10 +2,9 @@
 Tests for application factory helpers: secret key persistence
 and default admin user creation.
 """
-import json
 import os
-import pytest
-from monitor import create_app, _load_or_create_secret_key, _ensure_default_admin
+
+from monitor import _ensure_default_admin, _load_or_create_secret_key, create_app
 from monitor.store import Store
 
 

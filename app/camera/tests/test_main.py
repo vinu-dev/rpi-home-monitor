@@ -1,9 +1,9 @@
 """Tests for camera_streamer main entry point."""
 import signal
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from camera_streamer.main import main, _handle_signal
 import camera_streamer.main as main_module
+from camera_streamer.main import _handle_signal, main
 
 
 class TestMain:

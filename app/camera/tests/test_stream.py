@@ -1,9 +1,8 @@
 """Tests for camera_streamer.stream module."""
 import time
-import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock, patch
 
-from camera_streamer.stream import StreamManager, INITIAL_BACKOFF, MAX_BACKOFF
+from camera_streamer.stream import INITIAL_BACKOFF, MAX_BACKOFF, StreamManager
 
 
 class TestStreamManager:

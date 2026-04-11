@@ -10,9 +10,9 @@ Checks:
 - v4l2 device supports h264 output
 - Requested resolution is supported
 """
+import logging
 import os
 import subprocess
-import logging
 
 log = logging.getLogger("camera-streamer.capture")
 

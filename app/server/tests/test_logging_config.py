@@ -4,8 +4,6 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from monitor.logging_config import (
     LOG_BACKUP_COUNT,
     LOG_FORMAT,

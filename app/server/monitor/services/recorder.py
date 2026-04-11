@@ -16,7 +16,6 @@ File layout:
   /data/live/<cam-id>/stream.m3u8
   /data/live/<cam-id>/segment_NNN.ts
 """
-import os
 from datetime import date
 from pathlib import Path
 

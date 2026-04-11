@@ -19,12 +19,11 @@ Features:
 - Graceful shutdown on SIGTERM
 - Phase 2: mTLS client certificate for authentication (RTSPS)
 """
+import logging
 import os
-import signal
 import subprocess
 import threading
 import time
-import logging
 
 log = logging.getLogger("camera-streamer.stream")
 

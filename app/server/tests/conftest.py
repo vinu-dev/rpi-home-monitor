@@ -5,10 +5,11 @@ Provides a configured Flask test app, test client, and temporary
 data directories that mirror the production /data layout.
 """
 import json
-import os
+
 import pytest
+
 from monitor import create_app
-from monitor.models import Camera, User, Settings, Clip
+from monitor.models import Camera, Clip, Settings, User
 
 
 @pytest.fixture

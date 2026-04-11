@@ -1,7 +1,9 @@
 """Tests for the authentication module."""
 import time
+
 import pytest
-from monitor.auth import hash_password, check_password, _login_attempts
+
+from monitor.auth import _login_attempts, check_password, hash_password
 
 
 @pytest.fixture(autouse=True)

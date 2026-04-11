@@ -9,7 +9,6 @@ Note: HLS segment files (.ts) are served directly by nginx,
 not through Flask. This blueprint handles playlist generation
 and snapshot extraction.
 """
-import os
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, send_file

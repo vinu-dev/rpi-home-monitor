@@ -1,7 +1,6 @@
 """Tests for camera_streamer.health module."""
 import os
-import pytest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 from camera_streamer.health import HealthMonitor, _get_disk_free_mb
 

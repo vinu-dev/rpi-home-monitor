@@ -1,5 +1,5 @@
 """Tests for the users API."""
-from monitor.auth import hash_password, check_password
+from monitor.auth import hash_password
 
 
 def _login(app, client, role="admin"):

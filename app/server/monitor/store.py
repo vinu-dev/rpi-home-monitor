@@ -10,13 +10,11 @@ All writes use atomic replace (write to temp, then rename) to prevent
 corruption if the process is killed mid-write.
 """
 import json
-import os
 import threading
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
 
-from monitor.models import Camera, User, Settings, Clip
+from monitor.models import Camera, Settings, User
 
 
 class Store:
@@ -59,7 +57,7 @@ class Store:
             raw = self._read_json("cameras.json")
         return [Camera(**c) for c in raw] if isinstance(raw, list) else []
 
-    def get_camera(self, camera_id: str) -> Optional[Camera]:
+    def get_camera(self, camera_id: str) -> Camera | None:
         """Return a single camera by ID, or None."""
         for cam in self.get_cameras():
             if cam.id == camera_id:
@@ -102,14 +100,14 @@ class Store:
             raw = self._read_json("users.json")
         return [User(**u) for u in raw] if isinstance(raw, list) else []
 
-    def get_user(self, user_id: str) -> Optional[User]:
+    def get_user(self, user_id: str) -> User | None:
         """Return a single user by ID, or None."""
         for user in self.get_users():
             if user.id == user_id:
                 return user
         return None
 
-    def get_user_by_username(self, username: str) -> Optional[User]:
+    def get_user_by_username(self, username: str) -> User | None:
         """Return a user by username, or None."""
         for user in self.get_users():
             if user.username == username:

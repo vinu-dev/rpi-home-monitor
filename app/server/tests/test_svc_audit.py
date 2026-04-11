@@ -1,6 +1,7 @@
 """Tests for the audit logging service."""
 import json
 from unittest.mock import patch
+
 from monitor.services.audit import AuditLogger
 
 
@@ -9,7 +10,7 @@ class TestAuditLoggerInit:
 
     def test_creates_logs_dir(self, tmp_path):
         logs_dir = tmp_path / "newlogs"
-        logger = AuditLogger(str(logs_dir))
+        AuditLogger(str(logs_dir))
         assert logs_dir.exists()
 
     def test_works_with_existing_dir(self, data_dir):

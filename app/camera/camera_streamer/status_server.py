@@ -9,11 +9,10 @@ Requires the admin password set during provisioning.
 """
 import http.server
 import json
-import os
+import logging
 import secrets
 import threading
 import time
-import logging
 
 from camera_streamer import wifi
 

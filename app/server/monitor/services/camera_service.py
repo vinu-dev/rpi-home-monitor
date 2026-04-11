@@ -11,7 +11,7 @@ Design patterns:
 - Fail-Silent (audit failures don't break operations)
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger("monitor.camera_service")
 
@@ -94,7 +94,7 @@ class CameraService:
         camera.name = name or camera.name or camera_id
         camera.location = location or camera.location
         camera.status = "online"
-        camera.paired_at = datetime.now(timezone.utc).strftime(
+        camera.paired_at = datetime.now(UTC).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
         camera.rtsp_url = f"rtsp://127.0.0.1:8554/{camera.id}"

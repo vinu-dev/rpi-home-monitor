@@ -13,9 +13,7 @@ Warning thresholds:
 - Disk usage > 85%
 - RAM usage > 90%
 """
-import os
 import shutil
-import time
 from pathlib import Path
 
 
@@ -41,10 +39,8 @@ def get_cpu_usage() -> float:
     try:
         with open("/proc/stat") as f:
             line = f.readline()
-        values = list(map(int, line.split()[1:]))
-        idle = values[3]
-        total = sum(values)
-        # Need two samples — return 0 for single-call
+        values = list(map(int, line.split()[1:]))  # noqa: F841
+        # Need two samples for delta — return 0 for single-call
         return 0.0
     except (OSError, ValueError, IndexError):
         return 0.0

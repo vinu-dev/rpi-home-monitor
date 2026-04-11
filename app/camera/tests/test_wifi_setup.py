@@ -1,30 +1,26 @@
 """Tests for camera_streamer.wifi_setup module."""
-import json
 import os
-import time
-import pytest
-from unittest.mock import patch, MagicMock, call
-from http.client import HTTPConnection
+from unittest.mock import MagicMock, patch
 
 from camera_streamer import wifi
 from camera_streamer.wifi_setup import (
-    WifiSetupServer,
+    CONN_NAME,
+    CONNECT_DELAY,
+    HOTSPOT_PASS,
+    HOTSPOT_SSID,
+    IFACE,
+    SESSION_TIMEOUT,
     CameraStatusServer,
-    is_setup_complete,
-    mark_setup_complete,
-    _make_handler,
-    _create_session,
+    WifiSetupServer,
     _check_session,
+    _create_session,
     _destroy_session,
     _get_session_cookie,
-    _sessions,
+    _make_handler,
     _session_lock,
-    HOTSPOT_SSID,
-    HOTSPOT_PASS,
-    CONN_NAME,
-    IFACE,
-    CONNECT_DELAY,
-    SESSION_TIMEOUT,
+    _sessions,
+    is_setup_complete,
+    mark_setup_complete,
 )
 
 

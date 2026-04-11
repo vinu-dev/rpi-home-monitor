@@ -1,7 +1,5 @@
 """Tests for camera_streamer.capture module."""
-import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from camera_streamer.capture import CaptureManager
 

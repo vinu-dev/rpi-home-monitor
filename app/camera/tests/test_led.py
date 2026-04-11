@@ -1,10 +1,9 @@
 """Tests for camera_streamer.led module."""
 import os
-import pytest
-from unittest.mock import patch, mock_open, call, MagicMock
+from unittest.mock import mock_open, patch
 
-from camera_streamer.led import LedController, set_controller
 from camera_streamer import led
+from camera_streamer.led import LedController, set_controller
 
 
 class TestLedControllerWrite:

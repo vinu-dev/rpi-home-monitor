@@ -1,7 +1,6 @@
 """Tests for platform hardware abstraction."""
 import os
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import patch
 
 from camera_streamer.platform import (
     Platform,

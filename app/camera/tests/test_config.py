@@ -1,9 +1,8 @@
 """Tests for camera_streamer.config module."""
 import os
-import pytest
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
-from camera_streamer.config import ConfigManager, _get_hardware_serial, DEFAULTS
+from camera_streamer.config import ConfigManager, _get_hardware_serial
 
 
 class TestConfigManager:

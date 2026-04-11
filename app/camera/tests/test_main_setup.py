@@ -3,10 +3,10 @@
 These tests exercise main() which now delegates to CameraLifecycle.
 We mock the lifecycle to verify setup/shutdown interactions.
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from camera_streamer.main import main
 import camera_streamer.main as main_module
+from camera_streamer.main import main
 
 
 class TestMainSetupMode:

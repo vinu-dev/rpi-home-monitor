@@ -11,7 +11,7 @@ Roles: admin (full access), viewer (read-only).
 Passwords stored as bcrypt hashes (cost 12).
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, jsonify, request, session
 
@@ -71,7 +71,7 @@ def create_user():
         username=username,
         password_hash=hash_password(password),
         role=role,
-        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     current_app.store.save_user(user)
 

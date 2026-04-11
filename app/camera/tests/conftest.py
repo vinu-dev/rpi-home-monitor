@@ -4,7 +4,6 @@ Shared test fixtures for the camera-streamer test suite.
 Provides temporary data directories and mock configurations
 that mirror the production /data layout on the Zero 2W.
 """
-import os
 import pytest
 
 from camera_streamer.config import ConfigManager

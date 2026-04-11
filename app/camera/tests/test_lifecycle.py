@@ -1,8 +1,6 @@
 """Tests for CameraLifecycle state machine."""
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from camera_streamer.lifecycle import CameraLifecycle, State
 

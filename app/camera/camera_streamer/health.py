@@ -9,10 +9,10 @@ Checks:
 - Disk space on /data
 - CPU temperature (via injectable thermal_path from Platform)
 """
-import os
 import logging
-import time
+import os
 import threading
+import time
 
 log = logging.getLogger("camera-streamer.health")
 
@@ -73,7 +73,7 @@ class HealthMonitor:
         if not self._thermal_path:
             return None
         try:
-            with open(self._thermal_path, "r") as f:
+            with open(self._thermal_path) as f:
                 return int(f.read().strip()) / 1000.0
         except (OSError, ValueError):
             return None

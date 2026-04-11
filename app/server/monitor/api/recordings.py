@@ -9,6 +9,7 @@ Endpoints:
 """
 import os
 from dataclasses import asdict
+
 from flask import Blueprint, current_app, jsonify, request, send_file, session
 
 from monitor.auth import admin_required, login_required

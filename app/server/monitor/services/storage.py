@@ -16,7 +16,6 @@ Design patterns:
 - Single Responsibility (only manages storage, not streaming)
 """
 import logging
-import os
 import shutil
 import threading
 import time

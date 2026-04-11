@@ -14,15 +14,13 @@ do a quick scan BEFORE starting the hotspot.
 """
 import http.server
 import json
+import logging
 import os
-import subprocess
 import threading
 import time
-import logging
 from pathlib import Path
 
-from camera_streamer import led
-from camera_streamer import wifi
+from camera_streamer import led, wifi
 
 log = logging.getLogger("camera-streamer.wifi-setup")
 
@@ -176,7 +174,7 @@ class WifiSetupServer:
         """Set unique hostname using CPU serial suffix."""
         try:
             serial = ""
-            with open("/proc/cpuinfo", "r") as f:
+            with open("/proc/cpuinfo") as f:
                 for line in f:
                     if line.startswith("Serial"):
                         serial = line.split(":")[-1].strip()
@@ -210,24 +208,22 @@ class WifiSetupServer:
 
 # ---- Backward compatibility re-exports ----
 # Existing code and tests import these from wifi_setup
-from camera_streamer.status_server import CameraStatusServer  # noqa: F401, E402
+from camera_streamer.wifi import HOTSPOT_CONN_NAME as CONN_NAME  # noqa: F401, E402
+from camera_streamer.wifi import HOTSPOT_PASS  # noqa: F401, E402
+from camera_streamer.wifi import HOTSPOT_SSID  # noqa: F401, E402
 from camera_streamer.status_server import (  # noqa: F401, E402
-    _create_session,
-    _check_session,
-    _destroy_session,
-    _get_session_cookie,
-    _sessions,
-    _session_lock,
     SESSION_TIMEOUT,
+    CameraStatusServer,
+    _check_session,
+    _create_session,
+    _destroy_session,
     _get_cpu_temp,
-    _get_uptime,
     _get_memory_mb,
+    _get_session_cookie,
+    _get_uptime,
     _html_escape,
-)
-from camera_streamer.wifi import (  # noqa: F401, E402
-    HOTSPOT_SSID,
-    HOTSPOT_PASS,
-    HOTSPOT_CONN_NAME as CONN_NAME,
+    _session_lock,
+    _sessions,
 )
 
 # Legacy constant — tests reference this

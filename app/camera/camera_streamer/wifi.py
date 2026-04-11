@@ -6,9 +6,9 @@ used by both WifiSetupServer (first boot) and CameraStatusServer
 (post-setup). All functions take wifi_interface as a parameter
 for platform abstraction.
 """
+import logging
 import subprocess
 import time
-import logging
 
 log = logging.getLogger("camera-streamer.wifi")
 

@@ -6,10 +6,10 @@ for use as external recording storage. Supports ext4, ext3, ntfs, vfat, exfat.
 
 Unsupported filesystems are formatted to ext4 with user confirmation.
 """
+import json
 import logging
 import os
 import subprocess
-import json
 
 log = logging.getLogger("monitor.usb")
 
@@ -144,10 +144,7 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
 
         # FAT-based filesystems need uid/gid/umask at mount time
         # (they don't support POSIX ownership/chmod after mount)
-        if fstype in ("vfat", "exfat"):
-            cmd = ["mount", "-o", f"uid={uid},gid={gid},umask=0002",
-                   device_path, mount_point]
-        elif fstype == "ntfs":
+        if fstype in ("vfat", "exfat") or fstype == "ntfs":
             cmd = ["mount", "-o", f"uid={uid},gid={gid},umask=0002",
                    device_path, mount_point]
 

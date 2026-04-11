@@ -1,22 +1,22 @@
 """Tests for camera_streamer.status_server — session management + system helpers."""
 import time
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
 from camera_streamer.status_server import (
-    _create_session,
-    _check_session,
-    _destroy_session,
-    _get_session_cookie,
-    _sessions,
-    _session_lock,
     SESSION_TIMEOUT,
-    _get_cpu_temp,
-    _get_uptime,
-    _get_memory_mb,
-    _html_escape,
     CameraStatusServer,
+    _check_session,
+    _create_session,
+    _destroy_session,
+    _get_cpu_temp,
+    _get_memory_mb,
+    _get_session_cookie,
+    _get_uptime,
+    _html_escape,
+    _session_lock,
+    _sessions,
 )
 
 

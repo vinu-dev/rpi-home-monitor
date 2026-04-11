@@ -15,7 +15,6 @@ mediamtx to create the HLS/recording/snapshot outputs.
 """
 import logging
 import os
-import signal
 import subprocess
 import threading
 import time

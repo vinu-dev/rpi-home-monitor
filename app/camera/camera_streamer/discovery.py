@@ -13,10 +13,8 @@ TXT records:
 
 Uses avahi-publish-service which is part of avahi-daemon package.
 """
-import subprocess
-import threading
 import logging
-import os
+import subprocess
 
 log = logging.getLogger("camera-streamer.discovery")
 

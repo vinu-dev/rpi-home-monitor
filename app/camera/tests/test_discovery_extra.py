@@ -1,7 +1,7 @@
 """Additional discovery tests for coverage."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from camera_streamer.discovery import DiscoveryService, VERSION
+from camera_streamer.discovery import VERSION, DiscoveryService
 
 
 class TestDiscoveryResolution:
@@ -36,7 +36,6 @@ class TestDiscoveryResolution:
         with patch("subprocess.Popen") as mock_popen:
             proc = MagicMock()
             proc.poll.return_value = None
-            import subprocess
             proc.terminate.side_effect = OSError("already dead")
             proc.kill.side_effect = OSError("really dead")
             mock_popen.return_value = proc
