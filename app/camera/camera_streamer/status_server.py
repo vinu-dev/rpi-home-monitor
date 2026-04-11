@@ -274,8 +274,7 @@ def _make_status_handler(
                 self.send_header("Location", "/login")
                 self.end_headers()
             elif self.path == "/pair":
-                if not self._require_auth():
-                    return
+                # Pairing page is public — PIN serves as authentication
                 self._serve_pair_page()
             elif self.path == "/" or self.path == "/status":
                 if not self._require_auth():
@@ -302,8 +301,7 @@ def _make_status_handler(
             if self.path == "/login":
                 self._handle_login(body)
             elif self.path == "/pair" or self.path == "/api/pair":
-                if not self._require_auth():
-                    return
+                # PIN serves as authentication for pairing — no login required
                 self._handle_pair(body)
             elif self.path == "/api/wifi":
                 if not self._require_auth():
