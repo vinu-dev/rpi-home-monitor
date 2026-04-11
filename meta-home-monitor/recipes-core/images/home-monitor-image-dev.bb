@@ -20,6 +20,15 @@ IMAGE_INSTALL += " \
     gdb \
     strace \
     tcpdump \
+    iperf3 \
+    lsof \
+    tmux \
+    less \
+    tree \
+    iproute2 \
+    openssh-sftp-server \
+    e2fsprogs-resize2fs \
+    parted \
     "
 
 # --- Debug logging (LOG_LEVEL=DEBUG for app services) ---

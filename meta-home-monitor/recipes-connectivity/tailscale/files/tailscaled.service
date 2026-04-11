@@ -1,0 +1,21 @@
+[Unit]
+Description=Tailscale node agent
+Documentation=https://tailscale.com/kb/
+Wants=network-online.target
+After=network-online.target NetworkManager-wait-online.service
+
+[Service]
+ExecStartPre=/bin/mkdir -p /data/tailscale
+ExecStart=/usr/bin/tailscaled --state=/data/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port 41641
+ExecStopPost=/usr/bin/tailscale logout || true
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/data/tailscale /run/tailscale /dev/net/tun /proc/sys/net
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

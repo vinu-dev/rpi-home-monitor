@@ -15,6 +15,13 @@ EXTRA_IMAGE_FEATURES += "debug-tweaks ssh-server-openssh tools-debug"
 IMAGE_INSTALL += " \
     strace \
     tcpdump \
+    iperf3 \
+    lsof \
+    tmux \
+    less \
+    iproute2 \
+    e2fsprogs-resize2fs \
+    parted \
     "
 
 # --- Debug logging (LOG_LEVEL=DEBUG for app services) ---
