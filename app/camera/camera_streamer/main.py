@@ -53,31 +53,38 @@ def _resolve_server(config):
         )
 
 
-def _wait_for_wifi_connectivity(timeout=60):
-    """Wait up to timeout seconds for wlan0 to have an IP address.
+def _wait_for_wifi_connectivity(wifi_interface="wlan0", timeout=60):
+    """Wait up to timeout seconds for WiFi interface to have an IP address.
+
+    Args:
+        wifi_interface: WiFi interface name (from Platform).
+        timeout: Max seconds to wait.
 
     Returns True if connected, False if timed out.
     """
     import subprocess
-    log.info("Checking WiFi connectivity (timeout=%ds)...", timeout)
+    log.info("Checking WiFi connectivity on %s (timeout=%ds)...",
+             wifi_interface, timeout)
     for elapsed in range(timeout):
         if _shutdown:
             return True  # Don't block shutdown
         try:
             result = subprocess.run(
-                ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show", "wlan0"],
+                ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show",
+                 wifi_interface],
                 capture_output=True, text=True, timeout=10,
             )
             for line in result.stdout.strip().splitlines():
                 if line.startswith("IP4.ADDRESS") and "/" in line:
                     ip = line.split(":", 1)[1].split("/")[0]
                     if ip and ip != "0.0.0.0":
-                        log.info("WiFi connected with IP %s after %ds", ip, elapsed)
+                        log.info("WiFi connected with IP %s after %ds",
+                                 ip, elapsed)
                         return True
         except Exception:
             pass
         time.sleep(1)
-    log.warning("No WiFi IP after %ds", timeout)
+    log.warning("No WiFi IP on %s after %ds", wifi_interface, timeout)
     return False
 
 
@@ -120,9 +127,26 @@ def main():
     log.debug("Config loaded: data_dir=%s server_ip=%s camera_id=%s",
               config.data_dir, getattr(config, 'server_ip', 'N/A'), config.camera_id)
 
+    # 1b. Detect platform (hardware paths, WiFi interface, etc.)
+    from camera_streamer.platform import Platform
+    platform = Platform.detect()
+    log.info("Platform: camera=%s wifi=%s led=%s thermal=%s hostname=%s",
+             platform.camera_device, platform.wifi_interface,
+             platform.led_path or "none", platform.thermal_path or "none",
+             platform.hostname_prefix)
+
+    # 1c. Configure LED controller for this platform
+    from camera_streamer import led
+    from camera_streamer.led import LedController
+    led.set_controller(LedController(platform.led_path))
+
     # 2. Check if setup is needed (first boot)
     from camera_streamer.wifi_setup import WifiSetupServer
-    setup_server = WifiSetupServer(config)
+    setup_server = WifiSetupServer(
+        config,
+        wifi_interface=platform.wifi_interface,
+        hostname_prefix=platform.hostname_prefix,
+    )
     if setup_server.needs_setup():
         log.info("First boot — starting setup wizard")
         setup_server.start()
@@ -142,7 +166,7 @@ def main():
         log.info("Setup complete, continuing with startup")
 
     # 2a. Verify WiFi connectivity after setup (fallback hotspot)
-    if not _wait_for_wifi_connectivity():
+    if not _wait_for_wifi_connectivity(platform.wifi_interface):
         log.error("WiFi has no IP after 60s — reverting to setup mode")
         _revert_to_setup()
         return
@@ -154,7 +178,7 @@ def main():
     # 3. Validate camera device
     log.info("--- Camera Hardware Check ---")
     from camera_streamer.capture import CaptureManager
-    capture = CaptureManager()
+    capture = CaptureManager(device=platform.camera_device)
     if not capture.check():
         log.error(
             "Camera device not available. Troubleshooting:\n"
@@ -177,7 +201,7 @@ def main():
 
     # 5. Start streaming (if server is configured)
     from camera_streamer.stream import StreamManager
-    stream = StreamManager(config)
+    stream = StreamManager(config, camera_device=platform.camera_device)
     if config.is_configured:
         stream.start()
     else:
@@ -185,16 +209,20 @@ def main():
 
     # 5b. Start status page HTTP server on port 80
     from camera_streamer.wifi_setup import CameraStatusServer
-    status_server = CameraStatusServer(config, stream)
+    status_server = CameraStatusServer(
+        config, stream,
+        wifi_interface=platform.wifi_interface,
+        thermal_path=platform.thermal_path,
+    )
     status_server.start()
 
     # 6. Start health monitoring
     from camera_streamer.health import HealthMonitor
-    health = HealthMonitor(config, capture, stream)
+    health = HealthMonitor(config, capture, stream,
+                           thermal_path=platform.thermal_path)
     health.start()
 
     # LED: solid on = running
-    from camera_streamer import led
     led.connected()
     log.info("Camera streamer running (camera=%s)", config.camera_id)
 
