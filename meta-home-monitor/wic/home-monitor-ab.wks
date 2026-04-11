@@ -5,16 +5,12 @@
 # Part 1: boot    (512MB, vfat)  - U-Boot, kernel, DTBs, config.txt, U-Boot env
 # Part 2: rootfsA (8GB, ext4)    - active root filesystem
 # Part 3: rootfsB (8GB, ext4)    - standby root (OTA target)
-# Part 4: data    (remaining)    - recordings, config, certs, logs, updates (LUKS in production)
+# Part 4: data    (4GB, ext4)    - recordings, config, certs, logs, updates
 #
-# On 64 GB card: /data gets ~47 GB
-# On 32 GB card: /data gets ~15 GB
-#
-# rootfs image is built at content size (~600MB) and expanded via resize2fs
-# on first boot to fill the 8GB partition. OTA writes the compact image to
-# the inactive slot, then resize2fs runs during health-check confirmation.
+# Note: data partition is created at 4GB and expanded to fill the SD card
+# on first boot by first-boot-setup.service (via resize2fs).
 
 part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 512M
 part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfsA --align 4096 --size 8192M
 part --ondisk mmcblk0 --fstype=ext4 --label rootfsB --align 4096 --size 8192M
-part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --grow
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4096M
