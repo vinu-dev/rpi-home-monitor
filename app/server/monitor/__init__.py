@@ -13,9 +13,12 @@ from flask import Flask
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
+from monitor.services.provisioning_service import ProvisioningService
+from monitor.services.settings_service import SettingsService
 from monitor.services.storage import StorageManager
 from monitor.services.storage_service import StorageService
 from monitor.services.streaming import StreamingService
+from monitor.services.user_service import UserService
 from monitor.store import Store
 
 log = logging.getLogger("monitor")
@@ -151,6 +154,18 @@ def _init_services(app):
         store=app.store,
         audit=app.audit,
         default_recordings_dir=app.config["RECORDINGS_DIR"],
+    )
+
+    # User service — user CRUD + password management
+    app.user_service = UserService(store=app.store, audit=app.audit)
+
+    # Settings service — system config + WiFi management
+    app.settings_service = SettingsService(store=app.store, audit=app.audit)
+
+    # Provisioning service — first-boot setup wizard
+    app.provisioning_service = ProvisioningService(
+        store=app.store,
+        data_dir=app.config["DATA_DIR"],
     )
 
     # Connect storage manager → streaming service for dir change notifications

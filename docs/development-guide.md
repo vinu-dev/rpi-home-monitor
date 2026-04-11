@@ -331,7 +331,64 @@ This project follows a small, deliberate set of design patterns. These are chose
 - **Fallback cascade:** WebRTC → HLS. The player tries WebRTC first, falls back to HLS if ICE negotiation fails.
 - **MediaMTX is the single stream hub.** Camera pushes RTSP to MediaMTX. All consumers (WebRTC, HLS, recording) read from MediaMTX. Never duplicate the camera stream.
 
-### 3.7 Testing Rules
+### 3.7 AI Contributor Rules
+
+This codebase is developed primarily by AI agents (Claude Code). These rules
+exist because AI amplifies ambiguity — clarity and enforcement matter more
+than minimalism.
+
+#### Where Business Logic Lives
+
+| Layer | What belongs here | What does NOT belong here |
+|-------|-------------------|--------------------------|
+| `api/*.py` (routes) | HTTP parsing, JSON response formatting | Validation, subprocess calls, store access |
+| `services/*_service.py` | Validation, orchestration, audit logging | HTTP request/response, Flask session access |
+| `store.py` | JSON read/write, atomic persistence | Business rules, validation |
+| `models.py` | Data structures (dataclasses) | Methods with side effects |
+
+**Rule:** If you find `subprocess.run()`, `store.get_*()`, or validation
+logic inside a route handler — extract it to the service layer.
+
+#### Where FFmpeg Orchestration Lives
+
+- **`streaming.py`** — all ffmpeg pipeline management (HLS, recording, snapshots)
+- **`recorder.py`** — clip metadata and filesystem queries (NOT actual recording)
+- **Never** put ffmpeg commands in route handlers or other services
+- **Never** call ffmpeg directly from `create_app()` or startup code —
+  always go through `StreamingService`
+
+#### What Not to Refactor Casually
+
+These decisions are deliberate. Do not change them without an ADR:
+
+- **JSON files for persistence** (not SQLite, not Postgres) — see ADR-0002
+- **Flask** (not FastAPI, not Django) — see ADR-0006
+- **HLS fallback, WebRTC primary** — see ADR-0005
+- **Service layer pattern** — see ADR-0003
+- **Camera lifecycle state machine** — see ADR-0004
+- **No DI containers** — constructor injection is sufficient for ~10 services
+- **No src/ layout** — flat package layout matches Yocto recipe expectations
+
+#### Naming Conventions
+
+- **Services:** `services/<name>_service.py` containing class `<Name>Service`
+- **Routes:** `api/<resource>.py` containing blueprint `<resource>_bp`
+- **Tests:** `tests/test_<module>.py` for routes, `tests/test_<name>_service.py` for services
+- **Models:** All in `models.py` as dataclasses
+- **Constants:** UPPER_SNAKE_CASE at module level, never in class bodies
+
+#### Service Layer Checklist (for new features)
+
+1. Create `services/<feature>_service.py` with `<Feature>Service` class
+2. Constructor injection: `__init__(self, store, audit=None, ...)`
+3. Methods return `(result, error, status_code)` tuples
+4. Fail-silent audit: `_log_audit()` wraps audit calls in try/except
+5. Wire in `__init__.py` → `_init_services()`
+6. Create thin route in `api/<feature>.py`
+7. Write `tests/test_<feature>_service.py` (unit, mocked deps)
+8. Update `services/__init__.py` docstring
+
+### 3.8 Testing Rules
 
 **Full details: [`docs/testing-guide.md`](testing-guide.md)** — setup, writing tests, running tests, coverage reports, examples, checklists.
 

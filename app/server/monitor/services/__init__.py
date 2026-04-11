@@ -1,12 +1,19 @@
 """
-Background services that run as threads within the Flask process.
+Application services — business logic layer.
+
+Each service has a single responsibility and receives dependencies
+via constructor injection. Routes are thin HTTP adapters that delegate here.
 
 Services:
-  StreamingService - manages ffmpeg pipelines (HLS, recording, snapshots)
-  RecorderService  - manages ffmpeg processes for clip recording
-  DiscoveryService - scans for cameras via Avahi/mDNS
-  StorageManager   - monitors disk, loop-deletes oldest clips (FIFO)
-  HealthMonitor    - collects CPU/temp/RAM/disk metrics
-  AuditLogger      - logs security events to /data/logs/audit.log
-  usb              - USB device detection, mount, format, auto-mount
+  CameraService        - camera CRUD, lifecycle, streaming coordination
+  UserService          - user CRUD, password management, audit
+  SettingsService      - system settings, WiFi config (post-setup)
+  ProvisioningService  - first-boot setup wizard (WiFi, admin, completion)
+  StorageService       - USB select/format/eject orchestration
+  StorageManager       - FIFO loop recording cleanup, disk monitoring
+  StreamingService     - ffmpeg pipeline management (HLS, recording, snapshots)
+  RecorderService      - clip metadata, listing, deletion
+  DiscoveryService     - camera discovery via Avahi/mDNS
+  AuditLogger          - append-only security event log
+  usb                  - USB device detection, mount, format
 """
