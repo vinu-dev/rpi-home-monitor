@@ -94,7 +94,7 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | Auth/CSRF | `auth.py` | COMPLETE | bcrypt (cost 12), sessions (30min idle/24hr max), rate limit (5/min), CSRF tokens |
 | Data models | `models.py` | COMPLETE | Camera, User, Settings, Clip dataclasses — no DB, JSON files |
 | JSON store | `store.py` | COMPLETE | Thread-safe JSON persistence with atomic writes (cameras.json, users.json, settings.json) |
-| Setup wizard | `provisioning.py` | COMPLETE | WiFi scan → save creds → admin password → apply all at once (PR #11 fix) |
+| Setup wizard | `provisioning.py` | COMPLETE | Thin routes → delegates to ProvisioningService |
 | Page routes | `views.py` | COMPLETE | /setup, /login, /dashboard, /live, /recordings, /settings — all auth-gated |
 | Camera API | `api/cameras.py` | COMPLETE | Thin routes → delegates to CameraService |
 | Camera svc | `services/camera_service.py` | COMPLETE | Camera CRUD, lifecycle, streaming coordination, audit |
@@ -102,14 +102,17 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | Live API | `api/live.py` | COMPLETE | `/live/<id>/stream.m3u8` (HLS playlist), `/live/<id>/snapshot` (JPEG) |
 | Recordings API | `api/recordings.py` | COMPLETE | List clips, filter by date, get latest, delete clip |
 | System API | `api/system.py` | COMPLETE | Health (CPU temp, RAM, disk), system info |
-| Settings API | `api/settings.py` | COMPLETE | GET/PUT timezone, thresholds, hostname |
-| Users API | `api/users.py` | COMPLETE | CRUD users, change password, role-based access |
+| Settings API | `api/settings.py` | COMPLETE | Thin routes → delegates to SettingsService |
+| Users API | `api/users.py` | COMPLETE | Thin routes → delegates to UserService |
 | OTA API | `api/ota.py` | PARTIAL | Status endpoint works; upload/push endpoints are stubs |
 | Streaming svc | `services/streaming.py` | COMPLETE | Manages FFmpeg pipelines: HLS + recorder + snapshots per camera |
 | Recorder svc | `services/recorder.py` | COMPLETE | Clip metadata, listing, deletion (actual recording done by streaming svc) |
 | Health svc | `services/health.py` | COMPLETE | CPU temp, RAM, disk, uptime. Warns at CPU>70C, disk>85%, RAM>90% |
 | Audit svc | `services/audit.py` | COMPLETE | Append-only JSON audit log at /data/logs/audit.log |
 | Discovery svc | `services/discovery.py` | PARTIAL | Camera online/offline tracking, pending camera reports |
+| User svc | `services/user_service.py` | COMPLETE | User CRUD, password management, validation, audit |
+| Settings svc | `services/settings_service.py` | COMPLETE | System config, WiFi management, validation, audit |
+| Provisioning svc | `services/provisioning_service.py` | COMPLETE | First-boot WiFi, admin setup, completion, stamp file |
 | Storage svc | `services/storage.py` | COMPLETE | FIFO loop recording, background cleanup, USB/internal dir switching |
 | USB svc | `services/usb.py` | COMPLETE | USB detection (lsblk), mount/unmount, format to ext4, auto-mount |
 | Storage API | `api/storage.py` | COMPLETE | Thin routes → delegates to StorageService |
@@ -230,9 +233,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 ## Tests
 
-- **Server:** 549 tests, 84.5% coverage (`python -m pytest app/server/tests/ -v`)
-- **Camera:** 255 tests, 70.6% coverage (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 804 tests
+- **Server:** 719 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
+- **Camera:** 255 tests, 70.5% coverage (`python -m pytest app/camera/tests/ -v`)
+- **Total:** 974 tests
 
 ## PR History
 
