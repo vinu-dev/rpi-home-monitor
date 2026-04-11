@@ -269,6 +269,7 @@ def _register_blueprints(app):
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.ota import ota_bp
+    from monitor.api.pairing import pairing_bp
     from monitor.api.recordings import recordings_bp
     from monitor.api.settings import settings_bp
     from monitor.api.storage import storage_bp
@@ -288,4 +289,5 @@ def _register_blueprints(app):
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
+    app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
