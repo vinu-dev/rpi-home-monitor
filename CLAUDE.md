@@ -46,7 +46,6 @@ Full pattern docs: [development-guide.md Section 3.6](docs/development-guide.md)
 
 Only what's NOT done. When you implement a gap, delete it from this list in the same PR.
 
-- **ota_agent.py** — camera OTA update listener (stub, Phase 2)
 - **LUKS first-boot** — first-boot LUKS formatting not yet implemented (Phase 2)
 - **Motion detection** — recording mode exists but motion trigger not implemented (Phase 2)
 - **Multi-camera** — framework exists, untested with multiple real cameras (Phase 2)
