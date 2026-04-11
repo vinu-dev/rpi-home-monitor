@@ -14,6 +14,7 @@ from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
 from monitor.services.provisioning_service import ProvisioningService
+from monitor.services.recordings_service import RecordingsService
 from monitor.services.settings_service import SettingsService
 from monitor.services.storage_manager import StorageManager
 from monitor.services.storage_service import StorageService
@@ -158,6 +159,15 @@ def _init_services(app):
 
     # User service — user CRUD + password management
     app.user_service = UserService(store=app.store, audit=app.audit)
+
+    # Recordings service — clip queries, deletion, audit
+    app.recordings_service = RecordingsService(
+        storage_manager=app.storage_manager,
+        store=app.store,
+        audit=app.audit,
+        live_dir=app.config["LIVE_DIR"],
+        default_recordings_dir=recordings_dir,
+    )
 
     # Settings service — system config + WiFi management
     app.settings_service = SettingsService(store=app.store, audit=app.audit)

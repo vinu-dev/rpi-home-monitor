@@ -4,7 +4,13 @@ import time
 
 import pytest
 
-from monitor.auth import _login_attempts, check_password, hash_password
+from monitor.auth import (
+    _check_rate_limit,
+    _login_attempts,
+    _record_attempt,
+    check_password,
+    hash_password,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -243,6 +249,34 @@ class TestRateLimiting:
             },
         )
         assert response.status_code == 429
+
+    def test_check_rate_limit_two_tier(self):
+        """_check_rate_limit returns (allowed, warn) tuple."""
+        ip = "10.0.0.99"
+        # Under soft limit — allowed, no warn
+        for _ in range(4):
+            _record_attempt(ip)
+        allowed, warn = _check_rate_limit(ip)
+        assert allowed is True
+        assert warn is False
+
+        # At soft limit (5) — allowed, warn=True
+        _record_attempt(ip)
+        allowed, warn = _check_rate_limit(ip)
+        assert allowed is True
+        assert warn is True
+
+        # Between soft and hard limit
+        for _ in range(4):
+            _record_attempt(ip)
+        allowed, warn = _check_rate_limit(ip)
+        assert allowed is True
+        assert warn is True
+
+        # At hard limit (10) — blocked
+        _record_attempt(ip)
+        allowed, warn = _check_rate_limit(ip)
+        assert allowed is False
 
 
 class TestCSRF:

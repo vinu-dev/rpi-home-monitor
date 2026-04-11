@@ -60,10 +60,15 @@ def generate_csrf_token() -> str:
     return token
 
 
-def _check_rate_limit(ip: str) -> bool:
+def _check_rate_limit(ip: str) -> tuple[bool, bool]:
     """Check if an IP has exceeded the login rate limit.
 
-    Returns True if the request should be allowed, False if blocked.
+    Two-tier system:
+    - RATE_LIMIT_MAX (5): soft limit — request allowed but a warning is logged.
+    - RATE_LIMIT_BLOCK (10): hard limit — request is rejected (HTTP 429).
+
+    Returns:
+        (allowed, warn) — allowed=False means block; warn=True means soft limit hit.
     """
     now = time.time()
     attempts = _login_attempts.get(ip, [])
@@ -71,7 +76,12 @@ def _check_rate_limit(ip: str) -> bool:
     attempts = [t for t in attempts if now - t < RATE_LIMIT_WINDOW]
     _login_attempts[ip] = attempts
 
-    return len(attempts) < RATE_LIMIT_BLOCK
+    count = len(attempts)
+    if count >= RATE_LIMIT_BLOCK:
+        return False, False  # hard block
+    if count >= RATE_LIMIT_MAX:
+        return True, True  # allowed but warned
+    return True, False  # normal
 
 
 def _record_attempt(ip: str):
@@ -160,11 +170,14 @@ def login():
     ip = request.remote_addr or ""
     audit = _get_audit_logger()
 
-    # Rate limiting
-    if not _check_rate_limit(ip):
+    # Rate limiting (two-tier: warn at 5, block at 10)
+    allowed, warn = _check_rate_limit(ip)
+    if not allowed:
         if audit:
-            audit.log_event("LOGIN_FAILED", ip=ip, detail="rate limited")
+            audit.log_event("LOGIN_BLOCKED", ip=ip, detail="rate limited (hard block)")
         return jsonify({"error": "Too many login attempts. Try again later."}), 429
+    if warn and audit:
+        audit.log_event("LOGIN_RATE_WARN", ip=ip, detail="approaching rate limit")
 
     data = request.get_json(silent=True)
     if not data or not data.get("username") or not data.get("password"):

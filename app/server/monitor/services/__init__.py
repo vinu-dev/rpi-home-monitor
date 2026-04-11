@@ -15,6 +15,7 @@ Services:
   storage_manager.py      - StorageManager: FIFO loop recording cleanup, disk monitoring
   streaming_service.py    - StreamingService: ffmpeg pipeline management (HLS, recording, snapshots)
   recorder_service.py     - RecorderService: clip metadata, listing, deletion
+  recordings_service.py   - RecordingsService: orchestrates clip queries + deletion + audit
   discovery.py            - DiscoveryService: camera discovery via Avahi/mDNS
   audit.py                - AuditLogger: append-only security event log
   health.py               - HealthService: CPU temp, RAM, disk, uptime
