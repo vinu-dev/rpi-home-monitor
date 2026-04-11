@@ -65,7 +65,15 @@ def update_camera(camera_id):
 @cameras_bp.route("/<camera_id>", methods=["DELETE"])
 @admin_required
 def delete_camera(camera_id):
-    """Remove a camera. Admin only."""
+    """Remove a camera and revoke its cert. Admin only."""
+    # Revoke cert first (if paired)
+    if hasattr(current_app, "pairing_service"):
+        current_app.pairing_service.unpair(
+            camera_id,
+            user=session.get("username", ""),
+            ip=request.remote_addr or "",
+        )
+
     error, status = current_app.camera_service.delete(
         camera_id,
         user=session.get("username", ""),

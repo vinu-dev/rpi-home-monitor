@@ -76,5 +76,5 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 11 blueprints (9 API + views + setup)."""
-        assert len(app.blueprints) == 11
+        """We expect exactly 12 blueprints (10 API + views + setup)."""
+        assert len(app.blueprints) == 12

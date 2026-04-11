@@ -150,12 +150,18 @@ class CameraStatusServer:
     """
 
     def __init__(
-        self, config, stream_manager=None, wifi_interface="wlan0", thermal_path=None
+        self,
+        config,
+        stream_manager=None,
+        wifi_interface="wlan0",
+        thermal_path=None,
+        pairing_manager=None,
     ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
+        self._pairing = pairing_manager
         self._server = None
         self._thread = None
 
@@ -167,6 +173,7 @@ class CameraStatusServer:
             self,
             self._wifi_interface,
             self._thermal_path,
+            self._pairing,
         )
         try:
             self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
@@ -194,8 +201,42 @@ class CameraStatusServer:
         return wifi.connect_network(ssid, password, self._wifi_interface)
 
 
+_PAIR_PAGE_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Pair Camera — {{CAMERA_ID}}</title>
+<style>
+body{font-family:sans-serif;max-width:480px;margin:40px auto;padding:0 16px}
+h1{font-size:1.4em}
+.error{color:#c0392b;background:#fde8e8;padding:8px 12px;border-radius:4px;display:{{ERROR_DISPLAY}}}
+.success{color:#27ae60;background:#e8fde8;padding:8px 12px;border-radius:4px;display:{{SUCCESS_DISPLAY}}}
+label{display:block;margin-top:12px;font-weight:bold}
+input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;font-size:1em}
+button{margin-top:16px;padding:10px 24px;font-size:1em;cursor:pointer}
+.status{margin-bottom:16px;padding:8px;background:#f0f0f0;border-radius:4px}
+</style>
+</head>
+<body>
+<h1>Pair Camera</h1>
+<div class="status">Camera ID: {{CAMERA_ID}} | Status: {{PAIRED_STATUS}}</div>
+<div class="error">{{ERROR}}</div>
+<div class="success">{{SUCCESS}}</div>
+<div style="display:{{FORM_DISPLAY}}">
+<form method="POST" action="/pair">
+<label>Server URL<input type="text" name="server_url" placeholder="https://192.168.1.100" required></label>
+<label>PIN<input type="text" name="pin" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit PIN from server" required></label>
+<button type="submit">Pair</button>
+</form>
+</div>
+<p><a href="/">Back to status</a></p>
+</body>
+</html>
+"""
+
+
 def _make_status_handler(
-    config, stream_manager, status_server, wifi_interface, thermal_path
+    config, stream_manager, status_server, wifi_interface, thermal_path, pairing_manager
 ):
     """Create HTTP handler for the camera status page."""
 
@@ -232,6 +273,10 @@ def _make_status_handler(
                 )
                 self.send_header("Location", "/login")
                 self.end_headers()
+            elif self.path == "/pair":
+                if not self._require_auth():
+                    return
+                self._serve_pair_page()
             elif self.path == "/" or self.path == "/status":
                 if not self._require_auth():
                     return
@@ -256,6 +301,10 @@ def _make_status_handler(
 
             if self.path == "/login":
                 self._handle_login(body)
+            elif self.path == "/pair" or self.path == "/api/pair":
+                if not self._require_auth():
+                    return
+                self._handle_pair(body)
             elif self.path == "/api/wifi":
                 if not self._require_auth():
                     return
@@ -435,5 +484,71 @@ def _make_status_handler(
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _serve_pair_page(self, error="", success=""):
+            is_paired = pairing_manager.is_paired if pairing_manager else False
+            html = (
+                _PAIR_PAGE_HTML.replace("{{CAMERA_ID}}", _html_escape(config.camera_id))
+                .replace(
+                    "{{PAIRED_STATUS}}",
+                    "Paired" if is_paired else "Not paired",
+                )
+                .replace("{{ERROR}}", _html_escape(error))
+                .replace("{{ERROR_DISPLAY}}", "block" if error else "none")
+                .replace("{{SUCCESS}}", _html_escape(success))
+                .replace("{{SUCCESS_DISPLAY}}", "block" if success else "none")
+                .replace("{{FORM_DISPLAY}}", "none" if is_paired else "block")
+            )
+            body = html.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _handle_pair(self, body):
+            if not pairing_manager:
+                self._json_response({"error": "Pairing not available"}, 500)
+                return
+
+            content_type = self.headers.get("Content-Type", "")
+            pin = ""
+            server_url = ""
+
+            if "application/json" in content_type:
+                try:
+                    data = json.loads(body)
+                    pin = data.get("pin", "").strip()
+                    server_url = data.get("server_url", "").strip()
+                except json.JSONDecodeError:
+                    self._json_response({"error": "Invalid JSON"}, 400)
+                    return
+            else:
+                from urllib.parse import parse_qs
+
+                params = parse_qs(body.decode("utf-8", errors="replace"))
+                pin = params.get("pin", [""])[0].strip()
+                server_url = params.get("server_url", [""])[0].strip()
+
+            if not pin or not server_url:
+                if "application/json" in content_type:
+                    self._json_response({"error": "PIN and server_url required"}, 400)
+                else:
+                    self._serve_pair_page(error="PIN and server URL are required")
+                return
+
+            ok, err = pairing_manager.exchange(pin, server_url)
+            if "application/json" in content_type:
+                if ok:
+                    self._json_response({"message": "Pairing successful"})
+                else:
+                    self._json_response({"error": err}, 400)
+            else:
+                if ok:
+                    self._serve_pair_page(
+                        success="Pairing successful! Camera is now paired."
+                    )
+                else:
+                    self._serve_pair_page(error=err)
 
     return StatusHandler

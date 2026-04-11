@@ -4,6 +4,7 @@ Camera lifecycle state machine — orchestrates startup, streaming, and shutdown
 States:
   INIT        → Load config, detect platform, configure LED
   SETUP       → First-boot WiFi hotspot + setup wizard (skipped if already done)
+  PAIRING     → Wait for PIN-based pairing with server (skipped if already paired)
   CONNECTING  → Wait for WiFi IP, resolve server address via mDNS
   VALIDATING  → Check camera hardware (V4L2 device + H.264 support)
   RUNNING     → mDNS advertisement + RTSP streaming + health monitor + status server
@@ -26,6 +27,7 @@ from camera_streamer.capture import CaptureManager
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.health import HealthMonitor
 from camera_streamer.led import LedController
+from camera_streamer.pairing import PairingManager
 from camera_streamer.status_server import CameraStatusServer
 from camera_streamer.stream import StreamManager
 from camera_streamer.wifi_setup import WifiSetupServer
@@ -38,6 +40,7 @@ class State:
 
     INIT = "init"
     SETUP = "setup"
+    PAIRING = "pairing"
     CONNECTING = "connecting"
     VALIDATING = "validating"
     RUNNING = "running"
@@ -69,6 +72,7 @@ class CameraLifecycle:
         self._status_server = None
         self._health = None
         self._setup_server = None
+        self._pairing = PairingManager(config)
 
     @property
     def state(self):
@@ -79,6 +83,7 @@ class CameraLifecycle:
         transitions = [
             (State.INIT, self._do_init),
             (State.SETUP, self._do_setup),
+            (State.PAIRING, self._do_pairing),
             (State.CONNECTING, self._do_connecting),
             (State.VALIDATING, self._do_validating),
             (State.RUNNING, self._do_running),
@@ -156,6 +161,29 @@ class CameraLifecycle:
         log.info("Setup complete, config reloaded")
         return True
 
+    def _do_pairing(self):
+        """Wait for pairing if camera has no client certificate.
+
+        If already paired (client.crt exists), skip immediately.
+        Otherwise, the status server's /pair page allows the admin
+        to enter the PIN shown on the server dashboard.
+        """
+        if self._pairing.is_paired:
+            log.info("Camera already paired — skipping pairing state")
+            return True
+
+        log.info("Camera not paired — waiting for pairing via status page /pair")
+        led.setup_mode()
+
+        # Poll until paired or shutdown
+        while not self._is_shutdown():
+            if self._pairing.is_paired:
+                log.info("Pairing complete — certificates stored")
+                return True
+            time.sleep(2)
+
+        return False
+
     def _do_connecting(self):
         """Wait for WiFi connectivity and resolve server address."""
         if not self._wait_for_wifi():
@@ -215,6 +243,7 @@ class CameraLifecycle:
             self._stream,
             wifi_interface=self._platform.wifi_interface,
             thermal_path=self._platform.thermal_path,
+            pairing_manager=self._pairing,
         )
         self._status_server.start()
 

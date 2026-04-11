@@ -31,6 +31,7 @@ class Camera:
     last_seen: str | None = None
     firmware_version: str = ""
     cert_serial: str = ""
+    pairing_secret: str = ""  # hex-encoded, for camera LUKS key derivation (ADR-0010)
 
 
 @dataclass

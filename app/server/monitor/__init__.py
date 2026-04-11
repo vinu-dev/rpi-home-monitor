@@ -13,6 +13,7 @@ from flask import Flask
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
+from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recordings_service import RecordingsService
 from monitor.services.settings_service import SettingsService
@@ -169,6 +170,13 @@ def _init_services(app):
         default_recordings_dir=recordings_dir,
     )
 
+    # Pairing service — camera cert exchange and revocation
+    app.pairing_service = PairingService(
+        store=app.store,
+        audit=app.audit,
+        certs_dir=app.config["CERTS_DIR"],
+    )
+
     # Settings service — system config + WiFi management
     app.settings_service = SettingsService(store=app.store, audit=app.audit)
 
@@ -261,6 +269,7 @@ def _register_blueprints(app):
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.ota import ota_bp
+    from monitor.api.pairing import pairing_bp
     from monitor.api.recordings import recordings_bp
     from monitor.api.settings import settings_bp
     from monitor.api.storage import storage_bp
@@ -280,4 +289,5 @@ def _register_blueprints(app):
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
+    app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
