@@ -20,8 +20,20 @@ rtsp: yes
 # TCP only (reliable over WiFi)
 rtspTransports: [tcp]
 
-# No authentication for Phase 1 (cameras on LAN, firewall restricts)
-# Phase 2: add mTLS authentication
+###############################################
+# RTSPS server (mTLS — camera authentication)
+###############################################
+# Encrypted RTSP with mutual TLS for paired cameras.
+# Cameras present client cert signed by our CA during TLS handshake.
+# Unpaired cameras cannot stream (no valid client cert).
+#
+# encryption: optional allows both RTSP (localhost) and RTSPS (cameras).
+# Server-side services (ffmpeg recorders) connect on plain RTSP locally.
+# Cameras connect on RTSPS with client certificates.
+encryption: optional
+rtspsAddress: :8322
+serverCert: /data/certs/server.crt
+serverKey: /data/certs/server.key
 
 ###############################################
 # HLS server
