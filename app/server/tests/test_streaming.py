@@ -1,10 +1,10 @@
-"""Tests for monitor.services.streaming module."""
+"""Tests for monitor.services.streaming_service module."""
 
 import os
 import time
 from unittest.mock import MagicMock, patch
 
-from monitor.services.streaming import (
+from monitor.services.streaming_service import (
     CLIP_DURATION,
     HLS_LIST_SIZE,
     HLS_SEGMENT_DURATION,
@@ -35,7 +35,7 @@ class TestStreamingService:
         svc.start()
         svc.stop()
 
-    @patch("monitor.services.streaming.StreamingService._take_snapshot")
+    @patch("monitor.services.streaming_service.StreamingService._take_snapshot")
     @patch("subprocess.Popen")
     def test_start_camera(self, mock_popen, mock_snap, tmp_path):
         """start_camera should launch HLS and recorder ffmpeg processes."""

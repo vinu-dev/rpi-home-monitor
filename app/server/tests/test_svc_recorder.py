@@ -1,6 +1,6 @@
 """Tests for the recorder service."""
 
-from monitor.services.recorder import RecorderService
+from monitor.services.recorder_service import RecorderService
 
 
 def _make_clip(base, camera_id, clip_date, time_str, size=1024):

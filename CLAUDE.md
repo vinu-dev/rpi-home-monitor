@@ -105,15 +105,15 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | Settings API | `api/settings.py` | COMPLETE | Thin routes → delegates to SettingsService |
 | Users API | `api/users.py` | COMPLETE | Thin routes → delegates to UserService |
 | OTA API | `api/ota.py` | PARTIAL | Status endpoint works; upload/push endpoints are stubs |
-| Streaming svc | `services/streaming.py` | COMPLETE | Manages FFmpeg pipelines: HLS + recorder + snapshots per camera |
-| Recorder svc | `services/recorder.py` | COMPLETE | Clip metadata, listing, deletion (actual recording done by streaming svc) |
+| Streaming svc | `services/streaming_service.py` | COMPLETE | Manages FFmpeg pipelines: HLS + recorder + snapshots per camera |
+| Recorder svc | `services/recorder_service.py` | COMPLETE | Clip metadata, listing, deletion (actual recording done by streaming svc) |
 | Health svc | `services/health.py` | COMPLETE | CPU temp, RAM, disk, uptime. Warns at CPU>70C, disk>85%, RAM>90% |
 | Audit svc | `services/audit.py` | COMPLETE | Append-only JSON audit log at /data/logs/audit.log |
 | Discovery svc | `services/discovery.py` | PARTIAL | Camera online/offline tracking, pending camera reports |
 | User svc | `services/user_service.py` | COMPLETE | User CRUD, password management, validation, audit |
 | Settings svc | `services/settings_service.py` | COMPLETE | System config, WiFi management, validation, audit |
 | Provisioning svc | `services/provisioning_service.py` | COMPLETE | First-boot WiFi, admin setup, completion, stamp file |
-| Storage svc | `services/storage.py` | COMPLETE | FIFO loop recording, background cleanup, USB/internal dir switching |
+| Storage mgr | `services/storage_manager.py` | COMPLETE | FIFO loop recording, background cleanup, USB/internal dir switching |
 | USB svc | `services/usb.py` | COMPLETE | USB detection (lsblk), mount/unmount, format to ext4, auto-mount |
 | Storage API | `api/storage.py` | COMPLETE | Thin routes → delegates to StorageService |
 | Storage svc | `services/storage_service.py` | COMPLETE | USB select, format, eject orchestration with audit |
@@ -233,9 +233,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 ## Tests
 
-- **Server:** 719 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
+- **Server:** 760 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
 - **Camera:** 255 tests, 70.5% coverage (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 974 tests
+- **Total:** 1015 tests
 
 ## PR History
 

@@ -392,7 +392,27 @@ These decisions are deliberate. Do not change them without an ADR:
 
 **Full details: [`docs/testing-guide.md`](testing-guide.md)** — setup, writing tests, running tests, coverage reports, examples, checklists.
 
-**Key rules (non-negotiable):**
+#### 5-Layer Testing Pyramid
+
+Every PR must satisfy the appropriate layers:
+
+| Layer | What | Where | When to run | Required? |
+|-------|------|-------|-------------|-----------|
+| **1. Static checks** | `ruff check` + `ruff format --check` | CI + pre-commit | Every push | Always |
+| **2. Unit tests** | Service logic, models, helpers | `tests/test_*.py` | Every push | Always |
+| **3. Integration tests** | Flask routes + services wired together | `tests/test_api_*.py` | Every push | Always |
+| **4. Contract tests** | Exact JSON field names per endpoint | `tests/test_api_contracts.py` | Every push | Always |
+| **5. Smoke tests** | Live hardware: HTTPS, auth, health, cameras | `scripts/smoke-test.sh` | After deploy | Before merge |
+
+**Why contract tests (Layer 4)?** A renamed response field passes unit tests but breaks the frontend. Contract tests pin the exact field names returned by every API endpoint. If a field changes, the contract test fails immediately.
+
+**Why smoke tests (Layer 5)?** Unit/integration tests use mocks. Smoke tests hit a real RPi with real HTTPS, real disk, real systemd services. Run after deploying to hardware:
+
+```bash
+./scripts/smoke-test.sh 192.168.8.245 12345678
+```
+
+#### Key Rules (non-negotiable)
 
 1. **Every code change must include unit tests.** No PR is merged without tests for the changed code.
 2. **Minimum coverage: Server 80%, Camera 55%.** PRs that drop coverage below these thresholds are blocked. Target: server 90%+, camera 70%+.
@@ -400,12 +420,24 @@ These decisions are deliberate. Do not change them without an ADR:
 4. **Run tests before every commit.** If tests fail, do not commit.
 5. **Test file naming:** `test_<module>.py` — mirrors the module it tests.
 6. **Test location:** `app/server/tests/` and `app/camera/tests/`.
+7. **Contract tests are mandatory for new API endpoints.** Add field assertions to `test_api_contracts.py`.
+8. **Run smoke tests after every deploy to hardware.** Report results in the PR.
 
 ```bash
 # Run before every commit
 cd app/server && pytest     # Server: coverage + tests
 cd app/camera && pytest     # Camera: coverage + tests
 ```
+
+#### Test File Organization
+
+| Pattern | Purpose | Example |
+|---------|---------|---------|
+| `test_<service>.py` | Unit tests for a service | `test_user_service.py` |
+| `test_api_<domain>.py` | Integration tests for API routes | `test_api_cameras.py` |
+| `test_api_contracts.py` | Contract tests (all endpoints) | Field name assertions |
+| `test_svc_<module>.py` | Unit tests for infrastructure services | `test_svc_audit.py` |
+| `test_<module>.py` | Unit tests for non-service modules | `test_auth.py`, `test_store.py` |
 
 #### Integration / Hardware Testing
 
@@ -618,6 +650,8 @@ Since this is a public GitHub repository:
 [ ] Add audit log entry for state-changing operations
 [ ] Return proper JSON response with correct HTTP status
 [ ] Validate all user input
+[ ] Add contract test in tests/test_api_contracts.py (exact field names)
+[ ] Add integration test in tests/test_api_<domain>.py
 [ ] Update docs/requirements.md (SR-SRV-12 API section)
 [ ] Test with curl
 [ ] Commit on a feature branch, open PR

@@ -14,7 +14,7 @@ from dataclasses import asdict
 from flask import Blueprint, current_app, jsonify, request, send_file, session
 
 from monitor.auth import admin_required, login_required
-from monitor.services.recorder import RecorderService
+from monitor.services.recorder_service import RecorderService
 
 recordings_bp = Blueprint("recordings", __name__)
 

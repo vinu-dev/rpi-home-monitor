@@ -15,9 +15,9 @@ from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.settings_service import SettingsService
-from monitor.services.storage import StorageManager
+from monitor.services.storage_manager import StorageManager
 from monitor.services.storage_service import StorageService
-from monitor.services.streaming import StreamingService
+from monitor.services.streaming_service import StreamingService
 from monitor.services.user_service import UserService
 from monitor.store import Store
 
