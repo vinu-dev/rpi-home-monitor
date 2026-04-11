@@ -13,7 +13,6 @@ RDEPENDS:${PN} = " \
     dnsmasq \
     avahi-daemon \
     tzdata \
-    timezone-config \
     tailscale \
     htop \
     nano \
