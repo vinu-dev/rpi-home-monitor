@@ -189,7 +189,8 @@ As a homeowner, I want to update the software on my server and cameras without p
 | Kernel | linux-raspberrypi 6.6.x (aarch64) | RPi Foundation kernel, 64-bit, pinned |
 | Package format | deb | Easy on-device package management |
 | Image variants | dev (debug) + prod (hardened) | Separate concerns, safe production |
-| OTA framework | swupdate (A/B partitions) | Atomic updates with rollback |
+| Boot loader | U-Boot (`u-boot-rpi`) | Boot counting, A/B slot management, `fw_printenv`/`fw_setenv` |
+| OTA framework | SWUpdate (A/B partitions) | Atomic updates with rollback; file-level handlers for app-only updates |
 
 ### 4.3 Video Pipeline
 
@@ -233,10 +234,10 @@ Camera Node                    Server                     Client
 **Server (RPi 4B):**
 ```
 /
-├── /boot               # Kernel, DTBs, config.txt (partition 1, vfat)
+├── /boot               # U-Boot, kernel, DTBs, config.txt, U-Boot env (partition 1, vfat)
 ├── /                   # Root filesystem A (partition 2, ext4)
 ├── /                   # Root filesystem B (partition 3, ext4, for OTA)
-└── /data               # Persistent data partition (partition 4, ext4)
+└── /data               # Persistent data partition (partition 4, LUKS → ext4 in production)
     ├── /recordings     # 3-min MP4 clips, organized by camera/date
     │   └── /<cam-id>/
     │       └── /YYYY-MM-DD/
@@ -251,21 +252,27 @@ Camera Node                    Server                     Client
 **Camera (Zero 2W):**
 ```
 /
-├── /boot               # Kernel, DTBs, config.txt (partition 1, vfat)
+├── /boot               # U-Boot, kernel, DTBs, config.txt, U-Boot env (partition 1, vfat)
 ├── /                   # Root filesystem A (partition 2, ext4)
 ├── /                   # Root filesystem B (partition 3, ext4, for OTA)
-└── /data               # Persistent config (partition 4, ext4)
-    └── /config         # camera.conf, WiFi credentials
+└── /data               # Persistent config (partition 4, LUKS → ext4 in production)
+    ├── /config         # camera.conf, WiFi credentials
+    ├── /certs          # client.crt, client.key, ca.crt (from pairing, ADR-0009)
+    └── /ota            # OTA inbox, staging, history (ADR-0008)
 ```
 
-### 4.7 Partition Scheme (OTA-ready, swupdate A/B)
+### 4.7 Partition Scheme (OTA-ready, SWUpdate A/B with U-Boot)
+
+> **Status: Not implemented.** Partition layout defined in WKS files; U-Boot integration and SWUpdate pending (see ADR-0008).
 
 | Partition | Type | Size (Server) | Size (Camera) | Purpose |
 |-----------|------|---------------|---------------|---------|
-| boot | vfat | 100 MB | 100 MB | Kernel + DTBs |
-| rootfsA | ext4 | 2 GB | 1 GB | Active root filesystem |
-| rootfsB | ext4 | 2 GB | 1 GB | Standby root (OTA target) |
-| data | ext4 | Remaining | 256 MB | Persistent data, recordings, config |
+| boot | vfat | 512 MB | 512 MB | U-Boot, kernel, DTBs, config.txt, U-Boot env |
+| rootfsA | ext4 | 8 GB | 8 GB | Active root filesystem |
+| rootfsB | ext4 | 8 GB | 8 GB | Standby root (OTA target) |
+| data | ext4 / LUKS | Remaining (~47 GB on 64 GB card) | Remaining (~47 GB on 64 GB card) | Persistent data, recordings, config, certs (LUKS in production) |
+
+Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootlimit=3`, `altbootcmd`) and `fw_printenv`/`fw_setenv` for A/B slot management. See ADR-0008 for full details.
 
 ### 4.8 Performance Targets
 
@@ -325,10 +332,15 @@ Camera Node                    Server                     Client
 
 #### SR-CAM-06: OTA Update Support
 
-- Dual rootfs partitions (A/B layout) using swupdate
-- Accept update images pushed from server over HTTP
-- Automatic rollback if new rootfs fails to boot (3-attempt threshold)
+> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/ota_agent.py`. See ADR-0008.
+
+- Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
+- Accept update images pushed from server over HTTPS (mTLS authenticated, ADR-0009)
+- Two artifact types: `.swu` (full-system A/B rootfs) and `.tar.zst` + `.sig` (app-only)
+- App-only updates use symlink swap (`/opt/camera/releases/<version>/` with `current` symlink), no reboot
+- Automatic rollback if new rootfs fails health check within 90 seconds
 - Report current firmware version to server via mDNS TXT record
+- Ed25519 signature verification before any install (public key in rootfs)
 
 #### SR-CAM-07: System Watchdog
 
@@ -420,11 +432,23 @@ Camera Node                    Server                     Client
 
 #### SR-SRV-10: OTA Update Management
 
-- Dual rootfs partitions (A/B layout) using swupdate
-- Dashboard page (admin only): current server firmware version, available update (manual upload or URL)
-- Push updates to connected cameras from server
-- Update status tracking: idle, downloading, installing, rebooting, success, failed
-- Automatic rollback on failed boot (3-attempt threshold)
+> **Status: Not implemented.** API stubs exist at `app/server/monitor/api/ota.py`. See ADR-0008.
+
+- Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
+- **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):
+  - USB drive (auto-detected via udev, `*.swu`/`*.tar.zst` copied from root)
+  - Manual upload via dashboard (`POST /api/v1/ota/server/upload`)
+  - Server-mediated camera push (`POST /api/v1/ota/camera/<id>/push`, HTTPS + mTLS)
+  - SSH/SCP direct copy to inbox (dev builds only)
+  - Future: Suricatta polling from repository URL
+- **Two artifact types:**
+  - `.swu` — full-system A/B rootfs update (requires reboot)
+  - `.tar.zst` + detached `.sig` — app-only update (symlink swap, no reboot)
+- Ed25519 signature verification before any install (source is never trust)
+- Artifact naming: `hm-<target>-<type>-<version>.<ext>` (e.g., `hm-server-system-1.2.0.swu`)
+- Update status tracking: idle, downloading, verifying, staging, installing, rebooting, confirming, success, failed, rolled-back
+- Automatic rollback on failed boot (3-attempt threshold) or failed health check (90s window)
+- Space budget: inbox 2 GB, staging 500 MB, history retains last 2 successful versions
 
 #### SR-SRV-11: Nginx Configuration
 
@@ -489,28 +513,36 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-01: TLS on All Connections
 
+> **Status: Partially implemented.** HTTPS works. RTSPS and mTLS not yet implemented (Phase 2). See ADR-0009.
+
 - HTTPS (TLS 1.3) for all browser-to-server traffic (port 443)
 - RTSPS (RTSP over TLS) for all camera-to-server streams
-- Self-signed CA generated on server first boot
-- Server TLS certificate signed by local CA
-- Camera client certificates signed by CA during pairing
+- Self-signed CA (ECDSA P-256, 10-year validity) generated on server first boot
+- Server TLS certificate signed by local CA (5-year validity, auto-renewal via systemd timer)
+- Camera client certificates signed by CA during pairing (ECDSA P-256, 5-year validity)
 - No plaintext HTTP or RTSP permitted in production
 
 #### SR-SEC-02: Mutual TLS for Camera Authentication
 
-- Each paired camera receives a unique client certificate
+> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/pairing.py`. See ADR-0009.
+
+- Each paired camera receives a unique ECDSA P-256 client certificate (5-year validity)
 - Server verifies camera cert on every RTSP connection
 - Unpaired/unknown cameras cannot stream to server
-- Camera removal revokes the client certificate
-- Certificate serial numbers tracked in cameras.json
+- Camera removal revokes the client certificate (moved to `cameras/revoked/`, in-memory revocation set)
+- Certificate serial numbers tracked in `cameras.json` as `cert_serial`
+- Same certs used for RTSPS, OTA push authentication, and health polling (single trust chain)
 
 #### SR-SEC-03: Encryption at Rest
 
-- `/data` partition encrypted with LUKS2 (aes-xts-plain64)
-- Server: passphrase set during first-boot setup wizard
-- Camera: key derived from server-issued secret + hardware serial
-- Protects: recordings, WiFi credentials, user database, certificates
-- SD card theft yields no usable data without the passphrase
+> **Status: Not implemented.** Requires kernel config fragment for Adiantum. See ADR-0010.
+
+- `/data` partition encrypted with LUKS2 (`xchacha20,aes-adiantum-plain64`) — 2-3.5x faster than AES on ARM without hardware acceleration
+- **Server:** passphrase set during first-boot setup wizard, argon2id KDF (1 GB memory, 4 iterations, 4 parallelism). Optional auto-unlock keyfile or Dropbear SSH unlock for headless operation
+- **Camera:** key derived via HKDF-SHA256 from `pairing_secret` (ADR-0009) + CPU serial, argon2id KDF (64 MB memory, 4 iterations, 1 parallelism). Auto-unlock keyfile in initramfs
+- Protects: recordings, WiFi credentials, user database, certificates, CA private key
+- SD card theft yields no usable data without the passphrase (server) or pairing secret (camera)
+- Dev builds skip encryption for faster iteration (plain ext4 on `/data`)
 
 #### SR-SEC-04: Firewall (nftables)
 
@@ -552,20 +584,28 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-09: Signed OTA Updates
 
-- OTA `.swu` images signed with Ed25519 keypair
-- Build machine holds private signing key
-- Devices hold public verification key (in rootfs, not /data)
-- Update rejected if signature verification fails
-- Prevents installation of malicious firmware
+> **Status: Not implemented.** See ADR-0008 for signing workflow and trust model.
+
+- All artifacts signed with Ed25519 keypair (both `.swu` and `.tar.zst` app bundles)
+- Build machine holds private signing key (never on devices)
+- Devices hold public verification key (in rootfs, not `/data` — survives factory reset)
+- Update rejected if signature verification fails — source is never trust, only signature
+- Artifact naming convention: `hm-<target>-<type>-<version>.<ext>` with detached `.sig` for app bundles
+- Prevents installation of malicious firmware regardless of delivery mode (USB, upload, push, SCP)
 
 #### SR-SEC-10: Camera Pairing Protocol
 
+> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/pairing.py`. See ADR-0009.
+
 - Camera discovered via mDNS appears as "pending" (untrusted)
-- Admin explicitly confirms camera in dashboard
-- Server generates unique client certificate + pairing token
-- Token exchanged via camera's temporary setup AP or one-time HTTPS endpoint
-- Only after pairing: camera can stream, receives firewall allowance
-- Prevents rogue device from injecting fake video feeds
+- Admin clicks "Pair" in dashboard → server generates ECDSA P-256 client cert + 6-digit PIN (5-min expiry)
+- PIN displayed on dashboard; admin enters PIN on camera's status page (`/pair`)
+- Camera POSTs PIN to server (`POST /api/v1/pair/exchange`) — rate-limited to 3 attempts per 5-min window
+- Server returns: `client.crt`, `client.key`, `ca.crt`, RTSPS URL, `pairing_secret` (for LUKS key derivation, ADR-0010)
+- Camera stores certs at `/data/certs/`, transitions lifecycle to CONNECTING with mTLS
+- Only after pairing: camera can stream (RTSPS), receives firewall allowance, OTA push authentication
+- Camera removal revokes cert (moved to `cameras/revoked/`), removes from firewall `@camera_ips` set
+- Single pairing ceremony establishes: mTLS identity + OTA trust + LUKS key material
 
 ---
 
@@ -690,10 +730,11 @@ The architecture must support future additions without redesign:
 | Reverse proxy | nginx |
 | Auth | Flask sessions + bcrypt |
 | Network discovery | Avahi (mDNS/DNS-SD) |
-| TLS | Self-signed CA (OpenSSL), mTLS for cameras |
-| Encryption at rest | LUKS2 (cryptsetup) |
+| Boot loader | U-Boot (`u-boot-rpi` from meta-raspberrypi) |
+| TLS | Self-signed CA (ECDSA P-256, OpenSSL), mTLS for cameras |
+| Encryption at rest | LUKS2 with Adiantum cipher (`xchacha20,aes-adiantum-plain64`), argon2id KDF |
 | Firewall | nftables |
-| OTA updates | swupdate (dual A/B rootfs), Ed25519 signed |
+| OTA updates | SWUpdate (dual A/B rootfs + app-only symlink swap), Ed25519 signed |
 | Build system | Yocto BitBake |
 | CI/Releases | GitHub Releases |
 
@@ -703,7 +744,7 @@ The architecture must support future additions without redesign:
 
 | # | Question | When to decide |
 |---|----------|---------------|
-| 1 | Exact swupdate partition sizes — depends on rootfs size after all packages | During OTA implementation |
+| ~~1~~ | ~~Exact swupdate partition sizes~~ — **Decided in ADR-0008:** 512 MB boot, 8 GB rootfsA/B, remaining for data | ~~Resolved~~ |
 | 2 | Cloud relay architecture — small VPS with WireGuard tunnel vs. hosted signaling | Phase 2 planning |
 | 3 | Mobile app framework — React Native, Flutter, or native | Phase 2 planning |
 | 4 | Motion detection library — OpenCV on-device vs. server-side analysis | Phase 2 planning |

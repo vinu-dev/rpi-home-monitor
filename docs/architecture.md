@@ -250,38 +250,43 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 
 | What | Method | Key Management |
 |------|--------|---------------|
-| Browser ↔ Server | TLS 1.3 (HTTPS, nginx) | Self-signed CA, generated on first boot |
-| Camera ↔ Server | mTLS (RTSPS) | Server CA signs camera client certs during pairing |
-| Data at rest (server) | LUKS2 (aes-xts-plain64) | Passphrase set during first-boot setup |
-| Data at rest (camera) | LUKS2 | Key derived from server-issued secret + hardware serial |
+| Browser ↔ Server | TLS 1.3 (HTTPS, nginx) | Self-signed CA (ECDSA P-256, 10-year), generated on first boot |
+| Camera ↔ Server | mTLS (RTSPS) ⚠️ *Not implemented* | Server CA signs camera ECDSA P-256 client certs during PIN-based pairing (ADR-0009) |
+| Data at rest (server) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (1 GB, 4 iter) | Passphrase set during first-boot setup; optional auto-unlock keyfile. See ADR-0010 |
+| Data at rest (camera) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (64 MB, 4 iter) | Key derived via HKDF-SHA256 from `pairing_secret` + CPU serial. See ADR-0010 |
 | Passwords | bcrypt (cost 12) | Stored in /data/config/users.json |
 | OTA images | Ed25519 signature | Build machine holds signing key, devices hold public key |
 | Session tokens | cryptographically random (32 bytes) | Server-side session store |
 
 ### 3.4 Certificate Authority & Camera Pairing
 
+> **Status: Not implemented.** CA and server cert exist. Pairing flow, mTLS enforcement, and cert revocation pending. See ADR-0009.
+
 ```
 FIRST BOOT (Server):
-  1. Generate Ed25519 CA keypair → /data/certs/ca.crt, ca.key
-  2. Generate server TLS cert signed by CA → /data/certs/server.crt, server.key
+  1. Generate ECDSA P-256 CA keypair → /data/certs/ca.crt, ca.key (10-year validity)
+  2. Generate server TLS cert signed by CA → /data/certs/server.crt, server.key (5-year validity)
   3. nginx configured with server cert
+  4. systemd timer (cert-renewal-check.timer) checks weekly, warns 30 days before expiry
 
-CAMERA PAIRING:
+CAMERA PAIRING (PIN-based, see ADR-0009):
   1. Camera boots, advertises via mDNS (unpaired state)
   2. Server discovers camera, shows as "pending" in dashboard
   3. Admin clicks "Pair" → server generates:
-     - Unique client cert signed by CA
-     - Pairing token (6-digit PIN displayed on dashboard)
-  4. Admin enters PIN on camera setup page (via camera's temporary AP)
-     OR camera fetches cert via one-time HTTPS endpoint using the token
-  5. Camera stores client cert in /data/certs/
-  6. All future RTSP connections use mTLS — server verifies camera cert
-  7. Server rejects any RTSP connection without a valid client cert
+     - ECDSA P-256 keypair + client cert signed by CA (5-year validity)
+     - 6-digit PIN (cryptographically random, 5-minute expiry)
+  4. Admin enters PIN on camera status page (/pair)
+  5. Camera POSTs PIN to server (POST /api/v1/pair/exchange, rate-limited: 3 attempts/5 min)
+  6. Server returns: client.crt, client.key, ca.crt, RTSPS URL, pairing_secret
+  7. Camera stores certs in /data/certs/, pairing_secret for LUKS key derivation (ADR-0010)
+  8. All future connections use mTLS (RTSPS, OTA push, health polling)
+  9. Single pairing ceremony → mTLS identity + OTA trust + LUKS key material
 
 CAMERA REMOVAL:
   1. Admin removes camera from dashboard
-  2. Server revokes client cert (adds to revocation list)
-  3. Camera can no longer connect
+  2. Server moves cert to cameras/revoked/ (in-memory revocation set, rebuilt on startup)
+  3. MediaMTX reloaded, nftables @camera_ips updated
+  4. Camera can no longer connect
 ```
 
 ### 3.5 Firewall Rules
@@ -501,31 +506,37 @@ The system stores all state as JSON files on the encrypted `/data` partition. Th
 ### 5.1 Server (RPi 4B)
 
 ```
-SD Card / USB Disk Layout:
+SD Card Layout (64 GB card, minimum 32 GB):
 ┌───────────┬──────────┬──────────┬─────────────────────────┐
 │   boot    │ rootfsA  │ rootfsB  │         data            │
 │  (vfat)   │  (ext4)  │  (ext4)  │     (LUKS → ext4)      │
-│  100 MB   │   2 GB   │   2 GB   │      remaining          │
+│  512 MB   │   8 GB   │   8 GB   │  remaining (~47 GB)     │
 │           │ (active) │ (standby)│                         │
-│ kernel    │ system   │ OTA      │ recordings, config,     │
-│ DTBs      │ packages │ target   │ certs, logs             │
-│ config.txt│ apps     │          │                         │
+│ U-Boot    │ system   │ OTA      │ recordings, config,     │
+│ kernel    │ packages │ target   │ certs, logs, OTA inbox  │
+│ DTBs      │ apps     │          │                         │
+│ config.txt│          │          │                         │
+│ U-Boot env│          │          │                         │
 └───────────┴──────────┴──────────┴─────────────────────────┘
 ```
+
+> See ADR-0008 for U-Boot boot counting and A/B slot management. See ADR-0010 for LUKS encryption details.
 
 ### 5.2 Camera (Zero 2W)
 
 ```
-SD Card Layout:
-┌───────────┬──────────┬──────────┬──────────┐
-│   boot    │ rootfsA  │ rootfsB  │   data   │
-│  (vfat)   │  (ext4)  │  (ext4)  │(LUKS→ext4)
-│  100 MB   │   1 GB   │   1 GB   │  256 MB  │
-│           │ (active) │ (standby)│          │
-│ kernel    │ system   │ OTA      │ config,  │
-│ DTBs      │ packages │ target   │ certs,   │
-│ config.txt│ apps     │          │ WiFi     │
-└───────────┴──────────┴──────────┴──────────┘
+SD Card Layout (64 GB card, minimum 32 GB):
+┌───────────┬──────────┬──────────┬─────────────────────────┐
+│   boot    │ rootfsA  │ rootfsB  │         data            │
+│  (vfat)   │  (ext4)  │  (ext4)  │     (LUKS → ext4)      │
+│  512 MB   │   8 GB   │   8 GB   │  remaining (~47 GB)     │
+│           │ (active) │ (standby)│                         │
+│ U-Boot    │ system   │ OTA      │ config, certs, WiFi,    │
+│ kernel    │ packages │ target   │ OTA inbox               │
+│ DTBs      │ apps     │          │                         │
+│ config.txt│          │          │                         │
+│ U-Boot env│          │          │                         │
+└───────────┴──────────┴──────────┴─────────────────────────┘
 ```
 
 ---
@@ -578,22 +589,40 @@ Server browses:
 
 ### 6.3 OTA Update Flow
 
+> **Status: Not implemented.** API stubs exist. See ADR-0008 for full design.
+
+**Delivery modes** (all feed into single `inbox → verify → staging → install` pipeline):
 ```
-1. Admin uploads .swu image to server dashboard
-   POST /api/v1/ota/server/upload (multipart file)
+1. USB drive     → udev auto-detect → copy *.swu / *.tar.zst to /data/ota/inbox/
+2. Dashboard     → POST /api/v1/ota/server/upload (multipart file) → inbox/
+3. Camera push   → POST /api/v1/ota/camera/<id>/push (HTTPS + mTLS) → camera inbox/
+4. SSH/SCP       → direct copy to inbox/ (dev builds only)
+5. (Future)      → Suricatta polling from repository URL
+```
 
-2. Server verifies Ed25519 signature on the .swu file
+**Full-system update (.swu):**
+```
+1. Ed25519 signature verification in inbox
+2. SWUpdate installs to inactive rootfs (A→B or B→A)
+3. U-Boot env: upgrade_available=1, boot_count=0, bootlimit=3
+4. Reboot into new partition
+5. Health check within 90s → fw_setenv upgrade_available 0 (confirm)
+6. If boot fails 3 times → U-Boot altbootcmd rolls back to previous partition
+```
 
-3a. Server self-update:
-    swupdate installs to inactive rootfs partition (A→B or B→A)
-    System reboots into new partition
-    If boot fails 3 times → rollback to previous partition
+**App-only update (.tar.zst + .sig):**
+```
+1. Ed25519 signature verification
+2. Extract to /opt/monitor/releases/<version>/
+3. Symlink swap: current → new version
+4. systemctl restart <service>
+5. Health check → if fail, swap symlink back (instant rollback, no reboot)
+```
 
-3b. Camera update:
-    Admin triggers: POST /api/v1/ota/camera/<id>/push
-    Server pushes .swu to camera over HTTPS
-    Camera runs swupdate locally
-    Camera reboots, server monitors for re-appearance
+**Camera update:**
+```
+Admin triggers push → server sends artifact to camera OTA agent (port 8080, mTLS)
+Camera runs same inbox → verify → install pipeline locally
 ```
 
 ---
@@ -844,7 +873,8 @@ Storage monitor (runs every 60 seconds):
 | Live streaming | HLS via nginx | Works on mobile Safari (no alternatives), low latency enough | WebRTC (complex), MPEG-DASH (poor Safari support) |
 | Data storage | JSON files | Simple, tiny dataset, no daemon overhead | SQLite (marginal benefit, extra dependency) |
 | Camera discovery | Avahi/mDNS | Zero-config, standard, works on LAN | UPnP (complex), manual IP (bad UX) |
-| Encryption at rest | LUKS2 | Linux standard, hardware-accelerated on ARMv8 | dm-crypt raw (less features), app-level (partial) |
-| OTA | swupdate A/B | Atomic, rollback, Yocto integration | Mender (needs cloud server), RAUC (less community) |
+| Encryption at rest | LUKS2 + Adiantum (`xchacha20,aes-adiantum-plain64`) | 2-3.5x faster than AES on ARM without hw accel (no AES instructions on RPi 4B/Zero 2W). Google mandates Adiantum for Android without AES. See ADR-0010 | AES-XTS (too slow without hw accel), dm-crypt raw (less features) |
+| Boot loader | U-Boot (`u-boot-rpi`) | Boot counting (`bootlimit=3`), `fw_printenv`/`fw_setenv` for A/B slot management. See ADR-0008 | RPi tryboot (limited, no bootcount), direct kernel boot (no rollback) |
+| OTA | SWUpdate A/B + app-only symlink swap | Atomic, rollback, file-level handlers for app-only updates, Yocto integration. See ADR-0008 | Mender (needs cloud server), RAUC (less community) |
 | TLS | Self-signed CA | No internet dependency, full control | Let's Encrypt (needs port 80 open to internet) |
 | Firewall | nftables | Modern replacement for iptables, in-kernel | iptables (legacy), ufw (wrapper, more deps) |

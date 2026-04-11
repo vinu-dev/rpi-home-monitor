@@ -1,11 +1,20 @@
 # Partition layout for RPi Zero 2W Camera Node (A/B OTA)
 #
-# Part 1: boot    (100MB, vfat)  - kernel, DTBs, config.txt
-# Part 2: rootfsA (1GB, ext4)    - active root filesystem
-# Part 3: rootfsB (1GB, ext4)    - standby root (OTA target)
-# Part 4: data    (256MB, ext4)  - config, certs (LUKS in production)
+# Target SD card: 64 GB (minimum 32 GB)
+#
+# Part 1: boot    (512MB, vfat)  - U-Boot, kernel, DTBs, config.txt, U-Boot env
+# Part 2: rootfsA (8GB, ext4)    - active root filesystem
+# Part 3: rootfsB (8GB, ext4)    - standby root (OTA target)
+# Part 4: data    (remaining)    - config, certs, updates (LUKS in production)
+#
+# On 64 GB card: /data gets ~47 GB
+# On 32 GB card: /data gets ~15 GB
+#
+# rootfs image is built at content size (~400MB) and expanded via resize2fs
+# on first boot to fill the 8GB partition. OTA writes the compact image to
+# the inactive slot, then resize2fs runs during health-check confirmation.
 
-part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 100M
-part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfsA --align 4096 --size 1024M
-part --ondisk mmcblk0 --fstype=ext4 --label rootfsB --align 4096 --size 1024M
-part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 256M
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 512M
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfsA --align 4096 --size 8192M
+part --ondisk mmcblk0 --fstype=ext4 --label rootfsB --align 4096 --size 8192M
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --grow
