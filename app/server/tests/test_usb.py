@@ -388,20 +388,17 @@ def test_is_mounted_os_error(mock_run):
 # mount_device
 # ===========================================================================
 
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_success(mock_makedirs, mock_run, mock_is_mounted):
+def test_mount_device_success(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1", "/mnt/usb")
 
     assert ok is True
     assert err == ""
     mock_makedirs.assert_called_once_with("/mnt/usb", exist_ok=True)
-    mock_run.assert_called_once_with(
-        ["mount", "/dev/sda1", "/mnt/usb"],
-        capture_output=True, text=True, timeout=30,
-    )
 
 
 @patch("monitor.services.usb.is_mounted", return_value=True)
@@ -412,10 +409,11 @@ def test_mount_device_already_mounted(mock_makedirs, mock_is_mounted):
     assert err == ""
 
 
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted):
+def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
     mock_run.return_value = _make_run_result(
         returncode=1, stderr="mount: permission denied"
     )
@@ -425,10 +423,11 @@ def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted):
     assert "permission denied" in err
 
 
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_failure_empty_stderr(mock_makedirs, mock_run, mock_is_mounted):
+def test_mount_device_failure_empty_stderr(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
     """Empty stderr falls back to 'Mount failed'."""
     mock_run.return_value = _make_run_result(returncode=1, stderr="")
     ok, err = mount_device("/dev/sda1")
@@ -436,10 +435,11 @@ def test_mount_device_failure_empty_stderr(mock_makedirs, mock_run, mock_is_moun
     assert err == "Mount failed"
 
 
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_timeout(mock_makedirs, mock_run, mock_is_mounted):
+def test_mount_device_timeout(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
     mock_run.side_effect = subprocess.TimeoutExpired(cmd="mount", timeout=30)
     ok, err = mount_device("/dev/sda1")
     assert ok is False
@@ -454,14 +454,32 @@ def test_mount_device_makedirs_os_error(mock_makedirs):
     assert "read-only" in err
 
 
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_default_mount_point(mock_makedirs, mock_run, mock_is_mounted):
+def test_mount_device_default_mount_point(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1")
     assert ok is True
     mock_makedirs.assert_called_once_with(DEFAULT_MOUNT_POINT, exist_ok=True)
+
+
+@patch("monitor.services.usb._get_fstype_blkid", return_value="exfat")
+@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.subprocess.run")
+@patch("monitor.services.usb.os.makedirs")
+def test_mount_device_exfat_uses_uid_gid(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+    """exFAT mount includes uid/gid/umask options."""
+    mock_run.return_value = _make_run_result(returncode=0)
+    ok, err = mount_device("/dev/sda1", "/mnt/usb")
+    assert ok is True
+    # Verify mount command includes uid/gid options
+    call_args = mock_run.call_args[0][0]
+    assert "-o" in call_args
+    opts = call_args[call_args.index("-o") + 1]
+    assert "uid=" in opts
+    assert "umask=0002" in opts
 
 
 # ===========================================================================

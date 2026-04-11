@@ -137,8 +137,8 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
 
         # Detect filesystem to set proper mount options
         fstype = _get_fstype_blkid(device_path)
-        uid = os.getuid()
-        gid = os.getgid()
+        uid = getattr(os, "getuid", lambda: 0)()
+        gid = getattr(os, "getgid", lambda: 0)()
 
         cmd = ["mount", device_path, mount_point]
 
@@ -160,7 +160,7 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
             return False, err
 
         # For native Linux filesystems, set ownership after mount
-        if fstype in ("ext4", "ext3"):
+        if fstype in ("ext4", "ext3") and hasattr(os, "chown"):
             try:
                 os.chown(mount_point, uid, gid)
             except OSError as e:
