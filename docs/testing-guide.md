@@ -280,13 +280,12 @@ pipelines require real hardware (port 80, /dev/video0) that CI environments cann
 
 ### 6.5 Current Coverage
 
-| App | Tests | Coverage | Threshold |
-|-----|-------|----------|-----------|
-| Server (`monitor`) | 371 | 88% | 80% |
-| Camera (`camera_streamer`) | 164 | 63% | 55% |
-| **Total** | **535** | — | — |
+| App | Command | Threshold |
+|-----|---------|-----------|
+| Server (`monitor`) | `pytest app/server/tests/ -v` | 80% coverage |
+| Camera (`camera_streamer`) | `pytest app/camera/tests/ -v` | 55% coverage |
 
-*Updated: 2026-04-10 (v1.0.6-dev)*
+Run the commands above to see current test counts and coverage. Don't hardcode counts here — they change every PR.
 
 ---
 
@@ -639,8 +638,8 @@ cd app/server && pip install -e . -r requirements-test.txt
 cd app/camera && pip install -e . -r requirements-test.txt
 
 # ─── Run All Tests ───────────────────────────────
-cd app/server && pytest                  # 371 tests, 88% coverage (≥80%)
-cd app/camera && pytest                  # 164 tests, 63% coverage (≥55%)
+cd app/server && pytest                  # Run to see current count (threshold: ≥80%)
+cd app/camera && pytest                  # Run to see current count (threshold: ≥55%)
 
 # ─── Run Specific Tests ─────────────────────────
 pytest tests/test_models.py              # One file

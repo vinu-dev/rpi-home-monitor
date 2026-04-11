@@ -9,7 +9,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 ## Why RPi Home Monitor?
 
 - **Your data stays home.** Video never leaves your network. No cloud uploads, no third-party access, no monthly fees.
-- **Security by design.** TLS everywhere, mTLS between cameras, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting.
+- **Security by design.** HTTPS for web, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting. Camera mTLS planned for Phase 2.
 - **Built on real hardware.** Runs on a $35 Raspberry Pi 4B (server) and $15 Zero 2W (cameras). No proprietary hardware required.
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
 - **OTA updates with rollback.** A/B partition scheme means failed updates automatically roll back. No bricked devices.
@@ -19,7 +19,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 ## Architecture
 
 ```
-┌─────────────────┐    RTSPS (mTLS)    ┌──────────────────┐    HTTPS     ┌──────────┐
+┌─────────────────┐    RTSP stream      ┌──────────────────┐    HTTPS     ┌──────────┐
 │  Camera Node    │ ─────────────────> │   Home Server     │ <────────── │  Phone / │
 │  RPi Zero 2W   │                     │   RPi 4 Model B   │             │  Laptop  │
 │                 │    mDNS discovery   │                    │             │          │
@@ -126,11 +126,9 @@ First build takes 2-4 hours. Subsequent builds use cached artifacts and are much
 ## Run Tests
 
 ```bash
-cd app/server && pytest    # 777 tests, 90% coverage (threshold: 80%)
-cd app/camera && pytest    # 268 tests, 82% coverage (threshold: 55%)
-```
-
-**1045 total tests.** Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
+cd app/server && pytest    # threshold: 80% coverage
+cd app/camera && pytest    # threshold: 55% coverage
+``` Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
 
 ## Documentation
 
