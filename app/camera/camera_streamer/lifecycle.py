@@ -27,6 +27,7 @@ from camera_streamer.capture import CaptureManager
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.health import HealthMonitor
 from camera_streamer.led import LedController
+from camera_streamer.ota_agent import OTAAgent
 from camera_streamer.pairing import PairingManager
 from camera_streamer.status_server import CameraStatusServer
 from camera_streamer.stream import StreamManager
@@ -72,6 +73,7 @@ class CameraLifecycle:
         self._status_server = None
         self._health = None
         self._setup_server = None
+        self._ota_agent = None
         self._pairing = PairingManager(config)
 
     @property
@@ -109,6 +111,8 @@ class CameraLifecycle:
 
         if self._health:
             self._health.stop()
+        if self._ota_agent:
+            self._ota_agent.stop()
         if self._stream:
             self._stream.stop()
         if self._status_server:
@@ -246,6 +250,10 @@ class CameraLifecycle:
             pairing_manager=self._pairing,
         )
         self._status_server.start()
+
+        # OTA update agent (port 8080)
+        self._ota_agent = OTAAgent(self._config)
+        self._ota_agent.start()
 
         # Health monitoring
         self._health = HealthMonitor(
