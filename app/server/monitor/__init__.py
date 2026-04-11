@@ -9,8 +9,11 @@ import os
 
 from flask import Flask
 
+from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
+from monitor.services.camera_service import CameraService
 from monitor.services.storage import StorageManager
+from monitor.services.storage_service import StorageService
 from monitor.services.streaming import StreamingService
 from monitor.store import Store
 
@@ -65,25 +68,18 @@ def create_app(config=None):
     Creates and configures the Flask application with all blueprints,
     background services, and security middleware.
     """
-    # Configure logging — LOG_LEVEL env controls verbosity
-    # Dev builds set LOG_LEVEL=DEBUG via systemd drop-in
-    # Prod defaults to WARNING
-    log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.WARNING),
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    )
-    log.info("Monitor server starting (log_level=%s)", log_level)
+    configure_logging()
+    log.info("Monitor server starting")
 
     app = Flask(__name__)
-
     config_dir = os.environ.get("MONITOR_CONFIG_DIR", "/data/config")
 
     # Default config
     app.config.update(
         SECRET_KEY=os.urandom(32).hex(),
         DATA_DIR=os.environ.get("MONITOR_DATA_DIR", "/data"),
-        RECORDINGS_DIR=os.environ.get("MONITOR_RECORDINGS_DIR", "/data/recordings"),
+        RECORDINGS_DIR=os.environ.get("MONITOR_RECORDINGS_DIR",
+                                      "/data/recordings"),
         LIVE_DIR=os.environ.get("MONITOR_LIVE_DIR", "/data/live"),
         CONFIG_DIR=config_dir,
         CERTS_DIR=os.environ.get("MONITOR_CERTS_DIR", "/data/certs"),
@@ -91,59 +87,148 @@ def create_app(config=None):
         STORAGE_THRESHOLD_PERCENT=90,
         SESSION_TIMEOUT_MINUTES=30,
     )
-
     if config:
         app.config.update(config)
 
-    log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s", app.config["DATA_DIR"], config_dir)
+    log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s",
+              app.config["DATA_DIR"], config_dir)
 
     # Load persistent secret key (unless overridden by test config)
     if not config or "SECRET_KEY" not in config:
-        app.config["SECRET_KEY"] = _load_or_create_secret_key(app.config["CONFIG_DIR"])
+        app.config["SECRET_KEY"] = _load_or_create_secret_key(
+            app.config["CONFIG_DIR"]
+        )
 
-    # Initialize data store and audit logger
+    # --- Core infrastructure ---
+    _init_infrastructure(app)
+
+    # --- Application services ---
+    _init_services(app)
+
+    # --- Runtime startup (skip in tests) ---
+    if not app.config.get("TESTING"):
+        _startup(app)
+
+    # --- Register blueprints ---
+    _register_blueprints(app)
+
+    log.info("Monitor server ready — blueprints registered")
+    return app
+
+
+def _init_infrastructure(app):
+    """Initialize core infrastructure: store, audit, storage manager."""
     log.debug("Initializing data store at %s", app.config["CONFIG_DIR"])
     app.store = Store(app.config["CONFIG_DIR"])
+
     logs_dir = os.path.join(app.config["DATA_DIR"], "logs")
     app.audit = AuditLogger(logs_dir)
 
-    # Create default admin user on first boot (skip in test mode)
-    if not app.config.get("TESTING"):
-        _ensure_default_admin(app.store)
-        log.debug("Default admin user ensured")
-
-    # Initialize storage manager (loop recording + USB support)
-    recordings_dir = app.config["RECORDINGS_DIR"]
     app.storage_manager = StorageManager(
-        recordings_dir=recordings_dir,
+        recordings_dir=app.config["RECORDINGS_DIR"],
         data_dir=app.config["DATA_DIR"],
     )
 
-    # Auto-mount USB if previously configured
-    if not app.config.get("TESTING"):
-        recordings_dir = _auto_mount_usb(app, recordings_dir)
 
-    # Initialize streaming service (manages ffmpeg pipelines per camera)
+def _init_services(app):
+    """Initialize application services with dependency injection."""
+    recordings_dir = app.config["RECORDINGS_DIR"]
+
     app.streaming = StreamingService(
         live_dir=app.config["LIVE_DIR"],
         recordings_dir=recordings_dir,
         clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
     )
 
-    # Connect storage manager to streaming service for dir change notifications
+    # Camera service — orchestrates store + streaming + audit
+    app.camera_service = CameraService(
+        store=app.store,
+        streaming=app.streaming,
+        audit=app.audit,
+    )
+
+    # Storage service — orchestrates USB + storage manager + store + audit
+    app.storage_service = StorageService(
+        storage_manager=app.storage_manager,
+        store=app.store,
+        audit=app.audit,
+        default_recordings_dir=app.config["RECORDINGS_DIR"],
+    )
+
+    # Connect storage manager → streaming service for dir change notifications
     def _on_recording_dir_change(new_dir):
-        """Called when StorageManager switches recording directory."""
         app.streaming.update_recordings_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
-    if not app.config.get("TESTING"):
-        app.streaming.start()
-        app.storage_manager.start()
-        # Resume pipelines for any already-confirmed online cameras
-        _resume_camera_pipelines(app)
 
-    # Register blueprints
+def _startup(app):
+    """Runtime startup: default admin, USB auto-mount, start services."""
+    _ensure_default_admin(app.store)
+    log.debug("Default admin user ensured")
+
+    # Auto-mount USB if previously configured
+    recordings_dir = _auto_mount_usb(app, app.config["RECORDINGS_DIR"])
+    if recordings_dir != app.config["RECORDINGS_DIR"]:
+        app.streaming.update_recordings_dir(recordings_dir)
+
+    app.streaming.start()
+    app.storage_manager.start()
+
+    # Resume pipelines for confirmed online cameras
+    _resume_camera_pipelines(app)
+
+
+def _auto_mount_usb(app, default_recordings_dir):
+    """Auto-mount USB if previously configured in settings.
+
+    Returns the recordings directory to use (USB or default).
+    """
+    try:
+        settings = app.store.get_settings()
+        usb_device = getattr(settings, "usb_device", "")
+        usb_rec_dir = getattr(settings, "usb_recordings_dir", "")
+
+        if not usb_device or not usb_rec_dir:
+            return default_recordings_dir
+
+        from monitor.services import usb
+        devices = usb.detect_devices()
+        found = any(d["path"] == usb_device for d in devices)
+        if not found:
+            log.warning("Configured USB device %s not found — "
+                        "using internal storage", usb_device)
+            return default_recordings_dir
+
+        ok, err = usb.mount_device(usb_device)
+        if not ok:
+            log.error("Failed to auto-mount USB %s: %s — "
+                      "using internal storage", usb_device, err)
+            return default_recordings_dir
+
+        rec_dir = usb.prepare_recordings_dir()
+        app.storage_manager.set_recordings_dir(rec_dir)
+        log.info("Auto-mounted USB storage: %s -> %s", usb_device, rec_dir)
+        return rec_dir
+
+    except Exception as e:
+        log.error("USB auto-mount failed: %s", e)
+        return default_recordings_dir
+
+
+def _resume_camera_pipelines(app):
+    """Start streaming pipelines for cameras that were online before restart."""
+    try:
+        cameras = app.store.get_cameras()
+        for cam in cameras:
+            if cam.status == "online" and cam.recording_mode == "continuous":
+                app.streaming.start_camera(cam.id)
+    except Exception:
+        pass  # Don't crash on startup if cameras.json has issues
+
+
+def _register_blueprints(app):
+    """Register all Flask blueprints."""
     from monitor.api.cameras import cameras_bp
     from monitor.api.recordings import recordings_bp
     from monitor.api.live import live_bp
@@ -167,57 +252,3 @@ def create_app(config=None):
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
-
-    log.info("Monitor server ready — blueprints registered")
-    return app
-
-
-def _auto_mount_usb(app, default_recordings_dir):
-    """Auto-mount USB if previously configured in settings.
-
-    Returns the recordings directory to use (USB or default).
-    """
-    try:
-        settings = app.store.get_settings()
-        usb_device = getattr(settings, "usb_device", "")
-        usb_rec_dir = getattr(settings, "usb_recordings_dir", "")
-
-        if not usb_device or not usb_rec_dir:
-            return default_recordings_dir
-
-        from monitor.services import usb
-        # Check if device is still present
-        devices = usb.detect_devices()
-        found = any(d["path"] == usb_device for d in devices)
-        if not found:
-            log.warning("Configured USB device %s not found — "
-                        "using internal storage", usb_device)
-            return default_recordings_dir
-
-        # Mount it
-        ok, err = usb.mount_device(usb_device)
-        if not ok:
-            log.error("Failed to auto-mount USB %s: %s — "
-                      "using internal storage", usb_device, err)
-            return default_recordings_dir
-
-        # Ensure recordings folder exists
-        rec_dir = usb.prepare_recordings_dir()
-        app.storage_manager.set_recordings_dir(rec_dir)
-        log.info("Auto-mounted USB storage: %s -> %s", usb_device, rec_dir)
-        return rec_dir
-
-    except Exception as e:
-        log.error("USB auto-mount failed: %s", e)
-        return default_recordings_dir
-
-
-def _resume_camera_pipelines(app):
-    """Start streaming pipelines for cameras that were online before restart."""
-    try:
-        cameras = app.store.get_cameras()
-        for cam in cameras:
-            if cam.status == "online" and cam.recording_mode == "continuous":
-                app.streaming.start_camera(cam.id)
-    except Exception:
-        pass  # Don't crash on startup if cameras.json has issues

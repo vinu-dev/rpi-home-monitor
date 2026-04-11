@@ -21,6 +21,8 @@ Environment=MONITOR_RECORDINGS_DIR=/data/recordings
 Environment=MONITOR_LIVE_DIR=/data/live
 Environment=MONITOR_CONFIG_DIR=/data/config
 Environment=MONITOR_CERTS_DIR=/data/certs
+Environment=MONITOR_LOG_DIR=/data/logs
+Environment=LOG_LEVEL=INFO
 
 # Security: nftables firewall (default DROP, private nets only) + HTTPS
 # Note: systemd ProtectSystem/ProtectHome/ProtectKernel* directives create

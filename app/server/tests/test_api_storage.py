@@ -1,4 +1,9 @@
-"""Tests for the storage API."""
+"""Tests for the storage API.
+
+Tests exercise the HTTP endpoints which now delegate to StorageService.
+Mocks target the service's dependency (monitor.services.storage_service.usb)
+rather than the old route-level import.
+"""
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
@@ -30,6 +35,10 @@ def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
     }
 
 
+# Patch target: StorageService imports usb at module level
+USB_PATCH = "monitor.services.storage_service.usb"
+
+
 class TestGetStatus:
     """Test GET /api/v1/storage/status."""
 
@@ -44,8 +53,9 @@ class TestGetStatus:
             "free_bytes": 60000000,
             "recordings_dir": "/data/recordings",
         }
-        app.storage_manager = MagicMock()
-        app.storage_manager.get_storage_stats.return_value = mock_stats
+        # Replace the storage_manager inside the service
+        app.storage_service._storage_manager = MagicMock()
+        app.storage_service._storage_manager.get_storage_stats.return_value = mock_stats
 
         response = client.get("/api/v1/storage/status")
         assert response.status_code == 200
@@ -55,9 +65,8 @@ class TestGetStatus:
 
     def test_returns_500_when_no_storage_manager(self, app, client):
         _login(app, client)
-        # Ensure storage_manager is missing
-        if hasattr(app, "storage_manager"):
-            delattr(app, "storage_manager")
+        # Set storage_manager to None inside service
+        app.storage_service._storage_manager = None
 
         response = client.get("/api/v1/storage/status")
         assert response.status_code == 500
@@ -70,7 +79,7 @@ class TestListDevices:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/storage/devices").status_code == 401
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_returns_device_list(self, mock_usb, app, client):
         _login(app, client)
         devices = [_make_device("/dev/sda1"), _make_device("/dev/sdb1", model="Flash Drive")]
@@ -82,7 +91,7 @@ class TestListDevices:
         assert len(data["devices"]) == 2
         assert data["devices"][0]["path"] == "/dev/sda1"
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_returns_empty_list(self, mock_usb, app, client):
         _login(app, client)
         mock_usb.detect_devices.return_value = []
@@ -95,7 +104,7 @@ class TestListDevices:
 class TestSelectDevice:
     """Test POST /api/v1/storage/select."""
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_select_valid_device(self, mock_usb, app, client):
         _login(app, client)
         device = _make_device("/dev/sda1")
@@ -104,7 +113,7 @@ class TestSelectDevice:
         mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
 
-        app.storage_manager = MagicMock()
+        app.storage_service._storage_manager = MagicMock()
 
         response = client.post("/api/v1/storage/select", json={
             "device_path": "/dev/sda1",
@@ -116,7 +125,7 @@ class TestSelectDevice:
 
         mock_usb.mount_device.assert_called_once_with("/dev/sda1")
         mock_usb.prepare_recordings_dir.assert_called_once()
-        app.storage_manager.set_recordings_dir.assert_called_once_with(
+        app.storage_service._storage_manager.set_recordings_dir.assert_called_once_with(
             "/mnt/usb/recordings"
         )
 
@@ -131,7 +140,7 @@ class TestSelectDevice:
         response = client.post("/api/v1/storage/select")
         assert response.status_code == 400
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_device_not_found(self, mock_usb, app, client):
         _login(app, client)
         mock_usb.detect_devices.return_value = []
@@ -142,7 +151,7 @@ class TestSelectDevice:
         assert response.status_code == 404
         assert "not found" in response.get_json()["error"]
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_unsupported_filesystem(self, mock_usb, app, client):
         _login(app, client)
         device = _make_device("/dev/sda1", fstype="ntfs", supported=False)
@@ -156,7 +165,7 @@ class TestSelectDevice:
         assert data["needs_format"] is True
         assert data["fstype"] == "ntfs"
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_mount_failure(self, mock_usb, app, client):
         _login(app, client)
         device = _make_device("/dev/sda1")
@@ -180,7 +189,7 @@ class TestSelectDevice:
 class TestFormatDevice:
     """Test POST /api/v1/storage/format."""
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_format_success(self, mock_usb, app, client):
         _login(app, client)
         device = _make_device("/dev/sda1", fstype="ntfs", supported=False)
@@ -213,7 +222,7 @@ class TestFormatDevice:
         assert response.status_code == 400
         assert "needs_confirmation" in response.get_json()
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_format_device_not_found(self, mock_usb, app, client):
         _login(app, client)
         mock_usb.detect_devices.return_value = []
@@ -225,7 +234,7 @@ class TestFormatDevice:
         assert response.status_code == 404
         assert "not found" in response.get_json()["error"]
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_format_failure(self, mock_usb, app, client):
         _login(app, client)
         device = _make_device("/dev/sda1")
@@ -259,12 +268,12 @@ class TestFormatDevice:
 class TestEjectDevice:
     """Test POST /api/v1/storage/eject."""
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_eject_success(self, mock_usb, app, client):
         _login(app, client)
         mock_usb.unmount_device.return_value = (True, None)
 
-        app.storage_manager = MagicMock()
+        app.storage_service._storage_manager = MagicMock()
 
         response = client.post("/api/v1/storage/eject")
         assert response.status_code == 200
@@ -273,17 +282,17 @@ class TestEjectDevice:
         assert data["recordings_dir"] == app.config["RECORDINGS_DIR"]
 
         mock_usb.unmount_device.assert_called_once()
-        app.storage_manager.set_recordings_dir.assert_called_once_with(
+        app.storage_service._storage_manager.set_recordings_dir.assert_called_once_with(
             app.config["RECORDINGS_DIR"]
         )
 
-    @patch("monitor.api.storage.usb")
+    @patch(USB_PATCH)
     def test_eject_unmount_warning(self, mock_usb, app, client):
         """Eject still succeeds even if unmount has a warning."""
         _login(app, client)
         mock_usb.unmount_device.return_value = (False, "device busy")
 
-        app.storage_manager = MagicMock()
+        app.storage_service._storage_manager = MagicMock()
 
         response = client.post("/api/v1/storage/eject")
         # Eject still returns 200 — unmount failure is just a warning

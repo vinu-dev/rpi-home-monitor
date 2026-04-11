@@ -16,14 +16,10 @@ import logging
 import time
 import os
 
-# LOG_LEVEL env controls verbosity:
-# Dev builds set LOG_LEVEL=DEBUG via systemd drop-in
-# Prod defaults to WARNING
-_log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
-logging.basicConfig(
-    level=getattr(logging, _log_level, logging.WARNING),
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
+# Configure logging — both console (journalctl) and file (/data/logs/camera.log)
+# LOG_LEVEL env controls verbosity (dev=DEBUG, prod=WARNING)
+from camera_streamer.logging_config import configure_logging
+configure_logging()
 log = logging.getLogger("camera-streamer")
 
 # Global shutdown event
@@ -113,7 +109,7 @@ def main():
     """Entry point for camera-streamer service."""
     global _shutdown
 
-    log.info("Camera streamer starting (log_level=%s)", _log_level)
+    log.info("Camera streamer starting")
 
     # Register signal handlers
     signal.signal(signal.SIGTERM, _handle_signal)

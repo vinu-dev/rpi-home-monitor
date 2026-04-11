@@ -1,374 +1,425 @@
-"""Tests for StorageManager — loop recording with FIFO cleanup."""
-import os
-import threading
-import time
-from pathlib import Path
+"""Tests for StorageService — USB storage orchestration layer.
+
+Tests cover all public methods: get_status, list_devices, select_device,
+format_device, eject, plus audit logging and config persistence behaviors.
+Mocks target the module-level usb import (monitor.services.storage_service.usb).
+"""
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from monitor.services.storage import (
-    CHECK_INTERVAL,
-    RESERVE_INTERNAL_MB,
-    RESERVE_USB_MB,
-    StorageManager,
-    create_recording_dirs,
-)
+from monitor.services.storage_service import StorageService
+
+# Patch target: StorageService imports usb at module level
+USB_PATCH = "monitor.services.storage_service.usb"
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Helpers
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def rec_dir(tmp_path):
-    """Empty recordings directory."""
-    d = tmp_path / "recordings"
-    d.mkdir()
-    return d
+def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
+                 fstype="ext4", supported=True):
+    """Build a fake USB device dict matching usb.detect_devices() output."""
+    return {
+        "path": path,
+        "model": model,
+        "size": size,
+        "fstype": fstype,
+        "supported": supported,
+    }
 
 
-@pytest.fixture
-def data_dir(tmp_path):
-    """Simulated /data partition root."""
-    d = tmp_path / "data"
-    d.mkdir()
-    return d
-
-
-@pytest.fixture
-def manager(rec_dir, data_dir):
-    """StorageManager wired to tmp_path directories."""
-    return StorageManager(
-        recordings_dir=str(rec_dir),
-        data_dir=str(data_dir),
-        reserve_mb=400,
+def _make_service(storage_manager=None, store=None, audit=None,
+                  default_dir="/data/recordings"):
+    """Create a StorageService with sensible mock defaults."""
+    if store is None:
+        store = MagicMock()
+        store.get_settings.return_value = MagicMock(
+            usb_device="", usb_recordings_dir="",
+        )
+    if storage_manager is None:
+        storage_manager = MagicMock()
+    return StorageService(
+        storage_manager=storage_manager,
+        store=store,
+        audit=audit,
+        default_recordings_dir=default_dir,
     )
 
 
-def _make_clip(rec_dir, cam_id, date_str, time_str, size_bytes=1024):
-    """Helper: create a fake MP4 clip in the expected directory layout."""
-    clip_dir = rec_dir / cam_id / date_str
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    clip = clip_dir / f"{time_str}.mp4"
-    clip.write_bytes(b"\x00" * size_bytes)
-    return clip
+# ---------------------------------------------------------------------------
+# 1. get_status
+# ---------------------------------------------------------------------------
+
+class TestGetStatus:
+    def test_returns_stats_from_manager(self):
+        mgr = MagicMock()
+        mgr.get_storage_stats.return_value = {"total_gb": 50, "free_gb": 30}
+        svc = _make_service(storage_manager=mgr)
+
+        stats, err = svc.get_status()
+
+        assert stats == {"total_gb": 50, "free_gb": 30}
+        assert err == ""
+        mgr.get_storage_stats.assert_called_once()
+
+    def test_returns_error_when_manager_is_none(self):
+        svc = StorageService(
+            storage_manager=None, store=MagicMock(), audit=None,
+        )
+
+        stats, err = svc.get_status()
+
+        assert stats is None
+        assert "not initialized" in err
 
 
 # ---------------------------------------------------------------------------
-# 1. Constructor sets paths correctly
+# 2. list_devices
 # ---------------------------------------------------------------------------
 
-class TestConstructor:
-    def test_paths_stored(self, rec_dir, data_dir):
-        mgr = StorageManager(str(rec_dir), str(data_dir), reserve_mb=200)
-        assert mgr._recordings_dir == Path(rec_dir)
-        assert mgr._data_dir == Path(data_dir)
-        assert mgr._reserve_mb == 200
+class TestListDevices:
+    @patch(USB_PATCH)
+    def test_delegates_to_usb_detect(self, mock_usb):
+        devices = [_make_device("/dev/sda1"), _make_device("/dev/sdb1")]
+        mock_usb.detect_devices.return_value = devices
+        svc = _make_service()
 
-    def test_defaults(self, rec_dir):
-        mgr = StorageManager(str(rec_dir))
-        assert mgr._data_dir == Path("/data")
-        assert mgr._reserve_mb == RESERVE_INTERNAL_MB
+        result = svc.list_devices()
 
-    def test_initial_state(self, manager):
-        assert manager._running is False
-        assert manager._thread is None
-        assert manager._on_dir_change is None
+        assert result == devices
+        mock_usb.detect_devices.assert_called_once()
 
+    @patch(USB_PATCH)
+    def test_returns_empty_list_when_no_devices(self, mock_usb):
+        mock_usb.detect_devices.return_value = []
+        svc = _make_service()
 
-# ---------------------------------------------------------------------------
-# 2. recordings_dir property
-# ---------------------------------------------------------------------------
-
-class TestRecordingsDirProperty:
-    def test_returns_string(self, manager, rec_dir):
-        assert manager.recordings_dir == str(rec_dir)
-        assert isinstance(manager.recordings_dir, str)
+        assert svc.list_devices() == []
 
 
 # ---------------------------------------------------------------------------
-# 3-5. set_recordings_dir
+# 3. select_device — validation
 # ---------------------------------------------------------------------------
 
-class TestSetRecordingsDir:
-    def test_changes_path(self, manager, tmp_path):
-        new = tmp_path / "new_rec"
-        new.mkdir()
-        manager.set_recordings_dir(str(new))
-        assert manager.recordings_dir == str(new)
+class TestSelectDeviceValidation:
+    def test_missing_device_path_returns_400(self):
+        svc = _make_service()
 
-    def test_fires_callback(self, manager, tmp_path):
-        cb = MagicMock()
-        manager.set_dir_change_callback(cb)
-        new = str(tmp_path / "new_rec")
-        manager.set_recordings_dir(new)
-        cb.assert_called_once_with(new)
+        result, err, status = svc.select_device("")
 
-    def test_no_callback_does_not_crash(self, manager, tmp_path):
-        """set_recordings_dir with no callback set should not raise."""
-        new = str(tmp_path / "other")
-        manager.set_recordings_dir(new)  # should not raise
+        assert result is None
+        assert "device_path required" in err
+        assert status == 400
 
-    def test_callback_exception_is_caught(self, manager, tmp_path):
-        """A failing callback should not propagate."""
-        cb = MagicMock(side_effect=RuntimeError("boom"))
-        manager.set_dir_change_callback(cb)
-        new = str(tmp_path / "x")
-        manager.set_recordings_dir(new)  # should not raise
-        cb.assert_called_once()
+    @patch(USB_PATCH)
+    def test_device_not_found_returns_404(self, mock_usb):
+        mock_usb.detect_devices.return_value = []
+        svc = _make_service()
 
+        result, err, status = svc.select_device("/dev/sda1")
 
-# ---------------------------------------------------------------------------
-# 6-8. get_storage_stats
-# ---------------------------------------------------------------------------
+        assert result is None
+        assert "not found" in err
+        assert status == 404
 
-class TestGetStorageStats:
-    def test_empty_dir(self, manager, rec_dir):
-        stats = manager.get_storage_stats()
-        assert stats["clip_count"] == 0
-        assert stats["camera_count"] == 0
-        assert stats["recordings_mb"] == 0.0
-        assert stats["recordings_dir"] == str(rec_dir)
-        assert "total_gb" in stats
-        assert "free_gb" in stats
-        assert "percent" in stats
-        assert "reserve_mb" in stats
+    @patch(USB_PATCH)
+    def test_unsupported_filesystem_returns_400_with_needs_format(self, mock_usb):
+        mock_usb.detect_devices.return_value = [
+            _make_device(fstype="ntfs", supported=False),
+        ]
+        svc = _make_service()
 
-    def test_with_clips(self, manager, rec_dir):
-        clip_size = 512 * 1024  # 512 KB each — large enough to register after rounding
-        _make_clip(rec_dir, "cam1", "2024-01-01", "12-00-00", size_bytes=clip_size)
-        _make_clip(rec_dir, "cam1", "2024-01-01", "12-03-00", size_bytes=clip_size)
-        _make_clip(rec_dir, "cam2", "2024-01-02", "08-00-00", size_bytes=clip_size)
+        result, err, status = svc.select_device("/dev/sda1")
 
-        stats = manager.get_storage_stats()
-        assert stats["clip_count"] == 3
-        assert stats["camera_count"] == 2
-        assert stats["per_camera"]["cam1"]["clips"] == 2
-        assert stats["per_camera"]["cam2"]["clips"] == 1
-        assert stats["recordings_mb"] > 0
+        assert status == 400
+        assert result["needs_format"] is True
+        assert result["fstype"] == "ntfs"
+        assert "not supported" in err
 
-    def test_oserror_on_disk_usage(self, manager, rec_dir):
-        with patch("shutil.disk_usage", side_effect=OSError("no mount")):
-            stats = manager.get_storage_stats()
-        assert stats["total_gb"] == 0
-        assert stats["used_gb"] == 0
-        assert stats["free_gb"] == 0
-        assert stats["percent"] == 0.0
-        assert stats["clip_count"] == 0
+    @patch(USB_PATCH)
+    def test_mount_failure_returns_500(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (False, "mount: busy")
+        svc = _make_service()
 
-    def test_non_mp4_files_ignored(self, manager, rec_dir):
-        cam_dir = rec_dir / "cam1" / "2024-01-01"
-        cam_dir.mkdir(parents=True)
-        (cam_dir / "12-00-00.thumb.jpg").write_bytes(b"\xff")
-        (cam_dir / "notes.txt").write_bytes(b"hello")
+        result, err, status = svc.select_device("/dev/sda1")
 
-        stats = manager.get_storage_stats()
-        assert stats["clip_count"] == 0
-
-    def test_non_directory_in_rec_dir_ignored(self, manager, rec_dir):
-        (rec_dir / "stray_file.txt").write_text("ignore me")
-        stats = manager.get_storage_stats()
-        assert stats["camera_count"] == 0
+        assert result is None
+        assert "Failed to mount" in err
+        assert status == 500
 
 
 # ---------------------------------------------------------------------------
-# 9-10. needs_cleanup
+# 4. select_device — success path
 # ---------------------------------------------------------------------------
 
-class TestNeedsCleanup:
-    def test_low_space_returns_true(self, manager):
-        fake_usage = MagicMock(free=100 * 1024 * 1024)  # 100 MB free
-        with patch("shutil.disk_usage", return_value=fake_usage):
-            assert manager.needs_cleanup() is True
+class TestSelectDeviceSuccess:
+    @patch(USB_PATCH)
+    def test_success_returns_200_with_device_info(self, mock_usb):
+        device = _make_device(model="SanDisk", size="64G")
+        mock_usb.detect_devices.return_value = [device]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        svc = _make_service()
 
-    def test_plenty_space_returns_false(self, manager):
-        fake_usage = MagicMock(free=2000 * 1024 * 1024)  # 2000 MB free
-        with patch("shutil.disk_usage", return_value=fake_usage):
-            assert manager.needs_cleanup() is False
+        result, err, status = svc.select_device("/dev/sda1")
 
-    def test_exact_threshold_returns_false(self, manager):
-        fake_usage = MagicMock(free=400 * 1024 * 1024)  # exactly 400 MB
-        with patch("shutil.disk_usage", return_value=fake_usage):
-            assert manager.needs_cleanup() is False
+        assert status == 200
+        assert err == ""
+        assert "SanDisk" in result["message"]
+        assert "64G" in result["message"]
+        assert result["recordings_dir"] == "/mnt/usb/recordings"
+        assert result["device"] == device
 
-    def test_oserror_returns_false(self, manager):
-        with patch("shutil.disk_usage", side_effect=OSError):
-            assert manager.needs_cleanup() is False
+    @patch(USB_PATCH)
+    def test_success_updates_storage_manager(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        mgr = MagicMock()
+        svc = _make_service(storage_manager=mgr)
 
+        svc.select_device("/dev/sda1")
 
-# ---------------------------------------------------------------------------
-# 11-14. cleanup_oldest_clips
-# ---------------------------------------------------------------------------
+        mgr.set_recordings_dir.assert_called_once_with("/mnt/usb/recordings")
 
-class TestCleanupOldestClips:
-    def test_deletes_oldest_first(self, manager, rec_dir):
-        old = _make_clip(rec_dir, "cam1", "2024-01-01", "06-00-00")
-        mid = _make_clip(rec_dir, "cam1", "2024-01-01", "12-00-00")
-        new = _make_clip(rec_dir, "cam1", "2024-01-02", "06-00-00")
+    @patch(USB_PATCH)
+    def test_success_saves_config(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        store = MagicMock()
+        settings = MagicMock(usb_device="", usb_recordings_dir="")
+        store.get_settings.return_value = settings
+        svc = _make_service(store=store)
 
-        # needs_cleanup returns True for first 2 calls, then False
-        with patch.object(manager, "needs_cleanup", side_effect=[True, True, False]):
-            deleted = manager.cleanup_oldest_clips(max_delete=10)
+        svc.select_device("/dev/sda1")
 
-        assert deleted == 2
-        assert not old.exists()
-        assert not mid.exists()
-        assert new.exists()
+        assert settings.usb_device == "/dev/sda1"
+        assert settings.usb_recordings_dir == "/mnt/usb/recordings"
+        store.save_settings.assert_called_once_with(settings)
 
-    def test_respects_max_delete(self, manager, rec_dir):
-        for i in range(5):
-            _make_clip(rec_dir, "cam1", "2024-01-01", f"0{i}-00-00")
+    @patch(USB_PATCH)
+    def test_success_logs_audit(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        audit = MagicMock()
+        svc = _make_service(audit=audit)
 
-        with patch.object(manager, "needs_cleanup", return_value=True):
-            deleted = manager.cleanup_oldest_clips(max_delete=2)
+        svc.select_device("/dev/sda1", user="admin", ip="10.0.0.1")
 
-        assert deleted == 2
-
-    def test_removes_empty_date_dirs(self, manager, rec_dir):
-        clip = _make_clip(rec_dir, "cam1", "2024-01-01", "06-00-00")
-        date_dir = clip.parent
-
-        with patch.object(manager, "needs_cleanup", side_effect=[True, False]):
-            manager.cleanup_oldest_clips()
-
-        assert not date_dir.exists()
-
-    def test_keeps_date_dir_if_clips_remain(self, manager, rec_dir):
-        _make_clip(rec_dir, "cam1", "2024-01-01", "06-00-00")
-        remaining = _make_clip(rec_dir, "cam1", "2024-01-01", "12-00-00")
-
-        with patch.object(manager, "needs_cleanup", side_effect=[True, False]):
-            manager.cleanup_oldest_clips()
-
-        assert remaining.parent.exists()
-        assert remaining.exists()
-
-    def test_no_clips_returns_zero(self, manager, rec_dir):
-        deleted = manager.cleanup_oldest_clips()
-        assert deleted == 0
-
-    def test_nonexistent_dir_returns_zero(self, tmp_path):
-        mgr = StorageManager(str(tmp_path / "nope"))
-        assert mgr.cleanup_oldest_clips() == 0
-
-    def test_also_deletes_thumbnail(self, manager, rec_dir):
-        clip = _make_clip(rec_dir, "cam1", "2024-01-01", "06-00-00")
-        thumb = clip.with_suffix(".thumb.jpg")
-        thumb.write_bytes(b"\xff")
-
-        with patch.object(manager, "needs_cleanup", side_effect=[True, False]):
-            manager.cleanup_oldest_clips()
-
-        assert not clip.exists()
-        assert not thumb.exists()
-
-    def test_skips_malformed_filenames(self, manager, rec_dir):
-        """Clips without valid date/time structure are skipped."""
-        cam_dir = rec_dir / "cam1" / "not-a-date"
-        cam_dir.mkdir(parents=True)
-        (cam_dir / "badname.mp4").write_bytes(b"\x00" * 100)
-
-        with patch.object(manager, "needs_cleanup", return_value=True):
-            deleted = manager.cleanup_oldest_clips()
-
-        assert deleted == 0
+        audit.log_event.assert_called_once()
+        call_args = audit.log_event.call_args
+        assert call_args[0][0] == "USB_STORAGE_SELECTED"
+        assert call_args[1]["user"] == "admin"
+        assert call_args[1]["ip"] == "10.0.0.1"
 
 
 # ---------------------------------------------------------------------------
-# 15. _is_usb_path
+# 5. format_device
 # ---------------------------------------------------------------------------
 
-class TestIsUsbPath:
-    def test_internal_path(self, data_dir):
-        mgr = StorageManager(str(data_dir / "recordings"), str(data_dir))
-        assert mgr._is_usb_path(data_dir / "recordings") is False
+class TestFormatDevice:
+    def test_missing_device_path_returns_400(self):
+        svc = _make_service()
 
-    def test_usb_path(self, data_dir):
-        mgr = StorageManager("/mnt/usb/recordings", str(data_dir))
-        assert mgr._is_usb_path(Path("/mnt/usb/recordings")) is True
+        msg, status = svc.format_device("")
 
-    def test_is_usb_reflected_in_stats(self, tmp_path):
-        mgr = StorageManager(str(tmp_path / "rec"), data_dir=str(tmp_path / "data"))
-        (tmp_path / "rec").mkdir(exist_ok=True)
-        stats = mgr.get_storage_stats()
-        assert stats["is_usb"] is True  # rec is NOT under data_dir
+        assert "device_path required" in msg
+        assert status == 400
 
+    def test_no_confirm_returns_400_warning(self):
+        svc = _make_service()
 
-# ---------------------------------------------------------------------------
-# 16. start / stop lifecycle
-# ---------------------------------------------------------------------------
+        msg, status = svc.format_device("/dev/sda1", confirm=False)
 
-class TestStartStop:
-    def test_start_creates_thread(self, manager):
-        with patch.object(manager, "_cleanup_loop"):
-            manager.start()
-            assert manager._running is True
-            assert manager._thread is not None
-            assert manager._thread.name == "storage-cleanup"
-            manager.stop()
+        assert status == 400
+        assert "confirm=true" in msg
+        assert "ERASE ALL DATA" in msg
 
-    def test_stop_sets_running_false(self, manager):
-        manager._running = True
-        manager._thread = None
-        manager.stop()
-        assert manager._running is False
+    @patch(USB_PATCH)
+    def test_device_not_found_returns_404(self, mock_usb):
+        mock_usb.detect_devices.return_value = []
+        svc = _make_service()
 
-    def test_start_is_idempotent(self, manager):
-        with patch.object(manager, "_cleanup_loop"):
-            manager.start()
-            first_thread = manager._thread
-            manager.start()  # second call should be a no-op
-            assert manager._thread is first_thread
-            manager.stop()
+        msg, status = svc.format_device("/dev/sda1", confirm=True)
 
-    def test_cleanup_loop_calls_needs_cleanup(self, manager):
-        """Verify the loop checks disk and cleans up when needed."""
-        call_count = 0
+        assert status == 404
+        assert "not found" in msg
 
-        def fake_loop():
-            nonlocal call_count
-            while manager._running and call_count < 2:
-                if manager.needs_cleanup():
-                    manager.cleanup_oldest_clips()
-                call_count += 1
-                manager._running = False
+    @patch(USB_PATCH)
+    def test_format_failure_returns_500(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.format_device.return_value = (False, "permission denied")
+        svc = _make_service()
 
-        with patch.object(manager, "_cleanup_loop", side_effect=fake_loop):
-            manager.start()
-            manager._thread.join(timeout=5)
+        msg, status = svc.format_device("/dev/sda1", confirm=True)
 
-        assert call_count >= 1
+        assert status == 500
+        assert "Format failed" in msg
 
+    @patch(USB_PATCH)
+    def test_format_success_returns_200(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.format_device.return_value = (True, "")
+        svc = _make_service()
 
-# ---------------------------------------------------------------------------
-# Bonus: create_recording_dirs helper
-# ---------------------------------------------------------------------------
+        msg, status = svc.format_device("/dev/sda1", confirm=True)
 
-class TestCreateRecordingDirs:
-    def test_creates_nested_dirs(self, tmp_path):
-        path = create_recording_dirs(str(tmp_path), "cam-front")
-        assert path.exists()
-        assert path.parent.name == "cam-front"
-        # Date directory name is YYYY-MM-DD format
-        assert len(path.name) == 10  # e.g. "2024-01-01"
+        assert status == 200
+        assert "formatted as ext4" in msg
 
-    def test_idempotent(self, tmp_path):
-        p1 = create_recording_dirs(str(tmp_path), "cam1")
-        p2 = create_recording_dirs(str(tmp_path), "cam1")
-        assert p1 == p2
+    @patch(USB_PATCH)
+    def test_format_logs_audit(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device(model="Kingston")]
+        mock_usb.format_device.return_value = (True, "")
+        audit = MagicMock()
+        svc = _make_service(audit=audit)
+
+        svc.format_device("/dev/sda1", confirm=True, user="admin", ip="10.0.0.1")
+
+        audit.log_event.assert_called_once()
+        call_args = audit.log_event.call_args
+        assert call_args[0][0] == "USB_FORMAT"
+        assert "Kingston" in call_args[1]["detail"]
 
 
 # ---------------------------------------------------------------------------
-# Module-level constants
+# 6. eject
 # ---------------------------------------------------------------------------
 
-class TestConstants:
-    def test_check_interval(self):
-        assert CHECK_INTERVAL == 30
+class TestEject:
+    @patch(USB_PATCH)
+    def test_eject_switches_to_internal_storage(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        mgr = MagicMock()
+        svc = _make_service(storage_manager=mgr, default_dir="/data/recordings")
 
-    def test_reserve_internal_mb(self):
-        assert RESERVE_INTERNAL_MB == 400
+        svc.eject()
 
-    def test_reserve_usb_mb(self):
-        assert RESERVE_USB_MB == 100
+        mgr.set_recordings_dir.assert_called_once_with("/data/recordings")
+
+    @patch(USB_PATCH)
+    def test_eject_unmounts_device(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        svc = _make_service()
+
+        svc.eject()
+
+        mock_usb.unmount_device.assert_called_once()
+
+    @patch(USB_PATCH)
+    def test_eject_returns_200_with_internal_dir(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        svc = _make_service(default_dir="/data/recordings")
+
+        result, err, status = svc.eject()
+
+        assert status == 200
+        assert err == ""
+        assert result["recordings_dir"] == "/data/recordings"
+        assert "ejected" in result["message"].lower()
+
+    @patch(USB_PATCH)
+    def test_eject_clears_usb_config(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        store = MagicMock()
+        settings = MagicMock(usb_device="/dev/sda1", usb_recordings_dir="/mnt/usb/rec")
+        store.get_settings.return_value = settings
+        svc = _make_service(store=store)
+
+        svc.eject()
+
+        assert settings.usb_device == ""
+        assert settings.usb_recordings_dir == ""
+        store.save_settings.assert_called_once()
+
+    @patch(USB_PATCH)
+    def test_eject_unmount_failure_does_not_fail_operation(self, mock_usb):
+        mock_usb.unmount_device.return_value = (False, "device busy")
+        svc = _make_service()
+
+        result, err, status = svc.eject()
+
+        assert status == 200
+        assert "ejected" in result["message"].lower()
+
+    @patch(USB_PATCH)
+    def test_eject_logs_audit(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        audit = MagicMock()
+        svc = _make_service(audit=audit)
+
+        svc.eject(user="admin", ip="10.0.0.1")
+
+        audit.log_event.assert_called_once()
+        call_args = audit.log_event.call_args
+        assert call_args[0][0] == "USB_STORAGE_EJECTED"
+        assert call_args[1]["user"] == "admin"
+
+
+# ---------------------------------------------------------------------------
+# 7. Audit failure resilience
+# ---------------------------------------------------------------------------
+
+class TestAuditFailureResilience:
+    @patch(USB_PATCH)
+    def test_audit_exception_does_not_break_select(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        audit = MagicMock()
+        audit.log_event.side_effect = RuntimeError("audit db locked")
+        svc = _make_service(audit=audit)
+
+        result, err, status = svc.select_device("/dev/sda1")
+
+        assert status == 200
+
+    @patch(USB_PATCH)
+    def test_audit_exception_does_not_break_eject(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        audit = MagicMock()
+        audit.log_event.side_effect = RuntimeError("audit db locked")
+        svc = _make_service(audit=audit)
+
+        result, err, status = svc.eject()
+
+        assert status == 200
+
+    @patch(USB_PATCH)
+    def test_no_audit_provided_does_not_crash(self, mock_usb):
+        mock_usb.unmount_device.return_value = (True, "")
+        svc = _make_service(audit=None)
+
+        result, err, status = svc.eject(user="admin")
+
+        assert status == 200
+
+
+# ---------------------------------------------------------------------------
+# 8. Config persistence failure resilience
+# ---------------------------------------------------------------------------
+
+class TestConfigPersistenceFailure:
+    @patch(USB_PATCH)
+    def test_save_settings_failure_does_not_break_select(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        store = MagicMock()
+        store.get_settings.side_effect = OSError("disk full")
+        svc = _make_service(store=store)
+
+        result, err, status = svc.select_device("/dev/sda1")
+
+        assert status == 200

@@ -301,6 +301,150 @@ class TestCreateRecordingDirs:
         create_recording_dirs(str(tmp_path), "cam-test")
 
 
+class TestStaleClipDetection:
+    """Test _is_recorder_stale — detects hung ffmpeg segment muxer."""
+
+    def test_no_cam_dir_not_stale(self, tmp_path):
+        """Missing camera directory is not stale (hasn't started yet)."""
+        svc = StreamingService(str(tmp_path / "live"), str(tmp_path / "rec"))
+        assert svc._is_recorder_stale("cam-nonexistent") is False
+
+    def test_no_clips_not_stale(self, tmp_path):
+        """Camera dir exists but no clips — first clip still recording."""
+        rec = tmp_path / "rec"
+        (rec / "cam1" / "2026-04-11").mkdir(parents=True)
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+        assert svc._is_recorder_stale("cam1") is False
+
+    def test_recent_clip_not_stale(self, tmp_path):
+        """Clip written within threshold is fine."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+        clip = cam_dir / "08-30-00.mp4"
+        clip.write_bytes(b"\x00" * 100)
+        # Touch it to now
+        clip.touch()
+
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+        assert svc._is_recorder_stale("cam1") is False
+
+    def test_old_clip_is_stale(self, tmp_path):
+        """Clip older than 2 * clip_duration triggers stale detection."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+        clip = cam_dir / "06-00-00.mp4"
+        clip.write_bytes(b"\x00" * 100)
+        # Set mtime to 10 minutes ago (threshold = 2 * 180 = 360s)
+        old_time = time.time() - 600
+        os.utime(str(clip), (old_time, old_time))
+
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+        assert svc._is_recorder_stale("cam1") is True
+
+    def test_stale_threshold_uses_clip_duration(self, tmp_path):
+        """Custom clip_duration changes stale threshold."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+        clip = cam_dir / "08-00-00.mp4"
+        clip.write_bytes(b"\x00" * 100)
+        # Set mtime to 70 seconds ago
+        os.utime(str(clip), (time.time() - 70, time.time() - 70))
+
+        # With clip_duration=30, threshold = 2*30 = 60s → 70s is stale
+        svc = StreamingService(str(tmp_path / "live"), str(rec), clip_duration=30)
+        assert svc._is_recorder_stale("cam1") is True
+
+        # With clip_duration=60, threshold = 2*60 = 120s → 70s is NOT stale
+        svc2 = StreamingService(str(tmp_path / "live"), str(rec), clip_duration=60)
+        assert svc2._is_recorder_stale("cam1") is False
+
+    def test_multiple_clips_uses_newest(self, tmp_path):
+        """Stale check uses the newest clip, not oldest."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+
+        old_clip = cam_dir / "06-00-00.mp4"
+        old_clip.write_bytes(b"\x00" * 100)
+        os.utime(str(old_clip), (time.time() - 600, time.time() - 600))
+
+        new_clip = cam_dir / "08-30-00.mp4"
+        new_clip.write_bytes(b"\x00" * 100)
+        new_clip.touch()  # now
+
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+        assert svc._is_recorder_stale("cam1") is False
+
+
+class TestWatchdogStaleRestart:
+    """Test that _check_processes force-restarts stalled recorders."""
+
+    @patch.object(StreamingService, "_start_recorder")
+    @patch.object(StreamingService, "_start_hls")
+    def test_stale_recorder_is_killed_and_restarted(
+        self, mock_hls, mock_rec, tmp_path
+    ):
+        """A live but stale recorder should be force-killed and restarted."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+        clip = cam_dir / "06-00-00.mp4"
+        clip.write_bytes(b"\x00" * 100)
+        os.utime(str(clip), (time.time() - 600, time.time() - 600))
+
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+
+        # Simulate live HLS and recorder processes
+        fake_hls = MagicMock()
+        fake_hls.poll.return_value = None  # alive
+        fake_rec = MagicMock()
+        fake_rec.poll.return_value = None  # alive but stale
+        fake_rec.pid = 12345
+
+        svc._hls_procs["cam1"] = fake_hls
+        svc._rec_procs["cam1"] = fake_rec
+
+        svc._check_processes()
+
+        # Recorder should have been terminated and restarted
+        fake_rec.terminate.assert_called_once()
+        mock_rec.assert_called_once_with("cam1", f"{MEDIAMTX_URL}/cam1")
+        # HLS should NOT have been restarted (it's alive)
+        mock_hls.assert_not_called()
+
+    @patch.object(StreamingService, "_start_recorder")
+    @patch.object(StreamingService, "_start_hls")
+    def test_healthy_recorder_not_restarted(
+        self, mock_hls, mock_rec, tmp_path
+    ):
+        """A live recorder with recent clips should not be restarted."""
+        rec = tmp_path / "rec"
+        cam_dir = rec / "cam1" / "2026-04-11"
+        cam_dir.mkdir(parents=True)
+        clip = cam_dir / "08-30-00.mp4"
+        clip.write_bytes(b"\x00" * 100)
+        clip.touch()  # recent
+
+        svc = StreamingService(str(tmp_path / "live"), str(rec))
+
+        fake_hls = MagicMock()
+        fake_hls.poll.return_value = None
+        fake_rec = MagicMock()
+        fake_rec.poll.return_value = None
+
+        svc._hls_procs["cam1"] = fake_hls
+        svc._rec_procs["cam1"] = fake_rec
+
+        svc._check_processes()
+
+        # Neither should be restarted
+        mock_rec.assert_not_called()
+        mock_hls.assert_not_called()
+
+
 class TestConstants:
     """Test module constants."""
 
