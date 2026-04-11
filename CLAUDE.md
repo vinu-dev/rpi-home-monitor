@@ -180,7 +180,8 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | 443 | NGINX | Server | HTTPS web dashboard |
 | 5000 | Flask | Server | App (loopback, proxied by NGINX) |
 | 8554 | MediaMTX | Server | RTSP camera stream input |
-| 8889 | MediaMTX | Server | WebRTC WHEP (live view, proxied by NGINX) |
+| 8889 | MediaMTX | Server | WebRTC WHEP signaling (proxied by NGINX) |
+| 8189/udp | MediaMTX | Server | WebRTC ICE media (direct browser→server) |
 | 22 | SSH | Both | Admin (dev images only) |
 | 80 | Flask | Camera | Setup wizard (first boot only) |
 | 5353 | Avahi | Both | mDNS discovery |

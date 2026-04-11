@@ -24,7 +24,9 @@
 <!-- Controls -->
 <div class="flex-between mt-8">
     <span id="live-stream-status" class="text-muted text-small"></span>
-    <button class="btn btn--secondary btn--small" id="btn-snapshot" disabled>Snapshot</button>
+    <div>
+        <button class="btn btn--secondary btn--small" id="btn-snapshot" disabled>Snapshot</button>
+    </div>
 </div>
 
 <!-- Camera Info -->
@@ -57,7 +59,14 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/hls.min.js') }}"></script>
 <script>
+/**
+ * Live View Player — WebRTC-first with HLS fallback.
+ *
+ * Cascade: WebRTC (WHEP, sub-1s) → HLS.js (10-15s) → native HLS (Safari)
+ * WebRTC uses MediaMTX WHEP endpoint via nginx /webrtc/ proxy.
+ */
 (function() {
     var videoEl = document.getElementById('live-video');
     var overlay = document.getElementById('live-overlay');
@@ -66,8 +75,14 @@
     var btnSnapshot = document.getElementById('btn-snapshot');
     var statusEl = document.getElementById('live-stream-status');
     var infoPanel = document.getElementById('live-camera-info');
+
+    var peerConnection = null;
     var hlsInstance = null;
     var cameras = [];
+    var currentTransport = '';  // 'webrtc' or 'hls'
+
+    // WHEP timeout — if WebRTC doesn't connect in 5s, fall back to HLS
+    var WHEP_TIMEOUT_MS = 5000;
 
     function showOverlay(msg) {
         overlayText.textContent = msg;
@@ -77,6 +92,8 @@
     function hideOverlay() {
         overlay.classList.add('hidden');
     }
+
+    // ---- Camera loading ----
 
     function loadCameras() {
         window.HM.api.get('/api/v1/cameras')
@@ -100,14 +117,10 @@
                     selectEl.appendChild(opt);
                 });
 
-                // Check URL param for pre-selected camera
                 var params = new URLSearchParams(window.location.search);
                 var camParam = params.get('camera');
-                if (camParam) {
-                    selectEl.value = camParam;
-                }
+                if (camParam) selectEl.value = camParam;
 
-                // Start playing selected or first
                 if (selectEl.value) {
                     startStream(selectEl.value);
                 } else {
@@ -128,10 +141,7 @@
     }
 
     function updateCameraInfo(cam) {
-        if (!cam) {
-            infoPanel.style.display = 'none';
-            return;
-        }
+        if (!cam) { infoPanel.style.display = 'none'; return; }
         infoPanel.style.display = '';
         document.getElementById('info-name').textContent = cam.name || cam.id;
         document.getElementById('info-resolution').textContent = cam.resolution || '--';
@@ -141,15 +151,23 @@
         document.getElementById('info-recording').textContent = cam.recording_mode || '--';
     }
 
+    // ---- Stream lifecycle ----
+
     function destroyStream() {
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
         if (hlsInstance) {
             hlsInstance.destroy();
             hlsInstance = null;
         }
+        videoEl.srcObject = null;
         videoEl.removeAttribute('src');
         videoEl.load();
         btnSnapshot.disabled = true;
         statusEl.textContent = '';
+        currentTransport = '';
     }
 
     function startStream(cameraId) {
@@ -158,27 +176,139 @@
         var cam = findCamera(cameraId);
         updateCameraInfo(cam);
 
-        if (!cam) {
-            showOverlay('Camera not found');
-            return;
-        }
+        if (!cam) { showOverlay('Camera not found'); return; }
+        if (cam.status !== 'online') { showOverlay('Camera offline'); return; }
 
-        if (cam.status !== 'online') {
-            showOverlay('Camera offline');
-            return;
-        }
+        statusEl.textContent = 'Connecting (WebRTC)...';
+        showOverlay('Connecting...');
 
+        // Try WebRTC first, fall back to HLS on failure
+        startWebRTC(cameraId).catch(function(err) {
+            console.warn('WebRTC failed, falling back to HLS:', err);
+            startHLS(cameraId);
+        });
+    }
+
+    // ---- WebRTC via WHEP ----
+
+    function startWebRTC(cameraId) {
+        return new Promise(function(resolve, reject) {
+            if (typeof RTCPeerConnection === 'undefined') {
+                reject(new Error('RTCPeerConnection not available'));
+                return;
+            }
+
+            var whepUrl = '/webrtc/' + encodeURIComponent(cameraId) + '/whep';
+            var pc = new RTCPeerConnection({
+                iceServers: []  // LAN only, no STUN/TURN
+            });
+            peerConnection = pc;
+
+            // Timeout — if no video track arrives, fall back
+            var timeout = setTimeout(function() {
+                if (currentTransport !== 'webrtc') {
+                    pc.close();
+                    peerConnection = null;
+                    reject(new Error('WHEP timeout'));
+                }
+            }, WHEP_TIMEOUT_MS);
+
+            // Receive video track from MediaMTX
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            pc.ontrack = function(event) {
+                if (event.streams && event.streams[0]) {
+                    videoEl.srcObject = event.streams[0];
+                    videoEl.play().catch(function() {});
+                    clearTimeout(timeout);
+                    currentTransport = 'webrtc';
+                    hideOverlay();
+                    btnSnapshot.disabled = false;
+                    statusEl.textContent = 'Live (WebRTC)';
+                    resolve();
+                }
+            };
+
+            pc.onconnectionstatechange = function() {
+                if (pc.connectionState === 'failed' ||
+                    pc.connectionState === 'disconnected') {
+                    clearTimeout(timeout);
+                    if (currentTransport === 'webrtc') {
+                        // Was connected, now lost — try reconnect
+                        console.warn('WebRTC connection lost, retrying...');
+                        destroyStream();
+                        startStream(cameraId);
+                    }
+                }
+            };
+
+            // Create SDP offer and send to WHEP endpoint
+            pc.createOffer().then(function(offer) {
+                return pc.setLocalDescription(offer);
+            }).then(function() {
+                // Wait for ICE gathering to complete (or timeout after 2s)
+                return waitForICE(pc, 2000);
+            }).then(function() {
+                // POST SDP offer to MediaMTX WHEP endpoint
+                return fetch(whepUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/sdp' },
+                    body: pc.localDescription.sdp
+                });
+            }).then(function(response) {
+                if (!response.ok) {
+                    throw new Error('WHEP POST failed: ' + response.status);
+                }
+                return response.text();
+            }).then(function(sdpAnswer) {
+                return pc.setRemoteDescription(
+                    new RTCSessionDescription({ type: 'answer', sdp: sdpAnswer })
+                );
+            }).catch(function(err) {
+                clearTimeout(timeout);
+                pc.close();
+                peerConnection = null;
+                reject(err);
+            });
+        });
+    }
+
+    function waitForICE(pc, maxWait) {
+        return new Promise(function(resolve) {
+            if (pc.iceGatheringState === 'complete') {
+                resolve();
+                return;
+            }
+            var done = false;
+            var timer = setTimeout(function() {
+                if (!done) { done = true; resolve(); }
+            }, maxWait);
+            pc.onicegatheringstatechange = function() {
+                if (pc.iceGatheringState === 'complete' && !done) {
+                    done = true;
+                    clearTimeout(timer);
+                    resolve();
+                }
+            };
+        });
+    }
+
+    // ---- HLS fallback ----
+
+    function startHLS(cameraId) {
         var streamUrl = '/live/' + encodeURIComponent(cameraId) + '/stream.m3u8';
-        statusEl.textContent = 'Connecting...';
+        statusEl.textContent = 'Connecting (HLS)...';
+        currentTransport = 'hls';
 
-        // Safari has native HLS support
+        // Safari native HLS
         if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
             videoEl.src = streamUrl;
             videoEl.addEventListener('loadedmetadata', function onLoaded() {
                 videoEl.removeEventListener('loadedmetadata', onLoaded);
                 hideOverlay();
                 btnSnapshot.disabled = false;
-                statusEl.textContent = 'Live';
+                statusEl.textContent = 'Live (HLS)';
             });
             videoEl.addEventListener('error', function onErr() {
                 videoEl.removeEventListener('error', onErr);
@@ -189,11 +319,13 @@
             return;
         }
 
-        // Use HLS.js for other browsers
+        // HLS.js for Chrome, Firefox, etc.
         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
             hlsInstance = new Hls({
                 enableWorker: true,
                 lowLatencyMode: true,
+                liveSyncDurationCount: 2,
+                liveMaxLatencyDurationCount: 4,
             });
             hlsInstance.loadSource(streamUrl);
             hlsInstance.attachMedia(videoEl);
@@ -201,7 +333,7 @@
             hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
                 hideOverlay();
                 btnSnapshot.disabled = false;
-                statusEl.textContent = 'Live';
+                statusEl.textContent = 'Live (HLS)';
                 videoEl.play().catch(function() {});
             });
 
@@ -214,15 +346,16 @@
                 }
             });
         } else {
-            showOverlay('HLS playback not supported in this browser');
+            showOverlay('Live playback not supported in this browser');
             statusEl.textContent = 'Unsupported';
         }
     }
 
+    // ---- Event listeners ----
+
     selectEl.addEventListener('change', function() {
         if (selectEl.value) {
             startStream(selectEl.value);
-            // Update URL without reload
             var url = new URL(window.location);
             url.searchParams.set('camera', selectEl.value);
             history.replaceState(null, '', url.toString());
@@ -236,9 +369,7 @@
         }
     });
 
-    function init() {
-        loadCameras();
-    }
+    function init() { loadCameras(); }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

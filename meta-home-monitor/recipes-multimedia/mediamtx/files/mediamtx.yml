@@ -30,9 +30,18 @@ protocols: [tcp]
 hls: no
 
 ###############################################
-# WebRTC
+# WebRTC (WHEP — primary live view transport)
 ###############################################
-webrtc: no
+# Enables sub-second live view via browser RTCPeerConnection.
+# WHEP endpoint: POST /<stream-path>/whep (SDP offer/answer)
+# Proxied through nginx at /webrtc/<stream-path>/whep
+webrtc: yes
+webrtcAddress: :8889
+
+# ICE candidates — local network only (no STUN/TURN needed for LAN)
+webrtcICEServers2: []
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ""
 
 ###############################################
 # Recording
