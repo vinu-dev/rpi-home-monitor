@@ -10,6 +10,7 @@ import os
 from flask import Flask
 
 from monitor.services.audit import AuditLogger
+from monitor.services.storage import StorageManager
 from monitor.services.streaming import StreamingService
 from monitor.store import Store
 
@@ -111,14 +112,34 @@ def create_app(config=None):
         _ensure_default_admin(app.store)
         log.debug("Default admin user ensured")
 
+    # Initialize storage manager (loop recording + USB support)
+    recordings_dir = app.config["RECORDINGS_DIR"]
+    app.storage_manager = StorageManager(
+        recordings_dir=recordings_dir,
+        data_dir=app.config["DATA_DIR"],
+    )
+
+    # Auto-mount USB if previously configured
+    if not app.config.get("TESTING"):
+        recordings_dir = _auto_mount_usb(app, recordings_dir)
+
     # Initialize streaming service (manages ffmpeg pipelines per camera)
     app.streaming = StreamingService(
         live_dir=app.config["LIVE_DIR"],
-        recordings_dir=app.config["RECORDINGS_DIR"],
+        recordings_dir=recordings_dir,
         clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
     )
+
+    # Connect storage manager to streaming service for dir change notifications
+    def _on_recording_dir_change(new_dir):
+        """Called when StorageManager switches recording directory."""
+        app.streaming.update_recordings_dir(new_dir)
+
+    app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
+
     if not app.config.get("TESTING"):
         app.streaming.start()
+        app.storage_manager.start()
         # Resume pipelines for any already-confirmed online cameras
         _resume_camera_pipelines(app)
 
@@ -130,6 +151,7 @@ def create_app(config=None):
     from monitor.api.settings import settings_bp
     from monitor.api.users import users_bp
     from monitor.api.ota import ota_bp
+    from monitor.api.storage import storage_bp
     from monitor.auth import auth_bp
     from monitor.provisioning import provisioning_bp as setup_bp
     from monitor.views import views_bp
@@ -144,9 +166,50 @@ def create_app(config=None):
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
+    app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
 
     log.info("Monitor server ready — blueprints registered")
     return app
+
+
+def _auto_mount_usb(app, default_recordings_dir):
+    """Auto-mount USB if previously configured in settings.
+
+    Returns the recordings directory to use (USB or default).
+    """
+    try:
+        settings = app.store.get_settings()
+        usb_device = getattr(settings, "usb_device", "")
+        usb_rec_dir = getattr(settings, "usb_recordings_dir", "")
+
+        if not usb_device or not usb_rec_dir:
+            return default_recordings_dir
+
+        from monitor.services import usb
+        # Check if device is still present
+        devices = usb.detect_devices()
+        found = any(d["path"] == usb_device for d in devices)
+        if not found:
+            log.warning("Configured USB device %s not found — "
+                        "using internal storage", usb_device)
+            return default_recordings_dir
+
+        # Mount it
+        ok, err = usb.mount_device(usb_device)
+        if not ok:
+            log.error("Failed to auto-mount USB %s: %s — "
+                      "using internal storage", usb_device, err)
+            return default_recordings_dir
+
+        # Ensure recordings folder exists
+        rec_dir = usb.prepare_recordings_dir()
+        app.storage_manager.set_recordings_dir(rec_dir)
+        log.info("Auto-mounted USB storage: %s -> %s", usb_device, rec_dir)
+        return rec_dir
+
+    except Exception as e:
+        log.error("USB auto-mount failed: %s", e)
+        return default_recordings_dir
 
 
 def _resume_camera_pipelines(app):

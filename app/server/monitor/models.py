@@ -54,6 +54,9 @@ class Settings:
     hostname: str = "home-monitor"
     setup_completed: bool = False
     firmware_version: str = "1.0.0"
+    # USB storage — set when user selects a USB device for recordings
+    usb_device: str = ""              # e.g. /dev/sda1 (empty = internal)
+    usb_recordings_dir: str = ""      # e.g. /mnt/recordings/home-monitor-recordings
 
 
 @dataclass

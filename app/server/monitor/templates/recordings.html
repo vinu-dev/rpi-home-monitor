@@ -155,7 +155,7 @@
 
                     var actionsHtml =
                         '<button class="btn btn--primary btn--small btn-play-clip" ' +
-                        'data-url="/clips/' + encodeURIComponent(clip.camera_id) + '/' +
+                        'data-url="/api/v1/recordings/' + encodeURIComponent(clip.camera_id) + '/' +
                         encodeURIComponent(clip.date) + '/' + encodeURIComponent(clip.filename) + '" ' +
                         'data-label="' + window.HM.escapeHtml(clip.start_time) + '">Play</button>';
 

@@ -20,11 +20,13 @@ Environment=MONITOR_CONFIG_DIR=/data/config
 Environment=MONITOR_CERTS_DIR=/data/certs
 
 # Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
+# Note: ProtectSystem=strict creates a private mount namespace, which
+# prevents USB mounts from being visible to NGINX for clip serving.
+# We use targeted protections instead.
 ProtectHome=true
-ReadWritePaths=/data
-PrivateTmp=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
 
 [Install]
 WantedBy=multi-user.target

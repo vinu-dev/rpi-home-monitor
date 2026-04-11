@@ -50,6 +50,29 @@ class StreamingService:
         with self._lock:
             return list(self._hls_procs.keys())
 
+    @property
+    def recordings_dir(self):
+        """Current recordings directory."""
+        return str(self._recordings_dir)
+
+    def update_recordings_dir(self, new_dir):
+        """Change recordings directory and restart all recorder pipelines.
+
+        Called by StorageManager when switching between internal/USB storage.
+        HLS and snapshot pipelines are unaffected (they use live_dir).
+        """
+        old_dir = str(self._recordings_dir)
+        self._recordings_dir = Path(new_dir)
+        log.info("Recordings dir changed: %s -> %s", old_dir, new_dir)
+
+        # Restart recorders for all active cameras
+        active = self.active_cameras
+        for cam_id in active:
+            self._stop_process(cam_id, self._rec_procs, "recorder")
+            rtsp_url = f"{MEDIAMTX_URL}/{cam_id}"
+            self._start_recorder(cam_id, rtsp_url)
+            log.info("Restarted recorder for %s with new dir", cam_id)
+
     def start(self):
         """Start the streaming service."""
         self._running = True

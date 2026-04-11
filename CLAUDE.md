@@ -68,6 +68,7 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 - **Fail-Silent Adapter** — all hardware access wrapped in try/except, fails gracefully.
 - **App Factory** — Flask `create_app()`, blueprints, service layer.
 - **Repository** — `Store` class for JSON persistence with atomic writes.
+- **Observer/Callback** — simple callback for cross-service notifications (e.g., StorageManager → StreamingService dir change).
 
 **Patterns we NEVER use:**
 - No DI containers, no event sourcing, no CQRS, no microservices, no plugin systems, no ORM.
@@ -87,7 +88,7 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 | Component | File(s) | Status | What It Does |
 |-----------|---------|--------|--------------|
-| App factory | `__init__.py` | COMPLETE | Creates Flask app, registers 8 blueprints, creates default admin user |
+| App factory | `__init__.py` | COMPLETE | Creates Flask app, registers 10 blueprints, creates default admin user |
 | Auth/CSRF | `auth.py` | COMPLETE | bcrypt (cost 12), sessions (30min idle/24hr max), rate limit (5/min), CSRF tokens |
 | Data models | `models.py` | COMPLETE | Camera, User, Settings, Clip dataclasses — no DB, JSON files |
 | JSON store | `store.py` | COMPLETE | Thread-safe JSON persistence with atomic writes (cameras.json, users.json, settings.json) |
@@ -106,7 +107,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | Health svc | `services/health.py` | COMPLETE | CPU temp, RAM, disk, uptime. Warns at CPU>70C, disk>85%, RAM>90% |
 | Audit svc | `services/audit.py` | COMPLETE | Append-only JSON audit log at /data/logs/audit.log |
 | Discovery svc | `services/discovery.py` | PARTIAL | Camera online/offline tracking, pending camera reports |
-| Storage svc | `services/storage.py` | PARTIAL | Loop recording cleanup when disk >90% |
+| Storage svc | `services/storage.py` | COMPLETE | FIFO loop recording, background cleanup, USB/internal dir switching |
+| USB svc | `services/usb.py` | COMPLETE | USB detection (lsblk), mount/unmount, format to ext4, auto-mount |
+| Storage API | `api/storage.py` | COMPLETE | USB device list, select, format, eject, storage stats |
 
 ### Server Templates (`app/server/monitor/templates/`)
 
@@ -221,9 +224,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 ## Tests
 
-- **Server:** 371 tests, 91% coverage (`python -m pytest app/server/tests/ -v`)
+- **Server:** 479 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
 - **Camera:** 38 tests (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 409 tests
+- **Total:** 517 tests
 
 ## PR History
 

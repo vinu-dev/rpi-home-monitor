@@ -277,6 +277,7 @@ This project follows a small, deliberate set of design patterns. These are chose
 | **Strategy** | Streaming backends, capture backends | Swappable implementations behind a Protocol interface |
 | **Fail-Silent Adapter** | `camera/led.py`, hardware access | Wraps hardware calls, fails gracefully on unsupported platforms |
 | **Constructor Injection** | All classes | Dependencies passed in `__init__`, never imported globals |
+| **Observer/Callback** | `StorageManager` → `StreamingService` | Notify dependent services of state changes without tight coupling |
 
 #### Patterns We Do NOT Use (and Why)
 
@@ -315,6 +316,13 @@ This project follows a small, deliberate set of design patterns. These are chose
 - **Pass dependencies in `__init__`.** Never import a service and call it directly from another service.
 - **Flask app context** (`current_app`) is acceptable for accessing app-wide singletons (Store, AuditLogger).
 - **No service locators, no global registries.** If a service needs another service, it receives it as a constructor argument.
+
+#### Observer/Callback Pattern Rule
+
+- **Use simple callbacks for cross-service notifications.** When Service A needs to tell Service B about a state change, A holds a `_on_change` callback set via `set_*_callback()`.
+- **Example:** `StorageManager.set_dir_change_callback(fn)` — when recordings dir changes (e.g., switching to USB), StorageManager calls `fn(new_dir)`, which triggers StreamingService to restart recorder pipelines.
+- **Keep it simple.** One callback per concern. No event buses, no pub/sub, no observer registries. This system has ~10 services — a callback function is sufficient.
+- **Wiring happens in `create_app()`.** The app factory connects callbacks between services.
 
 #### Live Streaming Architecture Rule
 

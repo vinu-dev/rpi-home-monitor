@@ -126,6 +126,65 @@
     </div>
 </div>
 
+<!-- Storage Management (admin only) -->
+<div class="settings-section" id="section-storage" style="display:none;">
+    <div class="settings-section__title">Recording Storage</div>
+    <div class="card">
+        <div class="info-row">
+            <span class="info-row__label">Recording To</span>
+            <span class="info-row__value" id="storage-location">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Recordings Size</span>
+            <span class="info-row__value" id="storage-rec-size">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Total / Free</span>
+            <span class="info-row__value" id="storage-space">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Clips</span>
+            <span class="info-row__value" id="storage-clips">--</span>
+        </div>
+        <div class="info-row" style="border-bottom:none;">
+            <span class="info-row__label">Loop Recording</span>
+            <span class="info-row__value" style="color:#4ade80;">Active (FIFO)</span>
+        </div>
+    </div>
+
+    <!-- USB Devices -->
+    <div class="card mt-16">
+        <div class="flex-between" style="margin-bottom:12px;">
+            <span style="font-weight:600;">USB Storage Devices</span>
+            <button class="btn btn--secondary btn--small" id="btn-scan-usb">Scan</button>
+        </div>
+        <div id="usb-device-list">
+            <div class="text-muted" style="padding:8px 0;">Click Scan to detect USB devices</div>
+        </div>
+    </div>
+
+    <!-- Format Dialog (hidden) -->
+    <div class="inline-form" id="usb-format-wrap">
+        <div class="card" style="margin-top:12px;">
+            <div class="msg msg--warn" style="background:#78350f; color:#fde68a; padding:10px; border-radius:6px; margin-bottom:12px; font-size:0.85em;">
+                WARNING: Formatting will ERASE ALL DATA on the device. This cannot be undone.
+            </div>
+            <p style="margin-bottom:12px;">
+                Device <strong id="format-device-name">--</strong> has an unsupported filesystem
+                (<span id="format-device-fs">--</span>). Format it to ext4?
+            </p>
+            <button class="btn btn--danger btn--small" id="btn-confirm-format">Format to ext4</button>
+            <button class="btn btn--secondary btn--small" id="btn-cancel-format" style="margin-left:8px;">Cancel</button>
+            <input type="hidden" id="format-device-path" value="">
+        </div>
+    </div>
+
+    <!-- Eject USB (shown when USB active) -->
+    <div id="usb-eject-wrap" style="display:none; margin-top:12px;">
+        <button class="btn btn--secondary btn--small" id="btn-eject-usb">Eject USB &amp; Use Internal Storage</button>
+    </div>
+</div>
+
 <!-- System Info (all users) -->
 <div class="settings-section">
     <div class="settings-section__title">System Info</div>
@@ -193,9 +252,11 @@
                     document.getElementById('section-system-settings').style.display = '';
                     document.getElementById('section-user-mgmt').style.display = '';
                     document.getElementById('section-wifi').style.display = '';
+                    document.getElementById('section-storage').style.display = '';
                     loadSettings();
                     loadUsers();
                     loadWifi();
+                    loadStorageStatus();
                 }
 
                 loadSystemInfo();
@@ -330,6 +391,151 @@
         list.innerHTML = html;
     }
 
+    /* --- Storage Management --- */
+    function loadStorageStatus() {
+        window.HM.api.get('/api/v1/storage/status')
+            .then(function(data) {
+                var loc = data.is_usb ? 'USB Storage' : 'Internal (/data)';
+                document.getElementById('storage-location').textContent = loc;
+                document.getElementById('storage-rec-size').textContent =
+                    (data.recordings_mb || 0) + ' MB (' + (data.clip_count || 0) + ' clips)';
+                document.getElementById('storage-space').textContent =
+                    (data.total_gb || 0) + ' GB / ' + (data.free_gb || 0) + ' GB free';
+                document.getElementById('storage-clips').textContent =
+                    (data.clip_count || 0) + ' clips across ' + (data.camera_count || 0) + ' cameras';
+
+                // Show eject button if USB is active
+                var ejectWrap = document.getElementById('usb-eject-wrap');
+                if (data.is_usb) {
+                    ejectWrap.style.display = '';
+                } else {
+                    ejectWrap.style.display = 'none';
+                }
+            })
+            .catch(function() {
+                document.getElementById('storage-location').textContent = 'Error loading';
+            });
+    }
+
+    function scanUsbDevices() {
+        var list = document.getElementById('usb-device-list');
+        var btn = document.getElementById('btn-scan-usb');
+        btn.disabled = true;
+        btn.textContent = 'Scanning...';
+        list.innerHTML = '<div class="text-muted" style="padding:8px 0;">Scanning...</div>';
+
+        window.HM.api.get('/api/v1/storage/devices')
+            .then(function(data) {
+                btn.disabled = false;
+                btn.textContent = 'Scan';
+
+                var devices = data.devices || [];
+                if (devices.length === 0) {
+                    list.innerHTML = '<div class="text-muted" style="padding:8px 0;">No USB devices found. Plug in a USB drive and scan again.</div>';
+                    return;
+                }
+
+                var html = '';
+                devices.forEach(function(d) {
+                    var fsLabel = d.fstype ? d.fstype : 'unformatted';
+                    var statusBadge = d.supported
+                        ? '<span style="color:#4ade80;font-size:0.8em;">Compatible</span>'
+                        : '<span style="color:#f87171;font-size:0.8em;">Needs format</span>';
+
+                    html += '<div style="padding:10px;border-bottom:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center;">';
+                    html += '<div>';
+                    html += '<div style="font-weight:500;">' + window.HM.escapeHtml(d.model) + '</div>';
+                    html += '<div style="font-size:0.85em;color:#94a3b8;">' + window.HM.escapeHtml(d.path) + ' &middot; ' + window.HM.escapeHtml(d.size) + ' &middot; ' + window.HM.escapeHtml(fsLabel) + ' ' + statusBadge + '</div>';
+                    html += '</div>';
+
+                    if (d.supported) {
+                        html += '<button class="btn btn--primary btn--small btn-select-usb" data-path="' + window.HM.escapeHtml(d.path) + '">Use</button>';
+                    } else {
+                        html += '<button class="btn btn--secondary btn--small btn-format-usb" data-path="' + window.HM.escapeHtml(d.path) + '" data-name="' + window.HM.escapeHtml(d.model) + '" data-fs="' + window.HM.escapeHtml(fsLabel) + '">Format</button>';
+                    }
+                    html += '</div>';
+                });
+                list.innerHTML = html;
+
+                // Bind select buttons
+                list.querySelectorAll('.btn-select-usb').forEach(function(b) {
+                    b.addEventListener('click', function() { selectUsbDevice(b.getAttribute('data-path')); });
+                });
+                // Bind format buttons
+                list.querySelectorAll('.btn-format-usb').forEach(function(b) {
+                    b.addEventListener('click', function() {
+                        showFormatDialog(b.getAttribute('data-path'), b.getAttribute('data-name'), b.getAttribute('data-fs'));
+                    });
+                });
+            })
+            .catch(function() {
+                btn.disabled = false;
+                btn.textContent = 'Scan';
+                list.innerHTML = '<div class="text-muted" style="padding:8px 0;color:#f87171;">Failed to scan devices</div>';
+            });
+    }
+
+    function selectUsbDevice(devicePath) {
+        if (!confirm('Use this USB device for recordings? Current internal recordings will remain on /data.')) return;
+
+        window.HM.api.post('/api/v1/storage/select', { device_path: devicePath })
+            .then(function(data) {
+                window.HM.toast(data.message || 'USB storage active', 'success');
+                loadStorageStatus();
+                scanUsbDevices();
+            })
+            .catch(function(err) {
+                if (err.needs_format) {
+                    window.HM.toast('Device needs formatting first', 'error');
+                } else {
+                    window.HM.toast(err.message || 'Failed to select device', 'error');
+                }
+            });
+    }
+
+    function showFormatDialog(path, name, fs) {
+        document.getElementById('format-device-name').textContent = name;
+        document.getElementById('format-device-fs').textContent = fs;
+        document.getElementById('format-device-path').value = path;
+        document.getElementById('usb-format-wrap').classList.add('visible');
+    }
+
+    function formatUsbDevice() {
+        var path = document.getElementById('format-device-path').value;
+        if (!path) return;
+
+        var btn = document.getElementById('btn-confirm-format');
+        btn.disabled = true;
+        btn.textContent = 'Formatting...';
+
+        window.HM.api.post('/api/v1/storage/format', { device_path: path, confirm: true })
+            .then(function(data) {
+                window.HM.toast(data.message || 'Format complete', 'success');
+                document.getElementById('usb-format-wrap').classList.remove('visible');
+                btn.disabled = false;
+                btn.textContent = 'Format to ext4';
+                scanUsbDevices();
+            })
+            .catch(function(err) {
+                window.HM.toast(err.message || 'Format failed', 'error');
+                btn.disabled = false;
+                btn.textContent = 'Format to ext4';
+            });
+    }
+
+    function ejectUsb() {
+        if (!confirm('Eject USB and switch recordings back to internal storage?')) return;
+
+        window.HM.api.post('/api/v1/storage/eject', {})
+            .then(function(data) {
+                window.HM.toast(data.message || 'USB ejected', 'success');
+                loadStorageStatus();
+            })
+            .catch(function(err) {
+                window.HM.toast(err.message || 'Eject failed', 'error');
+            });
+    }
+
     /* --- Event Bindings --- */
     function bindEvents() {
         // Save Settings
@@ -456,6 +662,30 @@
                         window.HM.toast(err.message || 'WiFi change failed', 'error');
                     });
             });
+        }
+
+        // Storage - USB scan
+        var btnScanUsb = document.getElementById('btn-scan-usb');
+        if (btnScanUsb) {
+            btnScanUsb.addEventListener('click', scanUsbDevices);
+        }
+
+        // Storage - Format
+        var btnConfirmFormat = document.getElementById('btn-confirm-format');
+        if (btnConfirmFormat) {
+            btnConfirmFormat.addEventListener('click', formatUsbDevice);
+        }
+        var btnCancelFormat = document.getElementById('btn-cancel-format');
+        if (btnCancelFormat) {
+            btnCancelFormat.addEventListener('click', function() {
+                document.getElementById('usb-format-wrap').classList.remove('visible');
+            });
+        }
+
+        // Storage - Eject
+        var btnEject = document.getElementById('btn-eject-usb');
+        if (btnEject) {
+            btnEject.addEventListener('click', ejectUsb);
         }
 
         // Change password
