@@ -4,6 +4,7 @@ RPi Home Monitor - Server Application
 Flask-based web server that manages RTSP camera streams,
 records video clips, and provides a mobile-friendly web dashboard.
 """
+
 import logging
 import os
 
@@ -79,8 +80,7 @@ def create_app(config=None):
     app.config.update(
         SECRET_KEY=os.urandom(32).hex(),
         DATA_DIR=os.environ.get("MONITOR_DATA_DIR", "/data"),
-        RECORDINGS_DIR=os.environ.get("MONITOR_RECORDINGS_DIR",
-                                      "/data/recordings"),
+        RECORDINGS_DIR=os.environ.get("MONITOR_RECORDINGS_DIR", "/data/recordings"),
         LIVE_DIR=os.environ.get("MONITOR_LIVE_DIR", "/data/live"),
         CONFIG_DIR=config_dir,
         CERTS_DIR=os.environ.get("MONITOR_CERTS_DIR", "/data/certs"),
@@ -91,14 +91,11 @@ def create_app(config=None):
     if config:
         app.config.update(config)
 
-    log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s",
-              app.config["DATA_DIR"], config_dir)
+    log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s", app.config["DATA_DIR"], config_dir)
 
     # Load persistent secret key (unless overridden by test config)
     if not config or "SECRET_KEY" not in config:
-        app.config["SECRET_KEY"] = _load_or_create_secret_key(
-            app.config["CONFIG_DIR"]
-        )
+        app.config["SECRET_KEY"] = _load_or_create_secret_key(app.config["CONFIG_DIR"])
 
     # --- Core infrastructure ---
     _init_infrastructure(app)
@@ -194,17 +191,23 @@ def _auto_mount_usb(app, default_recordings_dir):
             return default_recordings_dir
 
         from monitor.services import usb
+
         devices = usb.detect_devices()
         found = any(d["path"] == usb_device for d in devices)
         if not found:
-            log.warning("Configured USB device %s not found — "
-                        "using internal storage", usb_device)
+            log.warning(
+                "Configured USB device %s not found — using internal storage",
+                usb_device,
+            )
             return default_recordings_dir
 
         ok, err = usb.mount_device(usb_device)
         if not ok:
-            log.error("Failed to auto-mount USB %s: %s — "
-                      "using internal storage", usb_device, err)
+            log.error(
+                "Failed to auto-mount USB %s: %s — using internal storage",
+                usb_device,
+                err,
+            )
             return default_recordings_dir
 
         rec_dir = usb.prepare_recordings_dir()

@@ -1,4 +1,5 @@
 """Tests for the audit logging service."""
+
 import json
 from unittest.mock import patch
 
@@ -139,6 +140,7 @@ class TestConcurrency:
 
     def test_concurrent_writes(self, data_dir):
         import threading
+
         logger = AuditLogger(str(data_dir / "logs"))
         errors = []
 

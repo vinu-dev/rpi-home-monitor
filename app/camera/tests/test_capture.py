@@ -1,4 +1,5 @@
 """Tests for camera_streamer.capture module."""
+
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.capture import CaptureManager
@@ -78,6 +79,7 @@ class TestCaptureManager:
     def test_v4l2ctl_timeout(self, tmp_path):
         """Should handle v4l2-ctl timeout gracefully."""
         import subprocess
+
         fake_dev = tmp_path / "video0"
         fake_dev.write_text("")
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 5)):

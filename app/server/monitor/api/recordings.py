@@ -7,6 +7,7 @@ Endpoints:
   GET    /recordings/<cam-id>/latest            - most recent clip
   DELETE /recordings/<cam-id>/<date>/<filename> - delete a clip (admin)
 """
+
 import os
 from dataclasses import asdict
 
@@ -25,7 +26,9 @@ def _get_recorder() -> RecorderService:
     the static RECORDINGS_DIR from config.
     """
     storage = getattr(current_app, "storage_manager", None)
-    recordings_dir = storage.recordings_dir if storage else current_app.config["RECORDINGS_DIR"]
+    recordings_dir = (
+        storage.recordings_dir if storage else current_app.config["RECORDINGS_DIR"]
+    )
     return RecorderService(
         recordings_dir,
         current_app.config["LIVE_DIR"],
@@ -85,9 +88,7 @@ def get_clip(camera_id, clip_date, filename):
         return jsonify({"error": "Invalid filename"}), 400
 
     recorder = _get_recorder()
-    clip_path = os.path.join(
-        recorder._recordings_dir, camera_id, clip_date, filename
-    )
+    clip_path = os.path.join(recorder._recordings_dir, camera_id, clip_date, filename)
     if not os.path.isfile(clip_path):
         return jsonify({"error": "Clip not found"}), 404
 

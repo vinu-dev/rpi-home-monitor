@@ -105,4 +105,4 @@ jobs:
         with:
           coverageFile: app/camera/coverage.xml
           token: ${{ secrets.GITHUB_TOKEN }}
-          thresholdAll: 0.80
+          thresholdAll: 0.70

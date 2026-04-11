@@ -26,6 +26,7 @@ Log format (one JSON object per line):
 
 Rotation: max 50MB, retained 90 days.
 """
+
 import json
 import logging
 import threading

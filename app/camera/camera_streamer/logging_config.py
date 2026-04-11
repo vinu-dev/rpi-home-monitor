@@ -7,6 +7,7 @@ all log output persists across service restarts for debugging.
 File logs use RotatingFileHandler to avoid filling disk:
   - /data/logs/camera.log  — main app log (5 MB × 3 = 15 MB max)
 """
+
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -15,8 +16,8 @@ from pathlib import Path
 LOG_DIR = Path(os.environ.get("CAMERA_LOG_DIR", "/data/logs"))
 LOG_FILE = "camera.log"
 LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-LOG_MAX_BYTES = 5 * 1024 * 1024    # 5 MB per file (smaller disk on Zero 2W)
-LOG_BACKUP_COUNT = 3                # keep 3 rotated files (15 MB total)
+LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file (smaller disk on Zero 2W)
+LOG_BACKUP_COUNT = 3  # keep 3 rotated files (15 MB total)
 
 
 def configure_logging(log_level=None):

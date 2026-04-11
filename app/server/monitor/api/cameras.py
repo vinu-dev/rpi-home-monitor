@@ -10,6 +10,7 @@ Endpoints:
 
 Routes are thin — all orchestration is in CameraService.
 """
+
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, login_required
@@ -51,7 +52,8 @@ def update_camera(camera_id):
         return jsonify({"error": "JSON body required"}), 400
 
     error, status = current_app.camera_service.update(
-        camera_id, data,
+        camera_id,
+        data,
         user=session.get("username", ""),
         ip=request.remote_addr or "",
     )

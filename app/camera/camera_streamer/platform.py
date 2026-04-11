@@ -17,6 +17,7 @@ Environment variables:
   CAMERA_WIFI_IFACE   — WiFi interface name (default: wlan0)
   CAMERA_HOSTNAME_PREFIX — hostname prefix (default: rpi-divinu-cam)
 """
+
 import glob
 import logging
 import os
@@ -51,21 +52,11 @@ class Platform:
 
         Priority: env vars > hardware probing > defaults.
         """
-        camera_device = os.environ.get(
-            "CAMERA_DEVICE", _probe_camera_device()
-        )
-        led_path = os.environ.get(
-            "CAMERA_LED_PATH", _probe_led_path()
-        )
-        thermal_path = os.environ.get(
-            "CAMERA_THERMAL_PATH", _probe_thermal_path()
-        )
-        wifi_interface = os.environ.get(
-            "CAMERA_WIFI_IFACE", _probe_wifi_interface()
-        )
-        hostname_prefix = os.environ.get(
-            "CAMERA_HOSTNAME_PREFIX", "rpi-divinu-cam"
-        )
+        camera_device = os.environ.get("CAMERA_DEVICE", _probe_camera_device())
+        led_path = os.environ.get("CAMERA_LED_PATH", _probe_led_path())
+        thermal_path = os.environ.get("CAMERA_THERMAL_PATH", _probe_thermal_path())
+        wifi_interface = os.environ.get("CAMERA_WIFI_IFACE", _probe_wifi_interface())
+        hostname_prefix = os.environ.get("CAMERA_HOSTNAME_PREFIX", "rpi-divinu-cam")
 
         platform = cls(
             camera_device=camera_device,

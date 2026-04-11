@@ -10,6 +10,7 @@ Design patterns:
 - Single Responsibility (camera lifecycle only)
 - Fail-Silent (audit failures don't break operations)
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -74,9 +75,14 @@ class CameraService:
             "recording_mode": camera.recording_mode,
         }, ""
 
-    def confirm(self, camera_id: str, name: str = "",
-                location: str = "", user: str = "",
-                ip: str = "") -> tuple[dict | None, str, int]:
+    def confirm(
+        self,
+        camera_id: str,
+        name: str = "",
+        location: str = "",
+        user: str = "",
+        ip: str = "",
+    ) -> tuple[dict | None, str, int]:
         """Confirm a discovered (pending) camera.
 
         Transitions camera from pending → online, sets RTSP URL,
@@ -94,9 +100,7 @@ class CameraService:
         camera.name = name or camera.name or camera_id
         camera.location = location or camera.location
         camera.status = "online"
-        camera.paired_at = datetime.now(UTC).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        camera.paired_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         camera.rtsp_url = f"rtsp://127.0.0.1:8554/{camera.id}"
 
         self._store.save_camera(camera)
@@ -106,19 +110,26 @@ class CameraService:
             self._streaming.start_camera(camera.id)
 
         self._log_audit(
-            "CAMERA_CONFIRMED", user, ip,
+            "CAMERA_CONFIRMED",
+            user,
+            ip,
             f"confirmed camera {camera_id} as '{camera.name}'",
         )
 
-        return {
-            "id": camera.id,
-            "name": camera.name,
-            "status": camera.status,
-            "paired_at": camera.paired_at,
-        }, "", 200
+        return (
+            {
+                "id": camera.id,
+                "name": camera.name,
+                "status": camera.status,
+                "paired_at": camera.paired_at,
+            },
+            "",
+            200,
+        )
 
-    def update(self, camera_id: str, data: dict,
-               user: str = "", ip: str = "") -> tuple[str, int]:
+    def update(
+        self, camera_id: str, data: dict, user: str = "", ip: str = ""
+    ) -> tuple[str, int]:
         """Update camera settings.
 
         Validates input, persists changes, and handles recording mode
@@ -147,22 +158,21 @@ class CameraService:
 
         # Handle recording mode transitions
         if self._streaming and "recording_mode" in data:
-            if data["recording_mode"] == "continuous" \
-                    and old_recording_mode == "off":
+            if data["recording_mode"] == "continuous" and old_recording_mode == "off":
                 self._streaming.start_camera(camera_id)
-            elif data["recording_mode"] == "off" \
-                    and old_recording_mode == "continuous":
+            elif data["recording_mode"] == "off" and old_recording_mode == "continuous":
                 self._streaming.stop_camera(camera_id)
 
         self._log_audit(
-            "CAMERA_UPDATED", user, ip,
+            "CAMERA_UPDATED",
+            user,
+            ip,
             f"updated camera {camera_id}: {', '.join(sorted(data.keys()))}",
         )
 
         return "", 200
 
-    def delete(self, camera_id: str,
-               user: str = "", ip: str = "") -> tuple[str, int]:
+    def delete(self, camera_id: str, user: str = "", ip: str = "") -> tuple[str, int]:
         """Remove a camera and stop its video pipelines.
 
         Returns (error_string, http_status_code). Empty error = success.
@@ -176,7 +186,9 @@ class CameraService:
             return "Camera not found", 404
 
         self._log_audit(
-            "CAMERA_DELETED", user, ip,
+            "CAMERA_DELETED",
+            user,
+            ip,
             f"removed camera {camera_id}",
         )
 
@@ -189,15 +201,17 @@ class CameraService:
         if unknown:
             return f"Unknown fields: {', '.join(sorted(unknown))}"
 
-        if "recording_mode" in data \
-                and data["recording_mode"] not in VALID_RECORDING_MODES:
-            return (f"recording_mode must be one of: "
-                    f"{', '.join(sorted(VALID_RECORDING_MODES))}")
+        if (
+            "recording_mode" in data
+            and data["recording_mode"] not in VALID_RECORDING_MODES
+        ):
+            return (
+                f"recording_mode must be one of: "
+                f"{', '.join(sorted(VALID_RECORDING_MODES))}"
+            )
 
-        if "resolution" in data \
-                and data["resolution"] not in VALID_RESOLUTIONS:
-            return (f"resolution must be one of: "
-                    f"{', '.join(sorted(VALID_RESOLUTIONS))}")
+        if "resolution" in data and data["resolution"] not in VALID_RESOLUTIONS:
+            return f"resolution must be one of: {', '.join(sorted(VALID_RESOLUTIONS))}"
 
         if "fps" in data:
             fps = data["fps"]

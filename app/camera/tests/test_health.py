@@ -1,4 +1,5 @@
 """Tests for camera_streamer.health module."""
+
 import os
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -53,6 +54,7 @@ class TestHealthMonitor:
         for d in ["config", "certs", "logs"]:
             (tmp_path / d).mkdir()
         from camera_streamer.config import ConfigManager
+
         config = ConfigManager(data_dir=str(tmp_path))
         config.load()
         capture = MagicMock()

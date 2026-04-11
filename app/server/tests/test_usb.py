@@ -1,4 +1,5 @@
 """Tests for monitor.services.usb — USB storage detection and management."""
+
 import json
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -20,6 +21,7 @@ from monitor.services.usb import (
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
+
 
 def _lsblk_output(blockdevices):
     """Build a fake lsblk JSON stdout string."""
@@ -90,6 +92,7 @@ def _make_run_result(returncode=0, stdout="", stderr=""):
 # detect_devices
 # ===========================================================================
 
+
 @patch("monitor.services.usb.subprocess.run")
 def test_detect_devices_with_usb_partitions(mock_run):
     """USB disk with partitions returns one entry per partition."""
@@ -126,9 +129,7 @@ def test_detect_devices_whole_disk_no_partitions(mock_run):
 @patch("monitor.services.usb.subprocess.run")
 def test_detect_devices_no_usb(mock_run):
     """No USB devices returns empty list."""
-    mock_run.return_value = _make_run_result(
-        stdout=_lsblk_output([FAKE_NON_USB_DISK])
-    )
+    mock_run.return_value = _make_run_result(stdout=_lsblk_output([FAKE_NON_USB_DISK]))
     assert detect_devices() == []
 
 
@@ -142,9 +143,7 @@ def test_detect_devices_empty_blockdevices(mock_run):
 @patch("monitor.services.usb.subprocess.run")
 def test_detect_devices_lsblk_failure(mock_run):
     """Non-zero return code from lsblk returns empty list."""
-    mock_run.return_value = _make_run_result(
-        returncode=1, stderr="lsblk: not found"
-    )
+    mock_run.return_value = _make_run_result(returncode=1, stderr="lsblk: not found")
     assert detect_devices() == []
 
 
@@ -255,6 +254,7 @@ def test_detect_devices_unsupported_fs(mock_run):
 # _device_info
 # ===========================================================================
 
+
 def test_device_info_builds_dict():
     part = {
         "name": "sda1",
@@ -296,8 +296,14 @@ def test_device_info_missing_fields():
 
 def test_device_info_null_mountpoint():
     """None mountpoint converts to empty string."""
-    part = {"name": "sda1", "path": "/dev/sda1", "size": 100,
-            "fstype": "vfat", "mountpoint": None, "label": None}
+    part = {
+        "name": "sda1",
+        "path": "/dev/sda1",
+        "size": 100,
+        "fstype": "vfat",
+        "mountpoint": None,
+        "label": None,
+    }
     parent = {"model": None}
     info = _device_info(part, parent)
     assert info["mountpoint"] == ""
@@ -308,6 +314,7 @@ def test_device_info_null_mountpoint():
 # ===========================================================================
 # _human_size
 # ===========================================================================
+
 
 def test_human_size_bytes():
     assert _human_size(0) == "0.0 B"
@@ -327,21 +334,22 @@ def test_human_size_mb():
 
 def test_human_size_gb():
     assert _human_size(1073741824) == "1.0 GB"
-    assert _human_size(32 * 1024 ** 3) == "32.0 GB"
+    assert _human_size(32 * 1024**3) == "32.0 GB"
 
 
 def test_human_size_tb():
-    assert _human_size(1024 ** 4) == "1.0 TB"
-    assert _human_size(2 * 1024 ** 4) == "2.0 TB"
+    assert _human_size(1024**4) == "1.0 TB"
+    assert _human_size(2 * 1024**4) == "2.0 TB"
 
 
 def test_human_size_pb():
-    assert _human_size(1024 ** 5) == "1.0 PB"
+    assert _human_size(1024**5) == "1.0 PB"
 
 
 # ===========================================================================
 # is_mounted
 # ===========================================================================
+
 
 @patch("monitor.services.usb.subprocess.run")
 def test_is_mounted_true(mock_run):
@@ -349,7 +357,8 @@ def test_is_mounted_true(mock_run):
     assert is_mounted("/mnt/usb") is True
     mock_run.assert_called_once_with(
         ["mountpoint", "-q", "/mnt/usb"],
-        capture_output=True, timeout=5,
+        capture_output=True,
+        timeout=5,
     )
 
 
@@ -365,7 +374,8 @@ def test_is_mounted_default_mount_point(mock_run):
     assert is_mounted() is True
     mock_run.assert_called_once_with(
         ["mountpoint", "-q", DEFAULT_MOUNT_POINT],
-        capture_output=True, timeout=5,
+        capture_output=True,
+        timeout=5,
     )
 
 
@@ -384,6 +394,7 @@ def test_is_mounted_os_error(mock_run):
 # ===========================================================================
 # mount_device
 # ===========================================================================
+
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
 @patch("monitor.services.usb.is_mounted", return_value=False)
@@ -424,7 +435,9 @@ def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted, mock_fst
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_failure_empty_stderr(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_failure_empty_stderr(
+    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+):
     """Empty stderr falls back to 'Mount failed'."""
     mock_run.return_value = _make_run_result(returncode=1, stderr="")
     ok, err = mount_device("/dev/sda1")
@@ -455,7 +468,9 @@ def test_mount_device_makedirs_os_error(mock_makedirs):
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_default_mount_point(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_default_mount_point(
+    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+):
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1")
     assert ok is True
@@ -466,7 +481,9 @@ def test_mount_device_default_mount_point(mock_makedirs, mock_run, mock_is_mount
 @patch("monitor.services.usb.is_mounted", return_value=False)
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_exfat_uses_uid_gid(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_exfat_uses_uid_gid(
+    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+):
     """exFAT mount includes uid/gid/umask options."""
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1", "/mnt/usb")
@@ -483,6 +500,7 @@ def test_mount_device_exfat_uses_uid_gid(mock_makedirs, mock_run, mock_is_mounte
 # unmount_device
 # ===========================================================================
 
+
 @patch("monitor.services.usb.is_mounted", return_value=True)
 @patch("monitor.services.usb.subprocess.run")
 def test_unmount_device_success(mock_run, mock_is_mounted):
@@ -493,7 +511,9 @@ def test_unmount_device_success(mock_run, mock_is_mounted):
     assert err == ""
     mock_run.assert_called_once_with(
         ["umount", "/mnt/usb"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -508,9 +528,7 @@ def test_unmount_device_not_mounted(mock_is_mounted):
 @patch("monitor.services.usb.is_mounted", return_value=True)
 @patch("monitor.services.usb.subprocess.run")
 def test_unmount_device_failure(mock_run, mock_is_mounted):
-    mock_run.return_value = _make_run_result(
-        returncode=1, stderr="target is busy"
-    )
+    mock_run.return_value = _make_run_result(returncode=1, stderr="target is busy")
     ok, err = unmount_device("/mnt/usb")
     assert ok is False
     assert "busy" in err
@@ -542,7 +560,9 @@ def test_unmount_device_default_mount_point(mock_run, mock_is_mounted):
     assert ok is True
     mock_run.assert_called_once_with(
         ["umount", DEFAULT_MOUNT_POINT],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -550,14 +570,15 @@ def test_unmount_device_default_mount_point(mock_run, mock_is_mounted):
 # format_device
 # ===========================================================================
 
+
 @patch("monitor.services.usb.unmount_device")
 @patch("monitor.services.usb.subprocess.run")
 def test_format_device_success(mock_run, mock_unmount):
     # First call: lsblk check mountpoint (not mounted)
     # Second call: mkfs.ext4
     mock_run.side_effect = [
-        _make_run_result(returncode=0, stdout=""),    # lsblk — not mounted
-        _make_run_result(returncode=0),                # mkfs.ext4
+        _make_run_result(returncode=0, stdout=""),  # lsblk — not mounted
+        _make_run_result(returncode=0),  # mkfs.ext4
     ]
     ok, err = format_device("/dev/sda1")
 
@@ -575,7 +596,7 @@ def test_format_device_unmounts_first(mock_run, mock_unmount):
     """If device is mounted, unmount before formatting."""
     mock_run.side_effect = [
         _make_run_result(returncode=0, stdout="/mnt/usb\n"),  # lsblk — mounted
-        _make_run_result(returncode=0),                         # mkfs.ext4
+        _make_run_result(returncode=0),  # mkfs.ext4
     ]
     ok, err = format_device("/dev/sda1")
 
@@ -653,9 +674,11 @@ def test_format_device_os_error(mock_run):
 # prepare_recordings_dir
 # ===========================================================================
 
+
 @patch("monitor.services.usb.os.makedirs")
 def test_prepare_recordings_dir_default(mock_makedirs):
     import os
+
     result = prepare_recordings_dir()
     expected = os.path.join(DEFAULT_MOUNT_POINT, RECORDINGS_FOLDER)
     assert result == expected
@@ -665,6 +688,7 @@ def test_prepare_recordings_dir_default(mock_makedirs):
 @patch("monitor.services.usb.os.makedirs")
 def test_prepare_recordings_dir_custom_mount(mock_makedirs):
     import os
+
     result = prepare_recordings_dir("/mnt/usb")
     expected = os.path.join("/mnt/usb", RECORDINGS_FOLDER)
     assert result == expected
@@ -682,6 +706,7 @@ def test_prepare_recordings_dir_returns_correct_path(mock_makedirs):
 # ===========================================================================
 # Constants
 # ===========================================================================
+
 
 def test_supported_fs_values():
     """Verify the supported filesystem set."""

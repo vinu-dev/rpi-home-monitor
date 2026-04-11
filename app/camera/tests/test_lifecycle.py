@@ -1,4 +1,5 @@
 """Tests for CameraLifecycle state machine."""
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -83,6 +84,7 @@ class TestSetup:
         platform = _make_platform()
 
         call_count = [0]
+
         def needs_setup():
             call_count[0] += 1
             return call_count[0] < 3  # True twice, then False
@@ -124,8 +126,10 @@ class TestConnecting:
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
 
-        with patch.object(lc, '_wait_for_wifi', return_value=True), \
-             patch.object(lc, '_resolve_server') as mock_resolve:
+        with (
+            patch.object(lc, "_wait_for_wifi", return_value=True),
+            patch.object(lc, "_resolve_server") as mock_resolve,
+        ):
             result = lc._do_connecting()
 
         assert result is True
@@ -136,8 +140,10 @@ class TestConnecting:
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
 
-        with patch.object(lc, '_wait_for_wifi', return_value=True), \
-             patch.object(lc, '_resolve_server') as mock_resolve:
+        with (
+            patch.object(lc, "_wait_for_wifi", return_value=True),
+            patch.object(lc, "_resolve_server") as mock_resolve,
+        ):
             result = lc._do_connecting()
 
         assert result is True
@@ -148,8 +154,10 @@ class TestConnecting:
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
 
-        with patch.object(lc, '_wait_for_wifi', return_value=False), \
-             patch.object(lc, '_revert_to_setup') as mock_revert:
+        with (
+            patch.object(lc, "_wait_for_wifi", return_value=False),
+            patch.object(lc, "_revert_to_setup") as mock_revert,
+        ):
             result = lc._do_connecting()
 
         assert result is False
@@ -208,6 +216,7 @@ class TestRunning:
 
         # Shutdown after first iteration
         calls = [0]
+
         def shutdown():
             calls[0] += 1
             return calls[0] > 1
@@ -287,8 +296,15 @@ class TestFullLifecycle:
     @patch("camera_streamer.lifecycle.CaptureManager")
     @patch("camera_streamer.lifecycle.WifiSetupServer")
     def test_full_run(
-        self, MockSetup, MockCapture, MockDiscovery, MockStream,
-        MockStatus, MockHealth, MockLedCtrl, mock_led
+        self,
+        MockSetup,
+        MockCapture,
+        MockDiscovery,
+        MockStream,
+        MockStatus,
+        MockHealth,
+        MockLedCtrl,
+        mock_led,
     ):
         config = _make_config()
         platform = _make_platform()
@@ -303,14 +319,17 @@ class TestFullLifecycle:
 
         # Shutdown immediately in running state
         calls = [0]
+
         def shutdown():
             calls[0] += 1
             return calls[0] > 5  # Allow a few state transitions
 
         lc = CameraLifecycle(config, platform, shutdown)
 
-        with patch.object(lc, '_wait_for_wifi', return_value=True), \
-             patch.object(lc, '_resolve_server'):
+        with (
+            patch.object(lc, "_wait_for_wifi", return_value=True),
+            patch.object(lc, "_resolve_server"),
+        ):
             lc.run()
 
         assert lc.state == State.SHUTDOWN
@@ -379,6 +398,7 @@ class TestResolveServer:
 
     def test_handles_resolution_failure(self):
         import socket as real_socket
+
         config = _make_config(server_ip="homemonitor.local")
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)

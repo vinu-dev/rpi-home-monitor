@@ -9,6 +9,7 @@ Endpoints:
 OTA uses swupdate with A/B partition scheme.
 Images must be Ed25519 signed — unsigned images are rejected.
 """
+
 import os
 from pathlib import Path
 
@@ -46,12 +47,14 @@ def get_status():
         if cam.status == "pending":
             continue
         cam_status = _ota_status.get(cam.id, {"state": "idle"})
-        result["cameras"].append({
-            "id": cam.id,
-            "name": cam.name,
-            "current_version": cam.firmware_version,
-            **cam_status,
-        })
+        result["cameras"].append(
+            {
+                "id": cam.id,
+                "name": cam.name,
+                "current_version": cam.firmware_version,
+                **cam_status,
+            }
+        )
 
     return jsonify(result), 200
 
@@ -100,11 +103,13 @@ def upload_server_image():
             detail=f"server update uploaded: {file.filename}",
         )
 
-    return jsonify({
-        "message": "Update image staged",
-        "filename": file.filename,
-        "size_bytes": dest.stat().st_size,
-    }), 200
+    return jsonify(
+        {
+            "message": "Update image staged",
+            "filename": file.filename,
+            "size_bytes": dest.stat().st_size,
+        }
+    ), 200
 
 
 @ota_bp.route("/camera/<camera_id>/push", methods=["POST"])

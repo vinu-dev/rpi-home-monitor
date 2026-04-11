@@ -4,6 +4,7 @@ Shared test fixtures for the monitor-server test suite.
 Provides a configured Flask test app, test client, and temporary
 data directories that mirror the production /data layout.
 """
+
 import json
 
 import pytest
@@ -24,18 +25,20 @@ def data_dir(tmp_path):
 @pytest.fixture
 def app(data_dir):
     """Create a Flask test application with temporary data dirs."""
-    app = create_app(config={
-        "TESTING": True,
-        "DATA_DIR": str(data_dir),
-        "RECORDINGS_DIR": str(data_dir / "recordings"),
-        "LIVE_DIR": str(data_dir / "live"),
-        "CONFIG_DIR": str(data_dir / "config"),
-        "CERTS_DIR": str(data_dir / "certs"),
-        "SECRET_KEY": "test-secret-key-do-not-use-in-prod",
-        "CLIP_DURATION_SECONDS": 180,
-        "STORAGE_THRESHOLD_PERCENT": 90,
-        "SESSION_TIMEOUT_MINUTES": 30,
-    })
+    app = create_app(
+        config={
+            "TESTING": True,
+            "DATA_DIR": str(data_dir),
+            "RECORDINGS_DIR": str(data_dir / "recordings"),
+            "LIVE_DIR": str(data_dir / "live"),
+            "CONFIG_DIR": str(data_dir / "config"),
+            "CERTS_DIR": str(data_dir / "certs"),
+            "SECRET_KEY": "test-secret-key-do-not-use-in-prod",
+            "CLIP_DURATION_SECONDS": 180,
+            "STORAGE_THRESHOLD_PERCENT": 90,
+            "SESSION_TIMEOUT_MINUTES": 30,
+        }
+    )
     return app
 
 
@@ -109,6 +112,7 @@ def sample_clip():
 def cameras_json(data_dir, sample_camera):
     """Write a cameras.json file with one sample camera."""
     from dataclasses import asdict
+
     cameras_file = data_dir / "config" / "cameras.json"
     cameras_file.write_text(json.dumps([asdict(sample_camera)], indent=2))
     return cameras_file
@@ -118,6 +122,7 @@ def cameras_json(data_dir, sample_camera):
 def users_json(data_dir, sample_user):
     """Write a users.json file with one sample user."""
     from dataclasses import asdict
+
     users_file = data_dir / "config" / "users.json"
     users_file.write_text(json.dumps([asdict(sample_user)], indent=2))
     return users_file
@@ -127,6 +132,7 @@ def users_json(data_dir, sample_user):
 def settings_json(data_dir, sample_settings):
     """Write a settings.json file with defaults."""
     from dataclasses import asdict
+
     settings_file = data_dir / "config" / "settings.json"
     settings_file.write_text(json.dumps(asdict(sample_settings), indent=2))
     return settings_file

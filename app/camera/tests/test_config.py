@@ -1,4 +1,5 @@
 """Tests for camera_streamer.config module."""
+
 import os
 from unittest.mock import mock_open, patch
 
@@ -85,7 +86,7 @@ class TestConfigManager:
     def test_parse_strips_quotes(self, data_dir):
         """Parser should strip quotes from values."""
         conf = data_dir / "config" / "camera.conf"
-        conf.write_text('SERVER_IP="1.2.3.4"\nSTREAM_NAME=\'mystream\'\n')
+        conf.write_text("SERVER_IP=\"1.2.3.4\"\nSTREAM_NAME='mystream'\n")
         mgr = ConfigManager(data_dir=str(data_dir))
         mgr.load()
         assert mgr.server_ip == "1.2.3.4"
@@ -175,7 +176,7 @@ class TestPasswordManagement:
         assert ":" in raw
         salt, h = raw.split(":", 1)
         assert len(salt) == 32  # 16 bytes hex
-        assert len(h) == 64     # sha256 hex
+        assert len(h) == 64  # sha256 hex
 
 
 class TestHardwareSerial:

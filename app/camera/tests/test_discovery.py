@@ -1,4 +1,5 @@
 """Tests for camera_streamer.discovery module."""
+
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.discovery import SERVICE_PORT, SERVICE_TYPE, DiscoveryService

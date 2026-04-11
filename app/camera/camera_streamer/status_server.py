@@ -7,6 +7,7 @@ system health, and change WiFi settings.
 
 Requires the admin password set during provisioning.
 """
+
 import http.server
 import json
 import logging
@@ -114,13 +115,18 @@ def _get_memory_mb():
 
 def _html_escape(s):
     """Escape HTML special characters."""
-    return (s.replace("&", "&amp;").replace("<", "&lt;")
-             .replace(">", "&gt;").replace('"', "&quot;"))
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def _load_template(name):
     """Load an HTML template from the templates/ directory."""
     from pathlib import Path
+
     template_dir = Path(__file__).parent / "templates"
     try:
         return (template_dir / name).read_text(encoding="utf-8")
@@ -143,8 +149,9 @@ class CameraStatusServer:
         thermal_path: Thermal sensor path (from Platform).
     """
 
-    def __init__(self, config, stream_manager=None,
-                 wifi_interface="wlan0", thermal_path=None):
+    def __init__(
+        self, config, stream_manager=None, wifi_interface="wlan0", thermal_path=None
+    ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
@@ -155,15 +162,18 @@ class CameraStatusServer:
     def start(self):
         """Start the status HTTP server on port 80."""
         handler = _make_status_handler(
-            self._config, self._stream, self,
-            self._wifi_interface, self._thermal_path,
+            self._config,
+            self._stream,
+            self,
+            self._wifi_interface,
+            self._thermal_path,
         )
         try:
-            self._server = http.server.HTTPServer(
-                ("0.0.0.0", LISTEN_PORT), handler)
+            self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
             self._thread = threading.Thread(
                 target=self._server.serve_forever,
-                daemon=True, name="status-http",
+                daemon=True,
+                name="status-http",
             )
             self._thread.start()
             log.info("Status server listening on port %d", LISTEN_PORT)
@@ -184,8 +194,9 @@ class CameraStatusServer:
         return wifi.connect_network(ssid, password, self._wifi_interface)
 
 
-def _make_status_handler(config, stream_manager, status_server,
-                         wifi_interface, thermal_path):
+def _make_status_handler(
+    config, stream_manager, status_server, wifi_interface, thermal_path
+):
     """Create HTTP handler for the camera status page."""
 
     class StatusHandler(http.server.BaseHTTPRequestHandler):
@@ -216,8 +227,9 @@ def _make_status_handler(config, stream_manager, status_server,
                 token = _get_session_cookie(self.headers)
                 _destroy_session(token)
                 self.send_response(302)
-                self.send_header("Set-Cookie",
-                                 "cam_session=; Path=/; Max-Age=0; HttpOnly")
+                self.send_header(
+                    "Set-Cookie", "cam_session=; Path=/; Max-Age=0; HttpOnly"
+                )
                 self.send_header("Location", "/login")
                 self.end_headers()
             elif self.path == "/" or self.path == "/status":
@@ -255,16 +267,13 @@ def _make_status_handler(config, stream_manager, status_server,
                         self._json_response({"error": "SSID required"}, 400)
                         return
                     if not password:
-                        self._json_response(
-                            {"error": "Password required"}, 400)
+                        self._json_response({"error": "Password required"}, 400)
                         return
                     ok, err = status_server.connect_wifi(ssid, password)
                     if ok:
-                        self._json_response(
-                            {"message": f"Connected to {ssid}"})
+                        self._json_response({"message": f"Connected to {ssid}"})
                     else:
-                        self._json_response(
-                            {"error": err or "Connection failed"}, 500)
+                        self._json_response({"error": err or "Connection failed"}, 500)
                 except json.JSONDecodeError:
                     self._json_response({"error": "Invalid JSON"}, 400)
             elif self.path == "/api/password":
@@ -276,17 +285,18 @@ def _make_status_handler(config, stream_manager, status_server,
                     new_pw = data.get("new_password", "")
                     if not current or not new_pw:
                         self._json_response(
-                            {"error": "Both current and new password required"},
-                            400)
+                            {"error": "Both current and new password required"}, 400
+                        )
                         return
                     if len(new_pw) < 4:
                         self._json_response(
-                            {"error": "Password must be at least 4 characters"},
-                            400)
+                            {"error": "Password must be at least 4 characters"}, 400
+                        )
                         return
                     if not config.check_password(current):
                         self._json_response(
-                            {"error": "Current password is incorrect"}, 403)
+                            {"error": "Current password is incorrect"}, 403
+                        )
                         return
                     config.set_password(new_pw)
                     config.save()
@@ -311,6 +321,7 @@ def _make_status_handler(config, stream_manager, status_server,
                     return
             else:
                 from urllib.parse import parse_qs
+
                 params = parse_qs(body.decode("utf-8", errors="replace"))
                 username = params.get("username", [""])[0].strip()
                 password = params.get("password", [""])[0]
@@ -319,20 +330,21 @@ def _make_status_handler(config, stream_manager, status_server,
                 self._serve_login_page(error="Username and password required")
                 return
 
-            if (username == config.admin_username
-                    and config.check_password(password)):
+            if username == config.admin_username and config.check_password(password):
                 token = _create_session()
-                log.info("Successful login from %s (user=%s)",
-                         self.client_address[0], username)
+                log.info(
+                    "Successful login from %s (user=%s)",
+                    self.client_address[0],
+                    username,
+                )
                 if "application/json" in content_type:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header(
                         "Set-Cookie",
-                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict"
+                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict",
                     )
-                    resp = json.dumps(
-                        {"message": "Login successful"}).encode()
+                    resp = json.dumps({"message": "Login successful"}).encode()
                     self.send_header("Content-Length", str(len(resp)))
                     self.end_headers()
                     self.wfile.write(resp)
@@ -340,19 +352,18 @@ def _make_status_handler(config, stream_manager, status_server,
                     self.send_response(302)
                     self.send_header(
                         "Set-Cookie",
-                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict"
+                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict",
                     )
                     self.send_header("Location", "/")
                     self.end_headers()
             else:
-                log.warning("Failed login from %s (user=%s)",
-                            self.client_address[0], username)
+                log.warning(
+                    "Failed login from %s (user=%s)", self.client_address[0], username
+                )
                 if "application/json" in content_type:
-                    self._json_response(
-                        {"error": "Invalid username or password"}, 401)
+                    self._json_response({"error": "Invalid username or password"}, 401)
                 else:
-                    self._serve_login_page(
-                        error="Invalid username or password")
+                    self._serve_login_page(error="Invalid username or password")
 
         def _get_status(self):
             current_ssid = wifi.get_current_ssid()
@@ -363,6 +374,7 @@ def _make_status_handler(config, stream_manager, status_server,
             server_addr = config.server_ip or "unknown"
             if config.server_ip:
                 import socket
+
                 try:
                     socket.gethostbyname(config.server_ip)
                     server_connected = True
@@ -400,12 +412,11 @@ def _make_status_handler(config, stream_manager, status_server,
             self.wfile.write(body)
 
         def _serve_login_page(self, error=""):
-            html = _load_template("login.html").replace(
-                "{{CAMERA_ID}}", config.camera_id
-            ).replace(
-                "{{ERROR}}", _html_escape(error)
-            ).replace(
-                "{{ERROR_DISPLAY}}", "block" if error else "none"
+            html = (
+                _load_template("login.html")
+                .replace("{{CAMERA_ID}}", config.camera_id)
+                .replace("{{ERROR}}", _html_escape(error))
+                .replace("{{ERROR_DISPLAY}}", "block" if error else "none")
             )
             body = html.encode()
             self.send_response(200)
@@ -416,7 +427,8 @@ def _make_status_handler(config, stream_manager, status_server,
 
         def _serve_status_page(self):
             html = _load_template("status.html").replace(
-                "{{CAMERA_ID}}", config.camera_id)
+                "{{CAMERA_ID}}", config.camera_id
+            )
             body = html.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")

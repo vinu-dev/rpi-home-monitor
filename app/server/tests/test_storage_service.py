@@ -4,6 +4,7 @@ Tests cover all public methods: get_status, list_devices, select_device,
 format_device, eject, plus audit logging and config persistence behaviors.
 Mocks target the module-level usb import (monitor.services.storage_service.usb).
 """
+
 from unittest.mock import MagicMock, patch
 
 from monitor.services.storage_service import StorageService
@@ -16,8 +17,10 @@ USB_PATCH = "monitor.services.storage_service.usb"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
-                 fstype="ext4", supported=True):
+
+def _make_device(
+    path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
+):
     """Build a fake USB device dict matching usb.detect_devices() output."""
     return {
         "path": path,
@@ -28,13 +31,15 @@ def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
     }
 
 
-def _make_service(storage_manager=None, store=None, audit=None,
-                  default_dir="/data/recordings"):
+def _make_service(
+    storage_manager=None, store=None, audit=None, default_dir="/data/recordings"
+):
     """Create a StorageService with sensible mock defaults."""
     if store is None:
         store = MagicMock()
         store.get_settings.return_value = MagicMock(
-            usb_device="", usb_recordings_dir="",
+            usb_device="",
+            usb_recordings_dir="",
         )
     if storage_manager is None:
         storage_manager = MagicMock()
@@ -50,6 +55,7 @@ def _make_service(storage_manager=None, store=None, audit=None,
 # 1. get_status
 # ---------------------------------------------------------------------------
 
+
 class TestGetStatus:
     def test_returns_stats_from_manager(self):
         mgr = MagicMock()
@@ -64,7 +70,9 @@ class TestGetStatus:
 
     def test_returns_error_when_manager_is_none(self):
         svc = StorageService(
-            storage_manager=None, store=MagicMock(), audit=None,
+            storage_manager=None,
+            store=MagicMock(),
+            audit=None,
         )
 
         stats, err = svc.get_status()
@@ -76,6 +84,7 @@ class TestGetStatus:
 # ---------------------------------------------------------------------------
 # 2. list_devices
 # ---------------------------------------------------------------------------
+
 
 class TestListDevices:
     @patch(USB_PATCH)
@@ -100,6 +109,7 @@ class TestListDevices:
 # ---------------------------------------------------------------------------
 # 3. select_device — validation
 # ---------------------------------------------------------------------------
+
 
 class TestSelectDeviceValidation:
     def test_missing_device_path_returns_400(self):
@@ -152,6 +162,7 @@ class TestSelectDeviceValidation:
 # ---------------------------------------------------------------------------
 # 4. select_device — success path
 # ---------------------------------------------------------------------------
+
 
 class TestSelectDeviceSuccess:
     @patch(USB_PATCH)
@@ -224,6 +235,7 @@ class TestSelectDeviceSuccess:
 # 5. format_device
 # ---------------------------------------------------------------------------
 
+
 class TestFormatDevice:
     def test_missing_device_path_returns_400(self):
         svc = _make_service()
@@ -292,6 +304,7 @@ class TestFormatDevice:
 # ---------------------------------------------------------------------------
 # 6. eject
 # ---------------------------------------------------------------------------
+
 
 class TestEject:
     @patch(USB_PATCH)
@@ -367,6 +380,7 @@ class TestEject:
 # 7. Audit failure resilience
 # ---------------------------------------------------------------------------
 
+
 class TestAuditFailureResilience:
     @patch(USB_PATCH)
     def test_audit_exception_does_not_break_select(self, mock_usb):
@@ -406,6 +420,7 @@ class TestAuditFailureResilience:
 # ---------------------------------------------------------------------------
 # 8. Config persistence failure resilience
 # ---------------------------------------------------------------------------
+
 
 class TestConfigPersistenceFailure:
     @patch(USB_PATCH)

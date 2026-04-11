@@ -1,4 +1,5 @@
 """Tests for camera_streamer.wifi_setup module."""
+
 import os
 from unittest.mock import MagicMock, patch
 
@@ -65,7 +66,9 @@ class TestWifiSetupServer:
     @patch("http.server.HTTPServer")
     @patch("camera_streamer.wifi.start_hotspot")
     @patch("camera_streamer.wifi.scan_networks")
-    def test_start_when_needed(self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config):
+    def test_start_when_needed(
+        self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config
+    ):
         """start() should pre-scan, start hotspot, and start HTTP server."""
         mock_scan.return_value = [{"ssid": "TestNet", "signal": 80, "security": "WPA2"}]
         mock_hotspot.return_value = True
@@ -93,7 +96,9 @@ class TestWifiSetupServer:
     @patch("http.server.HTTPServer")
     @patch("camera_streamer.wifi.start_hotspot")
     @patch("camera_streamer.wifi.scan_networks")
-    def test_start_with_hotspot_failure(self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config):
+    def test_start_with_hotspot_failure(
+        self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config
+    ):
         """start() should still work if hotspot fails (e.g. no WiFi hw)."""
         mock_scan.return_value = []
         mock_hotspot.return_value = False
@@ -205,6 +210,7 @@ class TestConnectWifi:
     def test_connect_timeout(self, mock_run):
         """connect_network should handle timeout."""
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="nmcli", timeout=30)
         ok, err = wifi.connect_network("TestNet", "pass")
         assert ok is False
@@ -265,6 +271,7 @@ class TestSaveAndConnect:
         server._do_connect("TestNet", "pass", "10.0.0.5", "9999")
 
         from camera_streamer.config import ConfigManager
+
         mgr = ConfigManager(data_dir=unconfigured_config.data_dir)
         mgr.load()
         assert mgr.server_ip == "10.0.0.5"
@@ -303,9 +310,7 @@ class TestWaitForWifi:
     @patch("subprocess.run")
     def test_wait_immediate_ready(self, mock_run, mock_sleep):
         """Should return True immediately if wlan0 is ready."""
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="wlan0:wifi\n"
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout="wlan0:wifi\n")
         assert wifi.wait_for_interface(max_wait=5) is True
         mock_sleep.assert_not_called()
 
@@ -371,6 +376,7 @@ class TestHotspot:
     def test_start_hotspot_nmcli_error(self, mock_run, mock_sleep):
         """Should return False and not crash on nmcli error."""
         import subprocess
+
         mock_run.side_effect = subprocess.CalledProcessError(1, "nmcli")
         result = wifi.start_hotspot()
         assert result is False
@@ -380,11 +386,14 @@ class TestHotspot:
     def test_start_hotspot_retries_activation(self, mock_run, mock_sleep):
         """Should retry connection up if first attempt fails."""
         import subprocess as sp
+
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="wlan0:wifi\n"),  # wait_for_interface
             MagicMock(returncode=0),  # delete
             MagicMock(returncode=0),  # add
-            sp.CalledProcessError(1, "nmcli", stderr="No suitable device"),  # up attempt 1
+            sp.CalledProcessError(
+                1, "nmcli", stderr="No suitable device"
+            ),  # up attempt 1
             MagicMock(returncode=0),  # up attempt 2
         ]
         result = wifi.start_hotspot()
@@ -491,6 +500,7 @@ class TestSaveAndConnectWithPassword:
 
         # Verify password was saved
         from camera_streamer.config import ConfigManager
+
         mgr = ConfigManager(data_dir=unconfigured_config.data_dir)
         mgr.load()
         assert mgr.has_password is True
@@ -531,15 +541,21 @@ class TestSystemInfoHelpers:
     def test_get_cpu_temp(self):
         """Should return float temperature."""
         from camera_streamer.wifi_setup import _get_cpu_temp
-        with patch("builtins.open", MagicMock(
-            return_value=MagicMock(
-                __enter__=MagicMock(return_value=MagicMock(
-                    read=MagicMock(return_value="52000\n"),
-                    strip=MagicMock(return_value="52000")
-                )),
-                __exit__=MagicMock(return_value=False)
-            )
-        )):
+
+        with patch(
+            "builtins.open",
+            MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(
+                        return_value=MagicMock(
+                            read=MagicMock(return_value="52000\n"),
+                            strip=MagicMock(return_value="52000"),
+                        )
+                    ),
+                    __exit__=MagicMock(return_value=False),
+                )
+            ),
+        ):
             # Can't easily mock open this way, just test the error path
             pass
         # Test fallback on error
@@ -549,12 +565,14 @@ class TestSystemInfoHelpers:
     def test_get_uptime(self):
         """Should return human-readable uptime string."""
         from camera_streamer.wifi_setup import _get_uptime
+
         with patch("builtins.open", side_effect=OSError("no file")):
             assert _get_uptime() == "0m"
 
     def test_get_memory_mb(self):
         """Should return (total, used) tuple."""
         from camera_streamer.wifi_setup import _get_memory_mb
+
         with patch("builtins.open", side_effect=OSError("no file")):
             total, used = _get_memory_mb()
             assert total == 0

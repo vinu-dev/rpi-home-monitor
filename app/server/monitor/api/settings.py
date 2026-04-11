@@ -10,6 +10,7 @@ Endpoints:
 Settings stored in /data/config/settings.json.
 Survives OTA updates (on data partition).
 """
+
 import logging
 import subprocess
 import time
@@ -37,15 +38,17 @@ UPDATABLE_FIELDS = {
 def get_settings():
     """Return current system settings."""
     settings = current_app.store.get_settings()
-    return jsonify({
-        "timezone": settings.timezone,
-        "storage_threshold_percent": settings.storage_threshold_percent,
-        "clip_duration_seconds": settings.clip_duration_seconds,
-        "session_timeout_minutes": settings.session_timeout_minutes,
-        "hostname": settings.hostname,
-        "setup_completed": settings.setup_completed,
-        "firmware_version": settings.firmware_version,
-    }), 200
+    return jsonify(
+        {
+            "timezone": settings.timezone,
+            "storage_threshold_percent": settings.storage_threshold_percent,
+            "clip_duration_seconds": settings.clip_duration_seconds,
+            "session_timeout_minutes": settings.session_timeout_minutes,
+            "hostname": settings.hostname,
+            "setup_completed": settings.setup_completed,
+            "firmware_version": settings.firmware_version,
+        }
+    ), 200
 
 
 @settings_bp.route("", methods=["PUT"])
@@ -79,6 +82,7 @@ def update_settings():
     audit = getattr(current_app, "audit", None)
     if audit:
         from flask import session
+
         audit.log_event(
             "SETTINGS_UPDATED",
             user=session.get("username", ""),
@@ -95,10 +99,12 @@ def get_wifi():
     """Return current WiFi SSID and scan for available networks."""
     current_ssid = _get_current_ssid()
     networks = _scan_wifi_networks()
-    return jsonify({
-        "current_ssid": current_ssid,
-        "networks": networks,
-    }), 200
+    return jsonify(
+        {
+            "current_ssid": current_ssid,
+            "networks": networks,
+        }
+    ), 200
 
 
 @settings_bp.route("/wifi", methods=["POST"])
@@ -122,6 +128,7 @@ def set_wifi():
         audit = getattr(current_app, "audit", None)
         if audit:
             from flask import session
+
             audit.log_event(
                 "WIFI_CHANGED",
                 user=session.get("username", ""),
@@ -138,7 +145,9 @@ def _get_current_ssid():
     try:
         result = subprocess.run(
             ["nmcli", "-t", "-f", "active,ssid", "device", "wifi"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         for line in result.stdout.strip().splitlines():
             parts = line.split(":", 1)
@@ -155,13 +164,16 @@ def _scan_wifi_networks():
         # Trigger a rescan
         subprocess.run(
             ["nmcli", "device", "wifi", "rescan"],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         time.sleep(2)
 
         result = subprocess.run(
             ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         networks = []
         seen = set()
@@ -169,11 +181,13 @@ def _scan_wifi_networks():
             parts = line.split(":", 2)
             if len(parts) >= 3 and parts[0] and parts[0] not in seen:
                 seen.add(parts[0])
-                networks.append({
-                    "ssid": parts[0],
-                    "signal": int(parts[1]) if parts[1].isdigit() else 0,
-                    "security": parts[2],
-                })
+                networks.append(
+                    {
+                        "ssid": parts[0],
+                        "signal": int(parts[1]) if parts[1].isdigit() else 0,
+                        "security": parts[2],
+                    }
+                )
         networks.sort(key=lambda n: n["signal"], reverse=True)
         return networks
     except Exception as e:
@@ -185,9 +199,20 @@ def _connect_wifi(ssid, password):
     """Connect to a WiFi network. Returns (ok, error_message)."""
     try:
         result = subprocess.run(
-            ["nmcli", "device", "wifi", "connect", ssid,
-             "password", password, "ifname", "wlan0"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "nmcli",
+                "device",
+                "wifi",
+                "connect",
+                ssid,
+                "password",
+                password,
+                "ifname",
+                "wlan0",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             return True, ""
@@ -206,7 +231,9 @@ def _validate_settings(data: dict) -> list[str]:
     if "storage_threshold_percent" in data:
         val = data["storage_threshold_percent"]
         if not isinstance(val, int) or val < 50 or val > 99:
-            errors.append("storage_threshold_percent must be an integer between 50 and 99")
+            errors.append(
+                "storage_threshold_percent must be an integer between 50 and 99"
+            )
 
     if "clip_duration_seconds" in data:
         val = data["clip_duration_seconds"]
@@ -216,7 +243,9 @@ def _validate_settings(data: dict) -> list[str]:
     if "session_timeout_minutes" in data:
         val = data["session_timeout_minutes"]
         if not isinstance(val, int) or val < 5 or val > 1440:
-            errors.append("session_timeout_minutes must be an integer between 5 and 1440")
+            errors.append(
+                "session_timeout_minutes must be an integer between 5 and 1440"
+            )
 
     if "hostname" in data:
         val = data["hostname"]
@@ -226,6 +255,8 @@ def _validate_settings(data: dict) -> list[str]:
     if "timezone" in data:
         val = data["timezone"]
         if not isinstance(val, str) or len(val) < 1 or "/" not in val:
-            errors.append("timezone must be a valid timezone string (e.g., Europe/Dublin)")
+            errors.append(
+                "timezone must be a valid timezone string (e.g., Europe/Dublin)"
+            )
 
     return errors

@@ -1,4 +1,5 @@
 """Tests for camera_streamer main entry point."""
+
 import signal
 from unittest.mock import MagicMock, patch
 
@@ -40,9 +41,7 @@ class TestMain:
     @patch("camera_streamer.lifecycle.CameraLifecycle")
     @patch("camera_streamer.platform.Platform")
     @patch("camera_streamer.config.ConfigManager")
-    def test_main_passes_shutdown_event(
-        self, MockConfig, MockPlatform, MockLifecycle
-    ):
+    def test_main_passes_shutdown_event(self, MockConfig, MockPlatform, MockLifecycle):
         """Shutdown event callable should reflect _shutdown flag."""
         config = MagicMock()
         config.camera_id = "cam-test"

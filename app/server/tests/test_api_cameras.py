@@ -1,4 +1,5 @@
 """Tests for the cameras API."""
+
 from monitor.auth import hash_password
 from monitor.models import Camera
 
@@ -6,15 +7,22 @@ from monitor.models import Camera
 def _login(app, client, role="admin"):
     """Helper: create admin user and login."""
     from monitor.models import User
-    app.store.save_user(User(
-        id="user-admin",
-        username="admin",
-        password_hash=hash_password("pass"),
-        role=role,
-    ))
-    client.post("/api/v1/auth/login", json={
-        "username": "admin", "password": "pass",
-    })
+
+    app.store.save_user(
+        User(
+            id="user-admin",
+            username="admin",
+            password_hash=hash_password("pass"),
+            role=role,
+        )
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "admin",
+            "password": "pass",
+        },
+    )
 
 
 def _add_camera(app, camera_id="cam-001", status="pending", name="", ip="192.168.1.50"):
@@ -51,8 +59,19 @@ class TestListCameras:
         _login(app, client)
         _add_camera(app, "cam-001", "online", "Front Door")
         cam = client.get("/api/v1/cameras").get_json()[0]
-        for field in ["id", "name", "location", "status", "ip", "recording_mode",
-                       "resolution", "fps", "paired_at", "last_seen", "firmware_version"]:
+        for field in [
+            "id",
+            "name",
+            "location",
+            "status",
+            "ip",
+            "recording_mode",
+            "resolution",
+            "fps",
+            "paired_at",
+            "last_seen",
+            "firmware_version",
+        ]:
             assert field in cam
 
 
@@ -66,9 +85,13 @@ class TestConfirmCamera:
     def test_confirms_pending_camera(self, app, client):
         _login(app, client)
         _add_camera(app, "cam-001", "pending", ip="192.168.1.50")
-        response = client.post("/api/v1/cameras/cam-001/confirm", json={
-            "name": "Front Door", "location": "Outdoor",
-        })
+        response = client.post(
+            "/api/v1/cameras/cam-001/confirm",
+            json={
+                "name": "Front Door",
+                "location": "Outdoor",
+            },
+        )
         assert response.status_code == 200
         data = response.get_json()
         assert data["name"] == "Front Door"
@@ -106,7 +129,9 @@ class TestUpdateCamera:
 
     def test_requires_admin(self, app, client):
         _login(app, client, role="viewer")
-        assert client.put("/api/v1/cameras/cam-001", json={"name": "x"}).status_code == 403
+        assert (
+            client.put("/api/v1/cameras/cam-001", json={"name": "x"}).status_code == 403
+        )
 
     def test_update_name(self, app, client):
         _login(app, client)
@@ -125,7 +150,9 @@ class TestUpdateCamera:
     def test_invalid_recording_mode(self, app, client):
         _login(app, client)
         _add_camera(app, "cam-001", "online")
-        response = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "magic"})
+        response = client.put(
+            "/api/v1/cameras/cam-001", json={"recording_mode": "magic"}
+        )
         assert response.status_code == 400
 
     def test_invalid_resolution(self, app, client):

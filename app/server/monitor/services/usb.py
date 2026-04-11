@@ -6,6 +6,7 @@ for use as external recording storage. Supports ext4, ext3, ntfs, vfat, exfat.
 
 Unsupported filesystems are formatted to ext4 with user confirmation.
 """
+
 import json
 import logging
 import os
@@ -26,9 +27,16 @@ def detect_devices() -> list[dict]:
     """
     try:
         result = subprocess.run(
-            ["lsblk", "-J", "-b", "-o",
-             "NAME,PATH,SIZE,FSTYPE,MOUNTPOINT,MODEL,LABEL,TRAN,TYPE"],
-            capture_output=True, text=True, timeout=10,
+            [
+                "lsblk",
+                "-J",
+                "-b",
+                "-o",
+                "NAME,PATH,SIZE,FSTYPE,MOUNTPOINT,MODEL,LABEL,TRAN,TYPE",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             log.warning("lsblk failed: %s", result.stderr.strip())
@@ -88,7 +96,9 @@ def _get_fstype_blkid(device_path):
     try:
         result = subprocess.run(
             ["blkid", "-s", "TYPE", "-o", "value", device_path],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -111,7 +121,8 @@ def is_mounted(mount_point=DEFAULT_MOUNT_POINT) -> bool:
     try:
         result = subprocess.run(
             ["mountpoint", "-q", mount_point],
-            capture_output=True, timeout=5,
+            capture_output=True,
+            timeout=5,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
@@ -145,11 +156,19 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
         # FAT-based filesystems need uid/gid/umask at mount time
         # (they don't support POSIX ownership/chmod after mount)
         if fstype in ("vfat", "exfat") or fstype == "ntfs":
-            cmd = ["mount", "-o", f"uid={uid},gid={gid},umask=0002",
-                   device_path, mount_point]
+            cmd = [
+                "mount",
+                "-o",
+                f"uid={uid},gid={gid},umask=0002",
+                device_path,
+                mount_point,
+            ]
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             err = result.stderr.strip() or "Mount failed"
@@ -163,8 +182,13 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
             except OSError as e:
                 log.warning("Could not chown %s: %s", mount_point, e)
 
-        log.info("Mounted %s at %s (fstype=%s, uid=%d)", device_path,
-                 mount_point, fstype, uid)
+        log.info(
+            "Mounted %s at %s (fstype=%s, uid=%d)",
+            device_path,
+            mount_point,
+            fstype,
+            uid,
+        )
         return True, ""
 
     except (subprocess.TimeoutExpired, OSError) as e:
@@ -182,7 +206,9 @@ def unmount_device(mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["umount", mount_point],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             err = result.stderr.strip() or "Unmount failed"
@@ -196,8 +222,7 @@ def unmount_device(mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
         return False, str(e)
 
 
-def format_device(device_path, fstype="ext4",
-                  label="HomeMonitor") -> tuple[bool, str]:
+def format_device(device_path, fstype="ext4", label="HomeMonitor") -> tuple[bool, str]:
     """Format a USB device to ext4.
 
     WARNING: This destroys all data on the device.
@@ -211,7 +236,9 @@ def format_device(device_path, fstype="ext4",
         # Unmount first if mounted
         result = subprocess.run(
             ["lsblk", "-no", "MOUNTPOINT", device_path],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         mp = result.stdout.strip()
         if mp:
@@ -221,7 +248,10 @@ def format_device(device_path, fstype="ext4",
         cmd = ["mkfs.ext4", "-F", "-L", label, device_path]
         log.info("Formatting %s as ext4 (label=%s)", device_path, label)
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode != 0:
             err = result.stderr.strip() or "Format failed"

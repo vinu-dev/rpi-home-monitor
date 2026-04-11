@@ -16,6 +16,7 @@ File layout:
   /data/live/<cam-id>/stream.m3u8
   /data/live/<cam-id>/segment_NNN.ts
 """
+
 from datetime import date
 from pathlib import Path
 
@@ -54,14 +55,16 @@ class RecorderService:
             start_time = stem.replace("-", ":")
             thumb = mp4.with_suffix(".thumb.jpg")
 
-            clips.append(Clip(
-                camera_id=camera_id,
-                filename=mp4.name,
-                date=clip_date,
-                start_time=start_time,
-                size_bytes=mp4.stat().st_size,
-                thumbnail=thumb.name if thumb.exists() else "",
-            ))
+            clips.append(
+                Clip(
+                    camera_id=camera_id,
+                    filename=mp4.name,
+                    date=clip_date,
+                    start_time=start_time,
+                    size_bytes=mp4.stat().st_size,
+                    thumbnail=thumb.name if thumb.exists() else "",
+                )
+            )
 
         return clips
 

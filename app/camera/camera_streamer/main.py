@@ -4,6 +4,7 @@ Camera streamer entry point.
 Thin wrapper — loads config, detects platform, and delegates to
 CameraLifecycle for the full startup/streaming/shutdown state machine.
 """
+
 import logging
 import signal
 
@@ -32,17 +33,23 @@ def main():
 
     # Load config
     from camera_streamer.config import ConfigManager
+
     config = ConfigManager()
     config.load()
-    log.debug("Config loaded: server_ip=%s camera_id=%s",
-              getattr(config, 'server_ip', 'N/A'), config.camera_id)
+    log.debug(
+        "Config loaded: server_ip=%s camera_id=%s",
+        getattr(config, "server_ip", "N/A"),
+        config.camera_id,
+    )
 
     # Detect platform
     from camera_streamer.platform import Platform
+
     platform = Platform.detect()
 
     # Run lifecycle state machine
     from camera_streamer.lifecycle import CameraLifecycle
+
     lifecycle = CameraLifecycle(
         config=config,
         platform=platform,

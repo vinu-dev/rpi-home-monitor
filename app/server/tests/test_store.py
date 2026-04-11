@@ -1,4 +1,5 @@
 """Tests for the JSON persistence layer."""
+
 import json
 import threading
 
@@ -241,11 +242,13 @@ class TestThreadSafety:
 
         def write_user(i):
             try:
-                store.save_user(User(
-                    id=f"user-{i:03d}",
-                    username=f"user{i}",
-                    password_hash=f"hash{i}",
-                ))
+                store.save_user(
+                    User(
+                        id=f"user-{i:03d}",
+                        username=f"user{i}",
+                        password_hash=f"hash{i}",
+                    )
+                )
             except Exception as e:
                 errors.append(e)
 

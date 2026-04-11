@@ -19,6 +19,7 @@ Features:
 - Graceful shutdown on SIGTERM
 - Phase 2: mTLS client certificate for authentication (RTSPS)
 """
+
 import logging
 import os
 import subprocess
@@ -97,7 +98,9 @@ class StreamManager:
 
             # Reconnect with backoff
             self._consecutive_failures += 1
-            wait = min(self._backoff * (2 ** (self._consecutive_failures - 1)), MAX_BACKOFF)
+            wait = min(
+                self._backoff * (2 ** (self._consecutive_failures - 1)), MAX_BACKOFF
+            )
             log.info(
                 "Stream ended (failure #%d), reconnecting in %ds...",
                 self._consecutive_failures,
@@ -112,6 +115,7 @@ class StreamManager:
     def _has_libcamera(self):
         """Check if libcamera-vid is available."""
         import shutil
+
         return shutil.which("libcamera-vid") is not None
 
     def _build_libcamera_ffmpeg_cmd(self):
@@ -130,18 +134,27 @@ class StreamManager:
         # libcamera-vid: capture H.264, serve on TCP
         libcamera_cmd = [
             "libcamera-vid",
-            "-t", "0",                    # run forever
-            "--width", str(cfg.width),
-            "--height", str(cfg.height),
-            "--framerate", str(cfg.fps),
-            "--codec", "h264",
-            "--profile", "high",
-            "--level", "4.2",
-            "--bitrate", "4000000",        # 4 Mbps
-            "--inline",                    # SPS/PPS with every keyframe
+            "-t",
+            "0",  # run forever
+            "--width",
+            str(cfg.width),
+            "--height",
+            str(cfg.height),
+            "--framerate",
+            str(cfg.fps),
+            "--codec",
+            "h264",
+            "--profile",
+            "high",
+            "--level",
+            "4.2",
+            "--bitrate",
+            "4000000",  # 4 Mbps
+            "--inline",  # SPS/PPS with every keyframe
             "--nopreview",
-            "--listen",                    # TCP server mode
-            "-o", f"tcp://0.0.0.0:{tcp_port}",
+            "--listen",  # TCP server mode
+            "-o",
+            f"tcp://0.0.0.0:{tcp_port}",
         ]
         # ffmpeg: read H.264 from TCP, push to RTSP
         # Key: probesize must be large enough for ffmpeg to see a keyframe
@@ -150,15 +163,24 @@ class StreamManager:
         ffmpeg_cmd = [
             "ffmpeg",
             "-nostdin",
-            "-use_wallclock_as_timestamps", "1",
-            "-fflags", "+genpts",
-            "-probesize", "15000000",      # 15MB — enough for 2+ keyframes
-            "-analyzeduration", "15000000",# 15s — wait for SPS/PPS
-            "-f", "h264",                  # tell ffmpeg it's raw H.264
-            "-i", f"tcp://127.0.0.1:{tcp_port}",
-            "-c:v", "copy",
-            "-f", "rtsp",
-            "-rtsp_transport", "tcp",
+            "-use_wallclock_as_timestamps",
+            "1",
+            "-fflags",
+            "+genpts",
+            "-probesize",
+            "15000000",  # 15MB — enough for 2+ keyframes
+            "-analyzeduration",
+            "15000000",  # 15s — wait for SPS/PPS
+            "-f",
+            "h264",  # tell ffmpeg it's raw H.264
+            "-i",
+            f"tcp://127.0.0.1:{tcp_port}",
+            "-c:v",
+            "copy",
+            "-f",
+            "rtsp",
+            "-rtsp_transport",
+            "tcp",
             cfg.rtsp_url,
         ]
         return libcamera_cmd, ffmpeg_cmd
@@ -169,14 +191,22 @@ class StreamManager:
         cmd = [
             "ffmpeg",
             "-nostdin",
-            "-f", "v4l2",
-            "-input_format", "h264",
-            "-video_size", f"{cfg.width}x{cfg.height}",
-            "-framerate", str(cfg.fps),
-            "-i", self._camera_device,
-            "-c:v", "copy",
-            "-f", "rtsp",
-            "-rtsp_transport", "tcp",
+            "-f",
+            "v4l2",
+            "-input_format",
+            "h264",
+            "-video_size",
+            f"{cfg.width}x{cfg.height}",
+            "-framerate",
+            str(cfg.fps),
+            "-i",
+            self._camera_device,
+            "-c:v",
+            "copy",
+            "-f",
+            "rtsp",
+            "-rtsp_transport",
+            "tcp",
             cfg.rtsp_url,
         ]
         return cmd
@@ -189,8 +219,11 @@ class StreamManager:
             "Stream config: device=%s resolution=%dx%d fps=%d "
             "server=%s:%s camera_id=%s",
             self._camera_device,
-            self._config.width, self._config.height, self._config.fps,
-            self._config.server_ip, self._config.server_port,
+            self._config.width,
+            self._config.height,
+            self._config.fps,
+            self._config.server_ip,
+            self._config.server_port,
             self._config.camera_id,
         )
         log.info("RTSP target URL: %s", self._config.rtsp_url)
@@ -219,16 +252,20 @@ class StreamManager:
                     stderr=subprocess.PIPE,
                     preexec_fn=os.setsid if hasattr(os, "setsid") else None,
                 )
-            log.info("libcamera-vid started (PID %d), waiting for TCP...",
-                     self._libcamera_proc.pid)
+            log.info(
+                "libcamera-vid started (PID %d), waiting for TCP...",
+                self._libcamera_proc.pid,
+            )
 
             # Wait for libcamera-vid to initialize camera + start TCP server
             # OV5647 on Zero 2W needs ~3-5s to start producing frames
             time.sleep(5)
 
             if self._libcamera_proc.poll() is not None:
-                log.error("libcamera-vid exited early (code %d)",
-                          self._libcamera_proc.returncode)
+                log.error(
+                    "libcamera-vid exited early (code %d)",
+                    self._libcamera_proc.returncode,
+                )
                 return
 
             with self._lock:
@@ -240,8 +277,11 @@ class StreamManager:
                     preexec_fn=os.setsid if hasattr(os, "setsid") else None,
                 )
 
-            log.info("ffmpeg started (PID %d), streaming to %s",
-                     self._process.pid, self._config.rtsp_url)
+            log.info(
+                "ffmpeg started (PID %d), streaming to %s",
+                self._process.pid,
+                self._config.rtsp_url,
+            )
         else:
             # Direct ffmpeg v4l2 capture (camera outputs H.264 natively)
             cmd = self._build_ffmpeg_only_cmd()
@@ -267,12 +307,14 @@ class StreamManager:
 
         # Read stderr in background to avoid deadlock
         stderr_lines = []
+
         def _read_stderr():
             for line in proc.stderr:
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 if decoded:
                     stderr_lines.append(decoded)
                     log.debug("ffmpeg: %s", decoded)
+
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
 

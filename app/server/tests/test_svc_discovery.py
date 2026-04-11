@@ -1,4 +1,5 @@
 """Tests for the camera discovery service."""
+
 from datetime import UTC, datetime, timedelta
 
 from monitor.services.discovery import DiscoveryService
@@ -75,7 +76,9 @@ class TestCheckOffline:
             camera = app.store.get_camera("cam-001")
             camera.status = "online"
             # Set last_seen to 60 seconds ago
-            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
             camera.last_seen = old
             app.store.save_camera(camera)
 
@@ -110,7 +113,9 @@ class TestCheckOffline:
             svc.report_camera("cam-001", "192.168.1.50")
             camera = app.store.get_camera("cam-001")
             camera.status = "online"
-            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
             camera.last_seen = old
             app.store.save_camera(camera)
             svc.check_offline()

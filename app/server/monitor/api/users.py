@@ -10,6 +10,7 @@ Endpoints:
 Roles: admin (full access), viewer (read-only).
 Passwords stored as bcrypt hashes (cost 12).
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -28,16 +29,18 @@ VALID_ROLES = {"admin", "viewer"}
 def list_users():
     """List all users (admin only). Passwords excluded."""
     users = current_app.store.get_users()
-    return jsonify([
-        {
-            "id": u.id,
-            "username": u.username,
-            "role": u.role,
-            "created_at": u.created_at,
-            "last_login": u.last_login,
-        }
-        for u in users
-    ]), 200
+    return jsonify(
+        [
+            {
+                "id": u.id,
+                "username": u.username,
+                "role": u.role,
+                "created_at": u.created_at,
+                "last_login": u.last_login,
+            }
+            for u in users
+        ]
+    ), 200
 
 
 @users_bp.route("", methods=["POST"])
@@ -59,7 +62,9 @@ def create_user():
     if not password or len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
     if role not in VALID_ROLES:
-        return jsonify({"error": f"Role must be one of: {', '.join(sorted(VALID_ROLES))}"}), 400
+        return jsonify(
+            {"error": f"Role must be one of: {', '.join(sorted(VALID_ROLES))}"}
+        ), 400
 
     # Check for duplicate username
     existing = current_app.store.get_user_by_username(username)
@@ -84,12 +89,14 @@ def create_user():
             detail=f"created user '{username}' with role '{role}'",
         )
 
-    return jsonify({
-        "id": user.id,
-        "username": user.username,
-        "role": user.role,
-        "created_at": user.created_at,
-    }), 201
+    return jsonify(
+        {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "created_at": user.created_at,
+        }
+    ), 201
 
 
 @users_bp.route("/<user_id>", methods=["DELETE"])

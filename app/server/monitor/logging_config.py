@@ -12,6 +12,7 @@ Usage:
     from monitor.logging_config import configure_logging
     configure_logging()  # call once at startup, before any getLogger()
 """
+
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -20,8 +21,8 @@ from pathlib import Path
 LOG_DIR = Path(os.environ.get("MONITOR_LOG_DIR", "/data/logs"))
 LOG_FILE = "monitor.log"
 LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-LOG_MAX_BYTES = 10 * 1024 * 1024   # 10 MB per file
-LOG_BACKUP_COUNT = 5                # keep 5 rotated files (50 MB total)
+LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
+LOG_BACKUP_COUNT = 5  # keep 5 rotated files (50 MB total)
 
 
 def configure_logging(log_level=None):

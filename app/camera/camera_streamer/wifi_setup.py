@@ -12,6 +12,7 @@ Single-radio constraint: wlan0 can either be an AP or a client, not both.
 So we can't scan while hotspot is active. User types SSID manually or we
 do a quick scan BEFORE starting the hotspot.
 """
+
 import http.server
 import json
 import logging
@@ -68,8 +69,9 @@ class WifiSetupServer:
         hostname_prefix: Hostname prefix (from Platform).
     """
 
-    def __init__(self, config, wifi_interface="wlan0",
-                 hostname_prefix="rpi-divinu-cam"):
+    def __init__(
+        self, config, wifi_interface="wlan0", hostname_prefix="rpi-divinu-cam"
+    ):
         self._config = config
         self._wifi_interface = wifi_interface
         self._hostname_prefix = hostname_prefix
@@ -120,8 +122,15 @@ class WifiSetupServer:
         led.off()
         log.info("Setup server stopped")
 
-    def save_and_connect(self, ssid, password, server_ip, server_port="8554",
-                         admin_username="admin", admin_password=""):
+    def save_and_connect(
+        self,
+        ssid,
+        password,
+        server_ip,
+        server_port="8554",
+        admin_username="admin",
+        admin_password="",
+    ):
         """Save settings and attempt WiFi connection in background."""
         self._connect_result = None
 
@@ -130,13 +139,16 @@ class WifiSetupServer:
                 self._config.update(ADMIN_USERNAME=admin_username)
             self._config.set_password(admin_password)
             self._config.save()
-            log.info("Camera admin credentials set during provisioning "
-                     "(user=%s)", admin_username)
+            log.info(
+                "Camera admin credentials set during provisioning (user=%s)",
+                admin_username,
+            )
 
         t = threading.Thread(
             target=self._do_connect,
             args=(ssid, password, server_ip, server_port),
-            daemon=True, name="wifi-connect",
+            daemon=True,
+            name="wifi-connect",
         )
         t.start()
 
@@ -151,8 +163,7 @@ class WifiSetupServer:
         self._hotspot_active = False
         time.sleep(2)
 
-        ok, err = wifi.connect_network(
-            ssid, password, self._wifi_interface)
+        ok, err = wifi.connect_network(ssid, password, self._wifi_interface)
 
         if ok:
             log.info("WiFi connected! Saving config and completing setup.")
@@ -258,13 +269,15 @@ def _make_handler(config, setup_server):
                     status = "failed"
                     error = str(result)
                 hostname = wifi.get_hostname()
-                self._json_response({
-                    "status": status,
-                    "error": error,
-                    "setup_complete": is_setup_complete(config.data_dir),
-                    "camera_id": config.camera_id,
-                    "hostname": hostname,
-                })
+                self._json_response(
+                    {
+                        "status": status,
+                        "error": error,
+                        "setup_complete": is_setup_complete(config.data_dir),
+                        "camera_id": config.camera_id,
+                        "hostname": hostname,
+                    }
+                )
             else:
                 log.debug("Captive portal redirect: %s -> /setup", self.path)
                 self.send_response(302)
@@ -286,37 +299,39 @@ def _make_handler(config, setup_server):
                     admin_password = data.get("admin_password", "")
 
                     if not ssid:
-                        self._json_response(
-                            {"error": "WiFi name required"}, 400)
+                        self._json_response({"error": "WiFi name required"}, 400)
                         return
                     if not password:
-                        self._json_response(
-                            {"error": "WiFi password required"}, 400)
+                        self._json_response({"error": "WiFi password required"}, 400)
                         return
                     if not server_ip:
-                        self._json_response(
-                            {"error": "Server IP required"}, 400)
+                        self._json_response({"error": "Server IP required"}, 400)
                         return
                     if not admin_username or len(admin_username) < 3:
                         self._json_response(
-                            {"error": "Username required (min 3 characters)"},
-                            400)
+                            {"error": "Username required (min 3 characters)"}, 400
+                        )
                         return
                     if not admin_password or len(admin_password) < 4:
                         self._json_response(
-                            {"error": "Password required (min 4 characters)"},
-                            400)
+                            {"error": "Password required (min 4 characters)"}, 400
+                        )
                         return
 
                     setup_server.save_and_connect(
-                        ssid, password, server_ip, server_port,
+                        ssid,
+                        password,
+                        server_ip,
+                        server_port,
                         admin_username=admin_username,
                         admin_password=admin_password,
                     )
-                    self._json_response({
-                        "status": "connecting",
-                        "message": "Settings saved. Connecting to WiFi...",
-                    })
+                    self._json_response(
+                        {
+                            "status": "connecting",
+                            "message": "Settings saved. Connecting to WiFi...",
+                        }
+                    )
                 except json.JSONDecodeError:
                     self._json_response({"error": "Invalid request"}, 400)
 

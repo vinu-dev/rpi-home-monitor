@@ -4,6 +4,7 @@ Tests exercise the HTTP endpoints which now delegate to StorageService.
 Mocks target the service's dependency (monitor.services.storage_service.usb)
 rather than the old route-level import.
 """
+
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
@@ -12,19 +13,27 @@ from monitor.auth import hash_password
 def _login(app, client, role="admin"):
     """Helper: create admin user and login."""
     from monitor.models import User
-    app.store.save_user(User(
-        id="user-admin",
-        username="admin",
-        password_hash=hash_password("pass"),
-        role=role,
-    ))
-    client.post("/api/v1/auth/login", json={
-        "username": "admin", "password": "pass",
-    })
+
+    app.store.save_user(
+        User(
+            id="user-admin",
+            username="admin",
+            password_hash=hash_password("pass"),
+            role=role,
+        )
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "admin",
+            "password": "pass",
+        },
+    )
 
 
-def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
-                 fstype="ext4", supported=True):
+def _make_device(
+    path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
+):
     """Build a fake USB device dict."""
     return {
         "path": path,
@@ -82,7 +91,10 @@ class TestListDevices:
     @patch(USB_PATCH)
     def test_returns_device_list(self, mock_usb, app, client):
         _login(app, client)
-        devices = [_make_device("/dev/sda1"), _make_device("/dev/sdb1", model="Flash Drive")]
+        devices = [
+            _make_device("/dev/sda1"),
+            _make_device("/dev/sdb1", model="Flash Drive"),
+        ]
         mock_usb.detect_devices.return_value = devices
 
         response = client.get("/api/v1/storage/devices")
@@ -115,9 +127,12 @@ class TestSelectDevice:
 
         app.storage_service._storage_manager = MagicMock()
 
-        response = client.post("/api/v1/storage/select", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 200
         data = response.get_json()
         assert data["recordings_dir"] == "/mnt/usb/recordings"
@@ -145,9 +160,12 @@ class TestSelectDevice:
         _login(app, client)
         mock_usb.detect_devices.return_value = []
 
-        response = client.post("/api/v1/storage/select", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 404
         assert "not found" in response.get_json()["error"]
 
@@ -157,9 +175,12 @@ class TestSelectDevice:
         device = _make_device("/dev/sda1", fstype="ntfs", supported=False)
         mock_usb.detect_devices.return_value = [device]
 
-        response = client.post("/api/v1/storage/select", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 400
         data = response.get_json()
         assert data["needs_format"] is True
@@ -172,17 +193,23 @@ class TestSelectDevice:
         mock_usb.detect_devices.return_value = [device]
         mock_usb.mount_device.return_value = (False, "mount: permission denied")
 
-        response = client.post("/api/v1/storage/select", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 500
         assert "Failed to mount" in response.get_json()["error"]
 
     def test_requires_admin(self, app, client):
         _login(app, client, role="viewer")
-        response = client.post("/api/v1/storage/select", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 403
 
 
@@ -196,29 +223,38 @@ class TestFormatDevice:
         mock_usb.detect_devices.return_value = [device]
         mock_usb.format_device.return_value = (True, None)
 
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-            "confirm": True,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+                "confirm": True,
+            },
+        )
         assert response.status_code == 200
         assert "formatted" in response.get_json()["message"].lower()
         mock_usb.format_device.assert_called_once_with("/dev/sda1")
 
     def test_format_without_confirm(self, app, client):
         _login(app, client)
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-            "confirm": False,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+                "confirm": False,
+            },
+        )
         assert response.status_code == 400
         data = response.get_json()
         assert data["needs_confirmation"] is True
 
     def test_format_missing_confirm(self, app, client):
         _login(app, client)
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
         assert response.status_code == 400
         assert "needs_confirmation" in response.get_json()
 
@@ -227,10 +263,13 @@ class TestFormatDevice:
         _login(app, client)
         mock_usb.detect_devices.return_value = []
 
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-            "confirm": True,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+                "confirm": True,
+            },
+        )
         assert response.status_code == 404
         assert "not found" in response.get_json()["error"]
 
@@ -241,27 +280,36 @@ class TestFormatDevice:
         mock_usb.detect_devices.return_value = [device]
         mock_usb.format_device.return_value = (False, "mkfs failed")
 
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-            "confirm": True,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+                "confirm": True,
+            },
+        )
         assert response.status_code == 500
         assert "Format failed" in response.get_json()["error"]
 
     def test_format_missing_device_path(self, app, client):
         _login(app, client)
-        response = client.post("/api/v1/storage/format", json={
-            "confirm": True,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "confirm": True,
+            },
+        )
         assert response.status_code == 400
         assert "device_path required" in response.get_json()["error"]
 
     def test_requires_admin(self, app, client):
         _login(app, client, role="viewer")
-        response = client.post("/api/v1/storage/format", json={
-            "device_path": "/dev/sda1",
-            "confirm": True,
-        })
+        response = client.post(
+            "/api/v1/storage/format",
+            json={
+                "device_path": "/dev/sda1",
+                "confirm": True,
+            },
+        )
         assert response.status_code == 403
 
 

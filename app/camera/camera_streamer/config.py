@@ -13,6 +13,7 @@ Config values:
   FPS            - Framerate (default: 25)
   CAMERA_ID      - Derived from hardware serial if not set
 """
+
 import hashlib
 import logging
 import os
@@ -30,7 +31,7 @@ DEFAULTS = {
     "FPS": "25",
     "CAMERA_ID": "",
     "ADMIN_USERNAME": "admin",  # default username
-    "ADMIN_PASSWORD": "",       # salt:hash (PBKDF2-SHA256)
+    "ADMIN_PASSWORD": "",  # salt:hash (PBKDF2-SHA256)
 }
 
 
@@ -38,9 +39,7 @@ class ConfigManager:
     """Load and manage camera configuration."""
 
     def __init__(self, data_dir=None):
-        self._data_dir = data_dir or os.environ.get(
-            "CAMERA_DATA_DIR", "/data"
-        )
+        self._data_dir = data_dir or os.environ.get("CAMERA_DATA_DIR", "/data")
         self._config_path = os.path.join(self._data_dir, "config", "camera.conf")
         self._default_path = "/opt/camera/camera.conf.default"
         self._values = dict(DEFAULTS)
@@ -217,4 +216,5 @@ def _get_hardware_serial():
         pass
     # Fallback: use hostname
     import socket
+
     return f"cam-{socket.gethostname()}"

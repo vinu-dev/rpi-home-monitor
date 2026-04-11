@@ -1,4 +1,5 @@
 """Tests for monitor.logging_config module."""
+
 import logging
 import os
 from pathlib import Path
@@ -36,9 +37,9 @@ class TestConfigureLogging:
         configure_logging("INFO")
         root = logging.getLogger()
         console_handlers = [
-            h for h in root.handlers
-            if isinstance(h, logging.StreamHandler)
-            and not hasattr(h, "baseFilename")
+            h
+            for h in root.handlers
+            if isinstance(h, logging.StreamHandler) and not hasattr(h, "baseFilename")
         ]
         assert len(console_handlers) >= 1
 
@@ -47,17 +48,17 @@ class TestConfigureLogging:
             configure_logging("INFO")
         root = logging.getLogger()
         from logging.handlers import RotatingFileHandler
-        file_handlers = [
-            h for h in root.handlers
-            if isinstance(h, RotatingFileHandler)
-        ]
+
+        file_handlers = [h for h in root.handlers if isinstance(h, RotatingFileHandler)]
         assert len(file_handlers) >= 1
         assert (tmp_path / "monitor.log").exists()
 
     def test_file_handler_failure_does_not_crash(self):
         """If log dir is not writable, fall back to console only."""
-        with patch("monitor.logging_config.LOG_DIR",
-                   Path("/nonexistent/path/that/cannot/exist")):
+        with patch(
+            "monitor.logging_config.LOG_DIR",
+            Path("/nonexistent/path/that/cannot/exist"),
+        ):
             configure_logging("INFO")  # should not raise
         root = logging.getLogger()
         assert len(root.handlers) >= 1  # at least console

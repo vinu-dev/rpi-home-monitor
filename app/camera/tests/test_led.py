@@ -1,4 +1,5 @@
 """Tests for camera_streamer.led module."""
+
 import os
 from unittest.mock import mock_open, patch
 

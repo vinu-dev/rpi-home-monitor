@@ -10,6 +10,7 @@ Endpoints:
 
 Routes are thin — all orchestration is in StorageService.
 """
+
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required
@@ -69,7 +70,8 @@ def format_device():
     confirm = data.get("confirm", False)
 
     msg, status = current_app.storage_service.format_device(
-        device_path, confirm,
+        device_path,
+        confirm,
         user=session.get("username", ""),
         ip=request.remote_addr or "",
     )

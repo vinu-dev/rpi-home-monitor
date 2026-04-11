@@ -5,6 +5,7 @@ All page routes check authentication via session and redirect
 to /login if not authenticated. The /setup page is shown when
 initial setup has not been completed.
 """
+
 import os
 
 from flask import (

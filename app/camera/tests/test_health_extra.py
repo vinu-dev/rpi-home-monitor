@@ -1,4 +1,5 @@
 """Additional tests for health module to boost coverage."""
+
 import os
 from unittest.mock import MagicMock, mock_open, patch
 

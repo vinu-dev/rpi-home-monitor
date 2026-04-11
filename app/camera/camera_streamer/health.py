@@ -9,6 +9,7 @@ Checks:
 - Disk space on /data
 - CPU temperature (via injectable thermal_path from Platform)
 """
+
 import logging
 import os
 import threading
@@ -114,6 +115,7 @@ class HealthMonitor:
         """Send systemd watchdog notification."""
         try:
             import socket
+
             addr = os.environ.get("NOTIFY_SOCKET")
             if not addr:
                 return

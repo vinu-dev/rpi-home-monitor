@@ -20,15 +20,18 @@ class TestCreateApp:
 
     def test_app_custom_config(self, data_dir):
         from monitor import create_app
-        app = create_app(config={
-            "TESTING": True,
-            "DATA_DIR": str(data_dir),
-            "RECORDINGS_DIR": str(data_dir / "recordings"),
-            "LIVE_DIR": str(data_dir / "live"),
-            "CONFIG_DIR": str(data_dir / "config"),
-            "CERTS_DIR": str(data_dir / "certs"),
-            "CLIP_DURATION_SECONDS": 300,
-        })
+
+        app = create_app(
+            config={
+                "TESTING": True,
+                "DATA_DIR": str(data_dir),
+                "RECORDINGS_DIR": str(data_dir / "recordings"),
+                "LIVE_DIR": str(data_dir / "live"),
+                "CONFIG_DIR": str(data_dir / "config"),
+                "CERTS_DIR": str(data_dir / "certs"),
+                "CLIP_DURATION_SECONDS": 300,
+            }
+        )
         assert app.config["CLIP_DURATION_SECONDS"] == 300
 
     def test_data_dirs_configured(self, app, data_dir):

@@ -1,4 +1,5 @@
 """Unit tests for StorageService — USB storage orchestration layer."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,11 +9,15 @@ from monitor.services.storage_service import StorageService
 USB_PATCH = "monitor.services.storage_service.usb"
 
 
-def _make_device(path="/dev/sda1", model="USB Stick", size="32G",
-                 fstype="ext4", supported=True):
+def _make_device(
+    path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
+):
     return {
-        "path": path, "model": model, "size": size,
-        "fstype": fstype, "supported": supported,
+        "path": path,
+        "model": model,
+        "size": size,
+        "fstype": fstype,
+        "supported": supported,
     }
 
 
@@ -32,7 +37,6 @@ def svc(deps):
 
 
 class TestGetStatus:
-
     def test_returns_stats(self, svc, deps):
         sm, _, _ = deps
         sm.get_storage_stats.return_value = {"total_bytes": 100}
@@ -49,7 +53,6 @@ class TestGetStatus:
 
 
 class TestListDevices:
-
     @patch(USB_PATCH)
     def test_delegates_to_usb(self, mock_usb, svc):
         mock_usb.detect_devices.return_value = [_make_device()]
@@ -59,7 +62,6 @@ class TestListDevices:
 
 
 class TestSelectDevice:
-
     def test_missing_device_path(self, svc):
         result, err, status = svc.select_device("")
         assert status == 400
@@ -119,7 +121,6 @@ class TestSelectDevice:
 
 
 class TestFormatDevice:
-
     def test_missing_device_path(self, svc):
         msg, status = svc.format_device("")
         assert status == 400
@@ -157,7 +158,6 @@ class TestFormatDevice:
 
 
 class TestEject:
-
     @patch(USB_PATCH)
     def test_eject_success(self, mock_usb, svc, deps):
         sm, store, audit = deps
@@ -187,7 +187,6 @@ class TestEject:
 
 
 class TestAuditFailSilent:
-
     @patch(USB_PATCH)
     def test_audit_error_doesnt_break_select(self, mock_usb, deps):
         sm, store, audit = deps

@@ -1,4 +1,5 @@
 """Tests for the live streaming API."""
+
 import os
 
 from monitor.auth import hash_password
@@ -8,20 +9,29 @@ from monitor.models import Camera
 def _login(app, client, role="admin"):
     """Helper: create admin user and login."""
     from monitor.models import User
-    app.store.save_user(User(
-        id="user-admin",
-        username="admin",
-        password_hash=hash_password("pass"),
-        role=role,
-    ))
-    client.post("/api/v1/auth/login", json={
-        "username": "admin", "password": "pass",
-    })
+
+    app.store.save_user(
+        User(
+            id="user-admin",
+            username="admin",
+            password_hash=hash_password("pass"),
+            role=role,
+        )
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "admin",
+            "password": "pass",
+        },
+    )
 
 
 def _add_camera(app, camera_id="cam-001", status="online"):
     """Helper: add camera."""
-    app.store.save_camera(Camera(id=camera_id, name="Test", status=status, ip="192.168.1.50"))
+    app.store.save_camera(
+        Camera(id=camera_id, name="Test", status=status, ip="192.168.1.50")
+    )
 
 
 def _make_playlist(app, camera_id):

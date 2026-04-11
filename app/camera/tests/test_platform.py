@@ -1,4 +1,5 @@
 """Tests for platform hardware abstraction."""
+
 import os
 from unittest.mock import patch
 
@@ -40,13 +41,16 @@ class TestPlatformInit:
 class TestPlatformDetect:
     """Test Platform.detect() with environment variables."""
 
-    @patch.dict(os.environ, {
-        "CAMERA_DEVICE": "/dev/video5",
-        "CAMERA_LED_PATH": "/sys/class/leds/custom",
-        "CAMERA_THERMAL_PATH": "/custom/thermal",
-        "CAMERA_WIFI_IFACE": "wlan2",
-        "CAMERA_HOSTNAME_PREFIX": "test-cam",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CAMERA_DEVICE": "/dev/video5",
+            "CAMERA_LED_PATH": "/sys/class/leds/custom",
+            "CAMERA_THERMAL_PATH": "/custom/thermal",
+            "CAMERA_WIFI_IFACE": "wlan2",
+            "CAMERA_HOSTNAME_PREFIX": "test-cam",
+        },
+    )
     def test_env_vars_override_probing(self):
         p = Platform.detect()
         assert p.camera_device == "/dev/video5"
@@ -61,8 +65,7 @@ class TestPlatformDetect:
     @patch("camera_streamer.platform._probe_wifi_interface", return_value="wlan0")
     def test_probing_fallback(self, mock_wifi, mock_thermal, mock_led, mock_cam):
         # Clear env vars if set
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith("CAMERA_")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CAMERA_")}
         with patch.dict(os.environ, env, clear=True):
             p = Platform.detect()
         assert p.camera_device == "/dev/video0"
@@ -147,10 +150,16 @@ class TestProbing:
     def test_probe_thermal_none(self, mock_glob):
         assert _probe_thermal_path() is None
 
-    @patch("os.path.isdir", side_effect=lambda p: p in [
-        "/sys/class/net",
-        "/sys/class/net/wlan0/wireless",
-    ])
+    @patch(
+        "os.path.isdir",
+        side_effect=lambda p: (
+            p
+            in [
+                "/sys/class/net",
+                "/sys/class/net/wlan0/wireless",
+            ]
+        ),
+    )
     @patch("os.listdir", return_value=["eth0", "lo", "wlan0"])
     def test_probe_wifi_interface_found(self, mock_listdir, mock_isdir):
         assert _probe_wifi_interface() == "wlan0"

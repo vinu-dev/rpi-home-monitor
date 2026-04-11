@@ -1,4 +1,5 @@
 """Tests for the camera management service."""
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 

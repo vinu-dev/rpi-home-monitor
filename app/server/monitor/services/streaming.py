@@ -13,6 +13,7 @@ mediamtx receives RTSP pushes from cameras and republishes them
 at rtsp://localhost:8554/<stream-name>. This service pulls from
 mediamtx to create the HLS/recording/snapshot outputs.
 """
+
 import logging
 import os
 import subprocess
@@ -39,9 +40,9 @@ class StreamingService:
         self._live_dir = Path(live_dir)
         self._recordings_dir = Path(recordings_dir)
         self._clip_duration = clip_duration
-        self._hls_procs = {}       # cam_id -> Popen
-        self._rec_procs = {}       # cam_id -> Popen
-        self._snap_threads = {}    # cam_id -> Thread
+        self._hls_procs = {}  # cam_id -> Popen
+        self._rec_procs = {}  # cam_id -> Popen
+        self._snap_threads = {}  # cam_id -> Thread
         self._running = False
         self._lock = threading.Lock()
 
@@ -160,17 +161,28 @@ class StreamingService:
         segment_pattern = str(output_dir / "segment_%03d.ts")
 
         cmd = [
-            "ffmpeg", "-nostdin",
-            "-rtsp_transport", "tcp",
-            "-stimeout", RTSP_TIMEOUT_US,
-            "-i", rtsp_url,
-            "-c:v", "copy",
-            "-c:a", "copy",
-            "-f", "hls",
-            "-hls_time", str(HLS_SEGMENT_DURATION),
-            "-hls_list_size", str(HLS_LIST_SIZE),
-            "-hls_flags", "delete_segments+append_list",
-            "-hls_segment_filename", segment_pattern,
+            "ffmpeg",
+            "-nostdin",
+            "-rtsp_transport",
+            "tcp",
+            "-stimeout",
+            RTSP_TIMEOUT_US,
+            "-i",
+            rtsp_url,
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-f",
+            "hls",
+            "-hls_time",
+            str(HLS_SEGMENT_DURATION),
+            "-hls_list_size",
+            str(HLS_LIST_SIZE),
+            "-hls_flags",
+            "delete_segments+append_list",
+            "-hls_segment_filename",
+            segment_pattern,
             str(playlist),
         ]
 
@@ -200,20 +212,34 @@ class StreamingService:
         self._start_dir_creator(cam_id, cam_rec_dir)
 
         cmd = [
-            "ffmpeg", "-nostdin",
-            "-rtsp_transport", "tcp",
-            "-stimeout", RTSP_TIMEOUT_US,
-            "-use_wallclock_as_timestamps", "1",
-            "-i", rtsp_url,
-            "-c:v", "copy",
-            "-c:a", "copy",
-            "-f", "segment",
-            "-segment_time", str(self._clip_duration),
-            "-segment_format", "mp4",
-            "-segment_atclocktime", "1",
-            "-segment_clocktime_wrap_duration", "30",
-            "-strftime", "1",
-            "-reset_timestamps", "1",
+            "ffmpeg",
+            "-nostdin",
+            "-rtsp_transport",
+            "tcp",
+            "-stimeout",
+            RTSP_TIMEOUT_US,
+            "-use_wallclock_as_timestamps",
+            "1",
+            "-i",
+            rtsp_url,
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-f",
+            "segment",
+            "-segment_time",
+            str(self._clip_duration),
+            "-segment_format",
+            "mp4",
+            "-segment_atclocktime",
+            "1",
+            "-segment_clocktime_wrap_duration",
+            "30",
+            "-strftime",
+            "1",
+            "-reset_timestamps",
+            "1",
             str(cam_rec_dir / "%Y-%m-%d" / "%H-%M-%S.mp4"),
         ]
 
@@ -225,13 +251,16 @@ class StreamingService:
 
     def _start_dir_creator(self, cam_id, rec_dir):
         """Pre-create date directories so ffmpeg segment muxer doesn't fail at midnight."""
+
         def _dir_loop():
             while self._running and cam_id in self._rec_procs:
                 # Create today's and tomorrow's dirs
                 now = datetime.now()
                 today = now.strftime("%Y-%m-%d")
-                tomorrow = (now.replace(hour=0, minute=0, second=0) +
-                           __import__('datetime').timedelta(days=1)).strftime("%Y-%m-%d")
+                tomorrow = (
+                    now.replace(hour=0, minute=0, second=0)
+                    + __import__("datetime").timedelta(days=1)
+                ).strftime("%Y-%m-%d")
                 for d in [today, tomorrow]:
                     (rec_dir / d).mkdir(parents=True, exist_ok=True)
                 # Check every 10 minutes
@@ -246,10 +275,11 @@ class StreamingService:
     # --- Process watchdog ---
 
     WATCHDOG_INTERVAL = 30  # seconds between health checks
-    STALE_CLIP_FACTOR = 2   # restart if newest clip > clip_duration * factor
+    STALE_CLIP_FACTOR = 2  # restart if newest clip > clip_duration * factor
 
     def _start_watchdog(self):
         """Start a watchdog thread that restarts dead ffmpeg processes."""
+
         def _watchdog_loop():
             while self._running:
                 self._check_processes()
@@ -258,8 +288,7 @@ class StreamingService:
                         return
                     time.sleep(0.1)
 
-        t = threading.Thread(target=_watchdog_loop, daemon=True,
-                             name="stream-watchdog")
+        t = threading.Thread(target=_watchdog_loop, daemon=True, name="stream-watchdog")
         t.start()
 
     def _check_processes(self):
@@ -274,9 +303,12 @@ class StreamingService:
             with self._lock:
                 hls_proc = self._hls_procs.get(cam_id)
             if hls_proc and hls_proc.poll() is not None:
-                log.warning("HLS process died for %s (PID=%d, exit=%s), "
-                            "restarting", cam_id, hls_proc.pid,
-                            hls_proc.returncode)
+                log.warning(
+                    "HLS process died for %s (PID=%d, exit=%s), restarting",
+                    cam_id,
+                    hls_proc.pid,
+                    hls_proc.returncode,
+                )
                 self._close_proc_log(hls_proc)
                 with self._lock:
                     self._hls_procs.pop(cam_id, None)
@@ -286,9 +318,12 @@ class StreamingService:
             with self._lock:
                 rec_proc = self._rec_procs.get(cam_id)
             if rec_proc and rec_proc.poll() is not None:
-                log.warning("Recorder died for %s (PID=%d, exit=%s), "
-                            "restarting", cam_id, rec_proc.pid,
-                            rec_proc.returncode)
+                log.warning(
+                    "Recorder died for %s (PID=%d, exit=%s), restarting",
+                    cam_id,
+                    rec_proc.pid,
+                    rec_proc.returncode,
+                )
                 self._close_proc_log(rec_proc)
                 with self._lock:
                     self._rec_procs.pop(cam_id, None)
@@ -296,8 +331,11 @@ class StreamingService:
             elif rec_proc and rec_proc.poll() is None:
                 # Process alive — check if it's actually writing clips
                 if self._is_recorder_stale(cam_id):
-                    log.warning("Recorder stalled for %s (no new clips), "
-                                "force-killing PID %d", cam_id, rec_proc.pid)
+                    log.warning(
+                        "Recorder stalled for %s (no new clips), force-killing PID %d",
+                        cam_id,
+                        rec_proc.pid,
+                    )
                     self._stop_process(cam_id, self._rec_procs, "stale-rec")
                     self._start_recorder(cam_id, rtsp_url)
 
@@ -334,8 +372,12 @@ class StreamingService:
         age = time.time() - newest_mtime
         threshold = self._clip_duration * self.STALE_CLIP_FACTOR
         if age > threshold:
-            log.debug("Newest clip for %s is %.0fs old (threshold=%ds)",
-                      cam_id, age, threshold)
+            log.debug(
+                "Newest clip for %s is %.0fs old (threshold=%ds)",
+                cam_id,
+                age,
+                threshold,
+            )
             return True
         return False
 
@@ -343,6 +385,7 @@ class StreamingService:
 
     def _start_snapshots(self, cam_id, rtsp_url):
         """Start periodic snapshot extraction in a thread."""
+
         def _snap_loop():
             while self._running and cam_id in self._snap_threads:
                 self._take_snapshot(cam_id, rtsp_url)
@@ -363,18 +406,27 @@ class StreamingService:
         tmp = output.with_suffix(".tmp.jpg")
 
         cmd = [
-            "ffmpeg", "-nostdin", "-y",
-            "-rtsp_transport", "tcp",
-            "-stimeout", RTSP_TIMEOUT_US,
-            "-i", rtsp_url,
-            "-frames:v", "1",
-            "-q:v", "5",
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-rtsp_transport",
+            "tcp",
+            "-stimeout",
+            RTSP_TIMEOUT_US,
+            "-i",
+            rtsp_url,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "5",
             str(tmp),
         ]
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, timeout=10,
+                cmd,
+                capture_output=True,
+                timeout=10,
             )
             if result.returncode == 0 and tmp.is_file():
                 # Atomic rename so readers never see a partial file
@@ -448,8 +500,13 @@ class StreamingService:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=2)
-            log.info("%s process stopped for %s (PID %d, exit=%s)",
-                     label, cam_id, proc.pid, proc.returncode)
+            log.info(
+                "%s process stopped for %s (PID %d, exit=%s)",
+                label,
+                cam_id,
+                proc.pid,
+                proc.returncode,
+            )
         except OSError:
             pass
         finally:

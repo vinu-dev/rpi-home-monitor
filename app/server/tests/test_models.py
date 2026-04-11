@@ -1,4 +1,5 @@
 """Tests for data models."""
+
 from dataclasses import asdict
 
 from monitor.models import Camera, Clip, Settings, User

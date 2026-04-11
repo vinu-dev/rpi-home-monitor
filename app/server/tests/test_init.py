@@ -2,6 +2,7 @@
 Tests for application factory helpers: secret key persistence
 and default admin user creation.
 """
+
 import os
 
 from monitor import _ensure_default_admin, _load_or_create_secret_key, create_app
@@ -56,6 +57,7 @@ class TestEnsureDefaultAdmin:
         store = Store(str(tmp_path))
         # Create a user first
         from monitor.models import User
+
         user = User(
             id="user-existing",
             username="existing",

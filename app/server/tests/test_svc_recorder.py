@@ -1,4 +1,5 @@
 """Tests for the recorder service."""
+
 from monitor.services.recorder import RecorderService
 
 

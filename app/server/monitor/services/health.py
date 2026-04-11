@@ -13,6 +13,7 @@ Warning thresholds:
 - Disk usage > 85%
 - RAM usage > 90%
 """
+
 import shutil
 from pathlib import Path
 
@@ -84,9 +85,9 @@ def get_disk_usage(path: str = "/data") -> dict:
     """
     try:
         usage = shutil.disk_usage(path)
-        total_gb = round(usage.total / (1024 ** 3), 1)
-        used_gb = round(usage.used / (1024 ** 3), 1)
-        free_gb = round(usage.free / (1024 ** 3), 1)
+        total_gb = round(usage.total / (1024**3), 1)
+        used_gb = round(usage.used / (1024**3), 1)
+        free_gb = round(usage.free / (1024**3), 1)
         percent = round(usage.used / usage.total * 100, 1) if usage.total > 0 else 0.0
         return {
             "total_gb": total_gb,

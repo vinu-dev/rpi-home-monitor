@@ -1,4 +1,5 @@
 """Tests for monitor.services.streaming module."""
+
 import os
 import time
 from unittest.mock import MagicMock, patch
@@ -249,6 +250,7 @@ class TestSnapshot:
     def test_snapshot_timeout(self, mock_run, tmp_path):
         """Should handle ffmpeg timeout gracefully."""
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 10)
 
         svc = StreamingService(
@@ -382,9 +384,7 @@ class TestWatchdogStaleRestart:
 
     @patch.object(StreamingService, "_start_recorder")
     @patch.object(StreamingService, "_start_hls")
-    def test_stale_recorder_is_killed_and_restarted(
-        self, mock_hls, mock_rec, tmp_path
-    ):
+    def test_stale_recorder_is_killed_and_restarted(self, mock_hls, mock_rec, tmp_path):
         """A live but stale recorder should be force-killed and restarted."""
         rec = tmp_path / "rec"
         cam_dir = rec / "cam1" / "2026-04-11"
@@ -415,9 +415,7 @@ class TestWatchdogStaleRestart:
 
     @patch.object(StreamingService, "_start_recorder")
     @patch.object(StreamingService, "_start_hls")
-    def test_healthy_recorder_not_restarted(
-        self, mock_hls, mock_rec, tmp_path
-    ):
+    def test_healthy_recorder_not_restarted(self, mock_hls, mock_rec, tmp_path):
         """A live recorder with recent clips should not be restarted."""
         rec = tmp_path / "rec"
         cam_dir = rec / "cam1" / "2026-04-11"

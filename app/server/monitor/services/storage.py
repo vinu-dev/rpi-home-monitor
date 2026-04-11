@@ -15,6 +15,7 @@ Design patterns:
 - Fail-Silent (all disk ops wrapped in try/except)
 - Single Responsibility (only manages storage, not streaming)
 """
+
 import logging
 import shutil
 import threading
@@ -24,9 +25,9 @@ from pathlib import Path
 
 log = logging.getLogger("monitor.storage")
 
-CHECK_INTERVAL = 30       # seconds between cleanup checks
+CHECK_INTERVAL = 30  # seconds between cleanup checks
 RESERVE_INTERNAL_MB = 400  # keep this much free on /data for OS/config/logs
-RESERVE_USB_MB = 100       # keep this much free on USB for filesystem overhead
+RESERVE_USB_MB = 100  # keep this much free on USB for filesystem overhead
 
 
 class StorageManager:
@@ -38,8 +39,12 @@ class StorageManager:
         reserve_mb: MB to keep free on internal storage.
     """
 
-    def __init__(self, recordings_dir: str, data_dir: str = "/data",
-                 reserve_mb: int = RESERVE_INTERNAL_MB):
+    def __init__(
+        self,
+        recordings_dir: str,
+        data_dir: str = "/data",
+        reserve_mb: int = RESERVE_INTERNAL_MB,
+    ):
         self._recordings_dir = Path(recordings_dir)
         self._data_dir = Path(data_dir)
         self._reserve_mb = reserve_mb
@@ -84,8 +89,11 @@ class StorageManager:
             target=self._cleanup_loop, daemon=True, name="storage-cleanup"
         )
         self._thread.start()
-        log.info("Storage manager started (reserve=%dMB, dir=%s)",
-                 self._reserve_mb, self._recordings_dir)
+        log.info(
+            "Storage manager started (reserve=%dMB, dir=%s)",
+            self._reserve_mb,
+            self._recordings_dir,
+        )
 
     def stop(self):
         """Stop the background cleanup thread."""
@@ -99,15 +107,21 @@ class StorageManager:
         rec_dir = self._recordings_dir
         try:
             usage = shutil.disk_usage(str(rec_dir))
-            total_gb = round(usage.total / (1024 ** 3), 2)
-            used_gb = round(usage.used / (1024 ** 3), 2)
-            free_gb = round(usage.free / (1024 ** 3), 2)
-            percent = round(usage.used / usage.total * 100, 1) \
-                if usage.total > 0 else 0.0
+            total_gb = round(usage.total / (1024**3), 2)
+            used_gb = round(usage.used / (1024**3), 2)
+            free_gb = round(usage.free / (1024**3), 2)
+            percent = (
+                round(usage.used / usage.total * 100, 1) if usage.total > 0 else 0.0
+            )
         except OSError:
             return {
-                "total_gb": 0, "used_gb": 0, "free_gb": 0, "percent": 0.0,
-                "camera_count": 0, "clip_count": 0, "recordings_dir": str(rec_dir),
+                "total_gb": 0,
+                "used_gb": 0,
+                "free_gb": 0,
+                "percent": 0.0,
+                "camera_count": 0,
+                "clip_count": 0,
+                "recordings_dir": str(rec_dir),
                 "is_usb": self._is_usb_path(rec_dir),
             }
 
@@ -176,10 +190,11 @@ class StorageManager:
             if len(parts) < 3:
                 continue
             date_str = parts[-2]  # YYYY-MM-DD
-            time_str = mp4.stem   # HH-MM-SS
+            time_str = mp4.stem  # HH-MM-SS
             try:
                 clip_dt = datetime.strptime(
-                    f"{date_str} {time_str}", "%Y-%m-%d %H-%M-%S")
+                    f"{date_str} {time_str}", "%Y-%m-%d %H-%M-%S"
+                )
             except ValueError:
                 continue
             clips.append((clip_dt, mp4))
@@ -204,8 +219,9 @@ class StorageManager:
                 thumb = mp4.with_suffix(".thumb.jpg")
                 thumb.unlink(missing_ok=True)
                 deleted += 1
-                log.info("Loop cleanup: deleted %s (%.1f MB)",
-                         mp4.name, size / (1024 * 1024))
+                log.info(
+                    "Loop cleanup: deleted %s (%.1f MB)", mp4.name, size / (1024 * 1024)
+                )
             except OSError as e:
                 log.warning("Failed to delete %s: %s", mp4, e)
 

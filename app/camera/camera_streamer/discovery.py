@@ -13,6 +13,7 @@ TXT records:
 
 Uses avahi-publish-service which is part of avahi-daemon package.
 """
+
 import logging
 import subprocess
 
@@ -99,6 +100,7 @@ class DiscoveryService:
             self.stop()
         # Short delay to let avahi clean up
         import time
+
         time.sleep(0.5)
         self._running = False  # Reset so start() works
         self.start()

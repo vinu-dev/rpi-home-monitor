@@ -1,4 +1,5 @@
 """Tests for camera_streamer.stream module."""
+
 import time
 from unittest.mock import MagicMock, patch
 
@@ -90,13 +91,13 @@ class TestStreamBackoff:
         """Backoff should grow exponentially up to max."""
         mgr = StreamManager(camera_config)
         mgr._consecutive_failures = 1
-        wait1 = min(INITIAL_BACKOFF * (2 ** 0), MAX_BACKOFF)
+        wait1 = min(INITIAL_BACKOFF * (2**0), MAX_BACKOFF)
         assert wait1 == 2
 
         mgr._consecutive_failures = 5
-        wait5 = min(INITIAL_BACKOFF * (2 ** 4), MAX_BACKOFF)
+        wait5 = min(INITIAL_BACKOFF * (2**4), MAX_BACKOFF)
         assert wait5 == 32
 
         mgr._consecutive_failures = 10
-        wait10 = min(INITIAL_BACKOFF * (2 ** 9), MAX_BACKOFF)
+        wait10 = min(INITIAL_BACKOFF * (2**9), MAX_BACKOFF)
         assert wait10 == MAX_BACKOFF  # Capped at 60

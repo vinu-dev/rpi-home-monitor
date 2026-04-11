@@ -1,19 +1,27 @@
 """Tests for the settings API."""
+
 from monitor.auth import hash_password
 
 
 def _login(app, client, role="admin"):
     """Helper: create user and login."""
     from monitor.models import User
-    app.store.save_user(User(
-        id="user-admin",
-        username="admin",
-        password_hash=hash_password("pass"),
-        role=role,
-    ))
-    client.post("/api/v1/auth/login", json={
-        "username": "admin", "password": "pass",
-    })
+
+    app.store.save_user(
+        User(
+            id="user-admin",
+            username="admin",
+            password_hash=hash_password("pass"),
+            role=role,
+        )
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "admin",
+            "password": "pass",
+        },
+    )
 
 
 class TestGetSettings:
@@ -83,11 +91,14 @@ class TestUpdateSettings:
 
     def test_update_multiple_fields(self, app, client):
         _login(app, client)
-        response = client.put("/api/v1/settings", json={
-            "hostname": "rpi-server",
-            "clip_duration_seconds": 120,
-            "storage_threshold_percent": 85,
-        })
+        response = client.put(
+            "/api/v1/settings",
+            json={
+                "hostname": "rpi-server",
+                "clip_duration_seconds": 120,
+                "storage_threshold_percent": 85,
+            },
+        )
         assert response.status_code == 200
         data = client.get("/api/v1/settings").get_json()
         assert data["hostname"] == "rpi-server"
@@ -107,12 +118,16 @@ class TestSettingsValidation:
 
     def test_storage_threshold_too_low(self, app, client):
         _login(app, client)
-        response = client.put("/api/v1/settings", json={"storage_threshold_percent": 10})
+        response = client.put(
+            "/api/v1/settings", json={"storage_threshold_percent": 10}
+        )
         assert response.status_code == 400
 
     def test_storage_threshold_too_high(self, app, client):
         _login(app, client)
-        response = client.put("/api/v1/settings", json={"storage_threshold_percent": 100})
+        response = client.put(
+            "/api/v1/settings", json={"storage_threshold_percent": 100}
+        )
         assert response.status_code == 400
 
     def test_clip_duration_too_short(self, app, client):
@@ -132,7 +147,9 @@ class TestSettingsValidation:
 
     def test_session_timeout_too_long(self, app, client):
         _login(app, client)
-        response = client.put("/api/v1/settings", json={"session_timeout_minutes": 5000})
+        response = client.put(
+            "/api/v1/settings", json={"session_timeout_minutes": 5000}
+        )
         assert response.status_code == 400
 
     def test_hostname_empty(self, app, client):

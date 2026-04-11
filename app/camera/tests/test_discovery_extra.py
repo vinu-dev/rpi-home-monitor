@@ -1,4 +1,5 @@
 """Additional discovery tests for coverage."""
+
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.discovery import VERSION, DiscoveryService

@@ -14,6 +14,7 @@ Note: Full mDNS browsing requires Avahi (Linux-only). This module
 provides the service interface; actual mDNS browsing runs only on
 the RPi hardware.
 """
+
 import threading
 from datetime import UTC, datetime
 

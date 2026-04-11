@@ -10,6 +10,7 @@ Design patterns:
 - Single Responsibility (storage operations only)
 - Fail-Silent (audit failures don't break operations)
 """
+
 import logging
 
 from monitor.services import usb
@@ -27,8 +28,13 @@ class StorageService:
         default_recordings_dir: Fallback internal recording path.
     """
 
-    def __init__(self, storage_manager, store, audit=None,
-                 default_recordings_dir="/data/recordings"):
+    def __init__(
+        self,
+        storage_manager,
+        store,
+        audit=None,
+        default_recordings_dir="/data/recordings",
+    ):
         self._storage_manager = storage_manager
         self._store = store
         self._audit = audit
@@ -48,9 +54,9 @@ class StorageService:
         """List available USB block devices."""
         return usb.detect_devices()
 
-    def select_device(self, device_path: str,
-                      user: str = "",
-                      ip: str = "") -> tuple[dict | None, str, int]:
+    def select_device(
+        self, device_path: str, user: str = "", ip: str = ""
+    ) -> tuple[dict | None, str, int]:
         """Select a USB device for recordings.
 
         Validates the device, mounts it, creates the recordings folder,
@@ -69,11 +75,17 @@ class StorageService:
 
         # Check filesystem
         if not device["supported"]:
-            return {
-                "needs_format": True,
-                "fstype": device["fstype"],
-            }, (f"Filesystem '{device['fstype']}' not supported. "
-                f"Format the device first via POST /storage/format."), 400
+            return (
+                {
+                    "needs_format": True,
+                    "fstype": device["fstype"],
+                },
+                (
+                    f"Filesystem '{device['fstype']}' not supported. "
+                    f"Format the device first via POST /storage/format."
+                ),
+                400,
+            )
 
         # Mount
         ok, err = usb.mount_device(device_path)
@@ -91,20 +103,27 @@ class StorageService:
         self._save_usb_config(device_path, rec_dir)
 
         self._log_audit(
-            "USB_STORAGE_SELECTED", user, ip,
+            "USB_STORAGE_SELECTED",
+            user,
+            ip,
             f"device={device_path}, mount={usb.DEFAULT_MOUNT_POINT}",
         )
 
-        return {
-            "message": (f"USB storage active: {device['model']} "
-                        f"({device['size']})"),
-            "recordings_dir": rec_dir,
-            "device": device,
-        }, "", 200
+        return (
+            {
+                "message": (
+                    f"USB storage active: {device['model']} ({device['size']})"
+                ),
+                "recordings_dir": rec_dir,
+                "device": device,
+            },
+            "",
+            200,
+        )
 
-    def format_device(self, device_path: str, confirm: bool = False,
-                      user: str = "",
-                      ip: str = "") -> tuple[str, int]:
+    def format_device(
+        self, device_path: str, confirm: bool = False, user: str = "", ip: str = ""
+    ) -> tuple[str, int]:
         """Format a USB device to ext4.
 
         Returns (error_or_message_string, http_status_code).
@@ -113,8 +132,10 @@ class StorageService:
             return "device_path required", 400
 
         if not confirm:
-            return ("Format requires confirm=true. "
-                    "WARNING: This will ERASE ALL DATA on the device."), 400
+            return (
+                "Format requires confirm=true. "
+                "WARNING: This will ERASE ALL DATA on the device."
+            ), 400
 
         # Verify it's a USB device
         devices = usb.detect_devices()
@@ -122,10 +143,11 @@ class StorageService:
         if not device:
             return f"USB device {device_path} not found", 404
 
-        log.warning("Formatting USB device %s (requested by admin)",
-                    device_path)
+        log.warning("Formatting USB device %s (requested by admin)", device_path)
         self._log_audit(
-            "USB_FORMAT", user, ip,
+            "USB_FORMAT",
+            user,
+            ip,
             f"device={device_path}, model={device['model']}",
         )
 
@@ -133,11 +155,11 @@ class StorageService:
         if not ok:
             return f"Format failed: {err}", 500
 
-        return ("Device formatted as ext4. "
-                "Select it again to start using for recordings."), 200
+        return (
+            "Device formatted as ext4. Select it again to start using for recordings."
+        ), 200
 
-    def eject(self, user: str = "",
-              ip: str = "") -> tuple[dict, str, int]:
+    def eject(self, user: str = "", ip: str = "") -> tuple[dict, str, int]:
         """Unmount USB and switch recordings back to internal storage.
 
         Returns (result_dict, error_string, http_status_code).
@@ -155,14 +177,20 @@ class StorageService:
         self._save_usb_config("", "")
 
         self._log_audit(
-            "USB_STORAGE_EJECTED", user, ip,
+            "USB_STORAGE_EJECTED",
+            user,
+            ip,
             "switched back to internal storage",
         )
 
-        return {
-            "message": "USB ejected. Recording to internal storage.",
-            "recordings_dir": self._default_dir,
-        }, "", 200
+        return (
+            {
+                "message": "USB ejected. Recording to internal storage.",
+                "recordings_dir": self._default_dir,
+            },
+            "",
+            200,
+        )
 
     def _save_usb_config(self, device_path: str, recordings_dir: str):
         """Persist USB storage selection in settings.json."""

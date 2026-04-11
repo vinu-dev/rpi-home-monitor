@@ -10,6 +10,7 @@ Checks:
 - v4l2 device supports h264 output
 - Requested resolution is supported
 """
+
 import logging
 import os
 import subprocess
@@ -47,10 +48,11 @@ class CaptureManager:
         log.info("Checking camera device %s ...", self._device)
 
         # List all video devices for debugging
-        video_devs = [
-            f"/dev/{d}" for d in os.listdir("/dev")
-            if d.startswith("video")
-        ] if os.path.isdir("/dev") else []
+        video_devs = (
+            [f"/dev/{d}" for d in os.listdir("/dev") if d.startswith("video")]
+            if os.path.isdir("/dev")
+            else []
+        )
         log.info("Video devices found: %s", video_devs or "NONE")
 
         # Check device node exists
@@ -69,7 +71,9 @@ class CaptureManager:
         mode = os.stat(self._device).st_mode
         if not mode & 0o020000:
             # Not a char device — might be in test env
-            log.warning("%s exists but is not a character device (mode=%o)", self._device, mode)
+            log.warning(
+                "%s exists but is not a character device (mode=%o)", self._device, mode
+            )
 
         # Try to query formats via v4l2-ctl
         self._formats = self._query_formats()
@@ -87,13 +91,15 @@ class CaptureManager:
         if h264_ok:
             log.info(
                 "Camera device %s ready — %d format(s), native H.264=YES",
-                self._device, len(self._formats),
+                self._device,
+                len(self._formats),
             )
         elif libcam:
             log.info(
                 "Camera device %s ready — %d format(s), native H.264=NO, "
                 "libcamera-vid available (will handle ISP + encode)",
-                self._device, len(self._formats),
+                self._device,
+                len(self._formats),
             )
         else:
             log.warning(
@@ -111,6 +117,7 @@ class CaptureManager:
     def has_libcamera(self):
         """Check if libcamera-vid is available for ISP-based capture."""
         import shutil
+
         return shutil.which("libcamera-vid") is not None
 
     def supports_resolution(self, width, height):
@@ -129,9 +136,7 @@ class CaptureManager:
             )
             if result.returncode == 0:
                 lines = [
-                    line.strip()
-                    for line in result.stdout.splitlines()
-                    if line.strip()
+                    line.strip() for line in result.stdout.splitlines() if line.strip()
                 ]
                 return lines
         except FileNotFoundError:

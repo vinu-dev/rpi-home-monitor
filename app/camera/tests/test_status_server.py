@@ -1,4 +1,5 @@
 """Tests for camera_streamer.status_server — session management + system helpers."""
+
 import time
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -31,6 +32,7 @@ def clear_sessions():
 
 
 # ---- Session management ----
+
 
 class TestSessionManagement:
     """Test in-memory session store."""
@@ -92,6 +94,7 @@ class TestSessionManagement:
 
 # ---- Cookie parsing ----
 
+
 class TestSessionCookie:
     """Test cookie extraction from HTTP headers."""
 
@@ -117,6 +120,7 @@ class TestSessionCookie:
 
 
 # ---- System info helpers ----
+
 
 class TestCpuTemp:
     """Test CPU temperature reading."""
@@ -181,7 +185,7 @@ class TestMemoryMb:
         with patch("builtins.open", mock_open(read_data=meminfo)):
             total, used = _get_memory_mb()
             assert total == 1000  # 1024000 // 1024
-            assert used == 500   # 1000 - 500
+            assert used == 500  # 1000 - 500
 
     def test_error_meminfo(self):
         with patch("builtins.open", side_effect=OSError):
@@ -191,6 +195,7 @@ class TestMemoryMb:
 
 
 # ---- HTML escape ----
+
 
 class TestHtmlEscape:
     """Test HTML special character escaping."""
@@ -213,12 +218,14 @@ class TestHtmlEscape:
 
 # ---- CameraStatusServer ----
 
+
 class TestCameraStatusServer:
     """Test CameraStatusServer initialization and WiFi methods."""
 
     @pytest.fixture
     def config(self, tmp_path):
         from camera_streamer.config import ConfigManager
+
         cfg = ConfigManager(data_dir=str(tmp_path / "data"))
         cfg.load()
         return cfg
@@ -230,8 +237,7 @@ class TestCameraStatusServer:
 
     def test_init_custom_params(self, config):
         server = CameraStatusServer(
-            config, wifi_interface="wlan1",
-            thermal_path="/sys/custom/temp"
+            config, wifi_interface="wlan1", thermal_path="/sys/custom/temp"
         )
         assert server._wifi_interface == "wlan1"
         assert server._thermal_path == "/sys/custom/temp"

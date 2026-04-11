@@ -12,6 +12,7 @@ shutdown). This avoids killing the hotspot mid-wizard.
 All setup endpoints require that /data/.setup-done does NOT exist. Once setup
 is complete, the stamp file is written and all endpoints return 403.
 """
+
 import logging
 import os
 import subprocess
@@ -81,10 +82,12 @@ def setup_status():
     complete = _is_setup_complete()
     hotspot = _is_hotspot_active()
     log.debug("GET /status — setup_complete=%s hotspot_active=%s", complete, hotspot)
-    return jsonify({
-        "setup_complete": complete,
-        "hotspot_active": hotspot,
-    }), 200
+    return jsonify(
+        {
+            "setup_complete": complete,
+            "hotspot_active": hotspot,
+        }
+    ), 200
 
 
 @provisioning_bp.route("/wifi/scan", methods=["GET"])
@@ -101,8 +104,17 @@ def wifi_scan():
     log.info("WiFi scan requested")
     try:
         result = subprocess.run(
-            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list",
-             "--rescan", "yes"],
+            [
+                "nmcli",
+                "-t",
+                "-f",
+                "SSID,SIGNAL,SECURITY",
+                "dev",
+                "wifi",
+                "list",
+                "--rescan",
+                "yes",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -116,7 +128,9 @@ def wifi_scan():
 
     if result.returncode != 0:
         log.error("WiFi scan nmcli error: %s", result.stderr.strip())
-        return jsonify({"error": "WiFi scan failed", "detail": result.stderr.strip()}), 500
+        return jsonify(
+            {"error": "WiFi scan failed", "detail": result.stderr.strip()}
+        ), 500
 
     # Parse nmcli output: "SSID:SIGNAL:SECURITY"
     networks = {}
@@ -209,6 +223,7 @@ def set_admin_password():
         return jsonify({"error": "Default admin user not found"}), 500
 
     from monitor.auth import hash_password
+
     admin.password_hash = hash_password(password)
     store.save_user(admin)
 
@@ -238,21 +253,34 @@ def setup_complete():
     password = _pending_wifi.get("password", "")
 
     if not ssid or not password:
-        return jsonify({"error": "WiFi credentials not saved. Go back and enter WiFi details."}), 400
+        return jsonify(
+            {"error": "WiFi credentials not saved. Go back and enter WiFi details."}
+        ), 400
 
     # --- Step 1: Connect to WiFi ---
     log.info("Connecting to WiFi: SSID=%s", ssid)
     try:
         result = subprocess.run(
-            ["nmcli", "dev", "wifi", "connect", ssid,
-             "password", password, "ifname", "wlan0"],
+            [
+                "nmcli",
+                "dev",
+                "wifi",
+                "connect",
+                ssid,
+                "password",
+                password,
+                "ifname",
+                "wlan0",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
         )
     except subprocess.TimeoutExpired:
         log.error("WiFi connect timed out for SSID=%s", ssid)
-        return jsonify({"error": "WiFi connection timed out. Check your password and try again."}), 504
+        return jsonify(
+            {"error": "WiFi connection timed out. Check your password and try again."}
+        ), 504
     except (FileNotFoundError, OSError) as exc:
         log.error("WiFi connect failed for SSID=%s: %s", ssid, exc)
         return jsonify({"error": f"WiFi connection failed: {exc}"}), 500
@@ -261,8 +289,15 @@ def setup_complete():
         stderr = result.stderr.strip()
         log.error("WiFi connect failed for SSID=%s: %s", ssid, stderr)
         if "secrets were required" in stderr.lower() or "no suitable" in stderr.lower():
-            return jsonify({"error": "Incorrect WiFi password. Go back and try again."}), 401
-        return jsonify({"error": "WiFi connection failed. Go back and try again.", "detail": stderr}), 500
+            return jsonify(
+                {"error": "Incorrect WiFi password. Go back and try again."}
+            ), 401
+        return jsonify(
+            {
+                "error": "WiFi connection failed. Go back and try again.",
+                "detail": stderr,
+            }
+        ), 500
 
     log.info("WiFi connected to %s", ssid)
 
@@ -334,14 +369,17 @@ def setup_complete():
 
     # Get the actual hostname for mDNS address
     import socket
+
     hostname = socket.gethostname()
     mdns_address = f"{hostname}.local"
 
-    return jsonify({
-        "message": "Setup complete",
-        "ip": ip_address,
-        "hostname": mdns_address,
-    }), 200
+    return jsonify(
+        {
+            "message": "Setup complete",
+            "ip": ip_address,
+            "hostname": mdns_address,
+        }
+    ), 200
 
 
 @provisioning_bp.route("/wizard", methods=["GET"])

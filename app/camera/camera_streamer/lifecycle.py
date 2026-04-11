@@ -14,6 +14,7 @@ Design patterns:
 - Single Responsibility (lifecycle orchestration only)
 - Fail-Silent (hardware check failure doesn't block startup)
 """
+
 import logging
 import os
 import socket
@@ -33,6 +34,7 @@ log = logging.getLogger("camera-streamer.lifecycle")
 
 class State:
     """Camera lifecycle states."""
+
     INIT = "init"
     SETUP = "setup"
     CONNECTING = "connecting"
@@ -116,10 +118,13 @@ class CameraLifecycle:
         """Load config, detect platform, configure LED."""
         led.set_controller(LedController(self._platform.led_path))
 
-        log.info("Platform: camera=%s wifi=%s led=%s thermal=%s",
-                 self._platform.camera_device, self._platform.wifi_interface,
-                 self._platform.led_path or "none",
-                 self._platform.thermal_path or "none")
+        log.info(
+            "Platform: camera=%s wifi=%s led=%s thermal=%s",
+            self._platform.camera_device,
+            self._platform.wifi_interface,
+            self._platform.led_path or "none",
+            self._platform.thermal_path or "none",
+        )
         return True
 
     def _do_setup(self):
@@ -153,8 +158,9 @@ class CameraLifecycle:
     def _do_connecting(self):
         """Wait for WiFi connectivity and resolve server address."""
         if not self._wait_for_wifi():
-            log.error("WiFi has no IP after %ds — reverting to setup mode",
-                      self.WIFI_TIMEOUT)
+            log.error(
+                "WiFi has no IP after %ds — reverting to setup mode", self.WIFI_TIMEOUT
+            )
             self._revert_to_setup()
             return False
 
@@ -177,8 +183,11 @@ class CameraLifecycle:
                 "Will retry via health monitor..."
             )
         else:
-            log.info("Camera hardware OK: device=%s h264=%s",
-                     self._capture.device, self._capture.supports_h264())
+            log.info(
+                "Camera hardware OK: device=%s h264=%s",
+                self._capture.device,
+                self._capture.supports_h264(),
+            )
 
         # Don't fail — health monitor will retry
         return True
@@ -201,7 +210,8 @@ class CameraLifecycle:
 
         # Status HTTP server (port 80)
         self._status_server = CameraStatusServer(
-            self._config, self._stream,
+            self._config,
+            self._stream,
             wifi_interface=self._platform.wifi_interface,
             thermal_path=self._platform.thermal_path,
         )
@@ -209,7 +219,9 @@ class CameraLifecycle:
 
         # Health monitoring
         self._health = HealthMonitor(
-            self._config, self._capture, self._stream,
+            self._config,
+            self._capture,
+            self._stream,
             thermal_path=self._platform.thermal_path,
         )
         self._health.start()
@@ -228,8 +240,11 @@ class CameraLifecycle:
     def _wait_for_wifi(self):
         """Wait for WiFi interface to have an IP address."""
         iface = self._platform.wifi_interface
-        log.info("Checking WiFi connectivity on %s (timeout=%ds)...",
-                 iface, self.WIFI_TIMEOUT)
+        log.info(
+            "Checking WiFi connectivity on %s (timeout=%ds)...",
+            iface,
+            self.WIFI_TIMEOUT,
+        )
 
         for elapsed in range(self.WIFI_TIMEOUT):
             if self._is_shutdown():
@@ -237,16 +252,16 @@ class CameraLifecycle:
 
             try:
                 result = subprocess.run(
-                    ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show",
-                     iface],
-                    capture_output=True, text=True, timeout=10,
+                    ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show", iface],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 for line in result.stdout.strip().splitlines():
                     if line.startswith("IP4.ADDRESS") and "/" in line:
                         ip = line.split(":", 1)[1].split("/")[0]
                         if ip and ip != "0.0.0.0":
-                            log.info("WiFi connected with IP %s after %ds",
-                                     ip, elapsed)
+                            log.info("WiFi connected with IP %s after %ds", ip, elapsed)
                             return True
             except Exception:
                 pass
@@ -266,7 +281,8 @@ class CameraLifecycle:
         except socket.gaierror:
             log.warning(
                 "Cannot resolve server address '%s' — mDNS may not be ready. "
-                "Will retry when streaming starts.", addr
+                "Will retry when streaming starts.",
+                addr,
             )
 
     @staticmethod
@@ -284,7 +300,8 @@ class CameraLifecycle:
         try:
             subprocess.run(
                 ["systemctl", "restart", "camera-streamer"],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
             )
         except Exception as e:
             log.error("Failed to restart service: %s", e)

@@ -12,6 +12,7 @@ Security features:
 - Rate limiting on login (5 attempts/min, block after 10 failures)
 - Audit logging of all auth events
 """
+
 import functools
 import hashlib
 import os
@@ -109,6 +110,7 @@ def _is_session_valid() -> bool:
 
 def login_required(f):
     """Decorator: require authenticated session."""
+
     @functools.wraps(f)
     def decorated(*args, **kwargs):
         if not _is_session_valid():
@@ -116,11 +118,13 @@ def login_required(f):
             return jsonify({"error": "Authentication required"}), 401
         session["last_active"] = time.time()
         return f(*args, **kwargs)
+
     return decorated
 
 
 def admin_required(f):
     """Decorator: require admin role."""
+
     @functools.wraps(f)
     def decorated(*args, **kwargs):
         if not _is_session_valid():
@@ -130,18 +134,23 @@ def admin_required(f):
             return jsonify({"error": "Admin access required"}), 403
         session["last_active"] = time.time()
         return f(*args, **kwargs)
+
     return decorated
 
 
 def csrf_protect(f):
     """Decorator: validate CSRF token on state-changing requests."""
+
     @functools.wraps(f)
     def decorated(*args, **kwargs):
         if request.method in ("POST", "PUT", "DELETE"):
-            token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+            token = request.headers.get("X-CSRF-Token") or request.form.get(
+                "csrf_token"
+            )
             if not token or token != session.get("csrf_token"):
                 return jsonify({"error": "Invalid CSRF token"}), 403
         return f(*args, **kwargs)
+
     return decorated
 
 
@@ -171,7 +180,9 @@ def login():
     if not user or not check_password(password, user.password_hash):
         _record_attempt(ip)
         if audit:
-            audit.log_event("LOGIN_FAILED", user=username, ip=ip, detail="invalid credentials")
+            audit.log_event(
+                "LOGIN_FAILED", user=username, ip=ip, detail="invalid credentials"
+            )
         return jsonify({"error": "Invalid username or password"}), 401
 
     # Update last login
@@ -191,14 +202,16 @@ def login():
     if audit:
         audit.log_event("LOGIN_SUCCESS", user=username, ip=ip, detail="session created")
 
-    return jsonify({
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "role": user.role,
-        },
-        "csrf_token": csrf_token,
-    }), 200
+    return jsonify(
+        {
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role,
+            },
+            "csrf_token": csrf_token,
+        }
+    ), 200
 
 
 @auth_bp.route("/logout", methods=["POST"])
@@ -220,11 +233,13 @@ def logout():
 @login_required
 def me():
     """Return current user info and role."""
-    return jsonify({
-        "user": {
-            "id": session.get("user_id"),
-            "username": session.get("username"),
-            "role": session.get("role"),
-        },
-        "csrf_token": session.get("csrf_token", ""),
-    }), 200
+    return jsonify(
+        {
+            "user": {
+                "id": session.get("user_id"),
+                "username": session.get("username"),
+                "role": session.get("role"),
+            },
+            "csrf_token": session.get("csrf_token", ""),
+        }
+    ), 200

@@ -1,4 +1,5 @@
 """Tests for the health monitoring service."""
+
 from collections import namedtuple
 from unittest.mock import mock_open, patch
 
@@ -39,12 +40,17 @@ class TestCPUUsage:
 class TestMemoryInfo:
     """Test memory info reading."""
 
-    @patch("builtins.open", mock_open(read_data=(
-        "MemTotal:       16384000 kB\n"
-        "MemFree:         2048000 kB\n"
-        "MemAvailable:    8192000 kB\n"
-        "Buffers:          512000 kB\n"
-    )))
+    @patch(
+        "builtins.open",
+        mock_open(
+            read_data=(
+                "MemTotal:       16384000 kB\n"
+                "MemFree:         2048000 kB\n"
+                "MemAvailable:    8192000 kB\n"
+                "Buffers:          512000 kB\n"
+            )
+        ),
+    )
     def test_reads_memory(self):
         info = get_memory_info()
         assert info["total_mb"] == 16000
@@ -88,7 +94,9 @@ class TestDiskUsage:
 class TestUptime:
     """Test uptime reading."""
 
-    @patch("monitor.services.health.Path.read_text", return_value="90061.23 360000.00\n")
+    @patch(
+        "monitor.services.health.Path.read_text", return_value="90061.23 360000.00\n"
+    )
     def test_reads_uptime(self, mock_read):
         info = get_uptime()
         assert info["seconds"] == 90061
@@ -119,15 +127,23 @@ class TestHealthSummary:
 
     @patch("monitor.services.health.get_cpu_temperature", return_value=55.0)
     @patch("monitor.services.health.get_cpu_usage", return_value=25.0)
-    @patch("monitor.services.health.get_memory_info", return_value={
-        "total_mb": 4096, "used_mb": 2048, "free_mb": 2048, "percent": 50.0
-    })
-    @patch("monitor.services.health.get_disk_usage", return_value={
-        "total_gb": 100, "used_gb": 40, "free_gb": 60, "percent": 40.0
-    })
-    @patch("monitor.services.health.get_uptime", return_value={
-        "seconds": 3600, "display": "1h 0m"
-    })
+    @patch(
+        "monitor.services.health.get_memory_info",
+        return_value={
+            "total_mb": 4096,
+            "used_mb": 2048,
+            "free_mb": 2048,
+            "percent": 50.0,
+        },
+    )
+    @patch(
+        "monitor.services.health.get_disk_usage",
+        return_value={"total_gb": 100, "used_gb": 40, "free_gb": 60, "percent": 40.0},
+    )
+    @patch(
+        "monitor.services.health.get_uptime",
+        return_value={"seconds": 3600, "display": "1h 0m"},
+    )
     def test_healthy_system(self, *mocks):
         summary = get_health_summary("/data")
         assert summary["status"] == "healthy"
@@ -137,15 +153,23 @@ class TestHealthSummary:
 
     @patch("monitor.services.health.get_cpu_temperature", return_value=75.0)
     @patch("monitor.services.health.get_cpu_usage", return_value=90.0)
-    @patch("monitor.services.health.get_memory_info", return_value={
-        "total_mb": 4096, "used_mb": 3800, "free_mb": 296, "percent": 92.8
-    })
-    @patch("monitor.services.health.get_disk_usage", return_value={
-        "total_gb": 100, "used_gb": 90, "free_gb": 10, "percent": 90.0
-    })
-    @patch("monitor.services.health.get_uptime", return_value={
-        "seconds": 3600, "display": "1h 0m"
-    })
+    @patch(
+        "monitor.services.health.get_memory_info",
+        return_value={
+            "total_mb": 4096,
+            "used_mb": 3800,
+            "free_mb": 296,
+            "percent": 92.8,
+        },
+    )
+    @patch(
+        "monitor.services.health.get_disk_usage",
+        return_value={"total_gb": 100, "used_gb": 90, "free_gb": 10, "percent": 90.0},
+    )
+    @patch(
+        "monitor.services.health.get_uptime",
+        return_value={"seconds": 3600, "display": "1h 0m"},
+    )
     def test_system_with_warnings(self, *mocks):
         summary = get_health_summary("/data")
         assert summary["status"] == "warning"
