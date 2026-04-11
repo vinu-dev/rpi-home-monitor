@@ -121,6 +121,10 @@ def is_mounted(mount_point=DEFAULT_MOUNT_POINT) -> bool:
 def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
     """Mount a USB device at the given mount point.
 
+    For FAT-based filesystems (vfat, exfat), mounts with uid/gid of the
+    current process so the monitor user can write recordings. For native
+    Linux filesystems (ext4, ext3), sets ownership after mount.
+
     Returns (success, error_message).
     """
     try:
@@ -131,16 +135,39 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
             log.info("Mount point %s already mounted", mount_point)
             return True, ""
 
+        # Detect filesystem to set proper mount options
+        fstype = _get_fstype_blkid(device_path)
+        uid = os.getuid()
+        gid = os.getgid()
+
+        cmd = ["mount", device_path, mount_point]
+
+        # FAT-based filesystems need uid/gid/umask at mount time
+        # (they don't support POSIX ownership/chmod after mount)
+        if fstype in ("vfat", "exfat"):
+            cmd = ["mount", "-o", f"uid={uid},gid={gid},umask=0002",
+                   device_path, mount_point]
+        elif fstype == "ntfs":
+            cmd = ["mount", "-o", f"uid={uid},gid={gid},umask=0002",
+                   device_path, mount_point]
+
         result = subprocess.run(
-            ["mount", device_path, mount_point],
-            capture_output=True, text=True, timeout=30,
+            cmd, capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
             err = result.stderr.strip() or "Mount failed"
             log.error("Failed to mount %s: %s", device_path, err)
             return False, err
 
-        log.info("Mounted %s at %s", device_path, mount_point)
+        # For native Linux filesystems, set ownership after mount
+        if fstype in ("ext4", "ext3"):
+            try:
+                os.chown(mount_point, uid, gid)
+            except OSError as e:
+                log.warning("Could not chown %s: %s", mount_point, e)
+
+        log.info("Mounted %s at %s (fstype=%s, uid=%d)", device_path,
+                 mount_point, fstype, uid)
         return True, ""
 
     except (subprocess.TimeoutExpired, OSError) as e:

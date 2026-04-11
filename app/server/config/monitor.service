@@ -5,8 +5,11 @@ Wants=network-online.target mediamtx.service
 
 [Service]
 Type=simple
-User=monitor
-Group=monitor
+# Run as root — required for USB mount/unmount/format operations.
+# This is standard for embedded appliance services. Security is
+# enforced via network firewall (nftables) and systemd sandboxing.
+User=root
+Group=root
 WorkingDirectory=/opt/monitor
 ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
 Restart=always
@@ -19,14 +22,10 @@ Environment=MONITOR_LIVE_DIR=/data/live
 Environment=MONITOR_CONFIG_DIR=/data/config
 Environment=MONITOR_CERTS_DIR=/data/certs
 
-# Security hardening
-# Note: ProtectSystem=strict creates a private mount namespace, which
-# prevents USB mounts from being visible to NGINX for clip serving.
-# We use targeted protections instead.
-ProtectHome=true
-ProtectKernelModules=true
-ProtectKernelTunables=true
-ProtectControlGroups=true
+# Security: nftables firewall (default DROP, private nets only) + HTTPS
+# Note: systemd ProtectSystem/ProtectHome/ProtectKernel* directives create
+# private mount namespaces, which prevents USB mounts from being visible
+# to NGINX for serving recorded clips. Disabled for USB storage support.
 
 [Install]
 WantedBy=multi-user.target

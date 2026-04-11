@@ -74,8 +74,9 @@ class StreamingService:
             log.info("Restarted recorder for %s with new dir", cam_id)
 
     def start(self):
-        """Start the streaming service."""
+        """Start the streaming service and watchdog thread."""
         self._running = True
+        self._start_watchdog()
         log.info("Streaming service started")
 
     def stop(self):
@@ -236,6 +237,52 @@ class StreamingService:
 
         t = threading.Thread(target=_dir_loop, daemon=True, name=f"dirs-{cam_id}")
         t.start()
+
+    # --- Process watchdog ---
+
+    WATCHDOG_INTERVAL = 30  # seconds between health checks
+
+    def _start_watchdog(self):
+        """Start a watchdog thread that restarts dead ffmpeg processes."""
+        def _watchdog_loop():
+            while self._running:
+                self._check_processes()
+                for _ in range(self.WATCHDOG_INTERVAL * 10):
+                    if not self._running:
+                        return
+                    time.sleep(0.1)
+
+        t = threading.Thread(target=_watchdog_loop, daemon=True,
+                             name="stream-watchdog")
+        t.start()
+
+    def _check_processes(self):
+        """Check all ffmpeg processes, restart any that have died."""
+        with self._lock:
+            cam_ids = list(self._hls_procs.keys())
+
+        for cam_id in cam_ids:
+            rtsp_url = f"{MEDIAMTX_URL}/{cam_id}"
+
+            # Check HLS process
+            with self._lock:
+                hls_proc = self._hls_procs.get(cam_id)
+            if hls_proc and hls_proc.poll() is not None:
+                log.warning("HLS process died for %s (exit=%s), restarting",
+                            cam_id, hls_proc.returncode)
+                with self._lock:
+                    self._hls_procs.pop(cam_id, None)
+                self._start_hls(cam_id, rtsp_url)
+
+            # Check recorder process
+            with self._lock:
+                rec_proc = self._rec_procs.get(cam_id)
+            if rec_proc and rec_proc.poll() is not None:
+                log.warning("Recorder died for %s (exit=%s), restarting",
+                            cam_id, rec_proc.returncode)
+                with self._lock:
+                    self._rec_procs.pop(cam_id, None)
+                self._start_recorder(cam_id, rtsp_url)
 
     # --- Snapshot extraction ---
 
