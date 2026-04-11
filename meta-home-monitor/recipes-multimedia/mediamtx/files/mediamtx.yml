@@ -18,7 +18,7 @@ rtspAddress: :8554
 rtsp: yes
 
 # TCP only (reliable over WiFi)
-protocols: [tcp]
+rtspTransports: [tcp]
 
 # No authentication for Phase 1 (cameras on LAN, firewall restricts)
 # Phase 2: add mTLS authentication
@@ -47,7 +47,8 @@ webrtcLocalTCPAddress: ""
 # Recording
 ###############################################
 # Disable built-in recording — we use ffmpeg for 3-min segments
-record: no
+pathDefaults:
+  record: no
 
 ###############################################
 # Paths
