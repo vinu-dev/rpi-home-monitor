@@ -6,12 +6,16 @@
 # Checks: HTTPS, API health, auth, camera endpoints, HLS readiness.
 #
 # Usage:
-#   ./scripts/smoke-test.sh <server-ip> [admin-password] [camera-ip]
+#   ./scripts/smoke-test.sh <server-ip> [admin-password] [camera-ip] [camera-password]
 #
 # Examples:
 #   ./scripts/smoke-test.sh 192.168.8.245 12345678
 #   ./scripts/smoke-test.sh 192.168.8.245 12345678 192.168.8.187
+#   ./scripts/smoke-test.sh 192.168.8.245 12345678 192.168.8.187 cam-pass
 #   ./scripts/smoke-test.sh homemonitor.local
+#
+# Camera password defaults to admin-password if not specified (dev builds
+# use admin/admin for both — see ADR-0007).
 #
 # Exit codes:
 #   0 = all checks passed
@@ -37,8 +41,8 @@ FAILED=0
 SKIPPED=0
 
 if [ -z "$SERVER" ]; then
-    echo "Usage: $0 <server-ip> [admin-password]"
-    echo "Example: $0 192.168.8.245 12345678"
+    echo "Usage: $0 <server-ip> [admin-password] [camera-ip] [camera-password]"
+    echo "Example: $0 192.168.8.245 12345678 192.168.8.187"
     exit 1
 fi
 
@@ -216,35 +220,86 @@ check_status "GET /ota/status" "${API_BASE}/ota/status" 200
 # ---------------------------------------------------------------------------
 
 CAMERA_IP="${3:-}"
+CAMERA_PASSWORD="${4:-${PASSWORD}}"
+CAM_COOKIE_JAR="/tmp/smoke-test-cam-cookies.txt"
+
+cleanup_cam() {
+    rm -f "$CAM_COOKIE_JAR"
+}
+trap 'cleanup; cleanup_cam' EXIT
+
 if [ -n "$CAMERA_IP" ]; then
     echo ""
     echo "[8/8] Camera node: ${CAMERA_IP}"
     CAM_URL="http://${CAMERA_IP}"
     CAM_CURL="curl -s --connect-timeout 5 --max-time 10"
 
+    # --- Reachability ---
     if $CAM_CURL -o /dev/null "$CAM_URL/" 2>/dev/null; then
         pass "Camera HTTP reachable"
     else
         fail "Camera HTTP unreachable at ${CAMERA_IP}"
+        echo ""
+        echo -e "${RED}Camera unreachable. Skipping camera tests.${NC}"
+        # Jump to summary
+        CAMERA_IP=""
     fi
+fi
 
-    # Check /api/status (no auth if no password, or auth required)
+if [ -n "$CAMERA_IP" ]; then
+    # --- Try unauthenticated status first ---
     CAM_STATUS=$($CAM_CURL "${CAM_URL}/api/status" 2>/dev/null) || true
+    CAM_AUTHED=false
+
     if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'camera_id' in d" 2>/dev/null; then
-        pass "Camera /api/status has camera_id"
-        check_json_field "Camera status has hostname" "${CAM_URL}/api/status" "hostname"
-        check_json_field "Camera status has wifi_ssid" "${CAM_URL}/api/status" "wifi_ssid"
-        check_json_field "Camera status has streaming" "${CAM_URL}/api/status" "streaming"
-        check_json_field "Camera status has cpu_temp" "${CAM_URL}/api/status" "cpu_temp"
+        # No auth required — status is open
+        pass "Camera /api/status accessible (no auth)"
+        CAM_AUTHED=true
     elif echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'error' in d" 2>/dev/null; then
+        # Auth required — login
         pass "Camera /api/status requires auth (expected)"
+
+        CAM_LOGIN=$($CAM_CURL -c "$CAM_COOKIE_JAR" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"admin\",\"password\":\"${CAMERA_PASSWORD}\"}" \
+            "${CAM_URL}/login" 2>/dev/null) || true
+
+        if echo "$CAM_LOGIN" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'message' in d" 2>/dev/null; then
+            pass "Camera login successful"
+            CAM_AUTHED=true
+            # Re-fetch status with session cookie
+            CAM_STATUS=$($CAM_CURL -b "$CAM_COOKIE_JAR" "${CAM_URL}/api/status" 2>/dev/null) || true
+        else
+            fail "Camera login failed (check password, tried: admin/${CAMERA_PASSWORD})"
+        fi
     else
         fail "Camera /api/status unexpected response"
     fi
+
+    # --- Verify all status fields if authenticated ---
+    if [ "$CAM_AUTHED" = true ]; then
+        for field in camera_id hostname ip_address wifi_ssid server_address \
+                     server_connected streaming cpu_temp uptime \
+                     memory_total_mb memory_used_mb; do
+            if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
+                pass "Camera status has '$field'"
+            else
+                fail "Camera status missing '$field'"
+            fi
+        done
+
+        # Show key values for human review
+        CAM_ID=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('camera_id','?'))" 2>/dev/null) || CAM_ID="?"
+        CAM_STREAM=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('streaming','?'))" 2>/dev/null) || CAM_STREAM="?"
+        CAM_TEMP=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu_temp','?'))" 2>/dev/null) || CAM_TEMP="?"
+        echo -e "  ${YELLOW}INFO${NC} Camera: id=${CAM_ID}, streaming=${CAM_STREAM}, cpu_temp=${CAM_TEMP}"
+    fi
 else
-    echo ""
-    echo "[8/8] Camera node"
-    skip "No camera IP provided (pass as 3rd argument)"
+    if [ -z "${3:-}" ]; then
+        echo ""
+        echo "[8/8] Camera node"
+        skip "No camera IP provided (pass as 3rd argument)"
+    fi
 fi
 
 # ===========================================================================
