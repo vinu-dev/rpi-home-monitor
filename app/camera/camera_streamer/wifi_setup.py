@@ -217,30 +217,6 @@ class WifiSetupServer:
         return self._cached_networks
 
 
-# ---- Backward compatibility re-exports ----
-# Existing code and tests import these from wifi_setup
-from camera_streamer.wifi import HOTSPOT_CONN_NAME as CONN_NAME  # noqa: F401, E402
-from camera_streamer.wifi import HOTSPOT_PASS  # noqa: F401, E402
-from camera_streamer.wifi import HOTSPOT_SSID  # noqa: F401, E402
-from camera_streamer.status_server import (  # noqa: F401, E402
-    SESSION_TIMEOUT,
-    CameraStatusServer,
-    _check_session,
-    _create_session,
-    _destroy_session,
-    _get_cpu_temp,
-    _get_memory_mb,
-    _get_session_cookie,
-    _get_uptime,
-    _html_escape,
-    _session_lock,
-    _sessions,
-)
-
-# Legacy constant — tests reference this
-IFACE = "wlan0"
-
-
 # ============================================================
 # Setup page HTTP handler (first boot — no auth required)
 # ============================================================

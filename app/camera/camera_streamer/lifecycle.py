@@ -26,8 +26,9 @@ from camera_streamer.capture import CaptureManager
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.health import HealthMonitor
 from camera_streamer.led import LedController
+from camera_streamer.status_server import CameraStatusServer
 from camera_streamer.stream import StreamManager
-from camera_streamer.wifi_setup import CameraStatusServer, WifiSetupServer
+from camera_streamer.wifi_setup import WifiSetupServer
 
 log = logging.getLogger("camera-streamer.lifecycle")
 

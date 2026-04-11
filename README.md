@@ -69,7 +69,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Live View | HLS streaming in any mobile browser |
 | Recording | Continuous 3-minute MP4 clips, organized by camera/date |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
-| User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions |
+| User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
@@ -77,6 +77,21 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Audit Logging | All admin actions logged (append-only) |
 | Encrypted Storage | LUKS-encrypted /data partition for recordings and config |
 | Firewall | nftables — cameras can only talk to server, minimal open ports |
+
+### Security Feature Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| HTTPS (TLS) | **Implemented** | Self-signed certs, NGINX terminates TLS |
+| bcrypt auth + CSRF | **Implemented** | Cost 12, rate limiting (warn at 5, block at 10) |
+| Session management | **Implemented** | 30min idle / 24hr absolute timeout |
+| LUKS encryption | **Implemented** | /data partition encrypted at rest |
+| nftables firewall | **Implemented** | Default DROP, minimal open ports |
+| Audit logging | **Implemented** | Append-only JSON, all admin actions |
+| Default admin warning | **Implemented** | `admin`/`admin` created on first boot, must change during setup |
+| RTSPS (mTLS) | **Planned (Phase 2)** | Camera→server streams currently use plaintext RTSP |
+| mTLS camera pairing | **Planned (Phase 2)** | Certificate exchange for camera authentication |
+| Signed OTA updates | **Partial** | Status endpoint works; upload/verify are stubs |
 
 ## Quick Start
 
@@ -111,11 +126,11 @@ First build takes 2-4 hours. Subsequent builds use cached artifacts and are much
 ## Run Tests
 
 ```bash
-cd app/server && pytest    # 371 tests, 88% coverage (threshold: 80%)
-cd app/camera && pytest    # 164 tests, 63% coverage (threshold: 55%)
+cd app/server && pytest    # 777 tests, 90% coverage (threshold: 80%)
+cd app/camera && pytest    # 268 tests, 82% coverage (threshold: 55%)
 ```
 
-**535 total tests.** Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
+**1045 total tests.** Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
 
 ## Documentation
 

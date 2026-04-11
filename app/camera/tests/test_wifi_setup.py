@@ -4,22 +4,27 @@ import os
 from unittest.mock import MagicMock, patch
 
 from camera_streamer import wifi
-from camera_streamer.wifi_setup import (
-    CONN_NAME,
-    CONNECT_DELAY,
-    HOTSPOT_PASS,
-    HOTSPOT_SSID,
-    IFACE,
+from camera_streamer.status_server import (
     SESSION_TIMEOUT,
     CameraStatusServer,
-    WifiSetupServer,
     _check_session,
     _create_session,
     _destroy_session,
     _get_session_cookie,
-    _make_handler,
     _session_lock,
     _sessions,
+)
+from camera_streamer.wifi import (
+    HOTSPOT_CONN_NAME as CONN_NAME,
+)
+from camera_streamer.wifi import (
+    HOTSPOT_PASS,
+    HOTSPOT_SSID,
+)
+from camera_streamer.wifi_setup import (
+    CONNECT_DELAY,
+    WifiSetupServer,
+    _make_handler,
     is_setup_complete,
     mark_setup_complete,
 )
@@ -540,7 +545,7 @@ class TestSystemInfoHelpers:
 
     def test_get_cpu_temp(self):
         """Should return float temperature."""
-        from camera_streamer.wifi_setup import _get_cpu_temp
+        from camera_streamer.status_server import _get_cpu_temp
 
         with patch(
             "builtins.open",
@@ -564,14 +569,14 @@ class TestSystemInfoHelpers:
 
     def test_get_uptime(self):
         """Should return human-readable uptime string."""
-        from camera_streamer.wifi_setup import _get_uptime
+        from camera_streamer.status_server import _get_uptime
 
         with patch("builtins.open", side_effect=OSError("no file")):
             assert _get_uptime() == "0m"
 
     def test_get_memory_mb(self):
         """Should return (total, used) tuple."""
-        from camera_streamer.wifi_setup import _get_memory_mb
+        from camera_streamer.status_server import _get_memory_mb
 
         with patch("builtins.open", side_effect=OSError("no file")):
             total, used = _get_memory_mb()
@@ -603,10 +608,6 @@ class TestSetupHTTPHandler:
     def test_connection_name(self):
         """Connection name should match SSID."""
         assert CONN_NAME == "HomeCam-Setup"
-
-    def test_interface(self):
-        """Interface should be wlan0."""
-        assert IFACE == "wlan0"
 
     def test_connect_delay(self):
         """Connect delay should be positive (give phone time to receive response)."""

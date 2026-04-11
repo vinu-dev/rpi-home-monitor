@@ -107,6 +107,7 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 | OTA API | `api/ota.py` | PARTIAL | Status endpoint works; upload/push endpoints are stubs |
 | Streaming svc | `services/streaming_service.py` | COMPLETE | Manages FFmpeg pipelines: HLS + recorder + snapshots per camera |
 | Recorder svc | `services/recorder_service.py` | COMPLETE | Clip metadata, listing, deletion (actual recording done by streaming svc) |
+| Recordings svc | `services/recordings_service.py` | COMPLETE | Orchestrates clip queries + deletion with camera validation + audit |
 | Health svc | `services/health.py` | COMPLETE | CPU temp, RAM, disk, uptime. Warns at CPU>70C, disk>85%, RAM>90% |
 | Audit svc | `services/audit.py` | COMPLETE | Append-only JSON audit log at /data/logs/audit.log |
 | Discovery svc | `services/discovery.py` | PARTIAL | Camera online/offline tracking, pending camera reports |
@@ -233,9 +234,9 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 
 ## Tests
 
-- **Server:** 760 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
-- **Camera:** 269 tests, 82% coverage (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 1029 tests
+- **Server:** 777 tests, 90% coverage (`python -m pytest app/server/tests/ -v`)
+- **Camera:** 268 tests, 82% coverage (`python -m pytest app/camera/tests/ -v`)
+- **Total:** 1045 tests
 
 ## PR History
 
