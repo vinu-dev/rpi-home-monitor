@@ -114,8 +114,34 @@ class StreamManager:
 
     @property
     def _use_mtls(self):
-        """Return True if mTLS certs are available for RTSPS."""
-        return self._config.has_client_cert
+        """Return True if mTLS certs are available and ffmpeg supports TLS.
+
+        Falls back to plain RTSP if ffmpeg lacks OpenSSL/TLS support
+        (e.g., ffmpeg 4.x compiled with --disable-openssl).
+        """
+        if not self._config.has_client_cert:
+            return False
+        if not self._ffmpeg_has_tls:
+            log.debug("mTLS certs present but ffmpeg lacks TLS — using plain RTSP")
+            return False
+        return True
+
+    @property
+    def _ffmpeg_has_tls(self):
+        """Check if ffmpeg was built with TLS support."""
+        if not hasattr(self, "_ffmpeg_tls_checked"):
+            try:
+                result = subprocess.run(
+                    ["ffmpeg", "-protocols"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                output = result.stderr + result.stdout
+                self._ffmpeg_tls_checked = "tls" in output.lower()
+            except (OSError, subprocess.TimeoutExpired):
+                self._ffmpeg_tls_checked = False
+        return self._ffmpeg_tls_checked
 
     @property
     def _stream_url(self):

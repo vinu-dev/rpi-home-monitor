@@ -94,6 +94,7 @@ class TestMTLSStreaming:
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
+        mgr._ffmpeg_tls_checked = True  # Simulate ffmpeg with TLS support
         assert mgr._use_mtls is True
         assert mgr._stream_url.startswith("rtsps://")
 
@@ -105,6 +106,7 @@ class TestMTLSStreaming:
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
+        mgr._ffmpeg_tls_checked = True
         flags = mgr._tls_flags()
         assert "-tls_cert" in flags
         assert "-tls_key" in flags
@@ -121,6 +123,7 @@ class TestMTLSStreaming:
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
+        mgr._ffmpeg_tls_checked = True
         cmd = mgr._build_ffmpeg_only_cmd()
         assert "-tls_cert" in cmd
         assert "-tls_key" in cmd
@@ -143,7 +146,20 @@ class TestMTLSStreaming:
         (certs / "client.crt").write_text("CERT")
 
         mgr = StreamManager(camera_config)
+        mgr._ffmpeg_tls_checked = True
         assert ":8322/" in mgr._stream_url
+
+    def test_fallback_to_rtsp_without_tls(self, camera_config, data_dir):
+        """Should fall back to plain RTSP when ffmpeg lacks TLS."""
+        certs = data_dir / "certs"
+        (certs / "client.crt").write_text("CERT")
+        (certs / "client.key").write_text("KEY")
+        (certs / "ca.crt").write_text("CA")
+
+        mgr = StreamManager(camera_config)
+        mgr._ffmpeg_tls_checked = False  # ffmpeg without TLS
+        assert mgr._use_mtls is False
+        assert mgr._stream_url.startswith("rtsp://")
 
 
 class TestStreamBackoff:
