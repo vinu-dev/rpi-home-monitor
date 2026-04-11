@@ -119,8 +119,8 @@ class TestStageBundle:
         with open(src, "wb") as f:
             f.write(b"x" * 100)
         svc.stage_bundle(src, "update.swu", user="admin", ip="1.2.3.4")
-        svc._audit.log.assert_called()
-        assert "OTA_STAGED" in str(svc._audit.log.call_args)
+        svc._audit.log_event.assert_called()
+        assert "OTA_STAGED" in str(svc._audit.log_event.call_args)
 
     def test_sets_status_staged(self, svc, data_dir):
         src = os.path.join(data_dir, "ota", "inbox", "update.swu")
@@ -257,7 +257,7 @@ class TestInstallBundle:
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         svc.install_bundle(bundle, user="admin", ip="1.2.3.4")
-        calls = [str(c) for c in svc._audit.log.call_args_list]
+        calls = [str(c) for c in svc._audit.log_event.call_args_list]
         assert any("OTA_INSTALL_START" in c for c in calls)
         assert any("OTA_INSTALL_COMPLETE" in c for c in calls)
 
@@ -287,7 +287,7 @@ class TestAuditResilience:
 
     def test_audit_error_ignored(self, data_dir):
         audit = MagicMock()
-        audit.log.side_effect = RuntimeError("audit broken")
+        audit.log_event.side_effect = RuntimeError("audit broken")
         svc = OTAService(store=MagicMock(), audit=audit, data_dir=data_dir)
 
         src = os.path.join(data_dir, "ota", "inbox", "update.swu")

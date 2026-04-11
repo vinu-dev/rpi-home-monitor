@@ -2,7 +2,6 @@
 
 import io
 
-from monitor.api.ota import _ota_status
 from monitor.auth import hash_password
 from monitor.models import Camera
 
@@ -93,16 +92,16 @@ class TestServerUpload:
             "/api/v1/ota/server/upload", data=data, content_type="multipart/form-data"
         )
         assert response.status_code == 200
-        assert response.get_json()["message"] == "Update image staged"
+        assert "staged" in response.get_json()["message"].lower()
 
-    def test_upload_logs_audit(self, app, client):
+    def test_upload_sets_status(self, app, client):
         _login(app, client)
         data = {"file": (io.BytesIO(b"fake-swu-content"), "update.swu")}
         client.post(
             "/api/v1/ota/server/upload", data=data, content_type="multipart/form-data"
         )
-        events = app.audit.get_events(event_type="OTA_UPLOADED")
-        assert len(events) >= 1
+        status = app.ota_service.get_status("server")
+        assert status["state"] == "staged"
 
 
 class TestCameraPush:
@@ -130,8 +129,8 @@ class TestCameraPush:
             "/api/v1/ota/camera/cam-001/push", json={"version": "1.1.0"}
         )
         assert response.status_code == 200
-        assert "cam-001" in _ota_status
-        assert _ota_status["cam-001"]["state"] == "pending"
+        status = app.ota_service.get_status("cam-001")
+        assert status["state"] == "pending"
 
     def test_push_logs_audit(self, app, client):
         _login(app, client)

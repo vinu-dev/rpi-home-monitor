@@ -164,8 +164,8 @@ class TestRenewServerCert:
             stderr="",
         )
         svc.renew_server_cert()
-        svc._audit.log.assert_called()
-        call_kwargs = svc._audit.log.call_args
+        svc._audit.log_event.assert_called()
+        call_kwargs = svc._audit.log_event.call_args
         assert "CERT_RENEWED" in str(call_kwargs)
 
     def test_renew_fails_without_ca_key(self, tmp_path):
@@ -252,7 +252,7 @@ class TestDoCheck:
             stderr="",
         )
         svc._do_check()
-        svc._audit.log.assert_called()
+        svc._audit.log_event.assert_called()
         assert svc._warning_logged is True
 
     @patch("monitor.services.cert_service.subprocess.run")
@@ -267,7 +267,7 @@ class TestDoCheck:
         svc._do_check()
         svc._do_check()
         # Should only log audit once despite two checks
-        assert svc._audit.log.call_count == 1
+        assert svc._audit.log_event.call_count == 1
 
     @patch("monitor.services.cert_service.CertService.renew_server_cert")
     @patch("monitor.services.cert_service.subprocess.run")
@@ -306,7 +306,7 @@ class TestAuditFailureResilience:
     def test_audit_error_ignored(self, mock_run, certs_dir):
         """Should not crash if audit logger raises."""
         audit = MagicMock()
-        audit.log.side_effect = RuntimeError("audit broken")
+        audit.log_event.side_effect = RuntimeError("audit broken")
         svc = CertService(certs_dir=certs_dir, audit=audit)
 
         soon = datetime.now(UTC) + timedelta(days=15)

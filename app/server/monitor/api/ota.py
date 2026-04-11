@@ -3,6 +3,7 @@ Over-the-Air update API.
 
 Endpoints:
   POST /ota/server/upload     - upload .swu image for server (admin)
+  POST /ota/server/install     - install staged bundle (admin)
   POST /ota/camera/<id>/push  - push update to camera (admin)
   GET  /ota/status            - update status for all devices
 
@@ -11,21 +12,13 @@ Images must be Ed25519 signed — unsigned images are rejected.
 """
 
 import os
-from pathlib import Path
+import tempfile
 
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, login_required
 
 ota_bp = Blueprint("ota", __name__)
-
-# In-memory OTA status tracking
-_ota_status: dict = {
-    "server": {"state": "idle", "version": "", "progress": 0, "error": ""},
-}
-
-ALLOWED_EXTENSIONS = {".swu"}
-MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500MB
 
 
 @ota_bp.route("/status", methods=["GET"])
@@ -34,11 +27,12 @@ def get_status():
     """Get OTA update status for all devices."""
     settings = current_app.store.get_settings()
     cameras = current_app.store.get_cameras()
+    ota = current_app.ota_service
 
     result = {
         "server": {
             "current_version": settings.firmware_version,
-            **_ota_status.get("server", {"state": "idle"}),
+            **ota.get_status("server"),
         },
         "cameras": [],
     }
@@ -46,13 +40,12 @@ def get_status():
     for cam in cameras:
         if cam.status == "pending":
             continue
-        cam_status = _ota_status.get(cam.id, {"state": "idle"})
         result["cameras"].append(
             {
                 "id": cam.id,
                 "name": cam.name,
                 "current_version": cam.firmware_version,
-                **cam_status,
+                **ota.get_status(cam.id),
             }
         )
 
@@ -70,46 +63,67 @@ def upload_server_image():
     if not file.filename:
         return jsonify({"error": "No filename"}), 400
 
-    # Validate extension
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": "Only .swu files are accepted"}), 400
+    ota = current_app.ota_service
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
 
-    # Save to staging area
-    data_dir = Path(current_app.config["DATA_DIR"])
-    staging = data_dir / "ota"
-    staging.mkdir(exist_ok=True)
-    dest = staging / "server-update.swu"
-    file.save(str(dest))
+    # Save upload to temp file first
+    try:
+        os.makedirs(ota.inbox_dir, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(suffix=".swu", dir=ota.inbox_dir)
+        with os.fdopen(fd, "wb") as f:
+            file.save(f)
+    except OSError as e:
+        return jsonify({"error": f"Upload failed: {e}"}), 500
 
-    # Check file size
-    if dest.stat().st_size > MAX_UPLOAD_SIZE:
-        dest.unlink()
-        return jsonify({"error": "File too large (max 500MB)"}), 400
+    # Stage the bundle (validates extension, size, disk space)
+    staged_path, err = ota.stage_bundle(tmp_path, file.filename, user=user, ip=ip)
+    if err:
+        # Clean up temp file if staging failed
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return jsonify({"error": err}), 400
 
-    _ota_status["server"] = {
-        "state": "staged",
-        "version": "",
-        "progress": 0,
-        "error": "",
-    }
-
-    audit = getattr(current_app, "audit", None)
-    if audit:
-        audit.log_event(
-            "OTA_UPLOADED",
-            user=session.get("username", ""),
-            ip=request.remote_addr or "",
-            detail=f"server update uploaded: {file.filename}",
-        )
+    # Verify bundle signature
+    valid, verify_err = ota.verify_bundle(staged_path)
+    if not valid:
+        ota.clean_staging()
+        return jsonify({"error": f"Verification failed: {verify_err}"}), 400
 
     return jsonify(
         {
-            "message": "Update image staged",
+            "message": "Update image staged and verified",
             "filename": file.filename,
-            "size_bytes": dest.stat().st_size,
+            "staged_path": staged_path,
         }
     ), 200
+
+
+@ota_bp.route("/server/install", methods=["POST"])
+@admin_required
+def install_server_image():
+    """Install a staged .swu bundle. Admin only."""
+    ota = current_app.ota_service
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+
+    # Find staged bundle
+    staging = ota.staging_dir
+    if not os.path.isdir(staging):
+        return jsonify({"error": "No staged update found"}), 404
+
+    bundles = [f for f in os.listdir(staging) if f.endswith(".swu")]
+    if not bundles:
+        return jsonify({"error": "No staged update found"}), 404
+
+    bundle_path = os.path.join(staging, bundles[0])
+    ok, err = ota.install_bundle(bundle_path, user=user, ip=ip)
+    if not ok:
+        return jsonify({"error": err}), 500
+
+    return jsonify({"message": "Installation complete — reboot required"}), 200
 
 
 @ota_bp.route("/camera/<camera_id>/push", methods=["POST"])
@@ -127,15 +141,11 @@ def push_camera_update(camera_id):
     if camera.status != "online":
         return jsonify({"error": "Camera must be online to receive updates"}), 400
 
+    ota = current_app.ota_service
     data = request.get_json(silent=True) or {}
     version = data.get("version", "")
 
-    _ota_status[camera_id] = {
-        "state": "pending",
-        "version": version,
-        "progress": 0,
-        "error": "",
-    }
+    ota.set_status(camera_id, "pending", version=version)
 
     audit = getattr(current_app, "audit", None)
     if audit:

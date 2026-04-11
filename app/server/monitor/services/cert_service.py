@@ -320,6 +320,6 @@ class CertService:
         """Log audit event (fail-silent)."""
         if self._audit:
             try:
-                self._audit.log(event=event, user=user, ip=ip, detail=detail)
+                self._audit.log_event(event, user=user, ip=ip, detail=detail)
             except Exception:
                 pass

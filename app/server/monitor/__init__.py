@@ -13,6 +13,8 @@ from flask import Flask
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
+from monitor.services.cert_service import CertService
+from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recordings_service import RecordingsService
@@ -186,6 +188,19 @@ def _init_services(app):
         data_dir=app.config["DATA_DIR"],
     )
 
+    # OTA service — bundle staging, verification, installation
+    app.ota_service = OTAService(
+        store=app.store,
+        audit=app.audit,
+        data_dir=app.config["DATA_DIR"],
+    )
+
+    # Certificate service — expiry monitoring and renewal
+    app.cert_service = CertService(
+        certs_dir=app.config["CERTS_DIR"],
+        audit=app.audit,
+    )
+
     # Connect storage manager → streaming service for dir change notifications
     def _on_recording_dir_change(new_dir):
         app.streaming.update_recordings_dir(new_dir)
@@ -205,6 +220,7 @@ def _startup(app):
 
     app.streaming.start()
     app.storage_manager.start()
+    app.cert_service.start()
 
     # Resume pipelines for confirmed online cameras
     _resume_camera_pipelines(app)
