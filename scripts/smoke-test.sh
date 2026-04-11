@@ -6,10 +6,11 @@
 # Checks: HTTPS, API health, auth, camera endpoints, HLS readiness.
 #
 # Usage:
-#   ./scripts/smoke-test.sh <server-ip> [admin-password]
+#   ./scripts/smoke-test.sh <server-ip> [admin-password] [camera-ip]
 #
 # Examples:
 #   ./scripts/smoke-test.sh 192.168.8.245 12345678
+#   ./scripts/smoke-test.sh 192.168.8.245 12345678 192.168.8.187
 #   ./scripts/smoke-test.sh homemonitor.local
 #
 # Exit codes:
@@ -209,6 +210,42 @@ check_status "GET /users" "${API_BASE}/users" 200
 echo ""
 echo "[7/7] OTA status"
 check_status "GET /ota/status" "${API_BASE}/ota/status" 200
+
+# ---------------------------------------------------------------------------
+# 8. Camera node (optional — pass camera IP as $3)
+# ---------------------------------------------------------------------------
+
+CAMERA_IP="${3:-}"
+if [ -n "$CAMERA_IP" ]; then
+    echo ""
+    echo "[8/8] Camera node: ${CAMERA_IP}"
+    CAM_URL="http://${CAMERA_IP}"
+    CAM_CURL="curl -s --connect-timeout 5 --max-time 10"
+
+    if $CAM_CURL -o /dev/null "$CAM_URL/" 2>/dev/null; then
+        pass "Camera HTTP reachable"
+    else
+        fail "Camera HTTP unreachable at ${CAMERA_IP}"
+    fi
+
+    # Check /api/status (no auth if no password, or auth required)
+    CAM_STATUS=$($CAM_CURL "${CAM_URL}/api/status" 2>/dev/null) || true
+    if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'camera_id' in d" 2>/dev/null; then
+        pass "Camera /api/status has camera_id"
+        check_json_field "Camera status has hostname" "${CAM_URL}/api/status" "hostname"
+        check_json_field "Camera status has wifi_ssid" "${CAM_URL}/api/status" "wifi_ssid"
+        check_json_field "Camera status has streaming" "${CAM_URL}/api/status" "streaming"
+        check_json_field "Camera status has cpu_temp" "${CAM_URL}/api/status" "cpu_temp"
+    elif echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'error' in d" 2>/dev/null; then
+        pass "Camera /api/status requires auth (expected)"
+    else
+        fail "Camera /api/status unexpected response"
+    fi
+else
+    echo ""
+    echo "[8/8] Camera node"
+    skip "No camera IP provided (pass as 3rd argument)"
+fi
 
 # ===========================================================================
 # Summary

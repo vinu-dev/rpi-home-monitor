@@ -234,8 +234,8 @@ Full rules in [`docs/development-guide.md`](docs/development-guide.md) Section 3
 ## Tests
 
 - **Server:** 760 tests, 89% coverage (`python -m pytest app/server/tests/ -v`)
-- **Camera:** 255 tests, 70.5% coverage (`python -m pytest app/camera/tests/ -v`)
-- **Total:** 1015 tests
+- **Camera:** 269 tests, 82% coverage (`python -m pytest app/camera/tests/ -v`)
+- **Total:** 1029 tests
 
 ## PR History
 
