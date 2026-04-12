@@ -662,6 +662,42 @@ class TestOtaStatusContract:
 # ===========================================================================
 
 
+class TestOtaUsbScanContract:
+    """GET /api/v1/ota/usb/scan."""
+
+    def test_fields(self, app, client):
+        _login(app, client)
+        resp = client.get("/api/v1/ota/usb/scan")
+        data = resp.get_json()
+        _assert_has_fields(data, {"bundles"})
+        assert isinstance(data["bundles"], list)
+
+    def test_requires_admin(self, app, client):
+        _login(app, client, role="viewer")
+        resp = client.get("/api/v1/ota/usb/scan")
+        assert resp.status_code == 403
+
+
+class TestOtaUsbImportContract:
+    """POST /api/v1/ota/usb/import."""
+
+    def test_requires_path(self, app, client):
+        csrf = _login(app, client)
+        resp = client.post(
+            "/api/v1/ota/usb/import",
+            json={},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        _assert_has_fields(data, {"error"})
+
+    def test_requires_admin(self, app, client):
+        _login(app, client, role="viewer")
+        resp = client.post("/api/v1/ota/usb/import", json={"path": "/mnt/usb/x.swu"})
+        assert resp.status_code == 403
+
+
 class TestTailscaleStatusContract:
     """GET /api/v1/system/tailscale."""
 

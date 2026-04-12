@@ -2,10 +2,12 @@
 Over-the-Air update API.
 
 Endpoints:
-  POST /ota/server/upload     - upload .swu image for server (admin)
+  POST /ota/server/upload      - upload .swu image for server (admin)
   POST /ota/server/install     - install staged bundle (admin)
-  POST /ota/camera/<id>/push  - push update to camera (admin)
-  GET  /ota/status            - update status for all devices
+  POST /ota/camera/<id>/push   - push update to camera (admin)
+  GET  /ota/status             - update status for all devices
+  GET  /ota/usb/scan           - scan USB devices for .swu bundles (admin)
+  POST /ota/usb/import         - import .swu bundle from USB (admin)
 
 OTA uses swupdate with A/B partition scheme.
 Images must be Ed25519 signed — unsigned images are rejected.
@@ -157,3 +159,47 @@ def push_camera_update(camera_id):
         )
 
     return jsonify({"message": f"Update queued for camera {camera_id}"}), 200
+
+
+@ota_bp.route("/usb/scan", methods=["GET"])
+@admin_required
+def scan_usb():
+    """Scan USB devices for .swu update bundles. Admin only."""
+    ota = current_app.ota_service
+    bundles = ota.scan_usb()
+    return jsonify({"bundles": bundles}), 200
+
+
+@ota_bp.route("/usb/import", methods=["POST"])
+@admin_required
+def import_from_usb():
+    """Import a .swu bundle from a USB device. Admin only.
+
+    Request body: {"path": "/mnt/recordings/updates/update-1.2.swu"}
+    """
+    ota = current_app.ota_service
+    data = request.get_json(silent=True) or {}
+    usb_path = data.get("path", "")
+
+    if not usb_path:
+        return jsonify({"error": "No file path provided"}), 400
+
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+
+    staged_path, err = ota.import_from_usb(usb_path, user=user, ip=ip)
+    if err:
+        return jsonify({"error": err}), 400
+
+    # Verify bundle signature
+    valid, verify_err = ota.verify_bundle(staged_path)
+    if not valid:
+        ota.clean_staging()
+        return jsonify({"error": f"Verification failed: {verify_err}"}), 400
+
+    return jsonify(
+        {
+            "message": "USB bundle imported, staged, and verified",
+            "staged_path": staged_path,
+        }
+    ), 200

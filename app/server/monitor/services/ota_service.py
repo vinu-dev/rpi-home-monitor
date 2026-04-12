@@ -29,6 +29,15 @@ MAX_BUNDLE_SIZE = 500 * 1024 * 1024
 MIN_FREE_SPACE = 100 * 1024 * 1024
 
 
+def _human_size(nbytes):
+    """Convert bytes to human-readable size string."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if nbytes < 1024:
+            return f"{nbytes:.1f} {unit}"
+        nbytes /= 1024
+    return f"{nbytes:.1f} PB"
+
+
 class OTAService:
     """Manages OTA update verification, staging, and installation.
 
@@ -252,6 +261,121 @@ class OTAService:
         except OSError as e:
             self.set_status("server", "error", error=str(e))
             return False, str(e)
+
+    def scan_usb(self):
+        """Scan USB devices for .swu update bundles.
+
+        Looks at all mounted USB devices for .swu files in root and
+        common update directories (updates/, ota/).
+
+        Returns:
+            list of dicts: [{filename, path, size, size_human, device}]
+        """
+        from monitor.services import usb
+
+        bundles = []
+        try:
+            devices = usb.detect_devices()
+        except Exception as e:
+            log.warning("USB detection failed during OTA scan: %s", e)
+            return bundles
+
+        for dev in devices:
+            mp = dev.get("mountpoint", "")
+            if not mp:
+                continue
+
+            # Search root and common update directories
+            search_dirs = [mp]
+            for subdir in ("updates", "ota", "OTA"):
+                candidate = os.path.join(mp, subdir)
+                if os.path.isdir(candidate):
+                    search_dirs.append(candidate)
+
+            for search_dir in search_dirs:
+                try:
+                    for entry in os.scandir(search_dir):
+                        if entry.is_file() and entry.name.lower().endswith(".swu"):
+                            stat = entry.stat()
+                            bundles.append(
+                                {
+                                    "filename": entry.name,
+                                    "path": entry.path,
+                                    "size": stat.st_size,
+                                    "size_human": _human_size(stat.st_size),
+                                    "device": dev.get("path", ""),
+                                }
+                            )
+                except OSError as e:
+                    log.debug("Cannot read %s: %s", search_dir, e)
+
+        log.info("USB scan found %d bundle(s)", len(bundles))
+        return bundles
+
+    def import_from_usb(self, usb_path, user="", ip=""):
+        """Import a .swu bundle from a USB device.
+
+        Copies (not moves) the file from USB to inbox, then stages it.
+        The original file on USB is preserved.
+
+        Args:
+            usb_path: Full path to the .swu file on USB.
+            user: Username for audit log.
+            ip: IP address for audit log.
+
+        Returns:
+            (staged_path, error) tuple.
+        """
+        filename = os.path.basename(usb_path)
+
+        if not filename.lower().endswith(".swu"):
+            return None, "Only .swu files are accepted"
+
+        if not os.path.isfile(usb_path):
+            return None, f"File not found: {usb_path}"
+
+        try:
+            size = os.path.getsize(usb_path)
+        except OSError as e:
+            return None, f"Cannot read file: {e}"
+
+        if size > MAX_BUNDLE_SIZE:
+            return None, f"File too large ({size} bytes, max {MAX_BUNDLE_SIZE})"
+
+        if size == 0:
+            return None, "File is empty"
+
+        # Check disk space
+        has_space, free, err = self.check_space(size)
+        if not has_space:
+            return (
+                None,
+                f"Insufficient disk space (free: {free}, need: {size + MIN_FREE_SPACE})",
+            )
+
+        # Copy to inbox (preserve original on USB)
+        os.makedirs(self.inbox_dir, exist_ok=True)
+        inbox_path = os.path.join(self.inbox_dir, filename)
+
+        try:
+            shutil.copy2(usb_path, inbox_path)
+        except OSError as e:
+            return None, f"Failed to copy from USB: {e}"
+
+        # Stage the bundle
+        staged_path, stage_err = self.stage_bundle(
+            inbox_path, filename, user=user, ip=ip
+        )
+        if stage_err:
+            try:
+                os.unlink(inbox_path)
+            except OSError:
+                pass
+            return None, stage_err
+
+        self._log_audit("OTA_USB_IMPORT", user, ip, f"Imported from USB: {usb_path}")
+        log.info("OTA bundle imported from USB: %s", usb_path)
+        return staged_path, ""
 
     def clean_staging(self):
         """Remove staged bundles from the staging directory."""
