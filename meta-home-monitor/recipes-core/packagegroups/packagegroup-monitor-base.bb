@@ -14,6 +14,7 @@ RDEPENDS:${PN} = " \
     avahi-daemon \
     tzdata \
     tailscale \
+    nm-persist \
     htop \
     nano \
     curl \
