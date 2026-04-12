@@ -94,14 +94,14 @@ class TailscaleService:
         elif backend_state == "Stopped":
             result["state"] = "stopped"
             # If there's a Self node with a hostname, user has authenticated before
-            self_node = status_data.get("Self", {})
+            self_node = status_data.get("Self") or {}
             if self_node.get("UserID", 0) > 0:
                 result["authenticated"] = True
         else:
             result["state"] = backend_state.lower() if backend_state else "unknown"
 
         # Parse self node info
-        self_node = status_data.get("Self", {})
+        self_node = status_data.get("Self") or {}
         if self_node:
             result["hostname"] = self_node.get("HostName", "")
             ips = self_node.get("TailscaleIPs", [])
@@ -111,7 +111,7 @@ class TailscaleService:
             result["exit_node"] = self_node.get("ExitNode", False)
 
         # Parse peers
-        peer_map = status_data.get("Peer", {})
+        peer_map = status_data.get("Peer") or {}
         for _key, peer in peer_map.items():
             result["peers"].append(
                 {
