@@ -20,7 +20,7 @@ log = logging.getLogger("monitor.tailscale")
 CLI_TIMEOUT = 15
 
 # Longer timeout for 'tailscale up' which may need network negotiation
-CONNECT_TIMEOUT = 30
+CONNECT_TIMEOUT = 15
 
 
 class TailscaleService:
@@ -137,7 +137,7 @@ class TailscaleService:
         if not self._binary_exists():
             return None, "Tailscale is not installed"
 
-        cmd = ["tailscale", "up"]
+        cmd = ["tailscale", "up", "--timeout=5s"]
         if accept_routes:
             cmd.append("--accept-routes")
         if ssh:
