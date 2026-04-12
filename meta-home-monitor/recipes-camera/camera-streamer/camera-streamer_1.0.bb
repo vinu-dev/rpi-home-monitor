@@ -14,6 +14,8 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:"
 SRC_URI = " \
     file://camera_streamer/ \
     file://config/camera-streamer.service \
+    file://config/camera-hotspot.service \
+    file://config/camera-hotspot.sh \
     file://config/nftables-camera.conf \
     file://config/captive-portal-dnsmasq.conf \
     file://config/camera.conf.default \
@@ -34,7 +36,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "camera-streamer.service"
+SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create camera system user/group
@@ -51,9 +53,14 @@ do_install() {
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default
 
-    # Systemd service
+    # Hotspot setup script (WiFi provisioning + factory reset wipe)
+    install -d ${D}/opt/camera/scripts
+    install -m 0755 ${WORKDIR}/config/camera-hotspot.sh ${D}/opt/camera/scripts/camera-hotspot.sh
+
+    # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/camera-streamer.service ${D}${systemd_system_unitdir}/camera-streamer.service
+    install -m 0644 ${WORKDIR}/config/camera-hotspot.service ${D}${systemd_system_unitdir}/camera-hotspot.service
 
     # Firewall rules
     install -d ${D}${sysconfdir}/nftables.d
@@ -67,6 +74,7 @@ do_install() {
 FILES:${PN} = " \
     /opt/camera \
     ${systemd_system_unitdir}/camera-streamer.service \
+    ${systemd_system_unitdir}/camera-hotspot.service \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     "
