@@ -3,729 +3,714 @@
 {% block title %}Settings - Home Monitor{% endblock %}
 
 {% block content %}
+<div x-data="settingsPage()" x-init="init()">
 <h1 class="page-title">Settings</h1>
 
-<!-- System Settings (admin only) -->
-<div class="settings-section" id="section-system-settings" style="display:none;">
-    <div class="settings-section__title">System Settings</div>
-    <div class="card">
-        <form id="form-settings">
-            <div class="form-group">
-                <label for="set-hostname">Hostname</label>
-                <input type="text" id="set-hostname" class="form-input" maxlength="63">
+<!-- Settings Tab Bar -->
+<div class="settings-tabs" x-show="isAdmin">
+    <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
+    <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
+    <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
+    <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SYSTEM TAB (admin only)
+     ═══════════════════════════���═══════════════════════════════ -->
+<div x-show="isAdmin && tab === 'system'" x-cloak>
+    <!-- System Settings Form -->
+    <div class="settings-section">
+        <div class="settings-section__title">System Settings</div>
+        <div class="card">
+            <form @submit.prevent="saveSettings()">
+                <div class="form-group">
+                    <label for="set-hostname">Hostname</label>
+                    <input type="text" id="set-hostname" class="form-input" maxlength="63" x-model="settings.hostname">
+                </div>
+                <div class="form-group">
+                    <label for="set-timezone">Timezone</label>
+                    <input type="text" id="set-timezone" class="form-input" placeholder="e.g. Europe/Dublin" x-model="settings.timezone">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="set-storage">Storage Threshold (%)</label>
+                        <input type="number" id="set-storage" class="form-input" min="50" max="99" x-model.number="settings.storage_threshold_percent">
+                    </div>
+                    <div class="form-group">
+                        <label for="set-clip-duration">Clip Duration (s)</label>
+                        <input type="number" id="set-clip-duration" class="form-input" min="30" max="600" x-model.number="settings.clip_duration_seconds">
+                    </div>
+                    <div class="form-group">
+                        <label for="set-session-timeout">Session Timeout (min)</label>
+                        <input type="number" id="set-session-timeout" class="form-input" min="5" max="1440" x-model.number="settings.session_timeout_minutes">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn--primary">Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="settings-section">
+        <div class="settings-section__title">System Info</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Firmware Version</span>
+                <span class="info-row__value" x-text="sysInfo.firmware_version || '--'"></span>
             </div>
-            <div class="form-group">
-                <label for="set-timezone">Timezone</label>
-                <input type="text" id="set-timezone" class="form-input" placeholder="e.g. Europe/Dublin">
+            <div class="info-row">
+                <span class="info-row__label">Uptime</span>
+                <span class="info-row__value" x-text="sysInfo.uptime || '--'"></span>
             </div>
-            <div class="form-group">
-                <label for="set-storage">Storage Threshold (%)</label>
-                <input type="number" id="set-storage" class="form-input" min="50" max="99">
+            <div class="info-row">
+                <span class="info-row__label">Disk Total</span>
+                <span class="info-row__value" x-text="sysInfo.disk_total || '--'"></span>
             </div>
-            <div class="form-group">
-                <label for="set-clip-duration">Clip Duration (seconds)</label>
-                <input type="number" id="set-clip-duration" class="form-input" min="30" max="600">
+            <div class="info-row">
+                <span class="info-row__label">Disk Used</span>
+                <span class="info-row__value" x-text="sysInfo.disk_used || '--'"></span>
             </div>
-            <div class="form-group">
-                <label for="set-session-timeout">Session Timeout (minutes)</label>
-                <input type="number" id="set-session-timeout" class="form-input" min="5" max="1440">
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Disk Free</span>
+                <span class="info-row__value" x-text="sysInfo.disk_free || '--'"></span>
             </div>
-            <button type="submit" class="btn btn--primary">Save Settings</button>
-        </form>
+        </div>
     </div>
 </div>
 
-<!-- WiFi Network (admin only) -->
-<div class="settings-section" id="section-wifi" style="display:none;">
-    <div class="settings-section__title">WiFi Network</div>
-    <div class="card">
-        <div class="info-row">
-            <span class="info-row__label">Current Network</span>
-            <span class="info-row__value" id="wifi-current-ssid">--</span>
+<!-- ═════════��═════════════════════════════════════════════════
+     NETWORK TAB (admin only) — WiFi + Tailscale
+     ══════════════���════════════════════════════════════════════ -->
+<div x-show="isAdmin && tab === 'network'" x-cloak>
+    <!-- WiFi Network -->
+    <div class="settings-section">
+        <div class="settings-section__title">WiFi Network</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Current Network</span>
+                <span class="info-row__value" x-text="wifi.currentSsid || 'Not connected'"></span>
+            </div>
+            <div style="padding-top: 8px;">
+                <button class="btn btn--secondary btn--small" @click="showWifiForm = !showWifiForm">
+                    <span x-text="showWifiForm ? 'Cancel' : 'Change WiFi'"></span>
+                </button>
+            </div>
         </div>
-        <div style="border-bottom:none; padding-top: 8px;">
-            <button class="btn btn--secondary btn--small" id="btn-change-wifi">Change WiFi</button>
+
+        <!-- Change WiFi Form -->
+        <div class="inline-form" :class="{ visible: showWifiForm }">
+            <div class="card" style="margin-top: 12px;">
+                <div class="msg msg--warn">
+                    Warning: Changing WiFi will briefly disconnect the server. Make sure you are on the same network or have physical access.
+                </div>
+                <div id="wifi-net-list" style="max-height:200px; overflow-y:auto; margin-bottom:12px;">
+                    <template x-for="net in wifi.networks" :key="net.ssid">
+                        <div class="wifi-net-item" @click="wifi.selectedSsid = net.ssid; $refs.wifiPass.focus()">
+                            <span class="wifi-net-item__name" x-text="net.ssid"></span>
+                            <span class="wifi-net-item__signal" x-text="net.signal + '%'"></span>
+                        </div>
+                    </template>
+                </div>
+                <button type="button" class="btn btn--secondary btn--small" @click="scanWifi()" :disabled="wifi.scanning">
+                    <span x-text="wifi.scanning ? 'Scanning...' : 'Scan for Networks'"></span>
+                </button>
+                <form @submit.prevent="connectWifi()" style="margin-top:12px;">
+                    <div class="form-group">
+                        <label for="wifi-ssid">WiFi Name (SSID)</label>
+                        <input type="text" id="wifi-ssid" class="form-input" x-model="wifi.selectedSsid" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="wifi-pass">WiFi Password</label>
+                        <input type="password" id="wifi-pass" class="form-input" x-model="wifi.password" x-ref="wifiPass" required>
+                    </div>
+                    <button type="submit" class="btn btn--primary btn--small">Connect</button>
+                </form>
+            </div>
         </div>
     </div>
 
-    <!-- Change WiFi Form (hidden by default) -->
-    <div class="inline-form" id="wifi-form-wrap">
-        <div class="card" style="margin-top: 12px;">
-            <div class="msg msg--warn" style="background:#78350f; color:#fde68a; padding:10px; border-radius:6px; margin-bottom:12px; font-size:0.85em;">
-                Warning: Changing WiFi will briefly disconnect the server. Make sure you are on the same network or have physical access.
+    <!-- Tailscale VPN -->
+    <div class="settings-section">
+        <div class="settings-section__title">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+            </svg>
+            Remote Access (Tailscale)
+        </div>
+        <div class="card">
+            <!-- Status Row -->
+            <div class="info-row">
+                <span class="info-row__label">Status</span>
+                <span class="info-row__value">
+                    <template x-if="!tailscale.installed">
+                        <span class="badge badge--offline">Not Installed</span>
+                    </template>
+                    <template x-if="tailscale.installed && tailscale.state === 'connected'">
+                        <span class="badge badge--online">Connected</span>
+                    </template>
+                    <template x-if="tailscale.installed && tailscale.state === 'needs-login'">
+                        <span class="badge badge--pending">Needs Login</span>
+                    </template>
+                    <template x-if="tailscale.installed && tailscale.state === 'stopped'">
+                        <span class="badge badge--offline">Stopped</span>
+                    </template>
+                    <template x-if="tailscale.installed && !['connected','needs-login','stopped'].includes(tailscale.state)">
+                        <span class="badge badge--offline" x-text="tailscale.state"></span>
+                    </template>
+                </span>
             </div>
-            <div id="wifi-net-list" style="max-height:200px; overflow-y:auto; margin-bottom:12px;"></div>
-            <button type="button" class="btn btn--secondary btn--small" id="btn-scan-wifi" style="margin-bottom:12px;">Scan for Networks</button>
-            <form id="form-wifi-connect">
+
+            <!-- Connected Info -->
+            <template x-if="tailscale.state === 'connected'">
+                <div>
+                    <div class="info-row">
+                        <span class="info-row__label">Tailscale IP</span>
+                        <span class="info-row__value" x-text="tailscale.ip || '--'"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-row__label">Hostname</span>
+                        <span class="info-row__value" x-text="tailscale.hostname || '--'"></span>
+                    </div>
+                    <div class="info-row" style="border-bottom:none;">
+                        <span class="info-row__label">Peers Online</span>
+                        <span class="info-row__value" x-text="tailscale.peers.filter(p => p.online).length + ' / ' + tailscale.peers.length"></span>
+                    </div>
+
+                    <!-- Peer List -->
+                    <template x-if="tailscale.peers.length > 0">
+                        <div class="ts-peers">
+                            <div class="ts-peers__title">Connected Devices</div>
+                            <template x-for="peer in tailscale.peers" :key="peer.ip">
+                                <div class="ts-peer">
+                                    <div class="ts-peer__dot" :class="peer.online ? 'ts-peer__dot--online' : 'ts-peer__dot--offline'"></div>
+                                    <div class="ts-peer__info">
+                                        <span class="ts-peer__name" x-text="peer.name"></span>
+                                        <span class="ts-peer__ip" x-text="peer.ip"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Auth URL (when needs-login) -->
+            <template x-if="tailscale.authUrl">
+                <div class="ts-auth-box">
+                    <p class="ts-auth-box__label">Open this URL to authenticate:</p>
+                    <a :href="tailscale.authUrl" target="_blank" rel="noopener" class="ts-auth-box__url" x-text="tailscale.authUrl"></a>
+                    <button class="btn btn--secondary btn--small mt-8" @click="navigator.clipboard.writeText(tailscale.authUrl); window.HM.toast('Copied to clipboard', 'success')">Copy URL</button>
+                </div>
+            </template>
+
+            <!-- Action Buttons -->
+            <div class="ts-actions" x-show="tailscale.installed">
+                <template x-if="tailscale.state !== 'connected'">
+                    <button class="btn btn--primary btn--small" @click="tsConnect()" :disabled="tailscale.loading">
+                        <span x-text="tailscale.loading ? 'Connecting...' : 'Enable Tailscale'"></span>
+                    </button>
+                </template>
+                <template x-if="tailscale.state === 'connected'">
+                    <button class="btn btn--secondary btn--small" @click="tsDisconnect()" :disabled="tailscale.loading">
+                        <span x-text="tailscale.loading ? 'Disconnecting...' : 'Disconnect'"></span>
+                    </button>
+                </template>
+                <button class="btn btn--secondary btn--small" @click="loadTailscale()" :disabled="tailscale.loading" style="margin-left:8px;">
+                    Refresh Status
+                </button>
+            </div>
+
+            <!-- Not installed message -->
+            <template x-if="!tailscale.installed">
+                <div class="text-muted text-small mt-8">
+                    Tailscale is not installed. It is included in the system image — reflash to enable remote access.
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<!-- ═══��══════════��════════════════════════════════════════════
+     USERS TAB (admin only)
+     ��═══════════════════════��══════════════════════════════════ -->
+<div x-show="isAdmin && tab === 'users'" x-cloak>
+    <!-- User Management -->
+    <div class="settings-section">
+        <div class="flex-between">
+            <div class="settings-section__title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">User Management</div>
+            <button class="btn btn--secondary btn--small" @click="showAddUser = !showAddUser">
+                <span x-text="showAddUser ? 'Cancel' : 'Add User'"></span>
+            </button>
+        </div>
+
+        <!-- Add User Inline Form -->
+        <div class="inline-form" :class="{ visible: showAddUser }">
+            <form @submit.prevent="createUser()">
+                <div class="inline-form__row">
+                    <div class="form-group">
+                        <label for="new-username">Username</label>
+                        <input type="text" id="new-username" class="form-input" minlength="3" maxlength="32" x-model="newUser.username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">Password</label>
+                        <input type="password" id="new-password" class="form-input" minlength="12" x-model="newUser.password" required>
+                        <span class="form-hint">Minimum 12 characters</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-role">Role</label>
+                        <select id="new-role" class="form-input" x-model="newUser.role">
+                            <option value="viewer">Viewer</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <button type="submit" class="btn btn--primary btn--small">Create User</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- User Table -->
+        <div class="card mt-16">
+            <div class="user-table-wrap">
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Created</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-if="users.length === 0">
+                            <tr><td colspan="4" class="text-muted text-center">Loading...</td></tr>
+                        </template>
+                        <template x-for="u in users" :key="u.id">
+                            <tr>
+                                <td>
+                                    <span x-text="u.username"></span>
+                                    <span x-show="currentUser && currentUser.id === u.id" class="text-muted"> (you)</span>
+                                </td>
+                                <td><span class="badge" :class="u.role === 'admin' ? 'badge--pending' : 'badge--offline'" x-text="u.role"></span></td>
+                                <td class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
+                                <td>
+                                    <button x-show="!currentUser || currentUser.id !== u.id"
+                                            class="btn btn--danger btn--icon"
+                                            @click="deleteUser(u.id, u.username)">
+                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password (all users) -->
+    <div class="settings-section">
+        <div class="settings-section__title">Change Password</div>
+        <div class="card">
+            <form @submit.prevent="changePassword()">
                 <div class="form-group">
-                    <label for="wifi-ssid">WiFi Name (SSID)</label>
-                    <input type="text" id="wifi-ssid" class="form-input" required>
+                    <label for="pw-new">New Password</label>
+                    <input type="password" id="pw-new" class="form-input" minlength="12" x-model="pw.newPassword" required>
+                    <span class="form-hint">Minimum 12 characters</span>
                 </div>
                 <div class="form-group">
-                    <label for="wifi-pass">WiFi Password</label>
-                    <input type="password" id="wifi-pass" class="form-input" required>
+                    <label for="pw-confirm">Confirm New Password</label>
+                    <input type="password" id="pw-confirm" class="form-input" minlength="12" x-model="pw.confirmPassword" required>
                 </div>
-                <button type="submit" class="btn btn--primary btn--small">Connect</button>
-                <button type="button" class="btn btn--secondary btn--small" id="btn-cancel-wifi" style="margin-left:8px;">Cancel</button>
+                <button type="submit" class="btn btn--primary">Change Password</button>
             </form>
         </div>
     </div>
 </div>
 
-<!-- User Management (admin only) -->
-<div class="settings-section" id="section-user-mgmt" style="display:none;">
-    <div class="flex-between">
-        <div class="settings-section__title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">User Management</div>
-        <button class="btn btn--secondary btn--small" id="btn-toggle-add-user">Add User</button>
-    </div>
-
-    <!-- Add User Inline Form -->
-    <div class="inline-form" id="form-add-user-wrap">
-        <form id="form-add-user">
-            <div class="inline-form__row">
-                <div class="form-group">
-                    <label for="new-username">Username</label>
-                    <input type="text" id="new-username" class="form-input" minlength="3" maxlength="32" required>
-                </div>
-                <div class="form-group">
-                    <label for="new-password">Password</label>
-                    <input type="password" id="new-password" class="form-input" minlength="8" required>
-                </div>
-                <div class="form-group">
-                    <label for="new-role">Role</label>
-                    <select id="new-role" class="form-input">
-                        <option value="viewer">Viewer</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </div>
+<!-- ���══════════════════════════════════════════════════════════
+     STORAGE TAB (admin only)
+     ═══════════════════════════��═══════════════════════════════ -->
+<div x-show="isAdmin && tab === 'storage'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Recording Storage</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Recording To</span>
+                <span class="info-row__value" x-text="storage.location || '--'"></span>
             </div>
-            <div class="mt-8">
-                <button type="submit" class="btn btn--primary btn--small">Create User</button>
-                <button type="button" class="btn btn--secondary btn--small" id="btn-cancel-add-user">Cancel</button>
+            <div class="info-row">
+                <span class="info-row__label">Recordings Size</span>
+                <span class="info-row__value" x-text="storage.recSize || '--'"></span>
             </div>
-        </form>
-    </div>
+            <div class="info-row">
+                <span class="info-row__label">Total / Free</span>
+                <span class="info-row__value" x-text="storage.space || '--'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Clips</span>
+                <span class="info-row__value" x-text="storage.clips || '--'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Loop Recording</span>
+                <span class="info-row__value" style="color:#4ade80;">Active (FIFO)</span>
+            </div>
+        </div>
 
-    <!-- User Table -->
-    <div class="card mt-16">
-        <div class="user-table-wrap">
-            <table class="user-table">
-                <thead>
-                    <tr>
-                        <th>Username</th>
-                        <th>Role</th>
-                        <th>Created</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="user-table-body">
-                    <tr><td colspan="4" class="text-muted text-center">Loading...</td></tr>
-                </tbody>
-            </table>
+        <!-- USB Devices -->
+        <div class="card mt-16">
+            <div class="flex-between" style="margin-bottom:12px;">
+                <span style="font-weight:600;">USB Storage Devices</span>
+                <button class="btn btn--secondary btn--small" @click="scanUsb()" :disabled="storage.scanning">
+                    <span x-text="storage.scanning ? 'Scanning...' : 'Scan'"></span>
+                </button>
+            </div>
+            <div>
+                <template x-if="storage.devices.length === 0 && !storage.scanned">
+                    <div class="text-muted" style="padding:8px 0;">Click Scan to detect USB devices</div>
+                </template>
+                <template x-if="storage.devices.length === 0 && storage.scanned">
+                    <div class="text-muted" style="padding:8px 0;">No USB devices found. Plug in a USB drive and scan again.</div>
+                </template>
+                <template x-for="d in storage.devices" :key="d.path">
+                    <div class="usb-device-item">
+                        <div>
+                            <div style="font-weight:500;" x-text="d.model"></div>
+                            <div class="text-small text-muted">
+                                <span x-text="d.path"></span> &middot;
+                                <span x-text="d.size"></span> &middot;
+                                <span x-text="d.fstype || 'unformatted'"></span>
+                                <span x-show="d.supported" style="color:#4ade80;"> Compatible</span>
+                                <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
+                            </div>
+                        </div>
+                        <button x-show="d.supported" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                        <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Format Dialog -->
+        <div class="inline-form" :class="{ visible: storage.showFormat }">
+            <div class="card" style="margin-top:12px;">
+                <div class="msg msg--warn">
+                    WARNING: Formatting will ERASE ALL DATA on the device. This cannot be undone.
+                </div>
+                <p style="margin:12px 0;">
+                    Device <strong x-text="storage.formatDevice.model || '--'"></strong> has an unsupported filesystem
+                    (<span x-text="storage.formatDevice.fstype || '--'"></span>). Format it to ext4?
+                </p>
+                <button class="btn btn--danger btn--small" @click="formatUsb()" :disabled="storage.formatting">
+                    <span x-text="storage.formatting ? 'Formatting...' : 'Format to ext4'"></span>
+                </button>
+                <button class="btn btn--secondary btn--small" @click="storage.showFormat = false" style="margin-left:8px;">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Eject USB -->
+        <div x-show="storage.isUsb" style="margin-top:12px;">
+            <button class="btn btn--secondary btn--small" @click="ejectUsb()">Eject USB &amp; Use Internal Storage</button>
         </div>
     </div>
 </div>
 
-<!-- Storage Management (admin only) -->
-<div class="settings-section" id="section-storage" style="display:none;">
-    <div class="settings-section__title">Recording Storage</div>
-    <div class="card">
-        <div class="info-row">
-            <span class="info-row__label">Recording To</span>
-            <span class="info-row__value" id="storage-location">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Recordings Size</span>
-            <span class="info-row__value" id="storage-rec-size">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Total / Free</span>
-            <span class="info-row__value" id="storage-space">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Clips</span>
-            <span class="info-row__value" id="storage-clips">--</span>
-        </div>
-        <div class="info-row" style="border-bottom:none;">
-            <span class="info-row__label">Loop Recording</span>
-            <span class="info-row__value" style="color:#4ade80;">Active (FIFO)</span>
-        </div>
-    </div>
-
-    <!-- USB Devices -->
-    <div class="card mt-16">
-        <div class="flex-between" style="margin-bottom:12px;">
-            <span style="font-weight:600;">USB Storage Devices</span>
-            <button class="btn btn--secondary btn--small" id="btn-scan-usb">Scan</button>
-        </div>
-        <div id="usb-device-list">
-            <div class="text-muted" style="padding:8px 0;">Click Scan to detect USB devices</div>
-        </div>
-    </div>
-
-    <!-- Format Dialog (hidden) -->
-    <div class="inline-form" id="usb-format-wrap">
-        <div class="card" style="margin-top:12px;">
-            <div class="msg msg--warn" style="background:#78350f; color:#fde68a; padding:10px; border-radius:6px; margin-bottom:12px; font-size:0.85em;">
-                WARNING: Formatting will ERASE ALL DATA on the device. This cannot be undone.
+<!-- ═══════════════════════════════════════════════════════════
+     NON-ADMIN: System Info + Change Password only
+     ��═════════════════════════════════════════════════��════════ -->
+<div x-show="!isAdmin" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">System Info</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Firmware Version</span>
+                <span class="info-row__value" x-text="sysInfo.firmware_version || '--'"></span>
             </div>
-            <p style="margin-bottom:12px;">
-                Device <strong id="format-device-name">--</strong> has an unsupported filesystem
-                (<span id="format-device-fs">--</span>). Format it to ext4?
-            </p>
-            <button class="btn btn--danger btn--small" id="btn-confirm-format">Format to ext4</button>
-            <button class="btn btn--secondary btn--small" id="btn-cancel-format" style="margin-left:8px;">Cancel</button>
-            <input type="hidden" id="format-device-path" value="">
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Uptime</span>
+                <span class="info-row__value" x-text="sysInfo.uptime || '--'"></span>
+            </div>
         </div>
     </div>
-
-    <!-- Eject USB (shown when USB active) -->
-    <div id="usb-eject-wrap" style="display:none; margin-top:12px;">
-        <button class="btn btn--secondary btn--small" id="btn-eject-usb">Eject USB &amp; Use Internal Storage</button>
-    </div>
-</div>
-
-<!-- System Info (all users) -->
-<div class="settings-section">
-    <div class="settings-section__title">System Info</div>
-    <div class="card">
-        <div class="info-row">
-            <span class="info-row__label">Firmware Version</span>
-            <span class="info-row__value" id="sysinfo-firmware">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Uptime</span>
-            <span class="info-row__value" id="sysinfo-uptime">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Disk Total</span>
-            <span class="info-row__value" id="sysinfo-disk-total">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Disk Used</span>
-            <span class="info-row__value" id="sysinfo-disk-used">--</span>
-        </div>
-        <div class="info-row" style="border-bottom:none;">
-            <span class="info-row__label">Disk Free</span>
-            <span class="info-row__value" id="sysinfo-disk-free">--</span>
+    <div class="settings-section">
+        <div class="settings-section__title">Change Password</div>
+        <div class="card">
+            <form @submit.prevent="changePassword()">
+                <div class="form-group">
+                    <label for="pw-new-v">New Password</label>
+                    <input type="password" id="pw-new-v" class="form-input" minlength="12" x-model="pw.newPassword" required>
+                    <span class="form-hint">Minimum 12 characters</span>
+                </div>
+                <div class="form-group">
+                    <label for="pw-confirm-v">Confirm New Password</label>
+                    <input type="password" id="pw-confirm-v" class="form-input" minlength="12" x-model="pw.confirmPassword" required>
+                </div>
+                <button type="submit" class="btn btn--primary">Change Password</button>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Change Password (all users) -->
-<div class="settings-section">
-    <div class="settings-section__title">Change Password</div>
-    <div class="card">
-        <form id="form-change-password">
-            <div class="form-group">
-                <label for="pw-current">Current Password</label>
-                <input type="password" id="pw-current" class="form-input" required>
-            </div>
-            <div class="form-group">
-                <label for="pw-new">New Password</label>
-                <input type="password" id="pw-new" class="form-input" minlength="8" required>
-            </div>
-            <div class="form-group">
-                <label for="pw-confirm">Confirm New Password</label>
-                <input type="password" id="pw-confirm" class="form-input" minlength="8" required>
-            </div>
-            <button type="submit" class="btn btn--primary">Change Password</button>
-        </form>
-    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-(function() {
-    var currentUser = null;
+function settingsPage() {
+    return {
+        tab: 'system',
+        isAdmin: false,
+        currentUser: null,
+        showAddUser: false,
+        showWifiForm: false,
 
-    function init() {
-        // Must wait for auth.getMe() to complete (async in app.js)
-        // before checking user role — otherwise _user is still null
-        window.HM.auth.getMe()
-            .then(function() {
-                currentUser = window.HM.auth.getUser();
-                var isAdmin = currentUser && currentUser.role === 'admin';
+        settings: { hostname: '', timezone: '', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
+        sysInfo: { firmware_version: '', uptime: '', disk_total: '', disk_used: '', disk_free: '' },
+        users: [],
+        newUser: { username: '', password: '', role: 'viewer' },
+        pw: { newPassword: '', confirmPassword: '' },
 
-                if (isAdmin) {
-                    document.getElementById('section-system-settings').style.display = '';
-                    document.getElementById('section-user-mgmt').style.display = '';
-                    document.getElementById('section-wifi').style.display = '';
-                    document.getElementById('section-storage').style.display = '';
-                    loadSettings();
-                    loadUsers();
-                    loadWifi();
-                    loadStorageStatus();
-                }
+        wifi: { currentSsid: '', networks: [], selectedSsid: '', password: '', scanning: false },
 
-                loadSystemInfo();
-                bindEvents();
-            })
-            .catch(function() {
-                // Not logged in — still show system info + password form
-                loadSystemInfo();
-                bindEvents();
-            });
-    }
+        tailscale: { installed: false, running: false, state: 'unavailable', hostname: '', ip: '', peers: [], authUrl: '', loading: false },
 
-    /* --- System Settings --- */
-    function loadSettings() {
-        window.HM.api.get('/api/v1/settings')
-            .then(function(data) {
-                document.getElementById('set-hostname').value = data.hostname || '';
-                document.getElementById('set-timezone').value = data.timezone || '';
-                document.getElementById('set-storage').value = data.storage_threshold_percent || 90;
-                document.getElementById('set-clip-duration').value = data.clip_duration_seconds || 180;
-                document.getElementById('set-session-timeout').value = data.session_timeout_minutes || 30;
-            })
-            .catch(function() {
-                window.HM.toast('Failed to load settings', 'error');
-            });
-    }
+        storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false },
 
-    /* --- System Info --- */
-    function loadSystemInfo() {
-        window.HM.api.get('/api/v1/system/info')
-            .then(function(data) {
-                document.getElementById('sysinfo-firmware').textContent = data.firmware_version || '--';
-                document.getElementById('sysinfo-uptime').textContent =
-                    (data.uptime && data.uptime.display) ? data.uptime.display : '--';
-            })
-            .catch(function() {});
+        async init() {
+            try {
+                await window.HM.auth.getMe();
+                this.currentUser = window.HM.auth.getUser();
+                this.isAdmin = this.currentUser && this.currentUser.role === 'admin';
+            } catch(e) {}
 
-        window.HM.api.get('/api/v1/system/health')
-            .then(function(data) {
-                if (data.disk) {
-                    document.getElementById('sysinfo-disk-total').textContent =
-                        (data.disk.total_gb || 0) + ' GB';
-                    document.getElementById('sysinfo-disk-used').textContent =
-                        (data.disk.used_gb || 0) + ' GB (' + (data.disk.percent || 0) + '%)';
-                    document.getElementById('sysinfo-disk-free').textContent =
-                        (data.disk.free_gb || 0) + ' GB';
-                }
-            })
-            .catch(function() {});
-    }
+            this.loadSystemInfo();
 
-    /* --- User Management --- */
-    function loadUsers() {
-        window.HM.api.get('/api/v1/users')
-            .then(function(users) {
-                var tbody = document.getElementById('user-table-body');
-                tbody.innerHTML = '';
+            if (this.isAdmin) {
+                this.loadSettings();
+                this.loadUsers();
+                this.loadWifi();
+                this.loadStorageStatus();
+                this.loadTailscale();
+            }
+        },
 
-                if (!users || users.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No users found</td></tr>';
-                    return;
-                }
-
-                users.forEach(function(u) {
-                    var tr = document.createElement('tr');
-                    var isSelf = currentUser && currentUser.id === u.id;
-                    var created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '--';
-
-                    var deleteBtn = '';
-                    if (!isSelf) {
-                        deleteBtn = '<button class="btn btn--danger btn--icon btn-delete-user" ' +
-                            'data-id="' + window.HM.escapeHtml(u.id) + '" ' +
-                            'data-name="' + window.HM.escapeHtml(u.username) + '">X</button>';
-                    }
-
-                    tr.innerHTML =
-                        '<td>' + window.HM.escapeHtml(u.username) + (isSelf ? ' (you)' : '') + '</td>' +
-                        '<td>' + window.HM.escapeHtml(u.role) + '</td>' +
-                        '<td>' + created + '</td>' +
-                        '<td>' + deleteBtn + '</td>';
-
-                    tbody.appendChild(tr);
-                });
-
-                // Bind delete buttons
-                tbody.querySelectorAll('.btn-delete-user').forEach(function(btn) {
-                    btn.addEventListener('click', function() {
-                        deleteUser(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
-                    });
-                });
-            })
-            .catch(function() {
-                window.HM.toast('Failed to load users', 'error');
-            });
-    }
-
-    function deleteUser(userId, username) {
-        if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
-
-        window.HM.api.del('/api/v1/users/' + encodeURIComponent(userId))
-            .then(function() {
-                window.HM.toast('User deleted', 'success');
-                loadUsers();
-            })
-            .catch(function(err) {
-                window.HM.toast(err.message || 'Failed to delete user', 'error');
-            });
-    }
-
-    /* --- WiFi --- */
-    function loadWifi() {
-        window.HM.api.get('/api/v1/settings/wifi')
-            .then(function(data) {
-                document.getElementById('wifi-current-ssid').textContent = data.current_ssid || 'Not connected';
-                if (data.networks && data.networks.length > 0) {
-                    renderWifiNetworks(data.networks);
-                }
-            })
-            .catch(function() {
-                document.getElementById('wifi-current-ssid').textContent = 'Error';
-            });
-    }
-
-    function renderWifiNetworks(nets) {
-        var list = document.getElementById('wifi-net-list');
-        var html = '';
-        nets.forEach(function(n) {
-            html += '<div style="padding:8px 10px;border-bottom:1px solid #0f3460;cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onclick="document.getElementById(\'wifi-ssid\').value=\'' + window.HM.escapeHtml(n.ssid).replace(/'/g, "\\'") + '\';document.getElementById(\'wifi-pass\').focus();">' +
-                '<span style="font-weight:500;">' + window.HM.escapeHtml(n.ssid) + '</span>' +
-                '<span style="color:#4ade80;font-size:0.85em;">' + n.signal + '%</span></div>';
-        });
-        list.innerHTML = html;
-    }
-
-    /* --- Storage Management --- */
-    function loadStorageStatus() {
-        window.HM.api.get('/api/v1/storage/status')
-            .then(function(data) {
-                var loc = data.is_usb ? 'USB Storage' : 'Internal (/data)';
-                document.getElementById('storage-location').textContent = loc;
-                document.getElementById('storage-rec-size').textContent =
-                    (data.recordings_mb || 0) + ' MB (' + (data.clip_count || 0) + ' clips)';
-                document.getElementById('storage-space').textContent =
-                    (data.total_gb || 0) + ' GB / ' + (data.free_gb || 0) + ' GB free';
-                document.getElementById('storage-clips').textContent =
-                    (data.clip_count || 0) + ' clips across ' + (data.camera_count || 0) + ' cameras';
-
-                // Show eject button if USB is active
-                var ejectWrap = document.getElementById('usb-eject-wrap');
-                if (data.is_usb) {
-                    ejectWrap.style.display = '';
-                } else {
-                    ejectWrap.style.display = 'none';
-                }
-            })
-            .catch(function() {
-                document.getElementById('storage-location').textContent = 'Error loading';
-            });
-    }
-
-    function scanUsbDevices() {
-        var list = document.getElementById('usb-device-list');
-        var btn = document.getElementById('btn-scan-usb');
-        btn.disabled = true;
-        btn.textContent = 'Scanning...';
-        list.innerHTML = '<div class="text-muted" style="padding:8px 0;">Scanning...</div>';
-
-        window.HM.api.get('/api/v1/storage/devices')
-            .then(function(data) {
-                btn.disabled = false;
-                btn.textContent = 'Scan';
-
-                var devices = data.devices || [];
-                if (devices.length === 0) {
-                    list.innerHTML = '<div class="text-muted" style="padding:8px 0;">No USB devices found. Plug in a USB drive and scan again.</div>';
-                    return;
-                }
-
-                var html = '';
-                devices.forEach(function(d) {
-                    var fsLabel = d.fstype ? d.fstype : 'unformatted';
-                    var statusBadge = d.supported
-                        ? '<span style="color:#4ade80;font-size:0.8em;">Compatible</span>'
-                        : '<span style="color:#f87171;font-size:0.8em;">Needs format</span>';
-
-                    html += '<div style="padding:10px;border-bottom:1px solid #0f3460;display:flex;justify-content:space-between;align-items:center;">';
-                    html += '<div>';
-                    html += '<div style="font-weight:500;">' + window.HM.escapeHtml(d.model) + '</div>';
-                    html += '<div style="font-size:0.85em;color:#94a3b8;">' + window.HM.escapeHtml(d.path) + ' &middot; ' + window.HM.escapeHtml(d.size) + ' &middot; ' + window.HM.escapeHtml(fsLabel) + ' ' + statusBadge + '</div>';
-                    html += '</div>';
-
-                    if (d.supported) {
-                        html += '<button class="btn btn--primary btn--small btn-select-usb" data-path="' + window.HM.escapeHtml(d.path) + '">Use</button>';
-                    } else {
-                        html += '<button class="btn btn--secondary btn--small btn-format-usb" data-path="' + window.HM.escapeHtml(d.path) + '" data-name="' + window.HM.escapeHtml(d.model) + '" data-fs="' + window.HM.escapeHtml(fsLabel) + '">Format</button>';
-                    }
-                    html += '</div>';
-                });
-                list.innerHTML = html;
-
-                // Bind select buttons
-                list.querySelectorAll('.btn-select-usb').forEach(function(b) {
-                    b.addEventListener('click', function() { selectUsbDevice(b.getAttribute('data-path')); });
-                });
-                // Bind format buttons
-                list.querySelectorAll('.btn-format-usb').forEach(function(b) {
-                    b.addEventListener('click', function() {
-                        showFormatDialog(b.getAttribute('data-path'), b.getAttribute('data-name'), b.getAttribute('data-fs'));
-                    });
-                });
-            })
-            .catch(function() {
-                btn.disabled = false;
-                btn.textContent = 'Scan';
-                list.innerHTML = '<div class="text-muted" style="padding:8px 0;color:#f87171;">Failed to scan devices</div>';
-            });
-    }
-
-    function selectUsbDevice(devicePath) {
-        if (!confirm('Use this USB device for recordings? Current internal recordings will remain on /data.')) return;
-
-        window.HM.api.post('/api/v1/storage/select', { device_path: devicePath })
-            .then(function(data) {
-                window.HM.toast(data.message || 'USB storage active', 'success');
-                loadStorageStatus();
-                scanUsbDevices();
-            })
-            .catch(function(err) {
-                if (err.needs_format) {
-                    window.HM.toast('Device needs formatting first', 'error');
-                } else {
-                    window.HM.toast(err.message || 'Failed to select device', 'error');
-                }
-            });
-    }
-
-    function showFormatDialog(path, name, fs) {
-        document.getElementById('format-device-name').textContent = name;
-        document.getElementById('format-device-fs').textContent = fs;
-        document.getElementById('format-device-path').value = path;
-        document.getElementById('usb-format-wrap').classList.add('visible');
-    }
-
-    function formatUsbDevice() {
-        var path = document.getElementById('format-device-path').value;
-        if (!path) return;
-
-        var btn = document.getElementById('btn-confirm-format');
-        btn.disabled = true;
-        btn.textContent = 'Formatting...';
-
-        window.HM.api.post('/api/v1/storage/format', { device_path: path, confirm: true })
-            .then(function(data) {
-                window.HM.toast(data.message || 'Format complete', 'success');
-                document.getElementById('usb-format-wrap').classList.remove('visible');
-                btn.disabled = false;
-                btn.textContent = 'Format to ext4';
-                scanUsbDevices();
-            })
-            .catch(function(err) {
-                window.HM.toast(err.message || 'Format failed', 'error');
-                btn.disabled = false;
-                btn.textContent = 'Format to ext4';
-            });
-    }
-
-    function ejectUsb() {
-        if (!confirm('Eject USB and switch recordings back to internal storage?')) return;
-
-        window.HM.api.post('/api/v1/storage/eject', {})
-            .then(function(data) {
-                window.HM.toast(data.message || 'USB ejected', 'success');
-                loadStorageStatus();
-            })
-            .catch(function(err) {
-                window.HM.toast(err.message || 'Eject failed', 'error');
-            });
-    }
-
-    /* --- Event Bindings --- */
-    function bindEvents() {
-        // Save Settings
-        var formSettings = document.getElementById('form-settings');
-        if (formSettings) {
-            formSettings.addEventListener('submit', function(e) {
-                e.preventDefault();
-                var payload = {
-                    hostname: document.getElementById('set-hostname').value.trim(),
-                    timezone: document.getElementById('set-timezone').value.trim(),
-                    storage_threshold_percent: parseInt(document.getElementById('set-storage').value, 10),
-                    clip_duration_seconds: parseInt(document.getElementById('set-clip-duration').value, 10),
-                    session_timeout_minutes: parseInt(document.getElementById('set-session-timeout').value, 10),
+        /* --- System Settings --- */
+        async loadSettings() {
+            try {
+                var data = await window.HM.api.get('/api/v1/settings');
+                this.settings = {
+                    hostname: data.hostname || '',
+                    timezone: data.timezone || '',
+                    storage_threshold_percent: data.storage_threshold_percent || 90,
+                    clip_duration_seconds: data.clip_duration_seconds || 180,
+                    session_timeout_minutes: data.session_timeout_minutes || 60,
                 };
-                window.HM.api.put('/api/v1/settings', payload)
-                    .then(function() {
-                        window.HM.toast('Settings saved', 'success');
-                    })
-                    .catch(function(err) {
-                        window.HM.toast(err.message || 'Failed to save settings', 'error');
-                    });
-            });
-        }
+            } catch(e) { window.HM.toast('Failed to load settings', 'error'); }
+        },
 
-        // Toggle add user form
-        var btnToggle = document.getElementById('btn-toggle-add-user');
-        var addUserWrap = document.getElementById('form-add-user-wrap');
-        var btnCancel = document.getElementById('btn-cancel-add-user');
+        async saveSettings() {
+            try {
+                await window.HM.api.put('/api/v1/settings', this.settings);
+                window.HM.toast('Settings saved', 'success');
+            } catch(e) { window.HM.toast(e.message || 'Failed to save settings', 'error'); }
+        },
 
-        if (btnToggle) {
-            btnToggle.addEventListener('click', function() {
-                addUserWrap.classList.toggle('visible');
-            });
-        }
-        if (btnCancel) {
-            btnCancel.addEventListener('click', function() {
-                addUserWrap.classList.remove('visible');
-                document.getElementById('form-add-user').reset();
-            });
-        }
-
-        // Create user
-        var formAddUser = document.getElementById('form-add-user');
-        if (formAddUser) {
-            formAddUser.addEventListener('submit', function(e) {
-                e.preventDefault();
-                var username = document.getElementById('new-username').value.trim();
-                var password = document.getElementById('new-password').value;
-                var role = document.getElementById('new-role').value;
-
-                if (!username || username.length < 3) {
-                    window.HM.toast('Username must be at least 3 characters', 'error');
-                    return;
+        /* --- System Info --- */
+        async loadSystemInfo() {
+            try {
+                var info = await window.HM.api.get('/api/v1/system/info');
+                this.sysInfo.firmware_version = info.firmware_version || '--';
+                this.sysInfo.uptime = (info.uptime && info.uptime.display) || '--';
+            } catch(e) {}
+            try {
+                var health = await window.HM.api.get('/api/v1/system/health');
+                if (health.disk) {
+                    this.sysInfo.disk_total = (health.disk.total_gb || 0) + ' GB';
+                    this.sysInfo.disk_used = (health.disk.used_gb || 0) + ' GB (' + (health.disk.percent || 0) + '%)';
+                    this.sysInfo.disk_free = (health.disk.free_gb || 0) + ' GB';
                 }
-                if (!password || password.length < 8) {
-                    window.HM.toast('Password must be at least 8 characters', 'error');
-                    return;
+            } catch(e) {}
+        },
+
+        /* --- Users --- */
+        async loadUsers() {
+            try {
+                this.users = await window.HM.api.get('/api/v1/users');
+            } catch(e) { window.HM.toast('Failed to load users', 'error'); }
+        },
+
+        async createUser() {
+            if (!this.newUser.username || this.newUser.username.length < 3) {
+                window.HM.toast('Username must be at least 3 characters', 'error'); return;
+            }
+            if (!this.newUser.password || this.newUser.password.length < 12) {
+                window.HM.toast('Password must be at least 12 characters', 'error'); return;
+            }
+            try {
+                await window.HM.api.post('/api/v1/users', this.newUser);
+                window.HM.toast('User created', 'success');
+                this.newUser = { username: '', password: '', role: 'viewer' };
+                this.showAddUser = false;
+                this.loadUsers();
+            } catch(e) { window.HM.toast(e.message || 'Failed to create user', 'error'); }
+        },
+
+        async deleteUser(userId, username) {
+            if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+            try {
+                await window.HM.api.del('/api/v1/users/' + encodeURIComponent(userId));
+                window.HM.toast('User deleted', 'success');
+                this.loadUsers();
+            } catch(e) { window.HM.toast(e.message || 'Failed to delete user', 'error'); }
+        },
+
+        async changePassword() {
+            if (this.pw.newPassword.length < 12) {
+                window.HM.toast('Password must be at least 12 characters', 'error'); return;
+            }
+            if (this.pw.newPassword !== this.pw.confirmPassword) {
+                window.HM.toast('Passwords do not match', 'error'); return;
+            }
+            if (!this.currentUser) return;
+            try {
+                await window.HM.api.put('/api/v1/users/' + encodeURIComponent(this.currentUser.id) + '/password', { new_password: this.pw.newPassword });
+                window.HM.toast('Password changed', 'success');
+                this.pw = { newPassword: '', confirmPassword: '' };
+            } catch(e) { window.HM.toast(e.message || 'Failed to change password', 'error'); }
+        },
+
+        /* --- WiFi --- */
+        async loadWifi() {
+            try {
+                var data = await window.HM.api.get('/api/v1/settings/wifi');
+                this.wifi.currentSsid = data.current_ssid || '';
+                if (data.networks) this.wifi.networks = data.networks;
+            } catch(e) {}
+        },
+
+        async scanWifi() {
+            this.wifi.scanning = true;
+            try {
+                var data = await window.HM.api.get('/api/v1/settings/wifi');
+                if (data.networks) this.wifi.networks = data.networks;
+            } catch(e) { window.HM.toast('Scan failed', 'error'); }
+            this.wifi.scanning = false;
+        },
+
+        async connectWifi() {
+            if (!this.wifi.selectedSsid || !this.wifi.password) {
+                window.HM.toast('Enter WiFi SSID and password', 'error'); return;
+            }
+            if (!confirm('Changing WiFi will briefly disconnect the server. Continue?')) return;
+            try {
+                await window.HM.api.post('/api/v1/settings/wifi', { ssid: this.wifi.selectedSsid, password: this.wifi.password });
+                window.HM.toast('WiFi changed to ' + this.wifi.selectedSsid, 'success');
+                this.showWifiForm = false;
+                this.wifi.password = '';
+                this.loadWifi();
+            } catch(e) { window.HM.toast(e.message || 'WiFi change failed', 'error'); }
+        },
+
+        /* --- Tailscale --- */
+        async loadTailscale() {
+            try {
+                var data = await window.HM.api.get('/api/v1/system/tailscale');
+                this.tailscale.installed = data.installed;
+                this.tailscale.running = data.running;
+                this.tailscale.state = data.state;
+                this.tailscale.hostname = data.hostname;
+                this.tailscale.ip = data.tailscale_ip;
+                this.tailscale.peers = data.peers || [];
+            } catch(e) {}
+        },
+
+        async tsConnect() {
+            this.tailscale.loading = true;
+            this.tailscale.authUrl = '';
+            try {
+                var data = await window.HM.api.post('/api/v1/system/tailscale/connect', {});
+                if (data.auth_url) {
+                    this.tailscale.authUrl = data.auth_url;
+                    this.tailscale.state = 'needs-login';
+                    window.HM.toast('Authentication required — see URL below', 'info');
+                } else {
+                    window.HM.toast('Tailscale connected', 'success');
+                    await this.loadTailscale();
                 }
+            } catch(e) { window.HM.toast(e.message || 'Connection failed', 'error'); }
+            this.tailscale.loading = false;
+        },
 
-                window.HM.api.post('/api/v1/users', { username: username, password: password, role: role })
-                    .then(function() {
-                        window.HM.toast('User created', 'success');
-                        formAddUser.reset();
-                        addUserWrap.classList.remove('visible');
-                        loadUsers();
-                    })
-                    .catch(function(err) {
-                        window.HM.toast(err.message || 'Failed to create user', 'error');
-                    });
-            });
-        }
+        async tsDisconnect() {
+            if (!confirm('Disconnect Tailscale? You will lose remote access.')) return;
+            this.tailscale.loading = true;
+            try {
+                await window.HM.api.post('/api/v1/system/tailscale/disconnect', {});
+                window.HM.toast('Tailscale disconnected', 'success');
+                this.tailscale.authUrl = '';
+                await this.loadTailscale();
+            } catch(e) { window.HM.toast(e.message || 'Disconnect failed', 'error'); }
+            this.tailscale.loading = false;
+        },
 
-        // WiFi change
-        var btnChangeWifi = document.getElementById('btn-change-wifi');
-        var wifiFormWrap = document.getElementById('wifi-form-wrap');
-        var btnCancelWifi = document.getElementById('btn-cancel-wifi');
-        var btnScanWifi = document.getElementById('btn-scan-wifi');
-        var formWifi = document.getElementById('form-wifi-connect');
+        /* --- Storage --- */
+        async loadStorageStatus() {
+            try {
+                var data = await window.HM.api.get('/api/v1/storage/status');
+                this.storage.location = data.is_usb ? 'USB Storage' : 'Internal (/data)';
+                this.storage.recSize = (data.recordings_mb || 0) + ' MB (' + (data.clip_count || 0) + ' clips)';
+                this.storage.space = (data.total_gb || 0) + ' GB / ' + (data.free_gb || 0) + ' GB free';
+                this.storage.clips = (data.clip_count || 0) + ' clips across ' + (data.camera_count || 0) + ' cameras';
+                this.storage.isUsb = data.is_usb;
+            } catch(e) {}
+        },
 
-        if (btnChangeWifi) {
-            btnChangeWifi.addEventListener('click', function() {
-                wifiFormWrap.classList.toggle('visible');
-            });
-        }
-        if (btnCancelWifi) {
-            btnCancelWifi.addEventListener('click', function() {
-                wifiFormWrap.classList.remove('visible');
-            });
-        }
-        if (btnScanWifi) {
-            btnScanWifi.addEventListener('click', function() {
-                btnScanWifi.disabled = true;
-                btnScanWifi.textContent = 'Scanning...';
-                window.HM.api.get('/api/v1/settings/wifi')
-                    .then(function(data) {
-                        if (data.networks) renderWifiNetworks(data.networks);
-                        btnScanWifi.disabled = false;
-                        btnScanWifi.textContent = 'Scan for Networks';
-                    })
-                    .catch(function() {
-                        window.HM.toast('Scan failed', 'error');
-                        btnScanWifi.disabled = false;
-                        btnScanWifi.textContent = 'Scan for Networks';
-                    });
-            });
-        }
-        if (formWifi) {
-            formWifi.addEventListener('submit', function(e) {
-                e.preventDefault();
-                var ssid = document.getElementById('wifi-ssid').value.trim();
-                var pass = document.getElementById('wifi-pass').value;
-                if (!ssid) { window.HM.toast('Enter WiFi SSID', 'error'); return; }
-                if (!pass) { window.HM.toast('Enter WiFi password', 'error'); return; }
+        async scanUsb() {
+            this.storage.scanning = true;
+            try {
+                var data = await window.HM.api.get('/api/v1/storage/devices');
+                this.storage.devices = data.devices || [];
+                this.storage.scanned = true;
+            } catch(e) { window.HM.toast('Failed to scan devices', 'error'); }
+            this.storage.scanning = false;
+        },
 
-                if (!confirm('Changing WiFi will briefly disconnect the server. Continue?')) return;
+        async selectUsb(path) {
+            if (!confirm('Use this USB device for recordings?')) return;
+            try {
+                var data = await window.HM.api.post('/api/v1/storage/select', { device_path: path });
+                window.HM.toast(data.message || 'USB storage active', 'success');
+                this.loadStorageStatus();
+                this.scanUsb();
+            } catch(e) { window.HM.toast(e.message || 'Failed to select device', 'error'); }
+        },
 
-                window.HM.api.post('/api/v1/settings/wifi', { ssid: ssid, password: pass })
-                    .then(function() {
-                        window.HM.toast('WiFi changed to ' + ssid, 'success');
-                        wifiFormWrap.classList.remove('visible');
-                        loadWifi();
-                    })
-                    .catch(function(err) {
-                        window.HM.toast(err.message || 'WiFi change failed', 'error');
-                    });
-            });
-        }
+        showFormat(device) {
+            this.storage.formatDevice = device;
+            this.storage.showFormat = true;
+        },
 
-        // Storage - USB scan
-        var btnScanUsb = document.getElementById('btn-scan-usb');
-        if (btnScanUsb) {
-            btnScanUsb.addEventListener('click', scanUsbDevices);
-        }
+        async formatUsb() {
+            this.storage.formatting = true;
+            try {
+                var data = await window.HM.api.post('/api/v1/storage/format', { device_path: this.storage.formatDevice.path, confirm: true });
+                window.HM.toast(data.message || 'Format complete', 'success');
+                this.storage.showFormat = false;
+                this.scanUsb();
+            } catch(e) { window.HM.toast(e.message || 'Format failed', 'error'); }
+            this.storage.formatting = false;
+        },
 
-        // Storage - Format
-        var btnConfirmFormat = document.getElementById('btn-confirm-format');
-        if (btnConfirmFormat) {
-            btnConfirmFormat.addEventListener('click', formatUsbDevice);
-        }
-        var btnCancelFormat = document.getElementById('btn-cancel-format');
-        if (btnCancelFormat) {
-            btnCancelFormat.addEventListener('click', function() {
-                document.getElementById('usb-format-wrap').classList.remove('visible');
-            });
-        }
-
-        // Storage - Eject
-        var btnEject = document.getElementById('btn-eject-usb');
-        if (btnEject) {
-            btnEject.addEventListener('click', ejectUsb);
-        }
-
-        // Change password
-        var formPw = document.getElementById('form-change-password');
-        if (formPw) {
-            formPw.addEventListener('submit', function(e) {
-                e.preventDefault();
-                var newPw = document.getElementById('pw-new').value;
-                var confirmPw = document.getElementById('pw-confirm').value;
-
-                if (newPw.length < 8) {
-                    window.HM.toast('New password must be at least 8 characters', 'error');
-                    return;
-                }
-                if (newPw !== confirmPw) {
-                    window.HM.toast('Passwords do not match', 'error');
-                    return;
-                }
-
-                if (!currentUser) return;
-
-                window.HM.api.put('/api/v1/users/' + encodeURIComponent(currentUser.id) + '/password', {
-                    new_password: newPw,
-                })
-                .then(function() {
-                    window.HM.toast('Password changed', 'success');
-                    formPw.reset();
-                })
-                .catch(function(err) {
-                    window.HM.toast(err.message || 'Failed to change password', 'error');
-                });
-            });
-        }
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-})();
+        async ejectUsb() {
+            if (!confirm('Eject USB and switch recordings back to internal storage?')) return;
+            try {
+                var data = await window.HM.api.post('/api/v1/storage/eject', {});
+                window.HM.toast(data.message || 'USB ejected', 'success');
+                this.loadStorageStatus();
+            } catch(e) { window.HM.toast(e.message || 'Eject failed', 'error'); }
+        },
+    };
+}
 </script>
 {% endblock %}

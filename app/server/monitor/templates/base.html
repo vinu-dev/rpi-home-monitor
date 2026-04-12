@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#0a0a1a">
     <title>{% block title %}Home Monitor{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script defer src="{{ url_for('static', filename='js/alpine.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -14,7 +16,13 @@
     {% if not hide_nav %}
     <!-- Top Bar -->
     <header class="top-bar">
-        <span class="top-bar__title">Home Monitor</span>
+        <div class="top-bar__left">
+            <svg class="top-bar__logo" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#e94560" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <span class="top-bar__title">Home Monitor</span>
+        </div>
         <div class="top-bar__right">
             <span class="top-bar__user" id="topbar-username"></span>
             <button class="top-bar__logout" id="btn-logout" type="button">Logout</button>
@@ -24,19 +32,30 @@
     <!-- Bottom Navigation -->
     <nav class="bottom-nav" id="bottom-nav">
         <a href="/dashboard" class="bottom-nav__item" data-page="dashboard">
-            <span class="bottom-nav__icon">[H]</span>
+            <svg class="bottom-nav__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
             <span>Dashboard</span>
         </a>
         <a href="/live" class="bottom-nav__item" data-page="live">
-            <span class="bottom-nav__icon">[L]</span>
+            <svg class="bottom-nav__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="23 7 16 12 23 17 23 7"/>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
             <span>Live</span>
         </a>
         <a href="/recordings" class="bottom-nav__item" data-page="recordings">
-            <span class="bottom-nav__icon">[R]</span>
+            <svg class="bottom-nav__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
+            </svg>
             <span>Recordings</span>
         </a>
         <a href="/settings" class="bottom-nav__item" data-page="settings">
-            <span class="bottom-nav__icon">[S]</span>
+            <svg class="bottom-nav__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
             <span>Settings</span>
         </a>
     </nav>

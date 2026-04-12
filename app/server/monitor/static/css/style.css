@@ -48,6 +48,14 @@ a:hover { text-decoration: underline; }
     z-index: 100;
 }
 
+.top-bar__left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.top-bar__logo {
+    flex-shrink: 0;
+}
 .top-bar__title {
     font-size: 1.1rem;
     font-weight: 700;
@@ -459,6 +467,149 @@ select.form-input {
     padding-bottom: 8px;
     border-bottom: 1px solid #2a2a3e;
 }
+
+/* --- Settings Tab Bar --- */
+.settings-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    padding: 4px;
+    background: #16213e;
+    border-radius: 8px;
+    overflow-x: auto;
+}
+.settings-tab {
+    flex: 1;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #999;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+    min-width: 0;
+}
+.settings-tab:hover { color: #eee; }
+.settings-tab.active {
+    background: #e94560;
+    color: #fff;
+}
+
+/* --- Form Row (multi-column) --- */
+.form-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.form-row .form-group {
+    flex: 1;
+    min-width: 140px;
+}
+
+/* --- Form Hint --- */
+.form-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 4px;
+}
+
+/* --- WiFi Network Item --- */
+.wifi-net-item {
+    padding: 8px 10px;
+    border-bottom: 1px solid #0f3460;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.15s;
+}
+.wifi-net-item:hover { background: rgba(233, 69, 96, 0.1); }
+.wifi-net-item__name { font-weight: 500; }
+.wifi-net-item__signal { color: #4ade80; font-size: 0.85em; }
+
+/* --- Warning Message Box --- */
+.msg--warn {
+    background: #78350f;
+    color: #fde68a;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 0.85em;
+}
+
+/* --- Tailscale --- */
+.ts-peers {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2a3e;
+}
+.ts-peers__title {
+    font-size: 0.8rem;
+    color: #999;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+.ts-peer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+.ts-peer__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.ts-peer__dot--online { background: #2ecc71; }
+.ts-peer__dot--offline { background: #555; }
+.ts-peer__info { display: flex; gap: 8px; align-items: baseline; }
+.ts-peer__name { font-size: 0.9rem; font-weight: 500; }
+.ts-peer__ip { font-size: 0.8rem; color: #999; }
+
+.ts-auth-box {
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(52, 152, 219, 0.1);
+    border: 1px solid #3498db;
+    border-radius: 6px;
+}
+.ts-auth-box__label {
+    font-size: 0.85rem;
+    color: #999;
+    margin-bottom: 6px;
+}
+.ts-auth-box__url {
+    display: block;
+    font-size: 0.85rem;
+    color: #3498db;
+    word-break: break-all;
+}
+
+.ts-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2a3e;
+}
+
+/* --- USB Device Item --- */
+.usb-device-item {
+    padding: 10px;
+    border-bottom: 1px solid #0f3460;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+/* --- Alpine.js cloak --- */
+[x-cloak] { display: none !important; }
 
 /* --- User Table --- */
 .user-table {

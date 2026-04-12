@@ -3,179 +3,122 @@
 {% block title %}Dashboard - Home Monitor{% endblock %}
 
 {% block content %}
+<div x-data="dashboardPage()" x-init="init()">
 <h1 class="page-title">Dashboard</h1>
 
 <!-- System Health -->
 <div class="section-header">System Health</div>
 <div class="grid grid--health" id="health-grid">
     <div class="card health-card">
-        <div class="health-card__value" id="health-temp">--</div>
+        <div class="health-card__value" :class="tempColor(health.temp)" x-text="health.temp !== null ? health.temp.toFixed(1) + '\u00B0C' : '--'"></div>
         <div class="health-card__label">CPU Temp</div>
     </div>
     <div class="card health-card">
-        <div class="health-card__value" id="health-cpu">--</div>
+        <div class="health-card__value" :class="usageColor(health.cpu)" x-text="health.cpu !== null ? health.cpu.toFixed(0) + '%' : '--'"></div>
         <div class="health-card__label">CPU Usage</div>
     </div>
     <div class="card health-card">
-        <div class="health-card__value" id="health-mem">--</div>
+        <div class="health-card__value" :class="usageColor(health.mem)" x-text="health.mem !== null ? health.mem.toFixed(0) + '%' : '--'"></div>
         <div class="health-card__label">Memory</div>
     </div>
     <div class="card health-card">
-        <div class="health-card__value" id="health-disk">--</div>
+        <div class="health-card__value" :class="usageColor(health.disk)" x-text="health.disk !== null ? health.disk.toFixed(0) + '%' : '--'"></div>
         <div class="health-card__label">Disk Usage</div>
     </div>
 </div>
 
 <!-- Warnings -->
-<div class="warnings-list" id="health-warnings"></div>
+<div class="warnings-list">
+    <template x-for="w in health.warnings" :key="w">
+        <div class="warning-item" x-text="w"></div>
+    </template>
+</div>
 
 <!-- Uptime -->
-<div class="card mt-16" id="uptime-card" style="text-align:center;">
+<div class="card mt-16" style="text-align:center;">
     <span class="text-muted text-small">Uptime: </span>
-    <span id="health-uptime" class="text-small">--</span>
+    <span class="text-small" x-text="health.uptime || '--'"></span>
 </div>
 
 <!-- Cameras -->
 <div class="section-header">Cameras</div>
 <div class="grid" id="cameras-grid">
-    <div class="empty-state" id="cameras-empty">
-        <div class="empty-state__title">No cameras found</div>
-        <div class="empty-state__text">Waiting for cameras to connect via mDNS discovery.</div>
-    </div>
+    <template x-if="cameras.length === 0">
+        <div class="empty-state">
+            <div class="empty-state__title">No cameras found</div>
+            <div class="empty-state__text">Waiting for cameras to connect via mDNS discovery.</div>
+        </div>
+    </template>
+    <template x-for="cam in cameras" :key="cam.id">
+        <div class="card card--clickable camera-card" @click="window.location.href = '/live?camera=' + encodeURIComponent(cam.id)">
+            <div class="camera-card__info">
+                <div class="camera-card__name" x-text="cam.name || cam.id"></div>
+                <div class="camera-card__location" x-text="cam.location || 'No location set'"></div>
+                <div class="camera-card__last-seen" x-text="cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : ''"></div>
+            </div>
+            <span class="badge" :class="{
+                'badge--online': cam.status === 'online',
+                'badge--offline': cam.status === 'offline',
+                'badge--pending': cam.status === 'pending'
+            }" x-text="cam.status"></span>
+        </div>
+    </template>
+</div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-(function() {
-    var healthInterval = null;
+function dashboardPage() {
+    return {
+        health: { temp: null, cpu: null, mem: null, disk: null, warnings: [], uptime: '' },
+        cameras: [],
+        _interval: null,
 
-    function tempColor(celsius) {
-        if (celsius < 60) return 'health-card__value--green';
-        if (celsius < 75) return 'health-card__value--yellow';
-        return 'health-card__value--red';
-    }
+        tempColor(c) {
+            if (c === null) return '';
+            if (c < 60) return 'health-card__value--green';
+            if (c < 75) return 'health-card__value--yellow';
+            return 'health-card__value--red';
+        },
+        usageColor(p) {
+            if (p === null) return '';
+            if (p < 70) return 'health-card__value--green';
+            if (p < 85) return 'health-card__value--yellow';
+            return 'health-card__value--red';
+        },
 
-    function usageColor(percent) {
-        if (percent < 70) return 'health-card__value--green';
-        if (percent < 85) return 'health-card__value--yellow';
-        return 'health-card__value--red';
-    }
+        async loadHealth() {
+            try {
+                var data = await window.HM.api.get('/api/v1/system/health');
+                this.health.temp = data.cpu_temp_c || 0;
+                this.health.cpu = data.cpu_usage_percent || 0;
+                this.health.mem = (data.memory && data.memory.percent) || 0;
+                this.health.disk = (data.disk && data.disk.percent) || 0;
+                this.health.warnings = data.warnings || [];
+            } catch(e) {}
+            try {
+                var info = await window.HM.api.get('/api/v1/system/info');
+                this.health.uptime = (info.uptime && info.uptime.display) || '--';
+            } catch(e) {}
+        },
 
-    function loadHealth() {
-        window.HM.api.get('/api/v1/system/health')
-            .then(function(data) {
-                var tempEl = document.getElementById('health-temp');
-                var cpuEl = document.getElementById('health-cpu');
-                var memEl = document.getElementById('health-mem');
-                var diskEl = document.getElementById('health-disk');
+        async loadCameras() {
+            try {
+                this.cameras = await window.HM.api.get('/api/v1/cameras');
+            } catch(e) {}
+        },
 
-                // API returns: cpu_temp_c, cpu_usage_percent, memory.percent, disk.percent
-                var temp = data.cpu_temp_c || 0;
-                tempEl.textContent = temp.toFixed(1) + '\u00B0C';
-                tempEl.className = 'health-card__value ' + tempColor(temp);
+        init() {
+            this.loadHealth();
+            this.loadCameras();
+            this._interval = setInterval(() => this.loadHealth(), 30000);
+        },
 
-                var cpu = data.cpu_usage_percent || 0;
-                cpuEl.textContent = cpu.toFixed(0) + '%';
-                cpuEl.className = 'health-card__value ' + usageColor(cpu);
-
-                var mem = (data.memory && data.memory.percent) || 0;
-                memEl.textContent = mem.toFixed(0) + '%';
-                memEl.className = 'health-card__value ' + usageColor(mem);
-
-                var disk = (data.disk && data.disk.percent) || 0;
-                diskEl.textContent = disk.toFixed(0) + '%';
-                diskEl.className = 'health-card__value ' + usageColor(disk);
-
-                // Warnings
-                var warningsEl = document.getElementById('health-warnings');
-                warningsEl.innerHTML = '';
-                if (data.warnings && data.warnings.length > 0) {
-                    data.warnings.forEach(function(w) {
-                        var div = document.createElement('div');
-                        div.className = 'warning-item';
-                        div.textContent = w;
-                        warningsEl.appendChild(div);
-                    });
-                }
-            })
-            .catch(function() {});
-
-        window.HM.api.get('/api/v1/system/info')
-            .then(function(data) {
-                var uptimeEl = document.getElementById('health-uptime');
-                // uptime is {seconds, display} from API
-                if (data.uptime && data.uptime.display) {
-                    uptimeEl.textContent = data.uptime.display;
-                } else {
-                    uptimeEl.textContent = data.uptime || '--';
-                }
-            })
-            .catch(function() {});
-    }
-
-    function loadCameras() {
-        window.HM.api.get('/api/v1/cameras')
-            .then(function(cameras) {
-                var grid = document.getElementById('cameras-grid');
-                var empty = document.getElementById('cameras-empty');
-
-                if (!cameras || cameras.length === 0) {
-                    grid.innerHTML = '';
-                    grid.appendChild(empty);
-                    empty.style.display = '';
-                    return;
-                }
-
-                grid.innerHTML = '';
-                cameras.forEach(function(cam) {
-                    var card = document.createElement('div');
-                    card.className = 'card card--clickable camera-card';
-                    card.addEventListener('click', function() {
-                        window.location.href = '/live?camera=' + encodeURIComponent(cam.id);
-                    });
-
-                    var statusClass = 'badge--offline';
-                    if (cam.status === 'online') statusClass = 'badge--online';
-                    else if (cam.status === 'pending') statusClass = 'badge--pending';
-
-                    var lastSeen = cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : '';
-
-                    // Derive .local URL from camera ID: cam-XXXXXXXX → rpi-divinu-cam-XXXX
-                    var camUrl = '';
-                    if (cam.id && cam.id.indexOf('cam-') === 0) {
-                        var suffix = cam.id.replace('cam-', '');
-                        if (suffix.length >= 4) {
-                            camUrl = 'http://rpi-divinu-cam-' + suffix.slice(-4) + '.local';
-                        }
-                    }
-
-                    card.innerHTML =
-                        '<div class="camera-card__info">' +
-                            '<div class="camera-card__name">' + window.HM.escapeHtml(cam.name || cam.id) + '</div>' +
-                            '<div class="camera-card__location">' + window.HM.escapeHtml(cam.location || 'No location set') + '</div>' +
-                            '<div class="camera-card__last-seen">' + window.HM.escapeHtml(lastSeen) + '</div>' +
-                            (camUrl ? '<a href="' + camUrl + '" class="camera-card__settings" onclick="event.stopPropagation()" target="_blank" style="color:#4ade80;font-size:0.85em;text-decoration:none;margin-top:4px;display:inline-block">Settings \u2197</a>' : '') +
-                        '</div>' +
-                        '<span class="badge ' + statusClass + '">' + window.HM.escapeHtml(cam.status) + '</span>';
-
-                    grid.appendChild(card);
-                });
-            })
-            .catch(function() {});
-    }
-
-    function init() {
-        loadHealth();
-        loadCameras();
-        healthInterval = setInterval(loadHealth, 30000);
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-})();
+        destroy() {
+            if (this._interval) clearInterval(this._interval);
+        }
+    };
+}
 </script>
 {% endblock %}
