@@ -61,7 +61,6 @@ Full pattern docs: [development-guide.md Section 3.6](docs/development-guide.md)
 
 Only what's NOT done. When you implement a gap, delete it from this list in the same PR.
 
-- **LUKS first-boot** — first-boot LUKS formatting not yet implemented (Phase 2)
 - **Motion detection** — recording mode exists but motion trigger not implemented (Phase 2)
 - **Multi-camera** — framework exists, untested with multiple real cameras (Phase 2)
 - **Cloud relay, mobile app, AI/ML** — Phase 2-3, not started
