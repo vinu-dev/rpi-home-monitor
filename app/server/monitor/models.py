@@ -44,6 +44,10 @@ class User:
     role: str = "viewer"  # admin | viewer
     created_at: str = ""
     last_login: str | None = None
+    totp_secret: str = ""  # TOTP secret for 2FA (ADR-0011, future)
+    failed_logins: int = 0  # consecutive failed login count
+    locked_until: str = ""  # ISO timestamp, empty = not locked
+    must_change_password: bool = False  # force password change on next login
 
 
 @dataclass

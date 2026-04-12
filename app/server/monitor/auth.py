@@ -1,15 +1,17 @@
 """
-Authentication and authorization module.
+Authentication and authorization module (ADR-0011).
 
 Handles login/logout, session management, CSRF protection,
-role-based access control (admin/viewer), and rate limiting.
+role-based access control (admin/viewer), rate limiting, and
+account lockout.
 
 Security features:
 - bcrypt password hashing (cost 12)
 - Secure/HttpOnly/SameSite=Strict session cookies
 - CSRF tokens on state-changing requests
-- Session timeout (30 min idle, 24 hr absolute)
-- Rate limiting on login (5 attempts/min, block after 10 failures)
+- Session timeout (60 min idle, 24 hr absolute)
+- Rate limiting on login (5 attempts/min per IP)
+- Exponential account lockout (1/5/30 min after 5/10/15 failures)
 - Audit logging of all auth events
 """
 
@@ -35,6 +37,13 @@ _login_attempts: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 5  # attempts per window
 RATE_LIMIT_BLOCK = 10  # block after this many in window
+
+# Account lockout thresholds (ADR-0011)
+LOCKOUT_THRESHOLDS = [
+    (5, 60),  # 5 failures → 1 min lockout
+    (10, 300),  # 10 failures → 5 min lockout
+    (15, 1800),  # 15 failures → 30 min lockout
+]
 
 
 def hash_password(password: str) -> str:
@@ -92,6 +101,26 @@ def _record_attempt(ip: str):
     _login_attempts[ip].append(now)
 
 
+def _get_lockout_duration(failed_count: int) -> int:
+    """Return lockout duration in seconds based on failure count."""
+    duration = 0
+    for threshold, secs in LOCKOUT_THRESHOLDS:
+        if failed_count >= threshold:
+            duration = secs
+    return duration
+
+
+def _is_account_locked(user) -> bool:
+    """Check if a user account is currently locked out."""
+    if not user.locked_until:
+        return False
+    try:
+        locked_until = datetime.fromisoformat(user.locked_until)
+        return datetime.now(UTC) < locked_until
+    except (ValueError, TypeError):
+        return False
+
+
 def _get_audit_logger():
     """Get the audit logger from the app, if available."""
     return getattr(current_app, "audit", None)
@@ -102,7 +131,7 @@ def _is_session_valid() -> bool:
     if "user_id" not in session:
         return False
 
-    timeout_minutes = current_app.config.get("SESSION_TIMEOUT_MINUTES", 30)
+    timeout_minutes = current_app.config.get("SESSION_TIMEOUT_MINUTES", 60)
     last_active = session.get("last_active")
     created_at = session.get("created_at")
     now = time.time()
@@ -190,15 +219,40 @@ def login():
     store = current_app.store
     user = store.get_user_by_username(username)
 
-    if not user or not check_password(password, user.password_hash):
+    # Check account lockout before password verification
+    if user and _is_account_locked(user):
         _record_attempt(ip)
         if audit:
             audit.log_event(
-                "LOGIN_FAILED", user=username, ip=ip, detail="invalid credentials"
+                "LOGIN_BLOCKED", user=username, ip=ip, detail="account locked"
             )
+        return jsonify(
+            {"error": "Account is temporarily locked. Try again later."}
+        ), 423
+
+    if not user or not check_password(password, user.password_hash):
+        _record_attempt(ip)
+        # Increment failed login counter on the actual user
+        if user:
+            user.failed_logins += 1
+            lockout_secs = _get_lockout_duration(user.failed_logins)
+            if lockout_secs > 0:
+                from datetime import timedelta
+
+                user.locked_until = (
+                    datetime.now(UTC) + timedelta(seconds=lockout_secs)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            store.save_user(user)
+        if audit:
+            detail = "invalid credentials"
+            if user:
+                detail += f" (failures: {user.failed_logins})"
+            audit.log_event("LOGIN_FAILED", user=username, ip=ip, detail=detail)
         return jsonify({"error": "Invalid username or password"}), 401
 
-    # Update last login
+    # Successful login — reset lockout state
+    user.failed_logins = 0
+    user.locked_until = ""
     user.last_login = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     store.save_user(user)
 
@@ -215,16 +269,20 @@ def login():
     if audit:
         audit.log_event("LOGIN_SUCCESS", user=username, ip=ip, detail="session created")
 
-    return jsonify(
-        {
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "role": user.role,
-            },
-            "csrf_token": csrf_token,
-        }
-    ), 200
+    response_data = {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+        },
+        "csrf_token": csrf_token,
+    }
+
+    # Signal if password change is required
+    if user.must_change_password:
+        response_data["must_change_password"] = True
+
+    return jsonify(response_data), 200
 
 
 @auth_bp.route("/logout", methods=["POST"])

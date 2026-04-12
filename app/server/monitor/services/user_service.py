@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 
 from monitor.auth import hash_password
 from monitor.models import User
+from monitor.password_policy import validate_password
 
 log = logging.getLogger("monitor.services.user_service")
 
@@ -61,8 +62,9 @@ class UserService:
             return None, "Username is required", 400
         if len(username) < 3 or len(username) > 32:
             return None, "Username must be 3-32 characters", 400
-        if not password or len(password) < 8:
-            return None, "Password must be at least 8 characters", 400
+        pw_error = validate_password(password)
+        if pw_error:
+            return None, pw_error, 400
         if role not in VALID_ROLES:
             return None, f"Role must be one of: {', '.join(sorted(VALID_ROLES))}", 400
 
@@ -141,14 +143,16 @@ class UserService:
         if requesting_role != "admin" and requesting_user_id != user_id:
             return "Cannot change another user's password", 403
 
-        if not new_password or len(new_password) < 8:
-            return "New password must be at least 8 characters", 400
+        pw_error = validate_password(new_password)
+        if pw_error:
+            return pw_error, 400
 
         user = self._store.get_user(user_id)
         if not user:
             return "User not found", 404
 
         user.password_hash = hash_password(new_password)
+        user.must_change_password = False
         self._store.save_user(user)
 
         self._log_audit(

@@ -75,44 +75,44 @@ class TestListUsers:
 # ---------------------------------------------------------------------------
 class TestCreateUser:
     def test_empty_username_rejected(self, svc):
-        user, err, status = svc.create_user("", "password123", "viewer")
+        user, err, status = svc.create_user("", "password12345", "viewer")
         assert user is None
         assert status == 400
         assert "required" in err.lower()
 
     def test_whitespace_only_username_rejected(self, svc):
-        user, err, status = svc.create_user("   ", "password123", "viewer")
+        user, err, status = svc.create_user("   ", "password12345", "viewer")
         assert user is None
         assert status == 400
         assert "required" in err.lower()
 
     def test_username_too_short(self, svc):
-        user, err, status = svc.create_user("ab", "password123", "viewer")
+        user, err, status = svc.create_user("ab", "password12345", "viewer")
         assert user is None
         assert status == 400
         assert "3-32" in err
 
     def test_username_too_long(self, svc):
-        user, err, status = svc.create_user("a" * 33, "password123", "viewer")
+        user, err, status = svc.create_user("a" * 33, "password12345", "viewer")
         assert user is None
         assert status == 400
         assert "3-32" in err
 
     def test_username_at_min_length(self, svc, store):
         store.get_user_by_username.return_value = None
-        user, err, status = svc.create_user("abc", "password123", "viewer")
+        user, err, status = svc.create_user("abc", "password12345", "viewer")
         assert status == 201
 
     def test_username_at_max_length(self, svc, store):
         store.get_user_by_username.return_value = None
-        user, err, status = svc.create_user("a" * 32, "password123", "viewer")
+        user, err, status = svc.create_user("a" * 32, "password12345", "viewer")
         assert status == 201
 
     def test_password_empty_rejected(self, svc):
         user, err, status = svc.create_user("alice", "", "viewer")
         assert user is None
         assert status == 400
-        assert "8 characters" in err
+        assert "required" in err.lower()
 
     def test_password_none_rejected(self, svc):
         user, err, status = svc.create_user("alice", None, "viewer")
@@ -123,17 +123,17 @@ class TestCreateUser:
         user, err, status = svc.create_user("alice", "short", "viewer")
         assert user is None
         assert status == 400
-        assert "8 characters" in err
+        assert "12 characters" in err
 
     def test_invalid_role_rejected(self, svc):
-        user, err, status = svc.create_user("alice", "password123", "superadmin")
+        user, err, status = svc.create_user("alice", "password12345", "superadmin")
         assert user is None
         assert status == 400
         assert "role" in err.lower()
 
     def test_duplicate_username_rejected(self, svc, store):
         store.get_user_by_username.return_value = _make_user()
-        user, err, status = svc.create_user("alice", "password123", "viewer")
+        user, err, status = svc.create_user("alice", "password12345", "viewer")
         assert user is None
         assert status == 409
         assert "already exists" in err.lower()
@@ -143,7 +143,7 @@ class TestCreateUser:
         store.get_user_by_username.return_value = None
         user, err, status = svc.create_user(
             "alice",
-            "password123",
+            "password12345",
             "viewer",
             requesting_user="admin",
             requesting_ip="10.0.0.1",
@@ -161,7 +161,7 @@ class TestCreateUser:
     @patch("monitor.services.user_service.hash_password", return_value="$2b$12$hashed")
     def test_successful_creation_saves_to_store(self, mock_hash, svc, store):
         store.get_user_by_username.return_value = None
-        svc.create_user("alice", "password123", "admin")
+        svc.create_user("alice", "password12345", "admin")
         store.save_user.assert_called_once()
         saved = store.save_user.call_args[0][0]
         assert saved.username == "alice"
@@ -173,7 +173,7 @@ class TestCreateUser:
         store.get_user_by_username.return_value = None
         svc.create_user(
             "alice",
-            "password123",
+            "password12345",
             "viewer",
             requesting_user="admin",
             requesting_ip="10.0.0.1",
@@ -186,14 +186,14 @@ class TestCreateUser:
     @patch("monitor.services.user_service.hash_password", return_value="$2b$12$hashed")
     def test_create_user_strips_username_whitespace(self, mock_hash, svc, store):
         store.get_user_by_username.return_value = None
-        user, err, status = svc.create_user("  alice  ", "password123", "viewer")
+        user, err, status = svc.create_user("  alice  ", "password12345", "viewer")
         assert status == 201
         assert user["username"] == "alice"
 
     @patch("monitor.services.user_service.hash_password", return_value="$2b$12$hashed")
     def test_create_admin_user(self, mock_hash, svc, store):
         store.get_user_by_username.return_value = None
-        user, err, status = svc.create_user("bob", "password123", "admin")
+        user, err, status = svc.create_user("bob", "password12345", "admin")
         assert status == 201
         assert user["role"] == "admin"
 
@@ -292,7 +292,7 @@ class TestChangePassword:
             requesting_user_id="user-001",
         )
         assert status == 400
-        assert "8 characters" in msg
+        assert "12 characters" in msg
 
     def test_empty_password_rejected(self, svc):
         msg, status = svc.change_password(
@@ -387,7 +387,7 @@ class TestAuditLogging:
         audit.log_event.side_effect = RuntimeError("audit db down")
         svc = UserService(store, audit)
         store.get_user_by_username.return_value = None
-        user, err, status = svc.create_user("alice", "password123", "viewer")
+        user, err, status = svc.create_user("alice", "password12345", "viewer")
         assert status == 201
         assert user is not None
 

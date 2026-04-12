@@ -68,6 +68,7 @@ def _ensure_default_admin(store):
         password_hash=hash_password("admin"),
         role="admin",
         created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        must_change_password=True,
     )
     store.save_user(admin)
 
@@ -94,7 +95,9 @@ def create_app(config=None):
         CERTS_DIR=os.environ.get("MONITOR_CERTS_DIR", "/data/certs"),
         CLIP_DURATION_SECONDS=180,
         STORAGE_THRESHOLD_PERCENT=90,
-        SESSION_TIMEOUT_MINUTES=30,
+        SESSION_TIMEOUT_MINUTES=60,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
     )
     if config:
         app.config.update(config)

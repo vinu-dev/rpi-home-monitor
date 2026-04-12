@@ -149,8 +149,11 @@ class ProvisioningService:
         if self.is_setup_complete():
             return "Setup already completed", 403
 
-        if len(password) < 8:
-            return "Password must be at least 8 characters", 400
+        from monitor.password_policy import validate_password
+
+        pw_error = validate_password(password)
+        if pw_error:
+            return pw_error, 400
 
         admin = self._store.get_user_by_username("admin")
         if not admin:

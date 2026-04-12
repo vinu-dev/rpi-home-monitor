@@ -289,22 +289,22 @@ class TestSaveWifiCredentials:
 class TestSetAdminPassword:
     def test_blocked_after_setup_complete(self, svc, tmp_path):
         (tmp_path / ".setup-done").write_text("done")
-        msg, code = svc.set_admin_password("longenough")
+        msg, code = svc.set_admin_password("longenough12")
         assert code == 403
 
     def test_too_short_password(self, svc):
         msg, code = svc.set_admin_password("short")
         assert code == 400
-        assert "8 characters" in msg
+        assert "12 characters" in msg
 
-    def test_exactly_8_chars_accepted(self, svc, store):
-        msg, code = svc.set_admin_password("12345678")
+    def test_exactly_12_chars_accepted(self, svc, store):
+        msg, code = svc.set_admin_password("a" * 12)
         assert code == 200
         store.save_user.assert_called_once()
 
     def test_admin_not_found(self, svc, store):
         store.get_user_by_username.return_value = None
-        msg, code = svc.set_admin_password("longenough")
+        msg, code = svc.set_admin_password("longenough12")
         assert code == 500
         assert "not found" in msg
 

@@ -1,16 +1,20 @@
 """Tests for the authentication module."""
 
 import time
+from datetime import UTC, datetime
 
 import pytest
 
 from monitor.auth import (
     _check_rate_limit,
+    _get_lockout_duration,
+    _is_account_locked,
     _login_attempts,
     _record_attempt,
     check_password,
     hash_password,
 )
+from monitor.password_policy import validate_password
 
 
 @pytest.fixture(autouse=True)
@@ -327,3 +331,149 @@ class TestDecorators:
         )
         response = client.get("/api/v1/auth/me")
         assert response.status_code == 200
+
+
+class TestAccountLockout:
+    """Test account lockout after repeated failures (ADR-0011)."""
+
+    def test_lockout_duration_thresholds(self):
+        assert _get_lockout_duration(0) == 0
+        assert _get_lockout_duration(4) == 0
+        assert _get_lockout_duration(5) == 60
+        assert _get_lockout_duration(9) == 60
+        assert _get_lockout_duration(10) == 300
+        assert _get_lockout_duration(15) == 1800
+
+    def test_account_not_locked_when_no_lockout(self):
+        from monitor.models import User
+
+        user = User(id="u1", username="test", password_hash="x")
+        assert _is_account_locked(user) is False
+
+    def test_account_locked_with_future_timestamp(self):
+        from datetime import timedelta
+
+        from monitor.models import User
+
+        future = (datetime.now(UTC) + timedelta(minutes=5)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        user = User(id="u1", username="test", password_hash="x", locked_until=future)
+        assert _is_account_locked(user) is True
+
+    def test_account_unlocked_after_expiry(self):
+        from datetime import timedelta
+
+        from monitor.models import User
+
+        past = (datetime.now(UTC) - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        user = User(id="u1", username="test", password_hash="x", locked_until=past)
+        assert _is_account_locked(user) is False
+
+    def test_login_increments_failed_count(self, app, client):
+        _create_test_user(app)
+        client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "wrong"},
+        )
+        user = app.store.get_user_by_username("admin")
+        assert user.failed_logins == 1
+
+    def test_login_resets_failed_count_on_success(self, app, client):
+        user = _create_test_user(app)
+        user.failed_logins = 3
+        app.store.save_user(user)
+
+        client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        user = app.store.get_user_by_username("admin")
+        assert user.failed_logins == 0
+        assert user.locked_until == ""
+
+    def test_locked_account_returns_423(self, app, client):
+        from datetime import timedelta
+
+        user = _create_test_user(app)
+        user.locked_until = (datetime.now(UTC) + timedelta(minutes=5)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        app.store.save_user(user)
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert response.status_code == 423
+
+    def test_lockout_triggers_after_threshold(self, app, client):
+        user = _create_test_user(app)
+        user.failed_logins = 4
+        app.store.save_user(user)
+
+        # 5th failure should trigger lockout
+        client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "wrong"},
+        )
+        user = app.store.get_user_by_username("admin")
+        assert user.failed_logins == 5
+        assert user.locked_until != ""
+
+
+class TestMustChangePassword:
+    """Test must_change_password flag."""
+
+    def test_login_signals_password_change_required(self, app, client):
+        user = _create_test_user(app)
+        user.must_change_password = True
+        app.store.save_user(user)
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["must_change_password"] is True
+
+    def test_login_no_flag_when_not_required(self, app, client):
+        _create_test_user(app)
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        data = response.get_json()
+        assert "must_change_password" not in data
+
+
+class TestPasswordPolicy:
+    """Test password policy enforcement (NIST SP 800-63B)."""
+
+    def test_valid_password(self):
+        assert validate_password("a-strong-password-here") == ""
+
+    def test_empty_password(self):
+        assert validate_password("") == "Password is required"
+
+    def test_too_short(self):
+        result = validate_password("short")
+        assert "at least 12" in result
+
+    def test_too_long(self):
+        result = validate_password("x" * 129)
+        assert "at most 128" in result
+
+    def test_exactly_12_chars(self):
+        assert validate_password("a" * 12) == ""
+
+    def test_spaces_allowed(self):
+        assert validate_password("this has spaces in it") == ""
+
+    def test_unicode_allowed(self):
+        assert validate_password("p\u00e4ssw\u00f6rd-l\u00e4nger-than-twelve") == ""
+
+    def test_common_password_blocked(self):
+        result = validate_password("administrator")
+        assert "too common" in result

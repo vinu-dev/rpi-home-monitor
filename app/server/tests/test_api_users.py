@@ -10,7 +10,7 @@ def _login(app, client, role="admin"):
     user = User(
         id="user-admin",
         username="admin",
-        password_hash=hash_password("adminpass1"),
+        password_hash=hash_password("adminpass1234"),
         role=role,
     )
     app.store.save_user(user)
@@ -18,7 +18,7 @@ def _login(app, client, role="admin"):
         "/api/v1/auth/login",
         json={
             "username": "admin",
-            "password": "adminpass1",
+            "password": "adminpass1234",
         },
     )
     return user.id
@@ -65,7 +65,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "newuser",
-                "password": "password123",
+                "password": "password12345",
                 "role": "viewer",
             },
         )
@@ -77,7 +77,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "viewer1",
-                "password": "securepass1",
+                "password": "securepass123",
                 "role": "viewer",
             },
         )
@@ -93,7 +93,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "newuser",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         assert response.status_code == 201
@@ -106,7 +106,7 @@ class TestCreateUser:
 
     def test_requires_username(self, app, client):
         _login(app, client)
-        response = client.post("/api/v1/users", json={"password": "password123"})
+        response = client.post("/api/v1/users", json={"password": "password12345"})
         assert response.status_code == 400
 
     def test_username_too_short(self, app, client):
@@ -115,7 +115,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "ab",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         assert response.status_code == 400
@@ -126,7 +126,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "a" * 33,
-                "password": "password123",
+                "password": "password12345",
             },
         )
         assert response.status_code == 400
@@ -148,7 +148,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "newuser",
-                "password": "password123",
+                "password": "password12345",
                 "role": "superadmin",
             },
         )
@@ -160,14 +160,14 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "viewer1",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         response = client.post(
             "/api/v1/users",
             json={
                 "username": "viewer1",
-                "password": "password456",
+                "password": "password45678",
             },
         )
         assert response.status_code == 409
@@ -178,7 +178,7 @@ class TestCreateUser:
             "/api/v1/users",
             json={
                 "username": "admin2",
-                "password": "securepass1",
+                "password": "securepass123",
                 "role": "admin",
             },
         )
@@ -201,7 +201,7 @@ class TestDeleteUser:
             "/api/v1/users",
             json={
                 "username": "todelete",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         user_id = resp.get_json()["id"]
@@ -242,14 +242,14 @@ class TestChangePassword:
             "/api/v1/users",
             json={
                 "username": "viewer1",
-                "password": "oldpass123",
+                "password": "oldpass12345",
             },
         )
         user_id = resp.get_json()["id"]
         response = client.put(
             f"/api/v1/users/{user_id}/password",
             json={
-                "new_password": "newpass1234",
+                "new_password": "newpass123456",
             },
         )
         assert response.status_code == 200
@@ -261,7 +261,7 @@ class TestChangePassword:
         viewer = User(
             id="user-viewer",
             username="viewer1",
-            password_hash=hash_password("oldpass123"),
+            password_hash=hash_password("oldpass12345"),
             role="viewer",
         )
         app.store.save_user(viewer)
@@ -269,13 +269,13 @@ class TestChangePassword:
             "/api/v1/auth/login",
             json={
                 "username": "viewer1",
-                "password": "oldpass123",
+                "password": "oldpass12345",
             },
         )
         response = client.put(
             "/api/v1/users/user-viewer/password",
             json={
-                "new_password": "newpass1234",
+                "new_password": "newpass123456",
             },
         )
         assert response.status_code == 200
@@ -310,7 +310,7 @@ class TestChangePassword:
         response = client.put(
             "/api/v1/users/user-other/password",
             json={
-                "new_password": "newpass1234",
+                "new_password": "newpass123456",
             },
         )
         assert response.status_code == 403
@@ -335,7 +335,7 @@ class TestChangePassword:
         response = client.put(
             "/api/v1/users/user-nonexistent/password",
             json={
-                "new_password": "newpass1234",
+                "new_password": "newpass123456",
             },
         )
         assert response.status_code == 404
@@ -350,7 +350,7 @@ class TestUsersAuditLog:
             "/api/v1/users",
             json={
                 "username": "newuser1",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         events = app.audit.get_events(limit=10, event_type="USER_CREATED")
@@ -363,7 +363,7 @@ class TestUsersAuditLog:
             "/api/v1/users",
             json={
                 "username": "todelete",
-                "password": "password123",
+                "password": "password12345",
             },
         )
         user_id = resp.get_json()["id"]
@@ -376,7 +376,7 @@ class TestUsersAuditLog:
         client.put(
             f"/api/v1/users/{admin_id}/password",
             json={
-                "new_password": "newpass1234",
+                "new_password": "newpass123456",
             },
         )
         events = app.audit.get_events(limit=10, event_type="PASSWORD_CHANGED")
