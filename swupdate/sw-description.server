@@ -1,0 +1,21 @@
+software =
+{
+    version = "@@VERSION@@";
+    hardware-compatibility: [ "1.0" ];
+    raspberrypi4-64 = {
+        images: (
+            {
+                filename = "rootfs.ext4.gz";
+                type = "raw";
+                device = "@@TARGET_PART@@";
+                compressed = "zlib";
+            }
+        );
+        scripts: (
+            {
+                filename = "post-update.sh";
+                type = "shellscript";
+            }
+        );
+    };
+};
