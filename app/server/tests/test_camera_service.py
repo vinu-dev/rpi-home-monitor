@@ -74,6 +74,61 @@ class TestListCameras:
         assert "rtsp_url" not in result[0]
 
 
+class TestAddCamera:
+    """Test registering a new pending camera."""
+
+    def test_creates_pending_camera(self):
+        store = MagicMock()
+        store.get_camera.return_value = None
+        svc = CameraService(store)
+        result, error, status = svc.add_camera("cam-new", "Front Door", "Outdoor")
+        assert status == 201
+        assert error == ""
+        assert result["id"] == "cam-new"
+        assert result["name"] == "Front Door"
+        assert result["status"] == "pending"
+        store.save_camera.assert_called_once()
+        saved = store.save_camera.call_args[0][0]
+        assert saved.id == "cam-new"
+        assert saved.location == "Outdoor"
+
+    def test_rejects_empty_id(self):
+        store = MagicMock()
+        svc = CameraService(store)
+        result, error, status = svc.add_camera("", "Name", "Loc")
+        assert status == 400
+        assert "required" in error.lower()
+        store.save_camera.assert_not_called()
+
+    def test_rejects_duplicate(self):
+        store = MagicMock()
+        store.get_camera.return_value = _make_camera(id="cam-dup")
+        svc = CameraService(store)
+        result, error, status = svc.add_camera("cam-dup")
+        assert status == 409
+        assert "exists" in error.lower()
+        store.save_camera.assert_not_called()
+
+    def test_defaults_name_to_id(self):
+        store = MagicMock()
+        store.get_camera.return_value = None
+        svc = CameraService(store)
+        result, error, status = svc.add_camera("cam-xyz")
+        assert status == 201
+        assert result["name"] == "cam-xyz"
+
+    def test_strips_whitespace(self):
+        store = MagicMock()
+        store.get_camera.return_value = None
+        svc = CameraService(store)
+        result, error, status = svc.add_camera("  cam-ws  ", "  My Cam  ", "  Yard  ")
+        assert status == 201
+        saved = store.save_camera.call_args[0][0]
+        assert saved.id == "cam-ws"
+        assert saved.name == "My Cam"
+        assert saved.location == "Yard"
+
+
 class TestGetCameraStatus:
     """Test getting camera status."""
 

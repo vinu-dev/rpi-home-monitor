@@ -1,0 +1,24 @@
+[Unit]
+Description=GPIO Trigger Detection (Provisioning / Factory Reset)
+Documentation=https://github.com/vinu-engineer/rpi-home-monitor
+After=local-fs.target
+Before=monitor-hotspot.service camera-hotspot.service monitor.service camera-streamer.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/opt/scripts/gpio-trigger.sh
+
+# GPIO pins can be overridden per-device via drop-in:
+#   systemctl edit gpio-trigger
+#   [Service]
+#   Environment=GPIO_PROVISION_PIN=5
+#   Environment=GPIO_RESET_PIN=27
+
+# Exit code 0 = normal boot, 10 = provisioning, 20 = factory reset
+# All are considered success — the script handles the trigger action internally
+SuccessExitStatus=0 10 20
+
+[Install]
+WantedBy=multi-user.target

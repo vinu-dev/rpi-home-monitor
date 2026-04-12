@@ -79,4 +79,6 @@ def setup_complete():
 @provisioning_bp.route("/wizard", methods=["GET"])
 def setup_wizard():
     """Serve the setup wizard HTML page."""
-    return render_template("setup.html")
+    from monitor.services.provisioning_service import SERVER_HOSTNAME
+
+    return render_template("setup.html", hostname=f"{SERVER_HOSTNAME}.local")

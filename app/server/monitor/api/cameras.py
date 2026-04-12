@@ -3,6 +3,7 @@ Camera management API.
 
 Endpoints:
   GET    /cameras              - list all cameras (confirmed + pending)
+  POST   /cameras              - register a new camera as pending (admin)
   POST   /cameras/<id>/confirm - confirm a discovered camera (admin)
   PUT    /cameras/<id>         - update name, location, recording mode (admin)
   DELETE /cameras/<id>         - remove camera and revoke cert (admin)
@@ -24,6 +25,21 @@ def list_cameras():
     """List all cameras (confirmed + pending)."""
     cameras = current_app.camera_service.list_cameras()
     return jsonify(cameras), 200
+
+
+@cameras_bp.route("", methods=["POST"])
+@admin_required
+def add_camera():
+    """Register a new camera as pending. Admin only."""
+    data = request.get_json(silent=True) or {}
+    result, error, status = current_app.camera_service.add_camera(
+        camera_id=data.get("id", ""),
+        name=data.get("name", ""),
+        location=data.get("location", ""),
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
 
 
 @cameras_bp.route("/<camera_id>/confirm", methods=["POST"])

@@ -227,22 +227,20 @@ class TestSetupComplete:
         cmd = connect_calls[0][0][0]
         assert "HomeWiFi" in cmd
 
-    @patch("monitor.services.provisioning_service.threading.Timer")
     @patch(f"{SUBPROCESS_PATCH}.run")
-    def test_delays_hotspot_stop(self, mock_run, mock_timer, app, client):
-        """Hotspot stop is scheduled via Timer, not called immediately."""
+    def test_hotspot_stopped_by_connect_command(self, mock_run, app, client):
+        """Hotspot is stopped by the connect command (ADR-0013), no Timer needed."""
         client.post(
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        client.post("/api/v1/setup/complete")
+        response = client.post("/api/v1/setup/complete")
+        assert response.status_code == 200
 
-        # Timer should be created with 15-second delay
-        mock_timer.assert_called_once()
-        args = mock_timer.call_args
-        assert args[0][0] == 15.0  # 15 second delay
-        mock_timer.return_value.start.assert_called_once()
+        # Connect call uses hotspot script's connect command
+        connect_calls = [c for c in mock_run.call_args_list if "connect" in str(c)]
+        assert len(connect_calls) >= 1
 
     @patch(f"{SUBPROCESS_PATCH}.run")
     def test_wifi_connect_failure_returns_error(self, mock_run, app, client):

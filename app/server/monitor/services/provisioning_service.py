@@ -15,11 +15,11 @@ import logging
 import os
 import socket
 import subprocess
-import threading
 
 log = logging.getLogger("monitor.services.provisioning_service")
 
 HOTSPOT_SCRIPT = "/opt/monitor/scripts/monitor-hotspot.sh"
+SERVER_HOSTNAME = "rpi-divinu"
 
 
 class ProvisioningService:
@@ -194,7 +194,10 @@ class ProvisioningService:
         # Step 2: Get new IP address
         ip_address = self._get_wifi_ip()
 
-        # Step 3: Write stamp file
+        # Step 3: Set hostname (ensures correct mDNS after factory reset)
+        self._set_hostname(SERVER_HOSTNAME)
+
+        # Step 4: Write stamp file
         stamp_err = self._write_stamp_file()
         if stamp_err:
             return None, stamp_err, 500
@@ -203,11 +206,10 @@ class ProvisioningService:
         self._pending_wifi["ssid"] = ""
         self._pending_wifi["password"] = ""
 
-        # Step 4: Schedule delayed hotspot stop
-        self._schedule_hotspot_stop()
+        # Note: hotspot was already stopped by the 'connect' command
+        # in _connect_wifi() — no separate stop needed (ADR-0013).
 
-        hostname = socket.gethostname()
-        mdns_address = f"{hostname}.local"
+        mdns_address = f"{SERVER_HOSTNAME}.local"
 
         log.info("Setup complete! WiFi IP: %s", ip_address or "unknown")
 
@@ -222,23 +224,18 @@ class ProvisioningService:
         )
 
     def _connect_wifi(self, ssid: str, password: str) -> tuple[bool, str]:
-        """Connect to a WiFi network. Returns (success, error_message)."""
+        """Connect to WiFi via hotspot script.
+
+        Uses the hotspot script's 'connect' command which atomically
+        stops the AP and connects to the target network (ADR-0013).
+        Returns (success, error_message).
+        """
         try:
             result = subprocess.run(
-                [
-                    "nmcli",
-                    "dev",
-                    "wifi",
-                    "connect",
-                    ssid,
-                    "password",
-                    password,
-                    "ifname",
-                    "wlan0",
-                ],
+                [HOTSPOT_SCRIPT, "connect", ssid, password],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=45,
             )
         except subprocess.TimeoutExpired:
             return (
@@ -249,18 +246,15 @@ class ProvisioningService:
             return False, f"WiFi connection failed: {exc}"
 
         if result.returncode != 0:
-            stderr = result.stderr.strip()
-            if (
-                "secrets were required" in stderr.lower()
-                or "no suitable" in stderr.lower()
-            ):
+            output = result.stderr.strip() or result.stdout.strip()
+            if "secrets" in output.lower() or "no suitable" in output.lower():
                 return False, "Incorrect WiFi password. Go back and try again."
             return (
                 False,
-                f"WiFi connection failed. Go back and try again. Detail: {stderr}",
+                f"WiFi connection failed. Go back and try again. Detail: {output}",
             )
 
-        log.info("WiFi connected to %s", ssid)
+        log.info("WiFi connected to %s via hotspot script", ssid)
         return True, ""
 
     def _get_wifi_ip(self) -> str:
@@ -296,26 +290,21 @@ class ProvisioningService:
         except OSError as exc:
             return f"Failed to mark setup complete: {exc}"
 
-    def _schedule_hotspot_stop(self):
-        """Stop the hotspot after a 15-second delay."""
+    def _set_hostname(self, hostname: str):
+        """Set system hostname for mDNS discovery."""
+        current = socket.gethostname()
+        if current == hostname:
+            return
+        try:
+            subprocess.run(
+                ["hostnamectl", "set-hostname", hostname],
+                capture_output=True,
+                timeout=10,
+            )
+            log.info("Hostname set: %s -> %s", current, hostname)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            log.warning("Failed to set hostname: %s", exc)
 
-        def _delayed_stop():
-            log.info("Delayed hotspot cleanup triggered (15s elapsed)")
-            try:
-                result = subprocess.run(
-                    [HOTSPOT_SCRIPT, "stop"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                log.debug(
-                    "Hotspot stop: rc=%d stdout=%s",
-                    result.returncode,
-                    result.stdout.strip(),
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-                log.warning("Hotspot stop failed (non-fatal): %s", exc)
-
-        timer = threading.Timer(15.0, _delayed_stop)
-        timer.daemon = True
-        timer.start()
+    def _get_hotspot_script(self) -> str:
+        """Return path to the hotspot management script."""
+        return HOTSPOT_SCRIPT

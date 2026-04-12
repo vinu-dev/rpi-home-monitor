@@ -1,17 +1,16 @@
 #!/bin/sh
-# monitor-hotspot.sh — WiFi hotspot management for initial device setup
-# Usage: monitor-hotspot.sh start|stop|status
+# camera-hotspot.sh — WiFi hotspot management for camera first-boot setup
+# Usage: camera-hotspot.sh start|stop|status|connect|wipe
 #
-# Creates/destroys WiFi AP "HomeMonitor-Setup" for first-boot provisioning.
-# The hotspot allows users to connect from a phone/laptop and configure
-# WiFi credentials + admin password via the setup wizard.
+# Mirrors the server's monitor-hotspot.sh pattern exactly (ADR-0013).
+# Creates/destroys WiFi AP "HomeCam-Setup" for first-boot provisioning.
 
 set -e
 
-CONN_NAME="HomeMonitor-Setup"
+CONN_NAME="HomeCam-Setup"
 IFACE="wlan0"
-HOTSPOT_SSID="HomeMonitor-Setup"
-HOTSPOT_PASS="homemonitor"
+HOTSPOT_SSID="HomeCam-Setup"
+HOTSPOT_PASS="homecamera"
 
 # --- LED control (ACT LED on RPi) ---
 LED_PATH="/sys/class/leds/ACT"
@@ -40,13 +39,10 @@ led_off() {
 }
 
 wait_for_wifi() {
-    # Wait until wlan0 is recognized by NetworkManager as a wifi device.
-    # The WiFi firmware/driver may still be loading at early boot.
     MAX_WAIT=30
     WAITED=0
     echo "Waiting for WiFi interface ${IFACE} to be ready..."
     while [ "$WAITED" -lt "$MAX_WAIT" ]; do
-        # Check NM sees it as a wifi device (not just that the interface exists)
         DEVTYPE=$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | grep "^${IFACE}:" | cut -d: -f2)
         if [ "$DEVTYPE" = "wifi" ]; then
             echo "WiFi interface ${IFACE} ready after ${WAITED}s"
@@ -62,18 +58,15 @@ wait_for_wifi() {
 start_hotspot() {
     echo "Starting WiFi hotspot: ${HOTSPOT_SSID}"
 
-    # Wait for WiFi hardware to be ready (firmware may still be loading)
     if ! wait_for_wifi; then
-        echo "WiFi interface ${IFACE} not found — skipping hotspot (ethernet-only setup)"
+        echo "WiFi interface ${IFACE} not found — skipping hotspot"
         exit 0
     fi
 
     # Remove any existing hotspot connection with this name
     nmcli connection delete "${CONN_NAME}" 2>/dev/null || true
 
-    # Create the hotspot with shared mode (NetworkManager runs dnsmasq
-    # automatically for DHCP when ipv4.method=shared, so connected
-    # clients get an IP address in the 10.42.0.x range)
+    # Create the hotspot with shared mode (NM runs dnsmasq for DHCP)
     nmcli connection add \
         type wifi \
         ifname "${IFACE}" \
@@ -86,10 +79,7 @@ start_hotspot() {
         wifi-sec.psk "${HOTSPOT_PASS}" \
         ipv4.method shared
 
-    # Bring up the connection with explicit interface binding + retry.
-    # Even after NM sees wlan0, AP mode activation can fail briefly
-    # while the driver finishes initialization.
-    # Note: temporarily disable set -e for the retry loop.
+    # Activate with retry (driver may still be initializing)
     MAX_RETRIES=5
     RETRY=0
     ACTIVATED=false
@@ -113,26 +103,20 @@ start_hotspot() {
         exit 1
     fi
 
-    # Get the actual IP assigned (shared mode uses 10.42.0.1 by default)
     ACTUAL_IP=$(nmcli -t -f IP4.ADDRESS dev show "${IFACE}" 2>/dev/null | head -n 1 | cut -d: -f2 | cut -d/ -f1)
     echo "Hotspot active on ${IFACE} — SSID: ${HOTSPOT_SSID}, IP: ${ACTUAL_IP:-10.42.0.1}"
     echo "Setup wizard available at http://${ACTUAL_IP:-10.42.0.1}/"
-    echo "Captive portal: phone should auto-open setup page on connect"
 
-    # LED: slow blink = setup mode
     led_setup_mode
 }
 
 stop_hotspot() {
     echo "Stopping WiFi hotspot: ${CONN_NAME}"
 
-    # Bring down and remove the hotspot connection
     nmcli connection down "${CONN_NAME}" 2>/dev/null || true
     nmcli connection delete "${CONN_NAME}" 2>/dev/null || true
 
-    # LED: solid on = normal operation
     led_connected
-
     echo "Hotspot stopped"
 }
 
@@ -147,7 +131,7 @@ status_hotspot() {
 }
 
 connect_wifi() {
-    # Usage: monitor-hotspot.sh connect <ssid> <password>
+    # Usage: camera-hotspot.sh connect <ssid> <password>
     WIFI_SSID="$1"
     WIFI_PASS="$2"
 

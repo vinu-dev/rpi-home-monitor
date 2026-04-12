@@ -52,21 +52,26 @@ if [ -n "$DATA_DEV" ]; then
     fi
 fi
 
-# Set hostname to match the camera's default server address.
-DESIRED_HOSTNAME="rpi-divinu"
-
-CURRENT_HOSTNAME=$(hostname 2>/dev/null)
-if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
-    echo "Setting hostname: ${CURRENT_HOSTNAME} -> ${DESIRED_HOSTNAME}"
-    hostnamectl set-hostname "$DESIRED_HOSTNAME" 2>/dev/null || \
-        echo "$DESIRED_HOSTNAME" > /etc/hostname
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl restart avahi-daemon 2>/dev/null || true
+# Set hostname — server gets a fixed name, camera gets serial suffix later.
+# Camera hostname is set by wifi_setup.py (_set_unique_hostname) during
+# first-boot provisioning, so we only set it here for the server.
+if id monitor >/dev/null 2>&1; then
+    DESIRED_HOSTNAME="rpi-divinu"
+    CURRENT_HOSTNAME=$(hostname 2>/dev/null)
+    if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
+        echo "Setting hostname: ${CURRENT_HOSTNAME} -> ${DESIRED_HOSTNAME}"
+        hostnamectl set-hostname "$DESIRED_HOSTNAME" 2>/dev/null || \
+            echo "$DESIRED_HOSTNAME" > /etc/hostname
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl restart avahi-daemon 2>/dev/null || true
+        fi
+        if command -v nmcli >/dev/null 2>&1; then
+            nmcli general hostname "$DESIRED_HOSTNAME" 2>/dev/null || true
+        fi
+        echo "Hostname set to ${DESIRED_HOSTNAME} (reachable at ${DESIRED_HOSTNAME}.local)"
     fi
-    if command -v nmcli >/dev/null 2>&1; then
-        nmcli general hostname "$DESIRED_HOSTNAME" 2>/dev/null || true
-    fi
-    echo "Hostname set to ${DESIRED_HOSTNAME} (reachable at ${DESIRED_HOSTNAME}.local)"
+else
+    echo "Camera board — hostname will be set during WiFi provisioning"
 fi
 
 # Create directory structure

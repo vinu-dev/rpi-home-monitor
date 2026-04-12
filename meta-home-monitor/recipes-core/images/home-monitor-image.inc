@@ -52,5 +52,8 @@ IMAGE_FSTYPES = "wic.bz2 wic.bmap ext4.gz"
 WKS_FILE = "home-monitor-ab.wks"
 WKS_FILE_DEPENDS = "e2fsprogs-native dosfstools-native mtools-native"
 
+# --- Default hostname (overridden by first-boot and provisioning) ---
+hostname = "rpi-divinu"
+
 # --- Extra space for video recordings (1GB) ---
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"

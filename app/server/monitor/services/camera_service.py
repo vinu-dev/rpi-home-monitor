@@ -34,6 +34,39 @@ class CameraService:
         self._streaming = streaming
         self._audit = audit
 
+    def add_camera(
+        self, camera_id: str, name: str = "", location: str = ""
+    ) -> tuple[dict | None, str, int]:
+        """Register a new camera as pending.
+
+        Returns (result_dict, error_string, http_status_code).
+        """
+        camera_id = camera_id.strip()
+        if not camera_id:
+            return None, "Camera ID is required", 400
+
+        existing = self._store.get_camera(camera_id)
+        if existing is not None:
+            return None, "Camera already exists", 409
+
+        from monitor.models import Camera
+
+        camera = Camera(
+            id=camera_id,
+            name=name.strip() or camera_id,
+            location=location.strip(),
+            status="pending",
+        )
+        self._store.save_camera(camera)
+
+        log.info("Camera registered: %s", camera_id)
+
+        return (
+            {"id": camera.id, "name": camera.name, "status": camera.status},
+            "",
+            201,
+        )
+
     def list_cameras(self) -> list[dict]:
         """List all cameras (confirmed + pending)."""
         cameras = self._store.get_cameras()

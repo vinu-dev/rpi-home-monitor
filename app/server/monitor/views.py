@@ -46,7 +46,9 @@ def setup():
     """Initial device setup wizard."""
     if _setup_complete():
         return redirect(url_for("views.login"))
-    return render_template("setup.html")
+    from monitor.services.provisioning_service import SERVER_HOSTNAME
+
+    return render_template("setup.html", hostname=f"{SERVER_HOSTNAME}.local")
 
 
 @views_bp.route("/login")

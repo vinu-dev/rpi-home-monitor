@@ -273,6 +273,7 @@ STATUS_API_FIELDS = {
     "server_address",
     "server_connected",
     "streaming",
+    "paired",
     "cpu_temp",
     "uptime",
     "memory_total_mb",

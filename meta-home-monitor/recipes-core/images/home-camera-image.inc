@@ -39,5 +39,8 @@ IMAGE_FSTYPES = "wic.bz2 wic.bmap ext4.gz"
 WKS_FILE = "home-camera-ab.wks"
 WKS_FILE_DEPENDS = "e2fsprogs-native dosfstools-native mtools-native"
 
+# --- Default hostname (suffixed with CPU serial by wifi_setup on first boot) ---
+hostname = "rpi-divinu-cam"
+
 # --- Keep image small ---
 IMAGE_ROOTFS_EXTRA_SPACE = "262144"

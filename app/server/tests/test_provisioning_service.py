@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 SUBPROCESS_PATCH = "monitor.services.provisioning_service.subprocess"
-TIMER_PATCH = "monitor.services.provisioning_service.threading.Timer"
 
 
 def _fix(mock_sub):
@@ -330,15 +329,15 @@ class TestConnectWifi:
         assert err == ""
 
     @patch(SUBPROCESS_PATCH)
-    def test_calls_nmcli_with_correct_args(self, mock_sub, svc):
+    def test_calls_hotspot_script_with_correct_args(self, mock_sub, svc):
         _fix(mock_sub)
         mock_sub.run.return_value = MagicMock(returncode=0)
         svc._connect_wifi("MySSID", "MyPass")
         args = mock_sub.run.call_args[0][0]
-        assert "nmcli" in args
-        assert "MySSID" in args
-        assert "MyPass" in args
-        assert "wlan0" in args
+        assert args[0].endswith("monitor-hotspot.sh")
+        assert args[1] == "connect"
+        assert args[2] == "MySSID"
+        assert args[3] == "MyPass"
 
     @patch(SUBPROCESS_PATCH)
     def test_timeout(self, mock_sub, svc):
@@ -477,58 +476,6 @@ class TestWriteStampFile:
         assert "Failed" in err
 
 
-# ── _schedule_hotspot_stop ───────────────────────────────────────────
-
-
-class TestScheduleHotspotStop:
-    @patch(TIMER_PATCH)
-    def test_creates_daemon_timer(self, mock_timer_cls, svc):
-        timer_inst = MagicMock()
-        mock_timer_cls.return_value = timer_inst
-        svc._schedule_hotspot_stop()
-        mock_timer_cls.assert_called_once()
-        args = mock_timer_cls.call_args
-        assert args[0][0] == 15.0  # delay seconds
-        assert timer_inst.daemon is True
-        timer_inst.start.assert_called_once()
-
-    @patch(TIMER_PATCH)
-    def test_callback_calls_hotspot_stop(self, mock_timer_cls, svc):
-        """Verify the Timer callback invokes the hotspot script with 'stop'."""
-        mock_timer_cls.return_value = MagicMock()
-        svc._schedule_hotspot_stop()
-        callback = mock_timer_cls.call_args[0][1]
-
-        with patch(SUBPROCESS_PATCH) as mock_sub:
-            _fix(mock_sub)
-            mock_sub.run.return_value = MagicMock(returncode=0, stdout="stopped")
-            callback()
-            args = mock_sub.run.call_args[0][0]
-            assert "stop" in args
-
-    @patch(TIMER_PATCH)
-    def test_callback_handles_timeout(self, mock_timer_cls, svc):
-        mock_timer_cls.return_value = MagicMock()
-        svc._schedule_hotspot_stop()
-        callback = mock_timer_cls.call_args[0][1]
-
-        with patch(SUBPROCESS_PATCH) as mock_sub:
-            _fix(mock_sub)
-            mock_sub.run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=30)
-            callback()  # should not raise
-
-    @patch(TIMER_PATCH)
-    def test_callback_handles_file_not_found(self, mock_timer_cls, svc):
-        mock_timer_cls.return_value = MagicMock()
-        svc._schedule_hotspot_stop()
-        callback = mock_timer_cls.call_args[0][1]
-
-        with patch(SUBPROCESS_PATCH) as mock_sub:
-            _fix(mock_sub)
-            mock_sub.run.side_effect = FileNotFoundError("gone")
-            callback()  # should not raise
-
-
 # ── complete_setup ───────────────────────────────────────────────────
 
 
@@ -557,27 +504,26 @@ class TestCompleteSetup:
         _, err, code = svc.complete_setup()
         assert code == 400
 
-    @patch(TIMER_PATCH)
     @patch(SUBPROCESS_PATCH)
     @patch("monitor.services.provisioning_service.socket")
-    def test_success_full_flow(self, mock_socket, mock_sub, mock_timer, svc, tmp_path):
-        """Full happy path: connect WiFi, get IP, write stamp, schedule stop."""
+    def test_success_full_flow(self, mock_socket, mock_sub, svc, tmp_path):
+        """Full happy path: connect WiFi via hotspot script, get IP, write stamp."""
         _fix(mock_sub)
         svc._pending_wifi["ssid"] = "HomeNet"
         svc._pending_wifi["password"] = "secret123"
 
         mock_sub.run.side_effect = [
-            MagicMock(returncode=0),  # _connect_wifi
+            MagicMock(returncode=0),  # _connect_wifi (hotspot script)
             MagicMock(returncode=0, stdout="IP4.ADDRESS[1]:192.168.1.100/24\n"),
+            MagicMock(returncode=0),  # _set_hostname (hostnamectl)
         ]
-        mock_socket.gethostname.return_value = "homemonitor"
-        mock_timer.return_value = MagicMock()
+        mock_socket.gethostname.return_value = "raspberrypi4-64"
 
         result, err, code = svc.complete_setup()
         assert code == 200
         assert err == ""
         assert result["ip"] == "192.168.1.100"
-        assert result["hostname"] == "homemonitor.local"
+        assert result["hostname"] == "rpi-divinu.local"
 
         # Stamp file written
         assert (tmp_path / ".setup-done").exists()
@@ -585,9 +531,6 @@ class TestCompleteSetup:
         # Credentials cleared
         assert svc._pending_wifi["ssid"] == ""
         assert svc._pending_wifi["password"] == ""
-
-        # Timer started
-        mock_timer.return_value.start.assert_called_once()
 
     @patch(SUBPROCESS_PATCH)
     def test_wifi_connect_failure_returns_500(self, mock_sub, svc):
@@ -613,16 +556,18 @@ class TestCompleteSetup:
         assert code == 500
         assert "Incorrect" in err
 
-    @patch(TIMER_PATCH)
     @patch(SUBPROCESS_PATCH)
-    def test_stamp_write_failure_returns_500(self, mock_sub, mock_timer, svc):
+    @patch("monitor.services.provisioning_service.socket")
+    def test_stamp_write_failure_returns_500(self, mock_socket, mock_sub, svc):
         _fix(mock_sub)
+        mock_socket.gethostname.return_value = "raspberrypi4-64"
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
 
         mock_sub.run.side_effect = [
             MagicMock(returncode=0),  # _connect_wifi
             MagicMock(returncode=0, stdout=""),  # _get_wifi_ip
+            MagicMock(returncode=0),  # _set_hostname
         ]
 
         with patch.object(svc, "_write_stamp_file", return_value="Disk error"):
@@ -630,21 +575,18 @@ class TestCompleteSetup:
         assert code == 500
         assert "Disk error" in err
 
-    @patch(TIMER_PATCH)
     @patch(SUBPROCESS_PATCH)
     @patch("monitor.services.provisioning_service.socket")
-    def test_credentials_cleared_on_success(
-        self, mock_socket, mock_sub, mock_timer, svc
-    ):
+    def test_credentials_cleared_on_success(self, mock_socket, mock_sub, svc):
         _fix(mock_sub)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
         mock_sub.run.side_effect = [
             MagicMock(returncode=0),
             MagicMock(returncode=0, stdout=""),
+            MagicMock(returncode=0),  # _set_hostname
         ]
-        mock_socket.gethostname.return_value = "host"
-        mock_timer.return_value = MagicMock()
+        mock_socket.gethostname.return_value = "raspberrypi4-64"
 
         svc.complete_setup()
         assert svc._pending_wifi["ssid"] == ""
@@ -661,12 +603,9 @@ class TestCompleteSetup:
         assert svc._pending_wifi["ssid"] == "Net"
         assert svc._pending_wifi["password"] == "pass"
 
-    @patch(TIMER_PATCH)
     @patch(SUBPROCESS_PATCH)
     @patch("monitor.services.provisioning_service.socket")
-    def test_empty_ip_still_succeeds(
-        self, mock_socket, mock_sub, mock_timer, svc, tmp_path
-    ):
+    def test_empty_ip_still_succeeds(self, mock_socket, mock_sub, svc, tmp_path):
         """If IP lookup returns nothing, setup still completes."""
         _fix(mock_sub)
         svc._pending_wifi["ssid"] = "Net"
@@ -674,9 +613,9 @@ class TestCompleteSetup:
         mock_sub.run.side_effect = [
             MagicMock(returncode=0),
             MagicMock(returncode=1, stdout=""),  # IP lookup fails
+            MagicMock(returncode=0),  # _set_hostname
         ]
-        mock_socket.gethostname.return_value = "host"
-        mock_timer.return_value = MagicMock()
+        mock_socket.gethostname.return_value = "raspberrypi4-64"
 
         result, err, code = svc.complete_setup()
         assert code == 200

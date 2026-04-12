@@ -69,48 +69,37 @@ class TestWifiSetupServer:
         assert server.needs_setup() is False
 
     @patch("http.server.HTTPServer")
-    @patch("camera_streamer.wifi.start_hotspot")
     @patch("camera_streamer.wifi.scan_networks")
-    def test_start_when_needed(
-        self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config
-    ):
-        """start() should pre-scan, start hotspot, and start HTTP server."""
+    def test_start_when_needed(self, mock_scan, mock_httpd, unconfigured_config):
+        """start() should pre-scan and start HTTP server (hotspot is systemd's job)."""
         mock_scan.return_value = [{"ssid": "TestNet", "signal": 80, "security": "WPA2"}]
-        mock_hotspot.return_value = True
         server = WifiSetupServer(unconfigured_config)
         result = server.start()
         assert result is True
         mock_scan.assert_called_once()
-        mock_hotspot.assert_called_once()
         # Verify cached networks from pre-scan
         assert len(server.get_cached_networks()) == 1
         assert server.get_cached_networks()[0]["ssid"] == "TestNet"
         server.stop()
 
-    @patch("camera_streamer.wifi.start_hotspot")
     @patch("camera_streamer.wifi.scan_networks")
-    def test_start_skips_when_done(self, mock_scan, mock_hotspot, unconfigured_config):
+    def test_start_skips_when_done(self, mock_scan, unconfigured_config):
         """start() should skip when setup already done."""
         mark_setup_complete(unconfigured_config.data_dir)
         server = WifiSetupServer(unconfigured_config)
         result = server.start()
         assert result is False
-        mock_hotspot.assert_not_called()
         mock_scan.assert_not_called()
 
     @patch("http.server.HTTPServer")
-    @patch("camera_streamer.wifi.start_hotspot")
     @patch("camera_streamer.wifi.scan_networks")
-    def test_start_with_hotspot_failure(
-        self, mock_scan, mock_hotspot, mock_httpd, unconfigured_config
-    ):
-        """start() should still work if hotspot fails (e.g. no WiFi hw)."""
+    def test_start_with_empty_scan(self, mock_scan, mock_httpd, unconfigured_config):
+        """start() should still work even if pre-scan finds no networks."""
         mock_scan.return_value = []
-        mock_hotspot.return_value = False
         server = WifiSetupServer(unconfigured_config)
-        # Should not raise — logs a warning, HTTP server still starts
         result = server.start()
         assert result is True
+        assert server.get_cached_networks() == []
         server.stop()
 
     def test_get_status_initial(self, unconfigured_config):
@@ -225,15 +214,13 @@ class TestConnectWifi:
 class TestSaveAndConnect:
     """Test the save_and_connect flow (background connection)."""
 
-    @patch("camera_streamer.wifi.time.sleep")
-    @patch("camera_streamer.wifi.start_hotspot")
-    @patch("camera_streamer.wifi.stop_hotspot")
-    @patch("camera_streamer.wifi.connect_network")
+    @patch("camera_streamer.wifi_setup.WifiSetupServer._hotspot_connect")
+    @patch("time.sleep")
     def test_connect_success_saves_config(
-        self, mock_connect, mock_stop, mock_start, mock_sleep, unconfigured_config
+        self, mock_sleep, mock_hotspot_connect, unconfigured_config
     ):
         """Successful connect should save config and mark setup done."""
-        mock_connect.return_value = (True, "")
+        mock_hotspot_connect.return_value = (True, "")
         server = WifiSetupServer(unconfigured_config)
 
         # Call _do_connect directly (skip threading)
@@ -241,36 +228,29 @@ class TestSaveAndConnect:
 
         assert server.get_status() is True
         assert is_setup_complete(unconfigured_config.data_dir)
-        mock_stop.assert_called_once()
-        mock_start.assert_not_called()  # No restart on success
+        mock_hotspot_connect.assert_called_once_with("TestNet", "pass123")
 
-    @patch("camera_streamer.wifi.time.sleep")
-    @patch("camera_streamer.wifi.start_hotspot")
-    @patch("camera_streamer.wifi.stop_hotspot")
-    @patch("camera_streamer.wifi.connect_network")
-    def test_connect_failure_restarts_hotspot(
-        self, mock_connect, mock_stop, mock_start, mock_sleep, unconfigured_config
+    @patch("camera_streamer.wifi_setup.WifiSetupServer._hotspot_connect")
+    @patch("time.sleep")
+    def test_connect_failure_sets_error(
+        self, mock_sleep, mock_hotspot_connect, unconfigured_config
     ):
-        """Failed connect should restart hotspot for retry."""
-        mock_connect.return_value = (False, "No such network")
+        """Failed connect should set error status (hotspot script handles AP restart)."""
+        mock_hotspot_connect.return_value = (False, "No such network")
         server = WifiSetupServer(unconfigured_config)
 
         server._do_connect("BadNet", "pass", "192.168.1.100", "8554")
 
         assert server.get_status() == "No such network"
         assert not is_setup_complete(unconfigured_config.data_dir)
-        mock_stop.assert_called_once()
-        mock_start.assert_called_once()  # Hotspot restarted
 
-    @patch("camera_streamer.wifi.time.sleep")
-    @patch("camera_streamer.wifi.start_hotspot")
-    @patch("camera_streamer.wifi.stop_hotspot")
-    @patch("camera_streamer.wifi.connect_network")
+    @patch("camera_streamer.wifi_setup.WifiSetupServer._hotspot_connect")
+    @patch("time.sleep")
     def test_connect_saves_server_port(
-        self, mock_connect, mock_stop, mock_start, mock_sleep, unconfigured_config
+        self, mock_sleep, mock_hotspot_connect, unconfigured_config
     ):
         """Server port should be saved to config on success."""
-        mock_connect.return_value = (True, "")
+        mock_hotspot_connect.return_value = (True, "")
         server = WifiSetupServer(unconfigured_config)
 
         server._do_connect("TestNet", "pass", "10.0.0.5", "9999")

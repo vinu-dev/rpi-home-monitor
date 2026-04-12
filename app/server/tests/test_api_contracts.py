@@ -164,6 +164,27 @@ class TestCamerasListContract:
             assert field not in cam, f"Sensitive field '{field}' leaked"
 
 
+class TestCameraAddContract:
+    """POST /api/v1/cameras."""
+
+    def test_success_fields(self, app, client):
+        _login(app, client)
+        resp = client.post(
+            "/api/v1/cameras",
+            json={"id": "cam-new", "name": "Front", "location": "Yard"},
+        )
+        data = resp.get_json()
+        _assert_has_fields(data, {"id", "name", "status"})
+        assert data["status"] == "pending"
+
+    def test_duplicate_error(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.post("/api/v1/cameras", json={"id": "cam-001"})
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
 class TestCameraConfirmContract:
     """POST /api/v1/cameras/<id>/confirm."""
 

@@ -41,26 +41,73 @@
 </div>
 
 <!-- Cameras -->
-<div class="section-header">Cameras</div>
+<div class="section-header">
+    Cameras
+    <button class="btn btn--primary btn--small" style="float:right;margin-top:-4px;" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
+</div>
+
+<!-- Add Camera Form -->
+<template x-if="showAddForm">
+    <div class="card mb-16">
+        <div class="form-group">
+            <label for="add-cam-id">Camera ID</label>
+            <input class="form-input" id="add-cam-id" x-model="newCam.id" placeholder="e.g. cam-351ad8ee">
+        </div>
+        <div class="form-group">
+            <label for="add-cam-name">Name</label>
+            <input class="form-input" id="add-cam-name" x-model="newCam.name" placeholder="e.g. Front Door">
+        </div>
+        <div class="form-group">
+            <label for="add-cam-location">Location</label>
+            <input class="form-input" id="add-cam-location" x-model="newCam.location" placeholder="e.g. Outdoor">
+        </div>
+        <button class="btn btn--primary" @click="addCamera()" :disabled="!newCam.id.trim()">Add Camera</button>
+    </div>
+</template>
+
+<!-- Pairing PIN Display -->
+<template x-if="pairingPin">
+    <div class="card mb-16 pairing-pin-card">
+        <div class="pairing-pin-card__title">Pairing PIN for <span x-text="pairingCameraId"></span></div>
+        <div class="pairing-pin-card__pin" x-text="pairingPin"></div>
+        <div class="pairing-pin-card__instructions">
+            On the camera's settings page, find the <strong>Server Pairing</strong> section and enter this PIN. Expires in 5 minutes.
+        </div>
+        <button class="btn btn--secondary btn--small" @click="pairingPin = ''; pairingCameraId = '';">Dismiss</button>
+    </div>
+</template>
+
 <div class="grid" id="cameras-grid">
-    <template x-if="cameras.length === 0">
+    <template x-if="cameras.length === 0 && !showAddForm">
         <div class="empty-state">
             <div class="empty-state__title">No cameras found</div>
-            <div class="empty-state__text">Waiting for cameras to connect via mDNS discovery.</div>
+            <div class="empty-state__text">Click "Add Camera" to register a camera, or wait for mDNS discovery.</div>
         </div>
     </template>
     <template x-for="cam in cameras" :key="cam.id">
-        <div class="card card--clickable camera-card" @click="window.location.href = '/live?camera=' + encodeURIComponent(cam.id)">
-            <div class="camera-card__info">
+        <div class="card camera-card">
+            <div class="camera-card__info" @click="cam.status === 'online' && (window.location.href = '/live?camera=' + encodeURIComponent(cam.id))" :style="cam.status === 'online' ? 'cursor:pointer' : ''">
                 <div class="camera-card__name" x-text="cam.name || cam.id"></div>
                 <div class="camera-card__location" x-text="cam.location || 'No location set'"></div>
                 <div class="camera-card__last-seen" x-text="cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : ''"></div>
             </div>
-            <span class="badge" :class="{
-                'badge--online': cam.status === 'online',
-                'badge--offline': cam.status === 'offline',
-                'badge--pending': cam.status === 'pending'
-            }" x-text="cam.status"></span>
+            <div class="camera-card__actions">
+                <span class="badge" :class="{
+                    'badge--online': cam.status === 'online',
+                    'badge--offline': cam.status === 'offline',
+                    'badge--pending': cam.status === 'pending'
+                }" x-text="cam.status"></span>
+                <template x-if="cam.status === 'pending'">
+                    <div class="camera-card__btns">
+                        <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
+                        <button class="btn btn--secondary btn--small" @click.stop="confirmCamera(cam.id)">Confirm</button>
+                        <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                    </div>
+                </template>
+                <template x-if="cam.status !== 'pending'">
+                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                </template>
+            </div>
         </div>
     </template>
 </div>
@@ -73,6 +120,10 @@ function dashboardPage() {
     return {
         health: { temp: null, cpu: null, mem: null, disk: null, warnings: [], uptime: '' },
         cameras: [],
+        showAddForm: false,
+        newCam: { id: '', name: '', location: '' },
+        pairingPin: '',
+        pairingCameraId: '',
         _interval: null,
 
         tempColor(c) {
@@ -109,10 +160,56 @@ function dashboardPage() {
             } catch(e) {}
         },
 
+        async addCamera() {
+            var id = this.newCam.id.trim();
+            if (!id) return;
+            try {
+                await window.HM.api.post('/api/v1/cameras', {
+                    id: id,
+                    name: this.newCam.name.trim(),
+                    location: this.newCam.location.trim()
+                });
+                this.newCam = { id: '', name: '', location: '' };
+                this.showAddForm = false;
+                await this.loadCameras();
+            } catch(e) {
+                alert(e.message || 'Failed to add camera');
+            }
+        },
+
+        async initPairing(camId) {
+            try {
+                var data = await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(camId) + '/pair', {});
+                this.pairingPin = data.pin;
+                this.pairingCameraId = camId;
+            } catch(e) {
+                alert(e.message || 'Failed to initiate pairing');
+            }
+        },
+
+        async confirmCamera(camId) {
+            try {
+                await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(camId) + '/confirm', {});
+                await this.loadCameras();
+            } catch(e) {
+                alert(e.message || 'Failed to confirm camera');
+            }
+        },
+
+        async deleteCamera(camId) {
+            if (!confirm('Remove this camera?')) return;
+            try {
+                await window.HM.api.del('/api/v1/cameras/' + encodeURIComponent(camId));
+                await this.loadCameras();
+            } catch(e) {
+                alert(e.message || 'Failed to remove camera');
+            }
+        },
+
         init() {
             this.loadHealth();
             this.loadCameras();
-            this._interval = setInterval(() => this.loadHealth(), 30000);
+            this._interval = setInterval(() => { this.loadHealth(); this.loadCameras(); }, 30000);
         },
 
         destroy() {

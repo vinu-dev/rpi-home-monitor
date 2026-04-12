@@ -546,6 +546,7 @@
         var savedSSID = '';
         var savedWifiPassword = '';
         var API_BASE = '/api/v1/setup';
+        var SERVER_HOSTNAME = '{{ hostname }}';
 
         function goToStep(step) {
             document.querySelectorAll('.step').forEach(function(el) {
@@ -808,9 +809,13 @@
                 }
             })
             .catch(function(err) {
-                /* Network error — likely the hotspot died mid-request.
-                   This is expected. The setup probably succeeded.
-                   User should reconnect to home WiFi. */
+                /* Network error — the hotspot stopped during WiFi switch.
+                   This is expected (ADR-0013). Setup succeeded.
+                   Show the pre-computed hostname so user knows where to go. */
+                if (SERVER_HOSTNAME) {
+                    document.getElementById('done-ip-display').textContent = 'https://' + SERVER_HOSTNAME + '/';
+                    document.getElementById('done-cam-address').textContent = SERVER_HOSTNAME;
+                }
                 document.getElementById('review-panel').style.display = 'none';
                 document.getElementById('done-panel').style.display = 'block';
             });

@@ -1,9 +1,9 @@
 [Unit]
-Description=Home Monitor WiFi Setup Hotspot
+Description=Camera WiFi Setup Hotspot
 Documentation=https://github.com/vinu-engineer/rpi-home-monitor
 After=NetworkManager.service local-fs.target sys-subsystem-net-devices-wlan0.device gpio-trigger.service
 Wants=NetworkManager.service
-Before=monitor.service
+Before=camera-streamer.service
 
 # Only start if initial setup has not been completed
 ConditionPathExists=!/data/.setup-done
@@ -12,8 +12,8 @@ ConditionPathExists=!/data/.setup-done
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=90
-ExecStart=/opt/monitor/scripts/monitor-hotspot.sh start
-ExecStop=/opt/monitor/scripts/monitor-hotspot.sh stop
+ExecStart=/opt/camera/scripts/camera-hotspot.sh start
+ExecStop=/opt/camera/scripts/camera-hotspot.sh stop
 
 [Install]
 WantedBy=multi-user.target

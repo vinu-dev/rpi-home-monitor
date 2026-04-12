@@ -1,22 +1,28 @@
 """
-WiFi setup for camera first boot.
+WiFi setup wizard for camera first boot.
 
 On first boot (when /data/.setup-done doesn't exist):
-1. Starts a WiFi hotspot "HomeCam-Setup"
-2. Runs a tiny HTTP server on port 80 with a setup page
+1. Systemd starts camera-hotspot.service (WiFi AP "HomeCam-Setup")
+2. This module runs an HTTP server on port 80 with a setup page
 3. User enters WiFi SSID + password + server IP + camera password
-4. Camera saves settings, tears down hotspot, connects to home WiFi
-5. If WiFi fails, hotspot comes back up for retry
+4. Camera calls hotspot script to connect WiFi (stops AP atomically)
+5. If WiFi fails, hotspot script restarts the AP for retry
+
+Architecture (ADR-0013):
+- Hotspot lifecycle is always managed by systemd + shell script
+- This module only provides the HTTP setup wizard UI
+- WiFi operations delegate to the hotspot script's 'connect' command
 
 Single-radio constraint: wlan0 can either be an AP or a client, not both.
-So we can't scan while hotspot is active. User types SSID manually or we
-do a quick scan BEFORE starting the hotspot.
+Networks are scanned BEFORE systemd starts the hotspot, via a pre-scan
+in the lifecycle's _do_setup() or from a brief AP drop via /api/rescan.
 """
 
 import http.server
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -28,6 +34,7 @@ log = logging.getLogger("camera-streamer.wifi-setup")
 SETUP_STAMP = ".setup-done"
 LISTEN_PORT = 80
 CONNECT_DELAY = 3
+HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
 
 # Template directory (adjacent to this module)
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -63,21 +70,29 @@ def mark_setup_complete(data_dir):
 class WifiSetupServer:
     """HTTP server for camera WiFi and server configuration (first boot).
 
+    Only provides the setup wizard UI. Hotspot lifecycle is managed
+    by camera-hotspot.service (systemd). See ADR-0013.
+
     Args:
         config: ConfigManager instance.
         wifi_interface: WiFi interface name (from Platform).
         hostname_prefix: Hostname prefix (from Platform).
+        hotspot_script: Path to hotspot management script.
     """
 
     def __init__(
-        self, config, wifi_interface="wlan0", hostname_prefix="rpi-divinu-cam"
+        self,
+        config,
+        wifi_interface="wlan0",
+        hostname_prefix="rpi-divinu-cam",
+        hotspot_script=HOTSPOT_SCRIPT,
     ):
         self._config = config
         self._wifi_interface = wifi_interface
         self._hostname_prefix = hostname_prefix
+        self._hotspot_script = hotspot_script
         self._server = None
         self._thread = None
-        self._hotspot_active = False
         self._cached_networks = []
         self._connect_result = None
 
@@ -86,19 +101,19 @@ class WifiSetupServer:
         return not is_setup_complete(self._config.data_dir)
 
     def start(self):
-        """Scan networks, start hotspot, then start HTTP server."""
+        """Pre-scan networks and start HTTP setup wizard.
+
+        The hotspot is already running (started by systemd).
+        This method only starts the HTTP server for the setup UI.
+        """
         if not self.needs_setup():
             log.info("Setup already complete, skipping")
             return False
 
-        # Scan BEFORE starting hotspot (wlan0 is in client mode now)
+        # Scan BEFORE hotspot is active (called from lifecycle before
+        # systemd starts hotspot, or networks may be empty)
         self._cached_networks = wifi.scan_networks(self._wifi_interface)
         log.info("Pre-scan found %d networks", len(self._cached_networks))
-
-        if not wifi.start_hotspot(self._wifi_interface):
-            log.warning("Could not start hotspot — setup via ethernet")
-        else:
-            self._hotspot_active = True
 
         led.setup_mode()
 
@@ -112,13 +127,10 @@ class WifiSetupServer:
         return True
 
     def stop(self):
-        """Stop HTTP server and hotspot."""
+        """Stop HTTP server. Hotspot is managed by systemd."""
         if self._server:
             self._server.shutdown()
             self._server = None
-        if self._hotspot_active:
-            wifi.stop_hotspot()
-            self._hotspot_active = False
         led.off()
         log.info("Setup server stopped")
 
@@ -153,17 +165,13 @@ class WifiSetupServer:
         t.start()
 
     def _do_connect(self, ssid, password, server_ip, server_port):
-        """Background: wait for phone to get response, then connect."""
+        """Background: wait for phone to get response, then connect via hotspot script."""
         time.sleep(CONNECT_DELAY)
 
-        log.info("Tearing down hotspot, connecting to WiFi: %s", ssid)
+        log.info("Connecting to WiFi via hotspot script: %s", ssid)
         led.connecting()
 
-        wifi.stop_hotspot()
-        self._hotspot_active = False
-        time.sleep(2)
-
-        ok, err = wifi.connect_network(ssid, password, self._wifi_interface)
+        ok, err = self._hotspot_connect(ssid, password)
 
         if ok:
             log.info("WiFi connected! Saving config and completing setup.")
@@ -173,13 +181,38 @@ class WifiSetupServer:
             self._connect_result = True
             led.connected()
         else:
-            log.error("WiFi connection failed: %s — restarting hotspot", err)
+            log.error("WiFi connection failed: %s", err)
             self._connect_result = err or "Connection failed"
             led.error()
-            time.sleep(2)
-            if wifi.start_hotspot(self._wifi_interface):
-                self._hotspot_active = True
-            led.setup_mode()
+
+    def _hotspot_connect(self, ssid, password):
+        """Connect to WiFi via hotspot script's 'connect' command.
+
+        The script atomically stops the AP and connects to the target
+        network. If connection fails, the script restarts the AP.
+        Returns (success, error_message).
+        """
+        try:
+            result = subprocess.run(
+                [self._hotspot_script, "connect", ssid, password],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            if result.returncode == 0:
+                return True, ""
+            output = result.stderr.strip() or result.stdout.strip()
+            return False, output
+        except FileNotFoundError:
+            log.warning(
+                "Hotspot script not found at %s — falling back to direct nmcli",
+                self._hotspot_script,
+            )
+            return wifi.connect_network(ssid, password, self._wifi_interface)
+        except subprocess.TimeoutExpired:
+            return False, "Connection timed out"
+        except OSError as e:
+            return False, str(e)
 
     def _set_unique_hostname(self):
         """Set unique hostname using CPU serial suffix."""
@@ -204,16 +237,31 @@ class WifiSetupServer:
         return list(self._cached_networks)
 
     def rescan(self):
-        """Rescan by briefly dropping AP, scanning, then restarting AP."""
-        log.info("Rescan requested — dropping AP briefly")
-        wifi.stop_hotspot()
-        self._hotspot_active = False
+        """Rescan by briefly dropping AP via hotspot script, scanning, then restarting."""
+        log.info("Rescan requested — stopping hotspot briefly")
+        try:
+            subprocess.run(
+                [self._hotspot_script, "stop"],
+                capture_output=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            wifi.stop_hotspot()
+
         time.sleep(2)
         self._cached_networks = wifi.scan_networks(self._wifi_interface)
         log.info("Rescan found %d networks", len(self._cached_networks))
         time.sleep(1)
-        if wifi.start_hotspot(self._wifi_interface):
-            self._hotspot_active = True
+
+        try:
+            subprocess.run(
+                [self._hotspot_script, "start"],
+                capture_output=True,
+                timeout=30,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            wifi.start_hotspot(self._wifi_interface)
+
         return self._cached_networks
 
 

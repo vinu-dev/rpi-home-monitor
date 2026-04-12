@@ -75,6 +75,52 @@ class TestListCameras:
             assert field in cam
 
 
+class TestAddCamera:
+    """Test POST /api/v1/cameras."""
+
+    def test_requires_admin(self, app, client):
+        _login(app, client, role="viewer")
+        resp = client.post("/api/v1/cameras", json={"id": "cam-new"})
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.post("/api/v1/cameras", json={"id": "cam-new"})
+        assert resp.status_code == 401
+
+    def test_adds_pending_camera(self, app, client):
+        _login(app, client)
+        resp = client.post(
+            "/api/v1/cameras",
+            json={"id": "cam-new", "name": "Front Door", "location": "Outdoor"},
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["id"] == "cam-new"
+        assert data["name"] == "Front Door"
+        assert data["status"] == "pending"
+        # Verify persisted
+        cam = app.store.get_camera("cam-new")
+        assert cam is not None
+        assert cam.location == "Outdoor"
+
+    def test_rejects_empty_id(self, app, client):
+        _login(app, client)
+        resp = client.post("/api/v1/cameras", json={"id": ""})
+        assert resp.status_code == 400
+
+    def test_rejects_duplicate(self, app, client):
+        _login(app, client)
+        _add_camera(app, "cam-001", "pending")
+        resp = client.post("/api/v1/cameras", json={"id": "cam-001"})
+        assert resp.status_code == 409
+
+    def test_defaults_name_to_id(self, app, client):
+        _login(app, client)
+        resp = client.post("/api/v1/cameras", json={"id": "cam-abc"})
+        assert resp.status_code == 201
+        assert resp.get_json()["name"] == "cam-abc"
+
+
 class TestConfirmCamera:
     """Test POST /api/v1/cameras/<id>/confirm."""
 

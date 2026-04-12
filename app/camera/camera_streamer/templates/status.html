@@ -183,6 +183,46 @@ body {
         </div>
     </div>
 
+    <!-- Server Pairing -->
+    <div class="card" id="pairing-card">
+        <div class="card__title">Server Pairing</div>
+        <div id="pair-status-row" class="info-row">
+            <span class="info-row__label">Status</span>
+            <span class="info-row__value" id="s-paired">--</span>
+        </div>
+        <div id="pair-server-row" class="info-row">
+            <span class="info-row__label">Server</span>
+            <span class="info-row__value" id="s-pair-server">--</span>
+        </div>
+
+        <!-- Not paired: show PIN entry form -->
+        <div id="pair-form" style="display:none;margin-top:var(--space-3)">
+            <div class="form-group">
+                <label>Server Address</label>
+                <input type="text" id="pair-server-url" class="form-input" placeholder="rpi-divinu.local">
+                <div style="font-size:0.75rem;color:var(--color-text-dim);margin-top:var(--space-1)">
+                    Uses your configured server address. Change only if needed.
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Pairing PIN</label>
+                <input type="text" id="pair-pin" class="form-input" placeholder="6-digit PIN from server dashboard"
+                       maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
+                       style="font-size:1.5rem;text-align:center;letter-spacing:0.3em">
+            </div>
+            <button class="btn btn--primary btn--full" id="btn-pair" onclick="doPair()">Pair with Server</button>
+            <div id="pair-result"></div>
+        </div>
+
+        <!-- Paired: show success state with edit button -->
+        <div id="pair-done" style="display:none;margin-top:var(--space-3)">
+            <div class="msg msg--ok" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Paired and authenticated</span>
+                <button class="btn btn--secondary btn--small" onclick="showPairForm()">Re-pair</button>
+            </div>
+        </div>
+    </div>
+
     <!-- System Health -->
     <div class="card">
         <div class="card__title">System Health</div>
@@ -308,8 +348,85 @@ function loadStatus() {
             var memPct = d.memory_total_mb > 0 ? Math.round(d.memory_used_mb / d.memory_total_mb * 100) : 0;
             $('s-mem').textContent = d.memory_used_mb + ' / ' + d.memory_total_mb + ' MB (' + memPct + '%)';
             $('s-uptime').textContent = d.uptime || '--';
+
+            // Update pairing section
+            updatePairingUI(d);
         })
         .catch(function() {});
+}
+
+function updatePairingUI(d) {
+    var pairedEl = $('s-paired');
+    var serverEl = $('s-pair-server');
+
+    serverEl.textContent = d.server_address || '--';
+
+    // Pre-fill server URL for pairing form
+    if (!$('pair-server-url').value && d.server_address) {
+        $('pair-server-url').value = d.server_address;
+    }
+
+    if (d.paired) {
+        pairedEl.textContent = 'Paired';
+        pairedEl.className = 'info-row__value status-ok';
+        $('pair-form').style.display = 'none';
+        $('pair-done').style.display = 'block';
+    } else {
+        pairedEl.textContent = 'Not paired';
+        pairedEl.className = 'info-row__value status-warn';
+        // Only show form if not already showing the done state
+        if ($('pair-done').style.display !== 'block') {
+            $('pair-form').style.display = 'block';
+        }
+    }
+}
+
+function showPairForm() {
+    $('pair-done').style.display = 'none';
+    $('pair-form').style.display = 'block';
+    $('pair-pin').value = '';
+    $('pair-result').innerHTML = '';
+}
+
+function doPair() {
+    var pin = $('pair-pin').value.trim();
+    var serverAddr = $('pair-server-url').value.trim();
+
+    if (!pin || pin.length !== 6) { alert('Enter the 6-digit PIN from the server dashboard'); return; }
+    if (!serverAddr) { alert('Enter the server address'); return; }
+
+    // Build server URL — add https:// if no scheme
+    var serverUrl = serverAddr;
+    if (serverUrl.indexOf('://') === -1) {
+        serverUrl = 'https://' + serverUrl;
+    }
+
+    $('btn-pair').disabled = true;
+    $('btn-pair').textContent = 'Pairing...';
+    $('pair-result').innerHTML = '';
+
+    fetch('/api/pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pin, server_url: serverUrl })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        $('btn-pair').disabled = false;
+        $('btn-pair').textContent = 'Pair with Server';
+        if (d.error) {
+            $('pair-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
+        } else {
+            $('pair-result').innerHTML = '<div class="msg msg--ok">' + esc(d.message || 'Paired!') + '</div>';
+            // Refresh status to update pairing UI
+            setTimeout(loadStatus, 1000);
+        }
+    })
+    .catch(function() {
+        $('btn-pair').disabled = false;
+        $('btn-pair').textContent = 'Pair with Server';
+        $('pair-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
+    });
 }
 
 function scanNetworks() {

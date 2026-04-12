@@ -11,14 +11,12 @@ Requires the admin password set during provisioning.
 import http.server
 import json
 import logging
-import os
 import secrets
-import shutil
-import subprocess
 import threading
 import time
 
 from camera_streamer import wifi
+from camera_streamer.factory_reset import FactoryResetService
 
 log = logging.getLogger("camera-streamer.status-server")
 
@@ -443,6 +441,8 @@ def _make_status_handler(
             uptime = _get_uptime()
             mem_total, mem_used = _get_memory_mb()
 
+            paired = pairing_manager.is_paired if pairing_manager else False
+
             return {
                 "camera_id": config.camera_id,
                 "hostname": hostname,
@@ -451,6 +451,7 @@ def _make_status_handler(
                 "server_address": server_addr,
                 "server_connected": server_connected,
                 "streaming": streaming,
+                "paired": paired,
                 "cpu_temp": cpu_temp,
                 "uptime": uptime,
                 "memory_total_mb": mem_total,
@@ -557,78 +558,14 @@ def _make_status_handler(
                     self._serve_pair_page(error=err)
 
         def _handle_factory_reset(self):
-            """Wipe camera config, certs, and restart in setup mode."""
+            """Wipe camera config, certs, and restart in setup mode.
+
+            Delegates to FactoryResetService for consistent behavior
+            with the server's factory reset (ADR-0013).
+            """
             data_dir = config.data_dir if hasattr(config, "data_dir") else "/data"
-            errors = []
-
-            # Remove config file
-            config_path = os.path.join(data_dir, "config", "camera.conf")
-            try:
-                if os.path.exists(config_path):
-                    os.remove(config_path)
-            except OSError as e:
-                errors.append(str(e))
-
-            # Remove certificates (pairing data)
-            certs_dir = os.path.join(data_dir, "certs")
-            try:
-                if os.path.exists(certs_dir):
-                    shutil.rmtree(certs_dir)
-            except OSError as e:
-                errors.append(str(e))
-
-            # Remove logs
-            logs_dir = os.path.join(data_dir, "logs")
-            try:
-                if os.path.exists(logs_dir):
-                    shutil.rmtree(logs_dir)
-            except OSError as e:
-                errors.append(str(e))
-
-            # Clear WiFi credentials (NetworkManager saved connections)
-            nm_dir = "/etc/NetworkManager/system-connections"
-            try:
-                if os.path.isdir(nm_dir):
-                    for f in os.listdir(nm_dir):
-                        filepath = os.path.join(nm_dir, f)
-                        if os.path.isfile(filepath):
-                            os.remove(filepath)
-            except OSError as e:
-                errors.append(str(e))
-
-            # Reset wpa_supplicant.conf
-            try:
-                wpa_conf = "/etc/wpa_supplicant.conf"
-                if os.path.exists(wpa_conf):
-                    with open(wpa_conf, "w") as fh:
-                        fh.write(
-                            "ctrl_interface=/var/run/wpa_supplicant\n"
-                            "ctrl_interface_group=0\n"
-                            "update_config=1\n"
-                        )
-            except OSError as e:
-                errors.append(str(e))
-
-            if errors:
-                log.warning("Factory reset completed with errors: %s", errors)
-            else:
-                log.info("Factory reset completed successfully")
-
-            self._json_response({"message": "Factory reset complete. Restarting..."})
-
-            # Schedule system reboot (full reboot ensures clean first-boot state)
-            def _restart():
-                try:
-                    subprocess.run(
-                        ["systemctl", "reboot"],
-                        capture_output=True,
-                        timeout=30,
-                    )
-                except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-                    log.error("Reboot failed: %s", e)
-
-            timer = threading.Timer(2.0, _restart)
-            timer.daemon = True
-            timer.start()
+            reset_svc = FactoryResetService(config, data_dir)
+            msg, status = reset_svc.execute_reset()
+            self._json_response({"message": msg}, status)
 
     return StatusHandler

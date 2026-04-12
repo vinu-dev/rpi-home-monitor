@@ -1,6 +1,5 @@
 """Unit tests for FactoryResetService — wipe data and return to first-boot."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -225,35 +224,39 @@ class TestEdgeCases:
         assert (data_dir / "config").exists()
 
 
-class TestWifiClear:
-    """Test that factory reset clears WiFi credentials."""
+class TestWifiWipeDelegation:
+    """Test that factory reset delegates WiFi wipe to hotspot script (ADR-0013)."""
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
-    @patch("monitor.services.factory_reset_service.os.remove")
-    @patch("monitor.services.factory_reset_service.os.listdir")
-    @patch("monitor.services.factory_reset_service.os.path.isdir")
-    def test_reset_clears_nm_connections(
-        self, mock_isdir, mock_listdir, mock_remove, mock_restart, svc, data_dir
+    @patch("monitor.services.factory_reset_service.subprocess.run")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script"
+    )
+    def test_reset_calls_hotspot_wipe(
+        self, mock_find, mock_run, mock_restart, svc, data_dir
     ):
-        """NM saved connections are deleted during reset."""
-        original_isdir = os.path.isdir
-
-        def isdir_side_effect(path):
-            if path == "/etc/NetworkManager/system-connections":
-                return True
-            return original_isdir(path)
-
-        mock_isdir.side_effect = isdir_side_effect
-        mock_listdir.return_value = ["MyWiFi.nmconnection", "Work.nmconnection"]
+        """WiFi wipe delegates to hotspot script's 'wipe' command."""
+        mock_find.return_value = "/opt/monitor/scripts/monitor-hotspot.sh"
+        mock_run.return_value = MagicMock(returncode=0)
         svc.execute_reset()
-        assert mock_remove.call_count >= 2
+        wipe_calls = [
+            c
+            for c in mock_run.call_args_list
+            if len(c[0]) > 0
+            and c[0][0] == ["/opt/monitor/scripts/monitor-hotspot.sh", "wipe"]
+        ]
+        assert len(wipe_calls) == 1
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
-    def test_reset_succeeds_without_nm_dir(self, mock_restart, svc):
-        """Reset doesn't fail if NM dir doesn't exist."""
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script"
+    )
+    def test_reset_succeeds_without_hotspot_script(self, mock_find, mock_restart, svc):
+        """Reset doesn't fail if hotspot script is not found."""
+        mock_find.return_value = None
         msg, status = svc.execute_reset()
         assert status == 200

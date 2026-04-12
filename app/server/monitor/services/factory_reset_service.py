@@ -90,7 +90,7 @@ class FactoryResetService:
         ota_dir = os.path.join(self._data_dir, "ota")
         self._safe_rmtree(ota_dir, errors)
 
-        # 9. Clear WiFi credentials (NetworkManager saved connections)
+        # 9. Clear WiFi credentials via hotspot script (ADR-0013)
         self._clear_wifi(errors)
 
         if errors:
@@ -124,33 +124,44 @@ class FactoryResetService:
             errors.append(f"{path}: {exc}")
 
     def _clear_wifi(self, errors: list):
-        """Remove saved WiFi connections so device returns to AP/hotspot mode."""
-        nm_dir = "/etc/NetworkManager/system-connections"
+        """Clear WiFi credentials via the hotspot management script (ADR-0013).
+
+        Delegates to the hotspot script's 'wipe' command which handles
+        NM connection cleanup and wpa_supplicant reset in one place.
+        """
+        hotspot_script = self._find_hotspot_script()
+        if not hotspot_script:
+            log.warning("Hotspot script not found — skipping WiFi wipe")
+            errors.append("wifi: hotspot script not found")
+            return
+
         try:
-            if os.path.isdir(nm_dir):
-                for f in os.listdir(nm_dir):
-                    filepath = os.path.join(nm_dir, f)
-                    if os.path.isfile(filepath):
-                        os.remove(filepath)
-                        log.debug("Removed WiFi connection: %s", f)
-        except OSError as exc:
-            log.warning("Failed to clear WiFi credentials: %s", exc)
+            result = subprocess.run(
+                [hotspot_script, "wipe"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                log.warning("WiFi wipe returned non-zero: %s", result.stderr.strip())
+                errors.append(f"wifi: {result.stderr.strip()}")
+            else:
+                log.debug("WiFi credentials wiped via %s", hotspot_script)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            log.warning("Failed to wipe WiFi credentials: %s", exc)
             errors.append(f"wifi: {exc}")
 
-        # Reset wpa_supplicant.conf to empty state
-        wpa_conf = "/etc/wpa_supplicant.conf"
-        try:
-            if os.path.exists(wpa_conf):
-                with open(wpa_conf, "w") as fh:
-                    fh.write(
-                        "ctrl_interface=/var/run/wpa_supplicant\n"
-                        "ctrl_interface_group=0\n"
-                        "update_config=1\n"
-                    )
-                log.debug("Reset wpa_supplicant.conf")
-        except OSError as exc:
-            log.warning("Failed to reset wpa_supplicant.conf: %s", exc)
-            errors.append(f"wpa: {exc}")
+    @staticmethod
+    def _find_hotspot_script() -> str | None:
+        """Locate the hotspot management script for this device."""
+        candidates = [
+            "/opt/monitor/scripts/monitor-hotspot.sh",
+            "/opt/camera/scripts/camera-hotspot.sh",
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                return path
+        return None
 
     def _schedule_restart(self):
         """Reboot the system after a 2-second delay.
