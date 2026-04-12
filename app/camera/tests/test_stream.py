@@ -146,20 +146,18 @@ class TestMTLSStreaming:
         (certs / "client.crt").write_text("CERT")
 
         mgr = StreamManager(camera_config)
-        mgr._ffmpeg_tls_checked = True
         assert ":8322/" in mgr._stream_url
 
-    def test_fallback_to_rtsp_without_tls(self, camera_config, data_dir):
-        """Should fall back to plain RTSP when ffmpeg lacks TLS."""
+    def test_mtls_required_when_paired(self, camera_config, data_dir):
+        """mTLS must be used when camera is paired (has client cert)."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
         (certs / "client.key").write_text("KEY")
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
-        mgr._ffmpeg_tls_checked = False  # ffmpeg without TLS
-        assert mgr._use_mtls is False
-        assert mgr._stream_url.startswith("rtsp://")
+        assert mgr._use_mtls is True
+        assert mgr._stream_url.startswith("rtsps://")
 
 
 class TestStreamBackoff:

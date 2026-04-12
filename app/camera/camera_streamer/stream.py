@@ -114,34 +114,8 @@ class StreamManager:
 
     @property
     def _use_mtls(self):
-        """Return True if mTLS certs are available and ffmpeg supports TLS.
-
-        Falls back to plain RTSP if ffmpeg lacks OpenSSL/TLS support
-        (e.g., ffmpeg 4.x compiled with --disable-openssl).
-        """
-        if not self._config.has_client_cert:
-            return False
-        if not self._ffmpeg_has_tls:
-            log.debug("mTLS certs present but ffmpeg lacks TLS — using plain RTSP")
-            return False
-        return True
-
-    @property
-    def _ffmpeg_has_tls(self):
-        """Check if ffmpeg was built with TLS support."""
-        if not hasattr(self, "_ffmpeg_tls_checked"):
-            try:
-                result = subprocess.run(
-                    ["ffmpeg", "-protocols"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                output = result.stderr + result.stdout
-                self._ffmpeg_tls_checked = "tls" in output.lower()
-            except (OSError, subprocess.TimeoutExpired):
-                self._ffmpeg_tls_checked = False
-        return self._ffmpeg_tls_checked
+        """Return True if mTLS certs are available (camera is paired)."""
+        return self._config.has_client_cert
 
     @property
     def _stream_url(self):
@@ -203,6 +177,8 @@ class StreamManager:
             "--bitrate",
             "4000000",  # 4 Mbps
             "--inline",  # SPS/PPS with every keyframe
+            "--intra",
+            "30",  # keyframe every 30 frames (~1.2s at 25fps)
             "--nopreview",
             "--listen",  # TCP server mode
             "-o",
@@ -220,9 +196,9 @@ class StreamManager:
             "-fflags",
             "+genpts",
             "-probesize",
-            "15000000",  # 15MB — enough for 2+ keyframes
+            "50000000",  # 50MB — ample room for keyframes
             "-analyzeduration",
-            "15000000",  # 15s — wait for SPS/PPS
+            "30000000",  # 30s — generous probe window for SPS/PPS
             "-f",
             "h264",  # tell ffmpeg it's raw H.264
             "-i",
