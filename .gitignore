@@ -37,6 +37,13 @@ coverage.xml
 .vscode/
 .idea/
 
+# Secrets / credentials (safety net)
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+
 # OS
 .DS_Store
 Thumbs.db

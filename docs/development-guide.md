@@ -409,7 +409,7 @@ Every PR must satisfy the appropriate layers:
 **Why smoke tests (Layer 5)?** Unit/integration tests use mocks. Smoke tests hit a real RPi with real HTTPS, real disk, real systemd services. Run after deploying to hardware:
 
 ```bash
-./scripts/smoke-test.sh 192.168.8.245 12345678
+./scripts/smoke-test.sh <server-ip> <password>
 ```
 
 #### Key Rules (non-negotiable)

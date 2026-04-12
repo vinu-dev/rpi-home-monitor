@@ -49,8 +49,8 @@ if [ -z "$SERVER_IP" ] || [ -z "$CAMERA_IP" ]; then
     echo "  WIFI_PASSWORD — WiFi password (required for server setup)"
     echo ""
     echo "Example:"
-    echo "  WIFI_SSID=MysticNet2.4 WIFI_PASSWORD=secret \\"
-    echo "    ./scripts/e2e-smoke-test.sh 192.168.1.245 192.168.1.186 admin"
+    echo "  WIFI_SSID=MyNetwork WIFI_PASSWORD=secret \\"
+    echo "    ./scripts/e2e-smoke-test.sh <server-ip> <camera-ip> admin"
     exit 1
 fi
 

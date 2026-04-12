@@ -9,9 +9,9 @@
 #   ./scripts/smoke-test.sh <server-ip> [admin-password] [camera-ip] [camera-password]
 #
 # Examples:
-#   ./scripts/smoke-test.sh 192.168.8.245 12345678
-#   ./scripts/smoke-test.sh 192.168.8.245 12345678 192.168.8.187
-#   ./scripts/smoke-test.sh 192.168.8.245 12345678 192.168.8.187 cam-pass
+#   ./scripts/smoke-test.sh <server-ip> <password>
+#   ./scripts/smoke-test.sh <server-ip> <password> <camera-ip>
+#   ./scripts/smoke-test.sh <server-ip> <password> <camera-ip> <cam-password>
 #   ./scripts/smoke-test.sh homemonitor.local
 #
 # Camera password defaults to admin-password if not specified (dev builds
