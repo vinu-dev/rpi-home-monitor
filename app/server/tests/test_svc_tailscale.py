@@ -239,7 +239,7 @@ class TestConnect:
         ]
         svc.connect()
         call_args = mock_run.call_args_list[1][0][0]
-        assert call_args == ["tailscale", "up"]
+        assert call_args == ["tailscale", "up", "--timeout=5s"]
 
     @patch("monitor.services.tailscale_service.subprocess.run")
     def test_connect_not_installed(self, mock_run, svc):
