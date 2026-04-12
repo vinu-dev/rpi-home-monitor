@@ -2,54 +2,140 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a1a">
 <title>Camera Login</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-       background: #1a1a2e; color: #eee; min-height: 100vh;
-       display: flex; flex-direction: column; align-items: center;
-       justify-content: center; }
-.container { max-width: 380px; width: 100%; padding: 20px; }
-h1 { text-align: center; color: #e94560; margin-bottom: 6px; font-size: 1.5em; }
-.cam-id { text-align: center; color: #666; font-size: 0.8em; margin-bottom: 30px; }
-.card { background: #16213e; border-radius: 12px; padding: 24px; }
-label { display: block; margin: 0 0 6px; color: #8090b0; font-size: 0.85em; }
-input[type=text], input[type=password] {
-  width: 100%; padding: 14px; border: 1px solid #2a3a5e; border-radius: 8px;
-  background: #0f3460; color: #eee; font-size: 1em; outline: none; }
-input:focus { border-color: #e94560; }
+:root {
+    --color-bg: #0a0a1a;
+    --color-surface: #1a1a2e;
+    --color-surface-alt: #16213e;
+    --color-border: #2a2a3e;
+    --color-text: #eee;
+    --color-text-muted: #999;
+    --color-accent: #e94560;
+    --color-accent-hover: #c73a52;
+    --color-danger: #e74c3c;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.login-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 380px;
+    border: 1px solid var(--color-border);
+}
+.login-card__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.login-card__title {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-accent);
+}
+.login-card__subtitle {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-bottom: 24px;
+}
 .form-group { margin-bottom: 14px; }
-.btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 10px;
-  font-size: 1em; font-weight: 600; cursor: pointer; margin-top: 16px;
-  background: #e94560; color: #fff; }
-.btn:hover { background: #d63851; }
-.error { background: #7f1d1d; color: #fecaca; padding: 10px; border-radius: 8px;
-  margin-bottom: 14px; font-size: 0.9em; text-align: center; }
-.hint { color: #506080; font-size: 0.8em; text-align: center; margin-top: 16px; }
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-bottom: 6px;
+}
+.form-input {
+    width: 100%;
+    padding: 12px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.form-input:focus { border-color: var(--color-accent); }
+.btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 16px;
+    background: var(--color-accent);
+    color: #fff;
+    transition: background 0.2s;
+}
+.btn:hover { background: var(--color-accent-hover); }
+.error {
+    background: rgba(231, 76, 60, 0.15);
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    margin-bottom: 14px;
+    text-align: center;
+}
+.hint {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    margin-top: 16px;
+}
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>Camera Login</h1>
-  <p class="cam-id">{{CAMERA_ID}}</p>
-  <div class="card">
+<div class="login-card">
+    <div class="login-card__logo">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#e94560" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span class="login-card__title">Camera</span>
+    </div>
+    <p class="login-card__subtitle">{{CAMERA_ID}}</p>
     <div class="error" style="display:{{ERROR_DISPLAY}}">{{ERROR}}</div>
     <form method="POST" action="/login">
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input type="text" name="username" id="username" placeholder="admin"
-               autofocus required>
-      </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" name="password" id="password" placeholder="Enter password"
-               required>
-      </div>
-      <button type="submit" class="btn">Login</button>
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" name="username" id="username" class="form-input"
+                   placeholder="admin" autofocus required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" name="password" id="password" class="form-input"
+                   placeholder="Enter password" required>
+        </div>
+        <button type="submit" class="btn">Login</button>
     </form>
-  </div>
-  <p class="hint">Credentials were set during camera setup.</p>
+    <p class="hint">Credentials were set during camera setup.</p>
 </div>
 </body>
 </html>

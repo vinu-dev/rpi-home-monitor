@@ -14,6 +14,7 @@ from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
+from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
@@ -207,6 +208,13 @@ def _init_services(app):
 
     # Tailscale service — VPN status and management
     app.tailscale_service = TailscaleService(audit=app.audit)
+
+    # Factory reset service — wipe all data and return to first-boot
+    app.factory_reset_service = FactoryResetService(
+        store=app.store,
+        audit=app.audit,
+        data_dir=app.config["DATA_DIR"],
+    )
 
     # Connect storage manager → streaming service for dir change notifications
     def _on_recording_dir_change(new_dir):

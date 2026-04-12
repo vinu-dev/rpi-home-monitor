@@ -76,6 +76,36 @@
             </div>
         </div>
     </div>
+
+    <!-- Factory Reset -->
+    <div class="settings-section">
+        <div class="settings-section__title">Factory Reset</div>
+        <div class="card">
+            <p style="font-size:var(--text-sm); color:var(--color-text-muted); margin-bottom:var(--space-3);">
+                Wipe all configuration, users, certificates, and recordings. The server will restart and present the first-boot setup wizard.
+            </p>
+            <div class="form-group">
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                    <input type="checkbox" x-model="resetKeepRecordings">
+                    <span>Keep recordings</span>
+                </label>
+            </div>
+            <template x-if="!resetConfirm">
+                <button class="btn btn--danger" @click="resetConfirm = true">Factory Reset</button>
+            </template>
+            <template x-if="resetConfirm">
+                <div>
+                    <p style="color:var(--color-danger); font-weight:600; margin-bottom:var(--space-2);">
+                        This action cannot be undone. Are you sure?
+                    </p>
+                    <div style="display:flex; gap:var(--space-2);">
+                        <button class="btn btn--danger" @click="doFactoryReset()">Yes, Reset Everything</button>
+                        <button class="btn btn--secondary" @click="resetConfirm = false">Cancel</button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
 </div>
 
 <!-- ═════════��═════════════════════════════════════════════════
@@ -477,6 +507,9 @@ function settingsPage() {
 
         storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false },
 
+        resetConfirm: false,
+        resetKeepRecordings: false,
+
         async init() {
             try {
                 await window.HM.auth.getMe();
@@ -514,6 +547,18 @@ function settingsPage() {
                 await window.HM.api.put('/api/v1/settings', this.settings);
                 window.HM.toast('Settings saved', 'success');
             } catch(e) { window.HM.toast(e.message || 'Failed to save settings', 'error'); }
+        },
+
+        /* --- Factory Reset --- */
+        async doFactoryReset() {
+            try {
+                await window.HM.api.post('/api/v1/system/factory-reset', { keep_recordings: this.resetKeepRecordings });
+                window.HM.toast('Factory reset initiated. Restarting...', 'info');
+                setTimeout(function() { window.location.href = '/'; }, 5000);
+            } catch(e) {
+                window.HM.toast(e.message || 'Factory reset failed', 'error');
+                this.resetConfirm = false;
+            }
         },
 
         /* --- System Info --- */

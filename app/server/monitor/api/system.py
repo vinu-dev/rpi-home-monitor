@@ -7,9 +7,10 @@ Endpoints:
   GET  /system/tailscale           - Tailscale VPN status
   POST /system/tailscale/connect   - Start Tailscale, return auth URL if needed
   POST /system/tailscale/disconnect - Stop Tailscale
+  POST /system/factory-reset       - Wipe all data and return to first-boot state
 """
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, login_required
 from monitor.services.health import get_health_summary, get_uptime
@@ -101,3 +102,30 @@ def tailscale_disconnect():
         return jsonify({"error": err}), 500
 
     return jsonify({"message": "Tailscale disconnected"}), 200
+
+
+# ---------------------------------------------------------------------------
+# Factory reset
+# ---------------------------------------------------------------------------
+
+
+@system_bp.route("/factory-reset", methods=["POST"])
+@admin_required
+def factory_reset():
+    """Wipe all data and return to first-boot state. Admin only.
+
+    Accepts optional JSON body: {"keep_recordings": true}
+    """
+    body = request.get_json(silent=True) or {}
+    keep_recordings = bool(body.get("keep_recordings", False))
+
+    user = session.get("user", "")
+    ip = request.remote_addr or ""
+
+    svc = current_app.factory_reset_service
+    msg, status = svc.execute_reset(
+        keep_recordings=keep_recordings,
+        requesting_user=user,
+        requesting_ip=ip,
+    )
+    return jsonify({"message": msg}), status

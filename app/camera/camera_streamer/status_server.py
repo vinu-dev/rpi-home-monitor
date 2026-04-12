@@ -11,7 +11,10 @@ Requires the admin password set during provisioning.
 import http.server
 import json
 import logging
+import os
 import secrets
+import shutil
+import subprocess
 import threading
 import time
 
@@ -323,6 +326,10 @@ def _make_status_handler(
                         self._json_response({"error": err or "Connection failed"}, 500)
                 except json.JSONDecodeError:
                     self._json_response({"error": "Invalid JSON"}, 400)
+            elif self.path == "/api/factory-reset":
+                if not self._require_auth():
+                    return
+                self._handle_factory_reset()
             elif self.path == "/api/password":
                 if not self._require_auth():
                     return
@@ -548,5 +555,56 @@ def _make_status_handler(
                     )
                 else:
                     self._serve_pair_page(error=err)
+
+        def _handle_factory_reset(self):
+            """Wipe camera config, certs, and restart in setup mode."""
+            data_dir = config.data_dir if hasattr(config, "data_dir") else "/data"
+            errors = []
+
+            # Remove config file
+            config_path = os.path.join(data_dir, "config", "camera.conf")
+            try:
+                if os.path.exists(config_path):
+                    os.remove(config_path)
+            except OSError as e:
+                errors.append(str(e))
+
+            # Remove certificates (pairing data)
+            certs_dir = os.path.join(data_dir, "certs")
+            try:
+                if os.path.exists(certs_dir):
+                    shutil.rmtree(certs_dir)
+            except OSError as e:
+                errors.append(str(e))
+
+            # Remove logs
+            logs_dir = os.path.join(data_dir, "logs")
+            try:
+                if os.path.exists(logs_dir):
+                    shutil.rmtree(logs_dir)
+            except OSError as e:
+                errors.append(str(e))
+
+            if errors:
+                log.warning("Factory reset completed with errors: %s", errors)
+            else:
+                log.info("Factory reset completed successfully")
+
+            self._json_response({"message": "Factory reset complete. Restarting..."})
+
+            # Schedule service restart
+            def _restart():
+                try:
+                    subprocess.run(
+                        ["systemctl", "restart", "camera-streamer"],
+                        capture_output=True,
+                        timeout=30,
+                    )
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+                    log.error("Restart failed: %s", e)
+
+            timer = threading.Timer(2.0, _restart)
+            timer.daemon = True
+            timer.start()
 
     return StatusHandler
