@@ -20,7 +20,7 @@ IMAGE_INSTALL += " \
 IMAGE_INSTALL += " \
     swupdate \
     swupdate-progress \
-    u-boot-fw-utils \
+    libubootenv-bin \
     "
 
 # --- Python for camera streamer app ---

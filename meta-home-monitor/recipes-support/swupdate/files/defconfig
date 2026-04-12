@@ -56,5 +56,13 @@ CONFIG_EXTRA_LDLIBS=""
 # CONFIG_SURICATTA is not set
 # CONFIG_WEBSERVER is not set
 # CONFIG_MONGOOSE is not set
-# CONFIG_SIGNED_IMAGES is not set
+#
+# Signing — bundle signature verification (ADR-0008)
+# Uses CMS (PKCS7) with OpenSSL 3.x backend, which supports
+# Ed25519 keys natively. Public key at /etc/swupdate-public.pem.
+#
+CONFIG_SIGNED_IMAGES=y
+CONFIG_SIGALG_CMS=y
+# CONFIG_SIGALG_RAWRSA is not set
+# CONFIG_SIGALG_GPG is not set
 # CONFIG_RDIFFHANDLER is not set
