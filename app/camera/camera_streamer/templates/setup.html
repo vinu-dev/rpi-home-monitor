@@ -97,33 +97,55 @@ input:focus { border-color: #e94560; }
       Scanning will briefly drop the hotspot connection.</p>
   </div>
 
-  <!-- CONNECTING VIEW -->
+  <!-- CONNECTING VIEW (shown immediately after Save & Connect) -->
   <div id="view-connecting">
     <div class="card">
       <div class="msg msg-info">
         <div class="spinner"></div> Connecting to WiFi...
       </div>
       <p style="color:#8090b0;font-size:0.85em;text-align:center;margin-top:12px">
-        The hotspot will disappear now. This is normal.<br><br>
-        <strong>If it worked:</strong> the camera LED will go solid.
-        You can close this page.<br><br>
-        <strong>If it failed:</strong> the <em>HomeCam-Setup</em> hotspot
-        will reappear in about 30 seconds. Reconnect and try again.
+        The hotspot will disappear now. This is normal.
       </p>
     </div>
+
+    <div class="card" id="cam-address-card">
+      <h3 style="text-align:center;margin-bottom:8px">Camera Address</h3>
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;text-align:center;margin:12px 0;font-family:monospace;font-size:1.15em;color:#4ade80" id="cam-address-display">
+      </div>
+      <p style="color:#fff;text-align:center;font-size:0.9em;margin-top:12px">
+        Connect your phone back to your home WiFi,<br>then open the address above.
+      </p>
+      <p style="text-align:center;font-size:0.85em;color:#8090b0;margin-top:4px">
+        Login: <strong id="cam-login-user">admin</strong> / your password
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:8px">Next Steps</h3>
+      <p style="color:#8090b0;font-size:0.85em;line-height:1.6">
+        <span style="color:#e94560;font-weight:600">1.</span> Connect your phone to your home WiFi<br>
+        <span style="color:#e94560;font-weight:600">2.</span> Open the camera address above<br>
+        <span style="color:#e94560;font-weight:600">3.</span> On the <strong>server dashboard</strong>, click <strong>Pair</strong> on this camera to get a 6-digit PIN<br>
+        <span style="color:#e94560;font-weight:600">4.</span> Enter the PIN on the camera settings page to complete pairing
+      </p>
+    </div>
+
+    <p style="color:#506080;font-size:0.8em;text-align:center;margin-top:8px">
+      If it failed, the <em>HomeCam-Setup</em> hotspot will reappear in ~30 seconds.
+    </p>
   </div>
 
-  <!-- RESULT VIEW (shown if user reconnects after success/failure) -->
+  <!-- RESULT VIEW (shown if user reconnects to hotspot after success/failure) -->
   <div id="view-result">
     <div id="result-msg" class="msg msg-err"></div>
     <div id="result-next-steps" style="display:none">
       <div class="card" style="margin-top:16px">
         <h3 style="margin-bottom:8px">Next Steps</h3>
-        <p style="color:#8090b0;font-size:0.85em;line-height:1.5">
-          1. Connect your phone back to your home WiFi<br>
-          2. Open the camera settings page at the address above<br>
-          3. On the <strong>server dashboard</strong>, click <strong>Pair</strong> on this camera to get a 6-digit PIN<br>
-          4. Enter the PIN on the camera settings page to complete pairing
+        <p style="color:#8090b0;font-size:0.85em;line-height:1.6">
+          <span style="color:#e94560;font-weight:600">1.</span> Connect your phone back to your home WiFi<br>
+          <span style="color:#e94560;font-weight:600">2.</span> Open the camera settings page at the address above<br>
+          <span style="color:#e94560;font-weight:600">3.</span> On the <strong>server dashboard</strong>, click <strong>Pair</strong> on this camera to get a 6-digit PIN<br>
+          <span style="color:#e94560;font-weight:600">4.</span> Enter the PIN on the camera settings page to complete pairing
         </p>
       </div>
     </div>
@@ -132,6 +154,8 @@ input:focus { border-color: #e94560; }
 </div>
 
 <script>
+var CAMERA_HOSTNAME = '{{HOSTNAME}}';
+
 function $(id) { return document.getElementById(id); }
 
 function showView(name) {
@@ -141,6 +165,17 @@ function showView(name) {
 }
 
 function showForm() { showView('view-form'); }
+
+function showConnecting(hostname) {
+  var h = hostname || CAMERA_HOSTNAME;
+  var url = h ? 'http://' + h + '.local' : '';
+  $('cam-address-display').textContent = url || 'Resolving...';
+  if ($('cam-login-user')) {
+    var user = $('in-admin-user') ? $('in-admin-user').value.trim() : 'admin';
+    $('cam-login-user').textContent = user || 'admin';
+  }
+  showView('view-connecting');
+}
 
 function loadNetworks() {
   var wrap = $('net-list-wrap');
@@ -212,11 +247,12 @@ function doConnect() {
       alert(d.error);
       $('btn-save').disabled = false;
     } else {
-      showView('view-connecting');
+      showConnecting(d.hostname || '');
     }
   })
   .catch(function() {
-    showView('view-connecting');
+    // Network error — hotspot dropped during request, setup likely succeeded
+    showConnecting('');
   });
 }
 

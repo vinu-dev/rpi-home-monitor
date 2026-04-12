@@ -26,8 +26,14 @@ fi
 # Create persistent directory
 mkdir -p "$PERSIST_DIR"
 
-# Seed from rootfs on first run (or if persistent dir is empty)
-if [ -z "$(ls -A "$PERSIST_DIR" 2>/dev/null)" ]; then
+# Seed from rootfs on first run (or if persistent dir is empty).
+# Skip seeding if .wifi-wiped marker exists (factory reset cleared WiFi
+# deliberately — don't restore baked-in connections from the rootfs).
+WIPE_MARKER="$PERSIST_DIR/../.wifi-wiped"
+if [ -f "$WIPE_MARKER" ]; then
+    echo "nm-persist: wifi-wiped marker found — skipping rootfs seed"
+    rm -f "$WIPE_MARKER"
+elif [ -z "$(ls -A "$PERSIST_DIR" 2>/dev/null)" ]; then
     echo "nm-persist: seeding connections from rootfs"
     if [ -d "$ROOTFS_DIR" ] && [ -n "$(ls -A "$ROOTFS_DIR" 2>/dev/null)" ]; then
         cp -a "$ROOTFS_DIR"/* "$PERSIST_DIR"/

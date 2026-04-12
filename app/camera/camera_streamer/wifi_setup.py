@@ -95,6 +95,7 @@ class WifiSetupServer:
         self._thread = None
         self._cached_networks = []
         self._connect_result = None
+        self._expected_hostname = self._compute_hostname()
 
     def needs_setup(self):
         """Return True if setup hasn't been completed."""
@@ -214,8 +215,8 @@ class WifiSetupServer:
         except OSError as e:
             return False, str(e)
 
-    def _set_unique_hostname(self):
-        """Set unique hostname using CPU serial suffix."""
+    def _compute_hostname(self):
+        """Pre-compute the hostname from CPU serial (same logic as _set_unique_hostname)."""
         try:
             serial = ""
             with open("/proc/cpuinfo") as f:
@@ -223,10 +224,18 @@ class WifiSetupServer:
                     if line.startswith("Serial"):
                         serial = line.split(":")[-1].strip()
             suffix = serial[-4:] if serial else "0000"
-            hostname = f"{self._hostname_prefix}-{suffix}"
-            wifi.set_hostname(hostname)
-        except Exception as e:
-            log.warning("Failed to set hostname: %s", e)
+            return f"{self._hostname_prefix}-{suffix}"
+        except Exception:
+            return ""
+
+    def _set_unique_hostname(self):
+        """Set unique hostname using CPU serial suffix."""
+        hostname = self._expected_hostname
+        if hostname:
+            try:
+                wifi.set_hostname(hostname)
+            except Exception as e:
+                log.warning("Failed to set hostname: %s", e)
 
     def get_status(self):
         """Return current connection attempt status."""
@@ -354,6 +363,7 @@ def _make_handler(config, setup_server):
                         {
                             "status": "connecting",
                             "message": "Settings saved. Connecting to WiFi...",
+                            "hostname": setup_server._expected_hostname,
                         }
                     )
                 except json.JSONDecodeError:
@@ -376,6 +386,8 @@ def _make_handler(config, setup_server):
         def _serve_setup_page(self):
             html = _load_template("setup.html").replace(
                 "{{CAMERA_ID}}", config.camera_id
+            ).replace(
+                "{{HOSTNAME}}", setup_server._expected_hostname or ""
             )
             body = html.encode()
             self.send_response(200)

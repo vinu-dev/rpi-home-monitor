@@ -150,6 +150,10 @@ class CameraLifecycle:
             return True
 
         log.info("First boot — starting setup wizard")
+
+        # Start WiFi hotspot for setup (AP mode so user can connect)
+        self._start_hotspot()
+
         self._setup_server.start()
 
         while not self._is_shutdown() and self._setup_server.needs_setup():
@@ -288,6 +292,51 @@ class CameraLifecycle:
         return True
 
     # ---- Helper methods ----
+
+    HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
+
+    def _start_hotspot(self):
+        """Start WiFi hotspot for setup mode if not already running.
+
+        On Yocto images, camera-hotspot.service starts the hotspot
+        via systemd before camera-streamer. This method checks if
+        the hotspot is already active and only starts it if needed.
+        Uses the same shell script as the systemd service (ADR-0013).
+        """
+        # Check if hotspot is already running (started by systemd)
+        try:
+            result = subprocess.run(
+                [self.HOTSPOT_SCRIPT, "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                log.info("Hotspot already active (started by systemd)")
+                return
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        # Hotspot not running — start it
+        try:
+            result = subprocess.run(
+                [self.HOTSPOT_SCRIPT, "start"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode == 0:
+                log.info("Hotspot started via script")
+            else:
+                log.warning(
+                    "Hotspot script failed (rc=%d): %s",
+                    result.returncode,
+                    result.stderr.strip() or result.stdout.strip(),
+                )
+        except FileNotFoundError:
+            log.warning("Hotspot script not found at %s", self.HOTSPOT_SCRIPT)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            log.warning("Hotspot script error: %s", e)
 
     def _wait_for_wifi(self):
         """Wait for WiFi interface to have an IP address."""

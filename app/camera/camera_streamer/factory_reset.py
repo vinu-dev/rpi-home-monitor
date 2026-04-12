@@ -94,7 +94,14 @@ class FactoryResetService:
             errors.append(f"{path}: {exc}")
 
     def _clear_wifi(self, errors: list):
-        """Clear WiFi credentials via hotspot script's 'wipe' command."""
+        """Clear WiFi credentials via hotspot script + direct cleanup.
+
+        The hotspot script's 'wipe' command handles nmcli deletion and
+        file cleanup. We also directly clean /data/network/ as a safety
+        net — nm-persist.sh bind-mounts this over /etc/NetworkManager/
+        system-connections/ on every boot, so it must be wiped too.
+        """
+        # 1. Run hotspot script wipe (handles nmcli + /etc cleanup)
         try:
             if os.path.isfile(self._hotspot_script):
                 result = subprocess.run(
@@ -112,12 +119,43 @@ class FactoryResetService:
                     log.debug("WiFi credentials wiped via hotspot script")
             else:
                 log.debug(
-                    "Hotspot script not found at %s — skipping WiFi wipe",
+                    "Hotspot script not found at %s — skipping script wipe",
                     self._hotspot_script,
                 )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
             log.warning("Failed to wipe WiFi credentials: %s", exc)
             errors.append(f"wifi: {exc}")
+
+        # 2. Always wipe /data/network/system-connections/ directly
+        #    (nm-persist.sh restores connections from here on every boot)
+        persist_dir = os.path.join(self._data_dir, "network", "system-connections")
+        self._wipe_dir_contents(persist_dir, "persistent WiFi", errors)
+
+        # 3. Write a marker so nm-persist.sh skips re-seeding from rootfs
+        #    (rootfs may have baked-in WiFi connections from dev builds)
+        marker = os.path.join(self._data_dir, "network", ".wifi-wiped")
+        try:
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w") as f:
+                f.write("1\n")
+            log.debug("WiFi wipe marker written: %s", marker)
+        except OSError as exc:
+            log.warning("Failed to write wifi wipe marker: %s", exc)
+            errors.append(f"wifi-marker: {exc}")
+
+    def _wipe_dir_contents(self, dirpath: str, label: str, errors: list):
+        """Remove all files in a directory (not the directory itself)."""
+        if not os.path.isdir(dirpath):
+            return
+        for fname in os.listdir(dirpath):
+            fpath = os.path.join(dirpath, fname)
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+                    log.debug("Removed %s: %s", label, fname)
+            except OSError as exc:
+                log.warning("Failed to remove %s: %s", fpath, exc)
+                errors.append(f"{label}: {exc}")
 
     def _schedule_reboot(self):
         """Reboot the system after a 2-second delay.

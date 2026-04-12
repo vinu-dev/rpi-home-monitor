@@ -148,7 +148,7 @@ def noauth_config(tmp_path):
 
 SETUP_STATUS_FIELDS = {"status", "error", "setup_complete", "camera_id", "hostname"}
 NETWORK_FIELDS = {"ssid", "signal", "security"}
-CONNECT_SUCCESS_FIELDS = {"status", "message"}
+CONNECT_SUCCESS_FIELDS = {"status", "message", "hostname"}
 
 
 class TestSetupNetworksContract:

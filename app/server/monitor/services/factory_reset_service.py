@@ -124,32 +124,66 @@ class FactoryResetService:
             errors.append(f"{path}: {exc}")
 
     def _clear_wifi(self, errors: list):
-        """Clear WiFi credentials via the hotspot management script (ADR-0013).
+        """Clear WiFi credentials via hotspot script + direct cleanup.
 
-        Delegates to the hotspot script's 'wipe' command which handles
-        NM connection cleanup and wpa_supplicant reset in one place.
+        The hotspot script's 'wipe' command handles nmcli deletion and
+        file cleanup. We also directly clean /data/network/ as a safety
+        net — nm-persist.sh bind-mounts this over /etc/NetworkManager/
+        system-connections/ on every boot, so it must be wiped too.
         """
+        # 1. Run hotspot script wipe (handles nmcli + /etc cleanup)
         hotspot_script = self._find_hotspot_script()
-        if not hotspot_script:
-            log.warning("Hotspot script not found — skipping WiFi wipe")
-            errors.append("wifi: hotspot script not found")
-            return
+        if hotspot_script:
+            try:
+                result = subprocess.run(
+                    [hotspot_script, "wipe"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if result.returncode != 0:
+                    log.warning(
+                        "WiFi wipe returned non-zero: %s", result.stderr.strip()
+                    )
+                    errors.append(f"wifi: {result.stderr.strip()}")
+                else:
+                    log.debug("WiFi credentials wiped via %s", hotspot_script)
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+                log.warning("Failed to wipe WiFi credentials: %s", exc)
+                errors.append(f"wifi: {exc}")
+        else:
+            log.warning("Hotspot script not found — skipping script wipe")
 
+        # 2. Always wipe /data/network/system-connections/ directly
+        #    (nm-persist.sh restores connections from here on every boot)
+        persist_dir = os.path.join(self._data_dir, "network", "system-connections")
+        self._wipe_dir_contents(persist_dir, "persistent WiFi", errors)
+
+        # 3. Write a marker so nm-persist.sh skips re-seeding from rootfs
+        #    (rootfs may have baked-in WiFi connections from dev builds)
+        marker = os.path.join(self._data_dir, "network", ".wifi-wiped")
         try:
-            result = subprocess.run(
-                [hotspot_script, "wipe"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if result.returncode != 0:
-                log.warning("WiFi wipe returned non-zero: %s", result.stderr.strip())
-                errors.append(f"wifi: {result.stderr.strip()}")
-            else:
-                log.debug("WiFi credentials wiped via %s", hotspot_script)
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-            log.warning("Failed to wipe WiFi credentials: %s", exc)
-            errors.append(f"wifi: {exc}")
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w") as f:
+                f.write("1\n")
+            log.debug("WiFi wipe marker written: %s", marker)
+        except OSError as exc:
+            log.warning("Failed to write wifi wipe marker: %s", exc)
+            errors.append(f"wifi-marker: {exc}")
+
+    def _wipe_dir_contents(self, dirpath: str, label: str, errors: list):
+        """Remove all files in a directory (not the directory itself)."""
+        if not os.path.isdir(dirpath):
+            return
+        for fname in os.listdir(dirpath):
+            fpath = os.path.join(dirpath, fname)
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+                    log.debug("Removed %s: %s", label, fname)
+            except OSError as exc:
+                log.warning("Failed to remove %s: %s", fpath, exc)
+                errors.append(f"{label}: {exc}")
 
     @staticmethod
     def _find_hotspot_script() -> str | None:

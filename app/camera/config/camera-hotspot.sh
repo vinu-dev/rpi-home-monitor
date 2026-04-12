@@ -168,12 +168,34 @@ connect_wifi() {
 wipe_wifi() {
     echo "Wiping all saved WiFi credentials"
 
+    # Use nmcli to properly delete connections from NM's in-memory state
+    # (just deleting files doesn't work — NM re-writes them on shutdown)
+    nmcli -t -f NAME,TYPE con show 2>/dev/null | while IFS=: read -r NAME TYPE; do
+        if [ "$TYPE" = "802-11-wireless" ]; then
+            nmcli con delete "$NAME" 2>/dev/null && echo "  Deleted: $NAME" || true
+        fi
+    done
+
+    # Clean up rootfs connection files
     NM_DIR="/etc/NetworkManager/system-connections"
     if [ -d "$NM_DIR" ]; then
         for CONN_FILE in "${NM_DIR}"/*; do
             if [ -f "$CONN_FILE" ]; then
                 rm -f "$CONN_FILE"
-                echo "  Removed: $(basename "$CONN_FILE")"
+                echo "  Removed file: $(basename "$CONN_FILE")"
+            fi
+        done
+    fi
+
+    # Clean up persistent /data connections (nm-persist.sh bind-mounts
+    # /data/network/system-connections/ over /etc/NetworkManager/system-connections/
+    # on every boot — wiping only /etc is not enough)
+    PERSIST_DIR="/data/network/system-connections"
+    if [ -d "$PERSIST_DIR" ]; then
+        for CONN_FILE in "${PERSIST_DIR}"/*; do
+            if [ -f "$CONN_FILE" ]; then
+                rm -f "$CONN_FILE"
+                echo "  Removed persistent: $(basename "$CONN_FILE")"
             fi
         done
     fi
