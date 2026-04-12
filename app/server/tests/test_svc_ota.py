@@ -282,6 +282,161 @@ class TestCleanStaging:
         svc.clean_staging()  # Should not raise
 
 
+class TestScanUsb:
+    """Test USB .swu bundle scanning."""
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_finds_bundles(self, mock_detect, svc, data_dir):
+        """Should find .swu files on mounted USB devices."""
+        usb_mount = os.path.join(data_dir, "usb_mount")
+        os.makedirs(usb_mount)
+        swu_path = os.path.join(usb_mount, "update-1.2.swu")
+        with open(swu_path, "wb") as f:
+            f.write(b"x" * 256)
+
+        mock_detect.return_value = [{"path": "/dev/sda1", "mountpoint": usb_mount}]
+
+        bundles = svc.scan_usb()
+        assert len(bundles) == 1
+        assert bundles[0]["filename"] == "update-1.2.swu"
+        assert bundles[0]["size"] == 256
+        assert bundles[0]["device"] == "/dev/sda1"
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_searches_subdirs(self, mock_detect, svc, data_dir):
+        """Should search updates/ and ota/ subdirectories."""
+        usb_mount = os.path.join(data_dir, "usb_mount2")
+        updates_dir = os.path.join(usb_mount, "updates")
+        os.makedirs(updates_dir)
+        swu_path = os.path.join(updates_dir, "camera-2.0.swu")
+        with open(swu_path, "wb") as f:
+            f.write(b"x" * 128)
+
+        mock_detect.return_value = [{"path": "/dev/sda1", "mountpoint": usb_mount}]
+
+        bundles = svc.scan_usb()
+        assert len(bundles) == 1
+        assert bundles[0]["filename"] == "camera-2.0.swu"
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_ignores_non_swu(self, mock_detect, svc, data_dir):
+        """Should skip non-.swu files."""
+        usb_mount = os.path.join(data_dir, "usb_mount3")
+        os.makedirs(usb_mount)
+        with open(os.path.join(usb_mount, "readme.txt"), "w") as f:
+            f.write("not an update")
+        with open(os.path.join(usb_mount, "image.img"), "wb") as f:
+            f.write(b"x" * 64)
+
+        mock_detect.return_value = [{"path": "/dev/sda1", "mountpoint": usb_mount}]
+
+        bundles = svc.scan_usb()
+        assert len(bundles) == 0
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_skips_unmounted(self, mock_detect, svc):
+        """Should skip USB devices that aren't mounted."""
+        mock_detect.return_value = [{"path": "/dev/sda1", "mountpoint": ""}]
+        bundles = svc.scan_usb()
+        assert len(bundles) == 0
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_no_usb(self, mock_detect, svc):
+        """Should return empty list when no USB devices found."""
+        mock_detect.return_value = []
+        bundles = svc.scan_usb()
+        assert len(bundles) == 0
+
+    @patch("monitor.services.usb.detect_devices")
+    def test_scan_handles_detection_error(self, mock_detect, svc):
+        """Should return empty list on detection failure."""
+        mock_detect.side_effect = RuntimeError("lsblk broken")
+        bundles = svc.scan_usb()
+        assert len(bundles) == 0
+
+
+class TestImportFromUsb:
+    """Test USB .swu bundle import."""
+
+    def test_import_success(self, svc, data_dir):
+        """Should copy .swu from USB and stage it."""
+        usb_file = os.path.join(data_dir, "usb", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x" * 512)
+
+        staged, err = svc.import_from_usb(usb_file, user="admin", ip="1.2.3.4")
+        assert err == ""
+        assert staged is not None
+        assert os.path.isfile(staged)
+        # Original on USB should still exist (copy, not move)
+        assert os.path.isfile(usb_file)
+
+    def test_import_preserves_original(self, svc, data_dir):
+        """Should preserve the original file on USB."""
+        usb_file = os.path.join(data_dir, "usb2", "firmware.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        content = b"firmware content"
+        with open(usb_file, "wb") as f:
+            f.write(content)
+
+        svc.import_from_usb(usb_file)
+        with open(usb_file, "rb") as f:
+            assert f.read() == content
+
+    def test_import_rejects_non_swu(self, svc, data_dir):
+        """Should reject non-.swu files."""
+        usb_file = os.path.join(data_dir, "usb3", "image.img")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x" * 64)
+        _, err = svc.import_from_usb(usb_file)
+        assert "swu" in err.lower()
+
+    def test_import_missing_file(self, svc):
+        """Should return error for missing file."""
+        _, err = svc.import_from_usb("/nonexistent/update.swu")
+        assert "not found" in err.lower()
+
+    def test_import_empty_file(self, svc, data_dir):
+        """Should reject empty files."""
+        usb_file = os.path.join(data_dir, "usb4", "empty.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        open(usb_file, "w").close()
+        _, err = svc.import_from_usb(usb_file)
+        assert "empty" in err.lower()
+
+    def test_import_oversized(self, svc, data_dir):
+        """Should reject files over MAX_BUNDLE_SIZE."""
+        usb_file = os.path.join(data_dir, "usb5", "big.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x" * 100)
+
+        with patch("os.path.getsize", return_value=MAX_BUNDLE_SIZE + 1):
+            _, err = svc.import_from_usb(usb_file)
+        assert "too large" in err.lower()
+
+    def test_import_sets_staged_status(self, svc, data_dir):
+        """Should set status to staged after import."""
+        usb_file = os.path.join(data_dir, "usb6", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x" * 128)
+        svc.import_from_usb(usb_file)
+        assert svc.get_status("server")["state"] == "staged"
+
+    def test_import_logs_audit(self, svc, data_dir):
+        """Should log USB import audit event."""
+        usb_file = os.path.join(data_dir, "usb7", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x" * 128)
+        svc.import_from_usb(usb_file, user="admin", ip="1.2.3.4")
+        calls = [str(c) for c in svc._audit.log_event.call_args_list]
+        assert any("OTA_USB_IMPORT" in c for c in calls)
+
+
 class TestAuditResilience:
     """Test that audit failures don't crash the service."""
 
