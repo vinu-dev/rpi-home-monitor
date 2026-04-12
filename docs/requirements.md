@@ -263,7 +263,7 @@ Camera Node                    Server                     Client
 
 ### 4.7 Partition Scheme (OTA-ready, SWUpdate A/B with U-Boot)
 
-> **Status: Not implemented.** Partition layout defined in WKS files; U-Boot integration and SWUpdate pending (see ADR-0008).
+> **Status: Implemented.** A/B partition layout defined in WKS files with U-Boot boot counting (see ADR-0008).
 
 | Partition | Type | Size (Server) | Size (Camera) | Purpose |
 |-----------|------|---------------|---------------|---------|
@@ -332,7 +332,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-CAM-06: OTA Update Support
 
-> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/ota_agent.py`. See ADR-0008.
+> **Status: Implemented.** Camera OTA agent at `app/camera/camera_streamer/ota_agent.py` (HTTP server on port 8080, mTLS). See ADR-0008.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - Accept update images pushed from server over HTTPS (mTLS authenticated, ADR-0009)
@@ -432,7 +432,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-SRV-10: OTA Update Management
 
-> **Status: Not implemented.** API stubs exist at `app/server/monitor/api/ota.py`. See ADR-0008.
+> **Status: Implemented.** Server OTA service at `app/server/monitor/services/ota_service.py` with API at `app/server/monitor/api/ota.py`. See ADR-0008.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):
@@ -524,7 +524,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-02: Mutual TLS for Camera Authentication
 
-> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/pairing.py`. See ADR-0009.
+> **Status: Implemented.** PairingService on server + PairingManager on camera. See ADR-0009.
 
 - Each paired camera receives a unique ECDSA P-256 client certificate (5-year validity)
 - Server verifies camera cert on every RTSP connection
@@ -535,7 +535,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-03: Encryption at Rest
 
-> **Status: Not implemented.** Requires kernel config fragment for Adiantum. See ADR-0010.
+> **Status: Implemented.** LUKS2 with Adiantum cipher on `/data` partition. See ADR-0010.
 
 - `/data` partition encrypted with LUKS2 (`xchacha20,aes-adiantum-plain64`) — 2-3.5x faster than AES on ARM without hardware acceleration
 - **Server:** passphrase set during first-boot setup wizard, argon2id KDF (1 GB memory, 4 iterations, 4 parallelism). Optional auto-unlock keyfile or Dropbear SSH unlock for headless operation
@@ -584,7 +584,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-09: Signed OTA Updates
 
-> **Status: Not implemented.** See ADR-0008 for signing workflow and trust model.
+> **Status: Implemented.** Ed25519 signature verification in OTA service. See ADR-0008.
 
 - All artifacts signed with Ed25519 keypair (both `.swu` and `.tar.zst` app bundles)
 - Build machine holds private signing key (never on devices)
@@ -595,7 +595,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-10: Camera Pairing Protocol
 
-> **Status: Not implemented.** Stub exists at `app/camera/camera_streamer/pairing.py`. See ADR-0009.
+> **Status: Implemented.** PairingService + PairingManager + `/pair/exchange` endpoint. See ADR-0009.
 
 - Camera discovered via mDNS appears as "pending" (untrusted)
 - Admin clicks "Pair" in dashboard → server generates ECDSA P-256 client cert + 6-digit PIN (5-min expiry)

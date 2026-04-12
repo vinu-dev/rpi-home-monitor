@@ -90,8 +90,12 @@ app/
     │   ├── discovery.py
     │   ├── health.py
     │   ├── led.py
-    │   ├── pairing.py               ← Stub (Phase 2)
-    │   ├── ota_agent.py             ← Stub (Phase 2)
+    │   ├── pairing.py               ← PIN-based cert exchange with server
+    │   ├── ota_agent.py             ← OTA update listener (port 8080, mTLS)
+    │   ├── factory_reset.py         ← WiFi wipe + config reset
+    │   ├── lifecycle.py             ← State machine orchestration
+    │   ├── status_server.py         ← Post-setup status/admin server
+    │   ├── wifi.py                  ← WiFi connection management
     │   └── templates/               ← Camera HTML templates
     │       ├── login.html           ← Camera login page
     │       ├── setup.html           ← First-boot provisioning wizard

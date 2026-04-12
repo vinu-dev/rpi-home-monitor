@@ -5,11 +5,11 @@
 Self-hosted home security camera system on Raspberry Pi. Two separate apps:
 
 - **`app/server/`** — Flask web app (monitor-server). Runs on RPi 4 Model B. Receives camera streams, records 3-min MP4 clips, serves web dashboard, manages cameras.
-- **`app/camera/`** — Python streaming service (camera-streamer). Runs on RPi Zero 2W. Captures 1080p video, pushes RTSP to server.
+- **`app/camera/`** — Python streaming service (camera-streamer). Runs on RPi Zero 2W. Captures 1080p video, pushes RTSPS (mTLS) to server.
 - **`meta-home-monitor/`** — Custom Yocto Linux distro (Home Monitor OS). Custom distro config, not poky.
 
 ```
-Camera (V4L2) → FFmpeg (H.264 RTSP push)
+Camera (V4L2) → FFmpeg (H.264 RTSPS push, mTLS)
     → MediaMTX (:8554) on server
         ├→ WebRTC (WHEP :8889) → browser <video> (sub-1s, live view)
         ├→ FFmpeg Record → /data/recordings/<cam-id>/YYYY-MM-DD/HH-MM-SS.mp4
@@ -68,7 +68,7 @@ This project is not a prototype. Every change must be production-ready, scalable
 - **Constructor Injection** — pass deps in `__init__()`. No DI frameworks, no global registries.
 - **Single Responsibility** — one class per file, one concern per class. No god files (>300 lines).
 - **App Factory** — Flask `create_app()` decomposed into `_init_infrastructure`, `_init_services`, `_startup`, `_register_blueprints`.
-- **State Machine** — camera lifecycle as explicit states (`INIT → SETUP → CONNECTING → VALIDATING → RUNNING → SHUTDOWN`).
+- **State Machine** — camera lifecycle as explicit states (`INIT → SETUP → PAIRING → CONNECTING → VALIDATING → RUNNING → SHUTDOWN`).
 - **Platform Provider** — `camera/platform.py` provides all hardware paths. Never hardcode device paths.
 - **Repository** — `Store` class for JSON persistence with atomic writes.
 - **Fail-Silent Adapter** — all hardware access wrapped in try/except.

@@ -9,7 +9,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 ## Why RPi Home Monitor?
 
 - **Your data stays home.** Video never leaves your network. No cloud uploads, no third-party access, no monthly fees.
-- **Security by design.** HTTPS for web, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting. Camera mTLS planned for Phase 2.
+- **Security by design.** HTTPS for web, mTLS camera streaming, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting, PIN-based camera pairing.
 - **Built on real hardware.** Runs on a $35 Raspberry Pi 4B (server) and $15 Zero 2W (cameras). No proprietary hardware required.
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
 - **OTA updates with rollback.** A/B partition scheme means failed updates automatically roll back. No bricked devices.
@@ -35,7 +35,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 |-----------|----------|------|
 | **Home Server** | Raspberry Pi 4 Model B (4GB+) | Receives streams, records clips, serves web dashboard, manages cameras |
 | **Camera Node** | Raspberry Pi Zero 2W + ZeroCam | Captures 1080p video, streams to server over RTSPS |
-| **Dashboard** | Any phone/laptop on LAN | Live view (HLS), clip playback, camera management, system admin |
+| **Dashboard** | Any phone/laptop on LAN | Live view (WebRTC/HLS), clip playback, camera management, system admin |
 
 ## First Boot Setup
 
@@ -66,7 +66,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 
 | Feature | Details |
 |---------|---------|
-| Live View | HLS streaming in any mobile browser |
+| Live View | WebRTC (sub-second latency) with HLS fallback in any mobile browser |
 | Recording | Continuous 3-minute MP4 clips, organized by camera/date |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
 | User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
@@ -89,9 +89,10 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | nftables firewall | **Implemented** | Default DROP, minimal open ports |
 | Audit logging | **Implemented** | Append-only JSON, all admin actions |
 | Default admin warning | **Implemented** | `admin`/`admin` created on first boot, must change during setup |
-| RTSPS (mTLS) | **Planned (Phase 2)** | Camera→server streams currently use plaintext RTSP |
-| mTLS camera pairing | **Planned (Phase 2)** | Certificate exchange for camera authentication |
-| Signed OTA updates | **Partial** | Status endpoint works; upload/verify are stubs |
+| RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
+| mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
+| Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
+| OTA updates | **Implemented** | Server OTA service (verify, stage, install) + camera OTA agent (port 8080, mTLS) |
 
 ## Quick Start
 
@@ -143,9 +144,9 @@ cd app/camera && pytest    # threshold: 55% coverage
 
 ## Roadmap
 
-- **Phase 1** (current): Single camera, live view, clip recording, web dashboard, authentication, security hardening, OTA-ready
-- **Phase 2**: Multi-camera support, motion detection, push notifications, cloud relay, mobile app, audio
-- **Phase 3**: AI/ML object detection, activity zones, clip protection, smart home integration
+- **Phase 1** (current): Single camera, live view, clip recording, web dashboard, authentication, security hardening, mTLS camera pairing, OTA updates, factory reset
+- **Phase 2**: Multi-camera support, motion detection, push notifications, audio
+- **Phase 3**: Cloud relay, mobile app, AI/ML object detection, activity zones, clip protection, smart home integration
 
 ## Contributing
 

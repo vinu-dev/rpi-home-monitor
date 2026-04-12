@@ -74,6 +74,9 @@ They are separate codebases because they run on different hardware with differen
            │              │  │  /api/v1/settings/*       │ │
            │              │  │  /api/v1/users/*          │ │
            │              │  │  /api/v1/ota/*            │ │
+           │              │  │  /cameras/<id>/pair       │ │
+           │              │  │  /pair/exchange            │ │
+           │              │  │  /pair/register            │ │
            │              │  └─────────────┬─────────────┘ │
            │              │                │               │
            │              │  ┌─────────────▼─────────────┐ │
@@ -81,8 +84,12 @@ They are separate codebases because they run on different hardware with differen
            │              │  │   (threads in process)    │ │
            │              │  │                           │ │
            │              │  │  • RecorderService        │ │
-           │              │  │  • DiscoveryService       │ │
-           │              │  │  • StorageManager         │ │
+           │              │  │  • StreamingService       │ │
+           │              │  │  • StorageService         │ │
+           │              │  │  • CameraService          │ │
+           │              │  │  • PairingService         │ │
+           │              │  │  • CertService            │ │
+           │              │  │  • OtaService             │ │
            │              │  │  • HealthMonitor          │ │
            │              │  │  • AuditLogger            │ │
            │              │  └───────────────────────────┘ │
@@ -155,6 +162,17 @@ They are separate codebases because they run on different hardware with differen
 │  │  │ setup/conn/  │  │ camera.conf       │  │  │
 │  │  │ error/solid  │  │ admin credentials │  │  │
 │  │  └──────────────┘  └───────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────┐  ┌───────────────────┐  │  │
+│  │  │ Pairing      │  │ OTA Agent         │  │  │
+│  │  │ PIN exchange │  │ HTTP :8080 (mTLS) │  │  │
+│  │  │ cert storage │  │ stream-to-disk    │  │  │
+│  │  └──────────────┘  └───────────────────┘  │  │
+│  │                                            │  │
+│  │  ┌──────────────────────────────────────┐  │  │
+│  │  │ Factory Reset                        │  │  │
+│  │  │ WiFi wipe + config reset + reboot    │  │  │
+│  │  └──────────────────────────────────────┘  │  │
 │  │                                            │  │
 │  │  ┌──────────────────────────────────────┐  │  │
 │  │  │ Templates (HTML)                     │  │  │
@@ -251,7 +269,7 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 | What | Method | Key Management |
 |------|--------|---------------|
 | Browser ↔ Server | TLS 1.3 (HTTPS, nginx) | Self-signed CA (ECDSA P-256, 10-year), generated on first boot |
-| Camera ↔ Server | mTLS (RTSPS) ⚠️ *Not implemented* | Server CA signs camera ECDSA P-256 client certs during PIN-based pairing (ADR-0009) |
+| Camera ↔ Server | mTLS (RTSPS) | Server CA signs camera ECDSA P-256 client certs during PIN-based pairing (ADR-0009) |
 | Data at rest (server) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (1 GB, 4 iter) | Passphrase set during first-boot setup; optional auto-unlock keyfile. See ADR-0010 |
 | Data at rest (camera) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (64 MB, 4 iter) | Key derived via HKDF-SHA256 from `pairing_secret` + CPU serial. See ADR-0010 |
 | Passwords | bcrypt (cost 12) | Stored in /data/config/users.json |
@@ -260,7 +278,7 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 
 ### 3.4 Certificate Authority & Camera Pairing
 
-> **Status: Not implemented.** CA and server cert exist. Pairing flow, mTLS enforcement, and cert revocation pending. See ADR-0009.
+> **Status: Implemented.** CA generation, PIN-based pairing, mTLS cert exchange, and cert revocation are operational. See ADR-0009.
 
 ```
 FIRST BOOT (Server):
@@ -589,7 +607,7 @@ Server browses:
 
 ### 6.3 OTA Update Flow
 
-> **Status: Not implemented.** API stubs exist. See ADR-0008 for full design.
+> **Status: Implemented.** Server OTA service (verify, stage, install), camera OTA agent (port 8080, mTLS), and USB detection are operational. See ADR-0008.
 
 **Delivery modes** (all feed into single `inbox → verify → staging → install` pipeline):
 ```
@@ -648,14 +666,24 @@ rpi-home-monitor/
 │   │   │   │   ├── system.py         # Health, storage, server info
 │   │   │   │   ├── settings.py       # Config read/write
 │   │   │   │   ├── users.py          # User CRUD, password management
-│   │   │   │   └── ota.py            # OTA upload, push, status
+│   │   │   │   ├── ota.py            # OTA upload, push, status
+│   │   │   │   ├── pairing.py        # PIN-based camera pairing + cert exchange
+│   │   │   │   └── storage.py        # Storage management endpoints
 │   │   │   ├── services/             # Background services
 │   │   │   │   ├── __init__.py
-│   │   │   │   ├── recorder.py       # ffmpeg recording manager (3-min clips)
-│   │   │   │   ├── discovery.py      # Avahi mDNS camera scanner
-│   │   │   │   ├── storage.py        # Loop recording, cleanup, stats
-│   │   │   │   ├── health.py         # CPU, temp, RAM, disk monitoring
-│   │   │   │   └── audit.py          # Security event logging
+│   │   │   │   ├── recorder_service.py    # ffmpeg recording manager (3-min clips)
+│   │   │   │   ├── recordings_service.py  # Clip listing, timeline queries
+│   │   │   │   ├── streaming_service.py   # HLS/recording pipeline orchestration
+│   │   │   │   ├── storage_service.py     # Loop recording, cleanup, stats
+│   │   │   │   ├── camera_service.py      # Camera CRUD + discovery confirmation
+│   │   │   │   ├── pairing_service.py     # PIN-based pairing + cert lifecycle
+│   │   │   │   ├── cert_service.py        # CA + certificate generation
+│   │   │   │   ├── ota_service.py         # OTA verify, stage, install
+│   │   │   │   ├── user_service.py        # User CRUD + password management
+│   │   │   │   ├── settings_service.py    # System settings read/write
+│   │   │   │   ├── factory_reset_service.py # WiFi wipe + config reset
+│   │   │   │   ├── provisioning_service.py  # First-boot setup orchestration
+│   │   │   │   └── tailscale_service.py   # Tailscale VPN management
 │   │   │   ├── templates/            # Jinja2 HTML templates
 │   │   │   │   ├── base.html         # Base layout (nav, auth check)
 │   │   │   │   ├── login.html        # Login page
@@ -684,13 +712,18 @@ rpi-home-monitor/
 │   └── camera/                        # RPi Zero 2W camera application
 │       ├── camera_streamer/           # Python package
 │       │   ├── __init__.py
-│       │   ├── main.py               # Entry point, service lifecycle
+│       │   ├── main.py               # Entry point
+│       │   ├── lifecycle.py          # State machine (INIT→SETUP→PAIRING→...→RUNNING)
 │       │   ├── capture.py            # v4l2 capture management
 │       │   ├── stream.py             # ffmpeg RTSPS streaming + reconnect
 │       │   ├── discovery.py          # Avahi service advertisement
 │       │   ├── config.py             # Config file management
 │       │   ├── pairing.py            # Certificate exchange during pairing
-│       │   └── ota_agent.py          # Listen for OTA push from server
+│       │   ├── ota_agent.py          # Listen for OTA push from server (port 8080)
+│       │   ├── factory_reset.py      # WiFi wipe + config reset
+│       │   ├── status_server.py      # Post-setup status/admin server
+│       │   ├── wifi.py               # WiFi connection management
+│       │   └── encryption.py         # LUKS key derivation
 │       ├── config/                    # Deployment configs
 │       │   ├── camera-streamer.service  # systemd unit
 │       │   ├── nftables-camera.conf    # Firewall rules
