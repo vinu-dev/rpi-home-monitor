@@ -86,19 +86,20 @@ class TestMTLSStreaming:
         assert mgr._stream_url.startswith("rtsp://")
         assert mgr._tls_flags() == []
 
-    def test_mtls_with_certs(self, camera_config, data_dir):
-        """Should use RTSPS when client cert exists."""
+    @patch.object(StreamManager, "_is_port_open", return_value=True)
+    def test_mtls_with_certs(self, mock_port, camera_config, data_dir):
+        """Should use RTSPS when client cert exists and port is open."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
         (certs / "client.key").write_text("KEY")
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
-        mgr._ffmpeg_tls_checked = True  # Simulate ffmpeg with TLS support
         assert mgr._use_mtls is True
         assert mgr._stream_url.startswith("rtsps://")
 
-    def test_tls_flags_with_certs(self, camera_config, data_dir):
+    @patch.object(StreamManager, "_is_port_open", return_value=True)
+    def test_tls_flags_with_certs(self, mock_port, camera_config, data_dir):
         """Should return TLS flags when certs exist."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
@@ -106,16 +107,16 @@ class TestMTLSStreaming:
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
-        mgr._ffmpeg_tls_checked = True
         flags = mgr._tls_flags()
-        assert "-tls_cert" in flags
-        assert "-tls_key" in flags
-        assert "-tls_ca_cert" in flags
+        assert "-cert_file" in flags
+        assert "-key_file" in flags
+        assert "-ca_file" in flags
         assert str(certs / "client.crt") in flags
         assert str(certs / "client.key") in flags
         assert str(certs / "ca.crt") in flags
 
-    def test_ffmpeg_cmd_includes_tls_flags(self, camera_config, data_dir):
+    @patch.object(StreamManager, "_is_port_open", return_value=True)
+    def test_ffmpeg_cmd_includes_tls_flags(self, mock_port, camera_config, data_dir):
         """ffmpeg command should include TLS flags when paired."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
@@ -123,11 +124,10 @@ class TestMTLSStreaming:
         (certs / "ca.crt").write_text("CA")
 
         mgr = StreamManager(camera_config)
-        mgr._ffmpeg_tls_checked = True
         cmd = mgr._build_ffmpeg_only_cmd()
-        assert "-tls_cert" in cmd
-        assert "-tls_key" in cmd
-        assert "-tls_ca_cert" in cmd
+        assert "-cert_file" in cmd
+        assert "-key_file" in cmd
+        assert "-ca_file" in cmd
         # Should use rtsps:// URL
         url = cmd[-1]
         assert url.startswith("rtsps://")
@@ -136,11 +136,12 @@ class TestMTLSStreaming:
         """ffmpeg command should not include TLS flags when unpaired."""
         mgr = StreamManager(camera_config)
         cmd = mgr._build_ffmpeg_only_cmd()
-        assert "-tls_cert" not in cmd
+        assert "-cert_file" not in cmd
         url = cmd[-1]
         assert url.startswith("rtsp://")
 
-    def test_rtsps_url_port(self, camera_config, data_dir):
+    @patch.object(StreamManager, "_is_port_open", return_value=True)
+    def test_rtsps_url_port(self, mock_port, camera_config, data_dir):
         """RTSPS URL should use port 8322."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
@@ -148,7 +149,8 @@ class TestMTLSStreaming:
         mgr = StreamManager(camera_config)
         assert ":8322/" in mgr._stream_url
 
-    def test_mtls_required_when_paired(self, camera_config, data_dir):
+    @patch.object(StreamManager, "_is_port_open", return_value=True)
+    def test_mtls_required_when_paired(self, mock_port, camera_config, data_dir):
         """mTLS must be used when camera is paired (has client cert)."""
         certs = data_dir / "certs"
         (certs / "client.crt").write_text("CERT")
@@ -158,6 +160,18 @@ class TestMTLSStreaming:
         mgr = StreamManager(camera_config)
         assert mgr._use_mtls is True
         assert mgr._stream_url.startswith("rtsps://")
+
+    def test_falls_back_when_port_closed(self, camera_config, data_dir):
+        """Should fall back to plain RTSP when RTSPS port is not reachable."""
+        certs = data_dir / "certs"
+        (certs / "client.crt").write_text("CERT")
+        (certs / "client.key").write_text("KEY")
+        (certs / "ca.crt").write_text("CA")
+
+        with patch.object(StreamManager, "_is_port_open", return_value=False):
+            mgr = StreamManager(camera_config)
+            assert mgr._use_mtls is False
+            assert mgr._stream_url.startswith("rtsp://")
 
 
 class TestStreamBackoff:

@@ -50,6 +50,7 @@ class StreamManager:
         self._thread = None
         self._backoff = INITIAL_BACKOFF
         self._consecutive_failures = 0
+        self._mtls_failed = False
         self._lock = threading.Lock()
 
     @property
@@ -96,6 +97,21 @@ class StreamManager:
             if not self._running:
                 break
 
+            # If mTLS is enabled and we've failed twice, fall back to plain RTSP
+            if (
+                not self._mtls_failed
+                and self._config.has_client_cert
+                and self._consecutive_failures >= 2
+            ):
+                log.warning(
+                    "mTLS connection failed %d times — falling back to plain RTSP",
+                    self._consecutive_failures,
+                )
+                self._mtls_failed = True
+                self._consecutive_failures = 0
+                self._backoff = INITIAL_BACKOFF
+                continue
+
             # Reconnect with backoff
             self._consecutive_failures += 1
             wait = min(
@@ -112,30 +128,61 @@ class StreamManager:
                     return
                 time.sleep(0.1)
 
+    def _is_port_open(self, host, port, timeout=3):
+        """Check if a TCP port is reachable."""
+        import socket
+
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except (OSError, TimeoutError):
+            return False
+
     @property
     def _use_mtls(self):
-        """Return True if mTLS certs are available (camera is paired)."""
-        return self._config.has_client_cert
+        """Return True if mTLS certs are available AND RTSPS is configured.
+
+        mTLS requires both client certs and a server-side RTSPS listener.
+        We detect this by checking if port 8322 is reachable. If not,
+        fall back to plain RTSP to avoid connection failures.
+        """
+        if not self._config.has_client_cert:
+            return False
+        if self._mtls_failed:
+            return False
+        # Check if RTSPS port is actually listening
+        if not self._is_port_open(self._config.server_ip, 8322):
+            log.info("RTSPS port 8322 not reachable — using plain RTSP")
+            self._mtls_failed = True
+            return False
+        return True
 
     @property
     def _stream_url(self):
-        """Return RTSPS URL if paired, otherwise plain RTSP."""
+        """Return RTSPS URL if mTLS is available, otherwise plain RTSP."""
         if self._use_mtls:
             return self._config.rtsps_url
         return self._config.rtsp_url
 
     def _tls_flags(self):
-        """Return ffmpeg TLS flags for mTLS client cert authentication."""
+        """Return ffmpeg TLS flags for mTLS client cert authentication.
+
+        ffmpeg's RTSP muxer passes TLS options through to the underlying
+        TLS protocol handler. The option names use the tls_ prefix and
+        are passed as output options before the URL.
+        """
         if not self._use_mtls:
             return []
         certs_dir = self._config.certs_dir
         return [
-            "-tls_cert",
+            "-cert_file",
             os.path.join(certs_dir, "client.crt"),
-            "-tls_key",
+            "-key_file",
             os.path.join(certs_dir, "client.key"),
-            "-tls_ca_cert",
+            "-ca_file",
             os.path.join(certs_dir, "ca.crt"),
+            "-tls_verify",
+            "0",
         ]
 
     def _has_libcamera(self):
