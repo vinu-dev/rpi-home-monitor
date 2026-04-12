@@ -23,7 +23,44 @@ Browser → NGINX (:443 HTTPS)
 
 See [README.md](README.md) for user-facing overview and setup instructions.
 
-## 2. Architecture Constraints
+## 2. Core Principles
+
+This project is not a prototype. Every change must be production-ready, scalable, maintainable, and suitable for open-source contribution. The goal is a reference-quality system that others can learn from and contribute to.
+
+### Design Philosophy
+
+- **Build it right, not just working** — do not take shortcuts to make something functional. Every implementation must be the best possible design for this product.
+- **Design-level fixes only** — never patch symptoms. If something breaks, find and fix the root cause. No fallback-based designs as a primary solution.
+- **No hacks, no workarounds** — no internal-only shortcuts, no undocumented logic, no manual-only workflows. Everything must be reproducible and automated.
+
+### Code Quality
+
+- **Readable and review-friendly** — code will be read by contributors and the open-source community. Write for humans first. Clear module boundaries, obvious data flow, self-documenting names.
+- **Easy to debug, update, and extend** — structure code so that adding a feature or fixing a bug requires touching minimal files with obvious impact.
+- **Well-structured modules** — each module has a clear purpose. No god files, no tangled dependencies, no circular imports.
+
+### Testing & Reliability
+
+- **Automated tests for everything** — every service, API endpoint, and behavior must have tests. No untested code paths in production.
+- **Real-world simulation** — tests must cover realistic scenarios, not just happy paths with injected state. Test coverage must include:
+  - **Fresh setup (zero state)** — first boot, no config, no users, no cameras
+  - **Network reconnect** — WiFi drops, camera disconnects, server restarts
+  - **Failure recovery** — corrupt config, full disk, service crash
+- **Smoke tests on hardware** — deploy and verify on real boards. Smoke tests are mandatory after every deploy, not optional.
+
+### UI/UX Standards
+
+- **Clean, intuitive, responsive** — mobile-first dark theme. Follow modern UI best practices (design tokens, component architecture, accessible markup).
+- **Architecture for growth** — UI code must support scaling (more cameras, more settings, more pages) without restructuring.
+- **Review-friendly and reusable** — UI code should be exemplary. Well-structured CSS with design tokens, co-located Alpine.js components, semantic HTML.
+
+### Open Source Readiness
+
+- **Easy to understand** — a new contributor should be able to read any file and understand what it does and why.
+- **Easy to contribute to** — clear patterns, consistent conventions, good test coverage make contributions safe.
+- **No internal assumptions** — every decision must be documented or self-evident from the code. No tribal knowledge.
+
+## 3. Architecture & Patterns
 
 ### Patterns We Follow
 
@@ -57,7 +94,7 @@ Full pattern docs: [development-guide.md Section 3.6](docs/development-guide.md)
 - **Document non-obvious choices** — add a comment explaining why each layer, recipe, or config choice was added.
 - **Build on VM** — all Yocto builds run on the GCP build VM in tmux/screen. Only copy final `.wic.bz2` images to the local PC for flashing.
 
-## 3. Known Gaps
+## 4. Known Gaps
 
 Only what's NOT done. When you implement a gap, delete it from this list in the same PR.
 
@@ -65,7 +102,7 @@ Only what's NOT done. When you implement a gap, delete it from this list in the 
 - **Multi-camera** — framework exists, untested with multiple real cameras (Phase 2)
 - **Cloud relay, mobile app, AI/ML** — Phase 2-3, not started
 
-## 4. Task Routing
+## 5. Task Routing
 
 | Change Type | Directory | Tests | Deploy Target |
 |-------------|-----------|-------|---------------|
@@ -74,7 +111,7 @@ Only what's NOT done. When you implement a gap, delete it from this list in the 
 | API endpoint | `app/server/monitor/api/` | + contract tests in `test_api_contracts.py` | RPi 4B + smoke test |
 | New service | `app/server/monitor/services/` | + new `test_svc_*.py` | RPi 4B |
 | Yocto recipe | `meta-home-monitor/` | `bitbake -p` (parse check) | Full image rebuild via `./scripts/build.sh` |
-| Templates/UI | `app/server/monitor/templates/` | Manual browser check | RPi 4B |
+| Templates/UI | `app/server/monitor/templates/` | Browser check + smoke test | RPi 4B |
 | Docs only | `docs/` | None | None |
 
 ### Deploy Pattern (from Windows, not from build VM)
@@ -94,7 +131,7 @@ ssh root@<camera-ip> "mv /opt/camera/camera_streamer /opt/camera/camera_streamer
 bash scripts/smoke-test.sh <server-ip> <password> [camera-ip]
 ```
 
-## 5. Execution Process
+## 6. Execution Process
 
 Mandatory for every change. Same sequence, no improvisation.
 
@@ -104,7 +141,7 @@ Mandatory for every change. Same sequence, no improvisation.
 git log --oneline -10          # What changed recently
 ```
 
-Read the files you will change. Verify current state. Check Section 3 (Known Gaps) — is this already done or still a stub? Don't assume.
+Read the files you will change. Verify current state. Check Section 4 (Known Gaps) — is this already done or still a stub? Don't assume.
 
 ### Step 2: BRANCH
 
@@ -116,7 +153,7 @@ Prefixes: `feature/`, `fix/`, `docs/`, `recipe/`, `release/`. Never commit direc
 
 ### Step 3: IMPLEMENT
 
-One concern per PR. Follow Section 2 patterns. No drive-by refactors.
+One concern per PR. Follow Section 2 principles and Section 3 patterns. No drive-by refactors.
 
 ### Step 4: VALIDATE
 
@@ -175,13 +212,13 @@ Only after CI green: `gh pr merge <number> --merge --delete-branch`
 
 ### Step 10: DEPLOY (if hardware available)
 
-Deploy using Section 4 pattern. Run smoke test. Verify services are active.
+Deploy using Section 5 pattern. Run smoke test. Verify services are active.
 
-## 6. Doc Update Rules
+## 7. Doc Update Rules
 
 | Trigger | Update |
 |---------|--------|
-| Implement a Known Gap | Delete from CLAUDE.md Section 3, same PR |
+| Implement a Known Gap | Delete from CLAUDE.md Section 4, same PR |
 | New API endpoint or convention | `docs/development-guide.md` |
 | Security model or data model change | `docs/architecture.md` |
 | Choice between alternatives with trade-offs | New `docs/adr/NNNN-<title>.md` |
@@ -208,7 +245,7 @@ Deploy using Section 4 pattern. Run smoke test. Verify services are active.
 
 Never create `.md` files in `app/`, `scripts/`, or `meta-home-monitor/`. New guide or spec goes in `docs/`. New architectural decision goes in `docs/adr/`.
 
-## 7. Reference
+## 8. Reference
 
 | Document | What's Inside |
 |----------|---------------|

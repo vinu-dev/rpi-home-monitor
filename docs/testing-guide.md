@@ -564,7 +564,18 @@ def two_cameras(data_dir):
 - [ ] Logs expected events
 - [ ] Cleanup on shutdown (kill child processes, close files)
 
-### 9.4 For Security-Critical Code
+### 9.4 For Real-World Scenarios
+
+Every feature must include tests for these operational conditions:
+
+- [ ] **Fresh setup (zero state)** — first boot, no config files, no users, no cameras registered, empty `/data`
+- [ ] **Network reconnect** — WiFi drops mid-stream, camera disconnects and reconnects, server restarts while cameras are connected
+- [ ] **Failure recovery** — corrupt JSON config, full disk during recording, service crash and restart, invalid cert files
+- [ ] **Graceful degradation** — camera offline while dashboard is open, API calls during service startup, concurrent requests to same resource
+
+These tests must simulate realistic conditions (e.g., truncated JSON files, `OSError` on disk writes), not just inject clean state. Smoke tests on hardware (`scripts/smoke-test.sh`) must cover all of the above.
+
+### 9.5 For Security-Critical Code
 
 - [ ] Authentication cannot be bypassed
 - [ ] Session expires after timeout
