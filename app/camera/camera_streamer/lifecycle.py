@@ -183,6 +183,9 @@ class CameraLifecycle:
         log.info("Camera not paired — starting status server for /pair endpoint")
         led.setup_mode()
 
+        # Register with server so it appears in the dashboard
+        self._register_with_server()
+
         # Start status server so /pair endpoint is accessible
         self._status_server = CameraStatusServer(
             self._config,
@@ -295,6 +298,31 @@ class CameraLifecycle:
         return True
 
     # ---- Helper methods ----
+
+    def _register_with_server(self):
+        """Register this camera with the server as pending.
+
+        Sends camera ID and IP so it appears in the server dashboard
+        before pairing is complete. Best-effort — pairing still works
+        if this fails (admin can add camera manually).
+        """
+        if not self._config.is_configured:
+            return
+        server = self._config.server_ip
+        camera_id = self._config.camera_id
+        url = f"http://{server}:5000/api/v1/pair/register"
+        try:
+            import json
+            import urllib.request
+
+            data = json.dumps({"camera_id": camera_id}).encode()
+            req = urllib.request.Request(
+                url, data=data, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                log.info("Registered with server as pending (status=%d)", resp.status)
+        except Exception as e:
+            log.debug("Server registration failed (will retry via mDNS): %s", e)
 
     HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
 

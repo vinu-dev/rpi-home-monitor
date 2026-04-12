@@ -43,7 +43,13 @@
 <!-- Cameras -->
 <div class="section-header">
     Cameras
-    <button class="btn btn--primary btn--small" style="float:right;margin-top:-4px;" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
+    <span style="float:right;margin-top:-4px;display:flex;gap:8px;">
+        <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
+            <span x-show="!scanning">Scan</span>
+            <span x-show="scanning">Scanning...</span>
+        </button>
+        <button class="btn btn--primary btn--small" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
+    </span>
 </div>
 
 <!-- Add Camera Form -->
@@ -67,13 +73,24 @@
 
 <!-- Pairing PIN Display -->
 <template x-if="pairingPin">
-    <div class="card mb-16 pairing-pin-card">
-        <div class="pairing-pin-card__title">Pairing PIN for <span x-text="pairingCameraId"></span></div>
-        <div class="pairing-pin-card__pin" x-text="pairingPin"></div>
-        <div class="pairing-pin-card__instructions">
-            On the camera's settings page, find the <strong>Server Pairing</strong> section and enter this PIN. Expires in 5 minutes.
+    <div class="card mb-16 pairing-pin-card" style="border:1px solid var(--accent);background:var(--bg-card);">
+        <div style="text-align:center;margin-bottom:12px;">
+            <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:4px;">Enter this PIN on your camera</div>
+            <div class="pairing-pin-card__pin" x-text="pairingPin"></div>
+            <div style="font-size:0.8em;color:var(--text-muted);margin-top:4px;">
+                Camera: <strong x-text="pairingCameraId"></strong>
+            </div>
         </div>
-        <button class="btn btn--secondary btn--small" @click="pairingPin = ''; pairingCameraId = '';">Dismiss</button>
+        <div style="font-size:0.85em;color:var(--text-secondary);line-height:1.6;margin-bottom:12px;">
+            <strong>Steps:</strong><br>
+            1. Open the camera's web page (shown after setup)<br>
+            2. Go to <strong>Settings</strong> &rarr; <strong>Server Pairing</strong><br>
+            3. Enter the 6-digit PIN above<br>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+            <button class="btn btn--secondary btn--small" @click="pairingPin = ''; pairingCameraId = '';">Dismiss</button>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:0.75em;color:var(--text-muted);">Expires in 5 minutes</div>
     </div>
 </template>
 
@@ -124,6 +141,7 @@ function dashboardPage() {
         newCam: { id: '', name: '', location: '' },
         pairingPin: '',
         pairingCameraId: '',
+        scanning: false,
         _interval: null,
 
         tempColor(c) {
@@ -158,6 +176,13 @@ function dashboardPage() {
             try {
                 this.cameras = await window.HM.api.get('/api/v1/cameras');
             } catch(e) {}
+        },
+
+        async scanCameras() {
+            this.scanning = true;
+            await this.loadCameras();
+            // Brief delay so user sees the scanning state
+            setTimeout(() => { this.scanning = false; }, 1500);
         },
 
         async addCamera() {
