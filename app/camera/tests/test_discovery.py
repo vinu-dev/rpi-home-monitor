@@ -15,35 +15,60 @@ class TestDiscoveryService:
 
     def test_start_launches_avahi_publish(self, camera_config):
         """start() should launch avahi-publish-service."""
-        with patch("subprocess.Popen") as mock_popen:
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
             proc = MagicMock()
             proc.poll.return_value = None
-            mock_popen.return_value = proc
+            mock_popen.side_effect = [proc, proc]
 
             svc = DiscoveryService(camera_config)
             svc.start()
             assert svc.is_advertising is True
 
-            # Verify command
-            args = mock_popen.call_args[0][0]
-            assert args[0] == "avahi-publish-service"
-            assert SERVICE_TYPE in args
-            assert str(SERVICE_PORT) in args
-            assert "id=cam-test001" in args
-            assert "paired=true" in args  # configured = paired
+            service_args = mock_popen.call_args_list[0][0][0]
+            host_args = mock_popen.call_args_list[1][0][0]
+            assert service_args[0] == "avahi-publish-service"
+            assert SERVICE_TYPE in service_args
+            assert str(SERVICE_PORT) in service_args
+            assert "id=cam-test001" in service_args
+            assert "paired=true" in service_args  # configured = paired
+            assert host_args[:4] == [
+                "avahi-publish-address",
+                "-R",
+                "-f",
+                "cam-test.local",
+            ]
+            assert host_args[4] == "192.168.1.50"
 
             svc.stop()
 
     def test_start_unpaired(self, unconfigured_config):
         """Unpaired camera should advertise paired=false."""
-        with patch("subprocess.Popen") as mock_popen:
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
             proc = MagicMock()
             proc.poll.return_value = None
-            mock_popen.return_value = proc
+            mock_popen.side_effect = [proc, proc]
 
             svc = DiscoveryService(unconfigured_config)
             svc.start()
-            args = mock_popen.call_args[0][0]
+            args = mock_popen.call_args_list[0][0][0]
             assert "paired=false" in args
             svc.stop()
 
@@ -56,21 +81,50 @@ class TestDiscoveryService:
 
     def test_stop_terminates_process(self, camera_config):
         """stop() should terminate the avahi process."""
-        with patch("subprocess.Popen") as mock_popen:
-            proc = MagicMock()
-            proc.poll.return_value = None
-            proc.wait.return_value = None
-            mock_popen.return_value = proc
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
+            service_proc = MagicMock()
+            service_proc.poll.return_value = None
+            service_proc.wait.return_value = None
+            host_proc = MagicMock()
+            host_proc.poll.return_value = None
+            host_proc.wait.return_value = None
+            mock_popen.side_effect = [service_proc, host_proc]
 
             svc = DiscoveryService(camera_config)
             svc.start()
             svc.stop()
-            proc.terminate.assert_called_once()
+            service_proc.terminate.assert_called_once()
+            host_proc.terminate.assert_called_once()
 
     def test_stop_handles_no_process(self, camera_config):
         """stop() should not raise if no process is running."""
         svc = DiscoveryService(camera_config)
         svc.stop()  # Should not raise
+
+    def test_start_skips_host_advertisement_without_network(self, camera_config):
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch("camera_streamer.discovery.wifi.get_hostname", return_value=""),
+            patch("camera_streamer.discovery.wifi.get_ip_address", return_value=""),
+        ):
+            proc = MagicMock()
+            proc.poll.return_value = None
+            mock_popen.return_value = proc
+
+            svc = DiscoveryService(camera_config)
+            svc.start()
+
+            assert mock_popen.call_count == 1
+            svc.stop()
 
     def test_service_type(self):
         """Service type should be _rtsp._tcp."""
