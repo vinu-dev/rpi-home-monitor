@@ -1,0 +1,16 @@
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Yocto and release guardrails.
+globs:
+  - meta-home-monitor/**
+  - config/**
+  - scripts/build*.sh
+alwaysApply: false
+---
+
+# Yocto And Release Rules
+
+- No permanent project policy in `local.conf`.
+- Put machine policy in machine config and distro policy in distro config.
+- Run `bitbake -p` for affected images.
+- Build on the VM for real Yocto validation.

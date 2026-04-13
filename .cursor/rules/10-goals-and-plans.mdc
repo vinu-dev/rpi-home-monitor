@@ -1,0 +1,14 @@
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Goal framing and large-task planning rules.
+globs:
+  - **/*
+alwaysApply: true
+---
+
+# Goals And Plans
+
+- Start from the user or operator outcome, not just the local code change.
+- For larger or riskier work, use `docs/exec-plans/template.md`.
+- Prefer design-level fixes over symptom patches.
+- Note assumptions when the requested goal is underspecified.

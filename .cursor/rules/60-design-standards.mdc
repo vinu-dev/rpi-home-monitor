@@ -1,0 +1,15 @@
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Product and UI design standards.
+globs:
+  - app/**
+  - docs/**
+alwaysApply: false
+---
+
+# Design Standards
+
+- Optimize for clarity, confidence, and truthful status communication.
+- Support mobile-first usage.
+- Always provide clear loading, empty, and error states.
+- Avoid generic AI-looking layouts or undocumented UX shortcuts.

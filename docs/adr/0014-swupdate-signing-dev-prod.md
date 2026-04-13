@@ -1,6 +1,6 @@
 # ADR-0014: Disable OTA Bundle Signing for Dev Builds
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-04-13
 
 ## Context

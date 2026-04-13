@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================
 # build-swu.sh — Build SWUpdate (.swu) bundle for OTA updates
 #

@@ -3,27 +3,117 @@ name: CI
 on:
   push:
     paths:
-      - 'app/**'
-      - '.github/workflows/test.yml'
-      - 'pyproject.toml'
+      - "app/**"
+      - "meta-home-monitor/**"
+      - "config/**"
+      - "swupdate/**"
+      - "docs/**"
+      - ".github/**"
+      - ".claude/**"
+      - ".cursor/**"
+      - ".qodo/**"
+      - "scripts/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - ".pre-commit-config.yaml"
+      - ".gitattributes"
+      - ".github/workflows/test.yml"
+      - "pyproject.toml"
   pull_request:
     paths:
-      - 'app/**'
-      - '.github/workflows/test.yml'
-      - 'pyproject.toml'
+      - "app/**"
+      - "meta-home-monitor/**"
+      - "config/**"
+      - "swupdate/**"
+      - "docs/**"
+      - ".github/**"
+      - ".claude/**"
+      - ".cursor/**"
+      - ".qodo/**"
+      - "scripts/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - ".pre-commit-config.yaml"
+      - ".gitattributes"
+      - ".github/workflows/test.yml"
+      - "pyproject.toml"
 
 jobs:
+  ai-governance:
+    name: AI Governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate AI repo setup
+        run: |
+          python scripts/ai/validate_repo_ai_setup.py
+          python scripts/ai/check_doc_links.py
+          python scripts/ai/check_shell_scripts.py
+
+  pre-commit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pre-commit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+      - name: Run pre-commit
+        run: |
+          pre-commit run --all-files
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/actionlint@v1.7.12
+
+  shell-lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Bash syntax check
+        run: |
+          bash -n scripts/*.sh
+      - name: ShellCheck
+        run: |
+          shellcheck -S warning -e SC1091,SC1111,SC2012,SC2034 scripts/*.sh
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          args: check app/
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: format --check app/
+          python-version: "3.12"
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+      - name: Ruff check
+        run: |
+          ruff check .
+      - name: Ruff format check
+        run: |
+          ruff format --check .
 
   server-tests:
     name: Server Tests
@@ -34,30 +124,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: "3.12"
+          cache: "pip"
           cache-dependency-path: app/server/requirements-test.txt
-
       - name: Install dependencies
         run: |
           pip install -e . -r requirements-test.txt
-
       - name: Run tests with coverage
         run: |
-          pytest --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
-
-      - name: Upload coverage to GitHub Summary
-        if: always()
-        run: |
-          echo "## Server Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          pytest --cov-report=term --no-header -q 2>&1 | tail -20 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
+          pytest --cov-fail-under=80 --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
       - name: Coverage report as PR comment
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -76,30 +153,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: "3.12"
+          cache: "pip"
           cache-dependency-path: app/camera/requirements-test.txt
-
       - name: Install dependencies
         run: |
           pip install -e . -r requirements-test.txt
-
       - name: Run tests with coverage
         run: |
-          pytest --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
-
-      - name: Upload coverage to GitHub Summary
-        if: always()
-        run: |
-          echo "## Camera Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          pytest --cov-report=term --no-header -q 2>&1 | tail -20 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
+          pytest --cov-fail-under=70 --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=results.xml
       - name: Coverage report as PR comment
         if: github.event_name == 'pull_request'
         continue-on-error: true

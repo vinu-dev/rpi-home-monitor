@@ -1,7 +1,7 @@
 # ADR-0011: Authentication Hardening
 
-**Status:** Proposed  
-**Date:** 2026-04-12  
+**Status:** Proposed
+**Date:** 2026-04-12
 **Context:** Phase 2 security improvements for production deployment
 
 ## Decision

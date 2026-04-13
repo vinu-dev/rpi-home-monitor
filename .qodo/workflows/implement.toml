@@ -1,0 +1,9 @@
+# AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
+name = "implement"
+description = "Implement a repository change while following the canonical AI policy."
+prompt = """
+Start at AGENTS.md, then docs/ai/index.md.
+State the goal, constraints, and exit criteria.
+Follow docs/ai/repo-map.md and docs/ai/validation-and-release.md.
+If the task is cross-cutting or risky, use docs/exec-plans/template.md.
+"""

@@ -1,7 +1,7 @@
 # ADR-0012: UI Architecture — HTMX + Alpine.js
 
-**Status:** Proposed  
-**Date:** 2026-04-12  
+**Status:** Proposed
+**Date:** 2026-04-12
 **Context:** Redesign dashboard UI for production quality while keeping server load minimal on Raspberry Pi 4B
 
 ## Decision

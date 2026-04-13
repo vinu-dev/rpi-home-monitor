@@ -1,0 +1,7 @@
+# AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
+name = "yocto-validate"
+description = "Validate Yocto-facing changes with the repository guardrails."
+prompt = """
+Inspect the Yocto-related change, confirm the policy is in the correct layer,
+run the required parse checks, and report whether the repo and build workflow still match the docs.
+"""

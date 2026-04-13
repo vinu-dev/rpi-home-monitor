@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================
 # generate-ota-keys.sh — Generate OTA signing keypair
 #

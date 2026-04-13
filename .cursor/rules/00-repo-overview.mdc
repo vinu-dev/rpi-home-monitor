@@ -1,0 +1,15 @@
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Repo-wide overview and source-of-truth rules.
+globs:
+  - **/*
+alwaysApply: true
+---
+
+# Repo Overview
+
+- Read `AGENTS.md` first.
+- Treat `docs/ai/` as the canonical AI operating system.
+- Keep tool adapters short and linked back to `docs/ai/`.
+- Work toward a clear product goal and success criteria.
+- Do not commit directly to `main`.
