@@ -123,12 +123,12 @@ scp -r app/server/monitor/* root@<server-ip>:/opt/monitor_new/
 ssh root@<server-ip> "mv /opt/monitor/monitor /opt/monitor/monitor_old && mv /opt/monitor_new /opt/monitor/monitor && rm -rf /opt/monitor/monitor_old && systemctl restart monitor"
 
 # Camera
-ssh root@<camera-ip> "mkdir -p /opt/camera_new"
-scp -r app/camera/camera_streamer/* root@<camera-ip>:/opt/camera_new/
-ssh root@<camera-ip> "mv /opt/camera/camera_streamer /opt/camera/camera_streamer_old && mv /opt/camera_new /opt/camera/camera_streamer && rm -rf /opt/camera/camera_streamer_old && systemctl restart camera-streamer"
+ssh root@<camera-ip> "mkdir -p /opt/camera_new/camera_streamer"
+scp -r app/camera/camera_streamer/* root@<camera-ip>:/opt/camera_new/camera_streamer/
+ssh root@<camera-ip> "chown -R camera:camera /opt/camera_new/camera_streamer && find /opt/camera_new/camera_streamer -type d -exec chmod 755 {} \; && find /opt/camera_new/camera_streamer -type f -exec chmod 644 {} \; && rm -rf /opt/camera/camera_streamer_old && if [ -d /opt/camera/camera_streamer ]; then mv /opt/camera/camera_streamer /opt/camera/camera_streamer_old; fi && mv /opt/camera_new/camera_streamer /opt/camera/camera_streamer && rmdir /opt/camera_new && systemctl restart camera-streamer"
 
 # Smoke test
-bash scripts/smoke-test.sh <server-ip> <password> [camera-ip]
+bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]
 ```
 
 ## 6. Execution Process

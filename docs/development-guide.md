@@ -418,8 +418,13 @@ Every PR must satisfy the appropriate layers:
 **Why smoke tests (Layer 5)?** Unit/integration tests use mocks. Smoke tests hit a real RPi with real HTTPS, real disk, real systemd services. Run after deploying to hardware:
 
 ```bash
-./scripts/smoke-test.sh <server-ip> <password>
+./scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]
 ```
+
+`scripts/smoke-test.sh` expects the camera status UI over HTTPS. If you need
+to validate a live server without the current admin password, set
+`SMOKE_SERVER_COOKIE="session=..."` to reuse a valid authenticated server
+session for read-only smoke checks.
 
 #### Key Rules (non-negotiable)
 
