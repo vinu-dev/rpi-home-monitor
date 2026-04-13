@@ -1,7 +1,7 @@
 # RPi Home Monitor - Requirements Specification
 
 Version: 1.0
-Date: 2026-04-09
+Date: 2026-04-13
 
 ---
 
@@ -55,11 +55,16 @@ The system aims to provide a similar experience to TP-Link Tapo or Ring cameras:
 
 - Single camera node (Zero 2W + ZeroCam)
 - RPi 4B server with live view and clip recording
-- Mobile web dashboard with authentication
+- Mobile web dashboard with authentication (HTMX + Alpine.js)
 - System health monitoring
-- OTA-ready partition layout (swupdate/A-B)
-- SD card storage with loop recording
+- OTA updates with SWUpdate A/B partitions and Ed25519 signing (ADR-0008)
+- SD card and USB external disk storage with loop recording
 - Ethernet + WiFi support on server
+- mTLS camera authentication with pairing protocol (ADR-0009)
+- LUKS2 encryption at rest on `/data` partition (ADR-0010)
+- WiFi provisioning via captive portal setup wizard (server and camera)
+- Tailscale VPN for remote access
+- Factory reset support
 
 ### Phase 2 — Multi-Camera & Remote Access
 
@@ -68,7 +73,6 @@ The system aims to provide a similar experience to TP-Link Tapo or Ring cameras:
 - Push notifications (motion alerts via email/Telegram/push)
 - Cloud relay server for remote access outside home WiFi
 - Mobile app (Android + iOS)
-- USB external disk support on server
 - Audio support (for cameras with microphones)
 
 ### Phase 3 — Intelligence & Integration
@@ -112,7 +116,7 @@ As a homeowner, I want the system to manage storage automatically, so I never ha
 - Loop recording: when storage reaches threshold (e.g., 90%), oldest clips are deleted
 - Dashboard shows storage usage (used/free/total)
 - Configurable retention: maximum days or maximum storage percentage
-- Works with SD card; extensible to USB disk (Phase 2)
+- Works with SD card and USB external disks
 
 ### UN-04: Secure Access
 
@@ -149,9 +153,9 @@ As a homeowner, I want new cameras to appear automatically when I plug them in a
 As a homeowner, I want to flash an SD card, plug in the device, connect to WiFi, and have it working, with minimal manual configuration.
 
 **Acceptance criteria:**
-- Server: flash SD, plug in, connect Ethernet or configure WiFi, access dashboard
-- Camera: flash SD, plug in, configure WiFi (via serial or first-boot AP), camera auto-connects to server
-- First-boot setup wizard for initial admin account creation and timezone
+- Server: flash SD, plug in, connect to `HomeMonitor-Setup` WiFi hotspot, complete captive portal setup wizard (WiFi, admin account, timezone), access dashboard
+- Camera: flash SD, plug in, connect to `HomeCam-Setup` WiFi hotspot, complete captive portal setup wizard (WiFi, server address, camera credentials), camera auto-connects to server
+- First-boot setup wizard for initial admin account creation, WiFi configuration, and timezone
 
 ### UN-08: Over-the-Air Updates
 
@@ -197,36 +201,42 @@ As a homeowner, I want to update the software on my server and cameras without p
 | Item | Choice | Rationale |
 |------|--------|-----------|
 | Camera capture | v4l2 (h264 from hardware encoder) | Zero CPU encode on Zero 2W |
-| Transport | RTSP over TCP | Reliable stream delivery over WiFi |
+| Transport | RTSPS (mTLS) with RTSP fallback | Encrypted stream delivery over WiFi, mutual TLS authentication |
+| RTSP relay | MediaMTX (:8554) | Single stream hub — camera pushes, consumers read |
 | Streaming tool | ffmpeg | Proven, flexible, available in Yocto |
 | Recording format | MP4 (3-minute segments) | Browser-native playback, small files |
-| Live view in browser | HLS or fragmented MP4 | No plugin needed, works on mobile Safari/Chrome |
+| Live view in browser | WebRTC (WHEP) with HLS.js fallback | Sub-second latency, works on mobile Safari/Chrome |
 
 ### 4.4 Web Application
 
 | Item | Choice | Rationale |
 |------|--------|-----------|
 | Backend | Python 3 + Flask | Simple, already in Yocto, easy to extend |
-| Frontend | Mobile-first HTML/CSS/JS | No build tools needed, works everywhere |
-| Reverse proxy | nginx | Serves video files efficiently, proxies Flask |
+| Frontend | HTMX + Alpine.js, mobile-first dark theme (ADR-0012) | Server-driven UI, no build tools, works everywhere |
+| Reverse proxy | nginx | Serves video files efficiently, proxies Flask and MediaMTX |
 | Authentication | Flask session-based (bcrypt hashed passwords) | Simple, secure for local network |
-| Video playback | HTML5 `<video>` with HLS.js | Native mobile support |
+| Video playback | WebRTC (WHEP) primary with HLS.js fallback | Sub-second live view, broad mobile support |
 
 ### 4.5 Network Architecture
 
 ```
-Camera Node                    Server                     Client
-┌─────────────┐    RTSP/TCP    ┌──────────────┐   HTTP    ┌────────┐
-│ ffmpeg       │──────────────>│ RTSP receiver │          │ Phone  │
-│ v4l2 → h264  │               │ (ffmpeg)     │          │ browser│
-│              │    mDNS       │              │   :80    │        │
-│ avahi-daemon │<─────────────>│ avahi-daemon │<─────────│        │
-│              │               │              │          │        │
-│ camera-      │               │ Flask app    │──────────>│ Web UI │
-│  streamer    │               │ nginx proxy  │          │        │
-│  .service    │               │ monitor      │          │        │
-└─────────────┘               │  .service    │          └────────┘
-                               └──────────────┘
+Camera Node                    Server                          Client
+┌─────────────┐   RTSPS/mTLS  ┌───────────────────┐  HTTPS    ┌────────┐
+│ ffmpeg       │──────────────>│ MediaMTX (:8554)  │  :443    │ Phone  │
+│ v4l2 → h264  │               │  RTSP relay       │<─────────│ browser│
+│              │    mDNS       │  ├─ WebRTC WHEP   │──────────>│        │
+│ avahi-daemon │<─────────────>│  │   (:8889)      │          │ Web UI │
+│              │               │  ├─ FFmpeg record  │          │        │
+│ camera-      │               │  └─ FFmpeg snap    │          │        │
+│  streamer    │               │                   │          └────────┘
+│  .service    │               │ nginx (:443 HTTPS)│
+└─────────────┘               │  ├─ Flask (:5000)  │
+                               │  ├─ /webrtc/ proxy│
+                               │  └─ /clips/ files │
+                               │                   │
+                               │ avahi-daemon       │
+                               │ monitor.service    │
+                               └───────────────────┘
 ```
 
 ### 4.6 Storage Layout
@@ -244,9 +254,14 @@ Camera Node                    Server                     Client
     │           ├── 14-00-00.mp4
     │           ├── 14-03-00.mp4
     │           └── ...
-    ├── /snapshots      # Thumbnail JPEGs per clip
+    ├── /live           # Live HLS segments + snapshot JPEGs per camera
     ├── /config         # App config, user database, camera registry
-    └── /logs           # Persistent application logs
+    ├── /logs           # Persistent application logs
+    ├── /certs
+    │   └── /cameras    # Paired camera certs (client.crt, client.key, ca.crt, revoked/)
+    ├── /tailscale      # Tailscale VPN state
+    ├── /network        # Persisted WiFi configuration
+    └── /ota            # OTA staging, inbox, history
 ```
 
 **Camera (Zero 2W):**
@@ -258,6 +273,7 @@ Camera Node                    Server                     Client
 └── /data               # Persistent config (partition 4, LUKS → ext4 in production)
     ├── /config         # camera.conf, WiFi credentials
     ├── /certs          # client.crt, client.key, ca.crt (from pairing, ADR-0009)
+    ├── /logs           # Persistent application logs
     └── /ota            # OTA inbox, staging, history (ADR-0008)
 ```
 
@@ -476,6 +492,12 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - `PUT /cameras/<id>` — update name, location, recording mode (admin)
 - `DELETE /cameras/<id>` — remove camera (admin)
 - `GET /cameras/<id>/status` — live status (online, fps, uptime)
+- `POST /cameras/<id>/pair` — initiate pairing for a discovered camera (admin)
+- `POST /cameras/<id>/unpair` — unpair and revoke camera certificate (admin)
+
+**Pairing:**
+- `POST /pair/register` — camera registers itself during pairing
+- `POST /pair/exchange` — camera exchanges PIN for certificates and keys
 
 **Recordings:**
 - `GET /recordings/<cam-id>?date=YYYY-MM-DD` — list clips for a camera on a date
@@ -487,14 +509,27 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - `GET /live/<cam-id>/stream.m3u8` — HLS playlist for live view
 - `GET /live/<cam-id>/snapshot` — current frame as JPEG
 
+**Storage:**
+- `GET /storage/status` — storage usage stats
+- `GET /storage/devices` — list available storage devices (SD, USB)
+- `POST /storage/select` — select active storage device (admin)
+- `POST /storage/format` — format a storage device (admin)
+- `POST /storage/eject` — safely eject USB storage device (admin)
+
 **System:**
 - `GET /system/health` — server health (CPU, RAM, disk, temp)
 - `GET /system/storage` — storage breakdown
 - `GET /system/info` — firmware version, uptime, hostname
+- `GET /system/tailscale` — Tailscale VPN connection status
+- `POST /system/tailscale/connect` — connect to Tailscale network (admin)
+- `POST /system/tailscale/disconnect` — disconnect from Tailscale (admin)
+- `POST /system/factory-reset` — factory reset the device (admin)
 
 **Settings:**
 - `GET /settings` — current settings
 - `PUT /settings` — update settings (admin)
+- `GET /settings/wifi` — current WiFi configuration
+- `POST /settings/wifi` — update WiFi settings (admin)
 
 **Users:**
 - `GET /users` — list users (admin)
@@ -506,6 +541,15 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - `POST /ota/server/upload` — upload update image for server (admin)
 - `POST /ota/camera/<id>/push` — push update to camera (admin)
 - `GET /ota/status` — update status for all devices
+- `GET /ota/usb/scan` — scan USB devices for OTA update files (admin)
+- `POST /ota/usb/import` — import OTA update from USB device (admin)
+
+**Setup (unauthenticated, first-boot only):**
+- `GET /setup/status` — setup completion status
+- `GET /setup/wifi/scan` — scan for available WiFi networks
+- `POST /setup/wifi/save` — save WiFi configuration
+- `POST /setup/admin` — create initial admin account
+- `POST /setup/complete` — finalize first-boot setup
 
 ---
 
@@ -513,7 +557,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-01: TLS on All Connections
 
-> **Status: Partially implemented.** HTTPS works. RTSPS and mTLS not yet implemented (Phase 2). See ADR-0009.
+> **Status: Implemented.** HTTPS, RTSPS, and mTLS all operational. See ADR-0009.
 
 - HTTPS (TLS 1.3) for all browser-to-server traffic (port 443)
 - RTSPS (RTSP over TLS) for all camera-to-server streams
@@ -722,11 +766,11 @@ The architecture must support future additions without redesign:
 | OS | Home Monitor OS (Yocto Scarthgap 5.0 LTS, aarch64) |
 | Init | systemd |
 | Video capture | v4l2 hardware H.264 encoder |
-| Streaming protocol | RTSP over TCP (ffmpeg) |
+| Streaming protocol | RTSPS (mTLS) via MediaMTX, ffmpeg for capture/record |
 | Live view delivery | WebRTC (MediaMTX WHEP, sub-1s) with HLS fallback |
 | Recording format | MP4 (3-minute segments, ffmpeg) |
 | Web backend | Python 3 + Flask |
-| Web frontend | HTML5 + CSS + vanilla JS (mobile-first) |
+| Web frontend | HTMX + Alpine.js, mobile-first dark theme (ADR-0012) |
 | Reverse proxy | nginx |
 | Auth | Flask sessions + bcrypt |
 | Network discovery | Avahi (mDNS/DNS-SD) |
@@ -745,7 +789,7 @@ The architecture must support future additions without redesign:
 | # | Question | When to decide |
 |---|----------|---------------|
 | ~~1~~ | ~~Exact swupdate partition sizes~~ — **Decided in ADR-0008:** 512 MB boot, 8 GB rootfsA/B, remaining for data | ~~Resolved~~ |
-| 2 | Cloud relay architecture — small VPS with WireGuard tunnel vs. hosted signaling | Phase 2 planning |
+| ~~2~~ | ~~Cloud relay architecture~~ — **Resolved:** Tailscale VPN implemented for remote access (no custom relay needed for Phase 1) | ~~Resolved~~ |
 | 3 | Mobile app framework — React Native, Flutter, or native | Phase 2 planning |
 | 4 | Motion detection library — OpenCV on-device vs. server-side analysis | Phase 2 planning |
 | 5 | ONVIF compliance level for smart home integration | Phase 3 planning |
