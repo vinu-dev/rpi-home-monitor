@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# smoke-test.sh — Layer 5 hardware verification for RPi Home Monitor
+# smoke-test.sh â€” Layer 5 hardware verification for RPi Home Monitor
 #
 # Runs against a live server to verify the deployment is working.
 # Checks: HTTPS, API health, auth, camera endpoints, HLS readiness.
@@ -14,8 +14,16 @@
 #   ./scripts/smoke-test.sh <server-ip> <password> <camera-ip> <cam-password>
 #   ./scripts/smoke-test.sh homemonitor.local
 #
-# Camera password defaults to admin-password if not specified (dev builds
-# use admin/admin for both — see ADR-0007).
+# Optional environment variables:
+#   SMOKE_SERVER_COOKIE="session=..."     Skip server login and reuse a valid
+#                                        authenticated Flask session cookie.
+#   SMOKE_CAMERA_COOKIE="cam_session=..." Skip camera login and reuse a valid
+#                                        authenticated camera session cookie.
+#
+# Camera password defaults to the server password only when the server login
+# path is being used. If the camera requires authentication and no camera
+# password or SMOKE_CAMERA_COOKIE is provided, camera-authenticated checks
+# are skipped.
 #
 # Exit codes:
 #   0 = all checks passed
@@ -30,6 +38,7 @@ HTTPS_PORT=443
 API_BASE="https://${SERVER}:${HTTPS_PORT}/api/v1"
 CURL_OPTS="-sk --connect-timeout 5 --max-time 10"
 COOKIE_JAR="/tmp/smoke-test-cookies.txt"
+SERVER_COOKIE_HEADER="${SMOKE_SERVER_COOKIE:-}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -68,7 +77,7 @@ skip() {
 check_status() {
     local desc="$1" url="$2" expected_status="$3"
     local status
-    status=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" "$url" 2>/dev/null) || true
+    status=$(server_curl -o /dev/null -w "%{http_code}" "$url" 2>/dev/null) || true
     if [ "$status" = "$expected_status" ]; then
         pass "$desc (HTTP $status)"
     else
@@ -79,11 +88,19 @@ check_status() {
 check_json_field() {
     local desc="$1" url="$2" field="$3"
     local body
-    body=$(curl $CURL_OPTS -b "$COOKIE_JAR" "$url" 2>/dev/null) || true
+    body=$(server_curl "$url" 2>/dev/null) || true
     if echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
         pass "$desc (has '$field')"
     else
         fail "$desc (missing '$field')"
+    fi
+}
+
+server_curl() {
+    if [ -n "$SERVER_COOKIE_HEADER" ]; then
+        curl $CURL_OPTS -H "Cookie: $SERVER_COOKIE_HEADER" "$@"
+    else
+        curl $CURL_OPTS -b "$COOKIE_JAR" "$@"
     fi
 }
 
@@ -99,7 +116,7 @@ trap cleanup EXIT
 # ===========================================================================
 echo ""
 echo "========================================="
-echo "  RPi Home Monitor — Smoke Tests"
+echo "  RPi Home Monitor â€” Smoke Tests"
 echo "  Server: ${SERVER}"
 echo "========================================="
 echo ""
@@ -136,18 +153,23 @@ check_json_field "setup_complete field" "${API_BASE}/setup/status" "setup_comple
 echo ""
 echo "[3/7] Authentication"
 
-# Login
-LOGIN_RESP=$(curl $CURL_OPTS -c "$COOKIE_JAR" \
-    -H "Content-Type: application/json" \
-    -d "{\"username\":\"admin\",\"password\":\"${PASSWORD}\"}" \
-    "${API_BASE}/auth/login" 2>/dev/null) || true
-
-if echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
-    pass "Login successful"
-    CSRF=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
-else
-    fail "Login failed (check password)"
+# Login or reuse caller-provided session
+if [ -n "$SERVER_COOKIE_HEADER" ]; then
+    pass "Using pre-authenticated server session from SMOKE_SERVER_COOKIE"
     CSRF=""
+else
+    LOGIN_RESP=$(curl $CURL_OPTS -c "$COOKIE_JAR" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"admin\",\"password\":\"${PASSWORD}\"}" \
+        "${API_BASE}/auth/login" 2>/dev/null) || true
+
+    if echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
+        pass "Login successful"
+        CSRF=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+    else
+        fail "Login failed (check password)"
+        CSRF=""
+    fi
 fi
 
 # /auth/me
@@ -178,7 +200,7 @@ echo ""
 echo "[5/7] Camera endpoints"
 check_status "GET /cameras" "${API_BASE}/cameras" 200
 
-CAMERAS=$(curl $CURL_OPTS -b "$COOKIE_JAR" "${API_BASE}/cameras" 2>/dev/null) || true
+CAMERAS=$(server_curl "${API_BASE}/cameras" 2>/dev/null) || true
 CAM_COUNT=$(echo "$CAMERAS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || CAM_COUNT=0
 
 if [ "$CAM_COUNT" -gt 0 ]; then
@@ -189,7 +211,7 @@ if [ "$CAM_COUNT" -gt 0 ]; then
         check_status "GET /recordings/$CAM_ID/dates" "${API_BASE}/recordings/${CAM_ID}/dates" 200
     fi
 else
-    skip "No cameras configured — skipping camera-specific tests"
+    skip "No cameras configured â€” skipping camera-specific tests"
 fi
 
 # ---------------------------------------------------------------------------
@@ -216,12 +238,16 @@ echo "[7/7] OTA status"
 check_status "GET /ota/status" "${API_BASE}/ota/status" 200
 
 # ---------------------------------------------------------------------------
-# 8. Camera node (optional — pass camera IP as $3)
+# 8. Camera node (optional â€” pass camera IP as $3)
 # ---------------------------------------------------------------------------
 
 CAMERA_IP="${3:-}"
-CAMERA_PASSWORD="${4:-${PASSWORD}}"
+CAMERA_PASSWORD="${4:-}"
+if [ -z "$CAMERA_PASSWORD" ] && [ -z "$SERVER_COOKIE_HEADER" ]; then
+    CAMERA_PASSWORD="$PASSWORD"
+fi
 CAM_COOKIE_JAR="/tmp/smoke-test-cam-cookies.txt"
+CAMERA_COOKIE_HEADER="${SMOKE_CAMERA_COOKIE:-}"
 
 cleanup_cam() {
     rm -f "$CAM_COOKIE_JAR"
@@ -231,14 +257,15 @@ trap 'cleanup; cleanup_cam' EXIT
 if [ -n "$CAMERA_IP" ]; then
     echo ""
     echo "[8/8] Camera node: ${CAMERA_IP}"
-    CAM_URL="http://${CAMERA_IP}"
-    CAM_CURL="curl -s --connect-timeout 5 --max-time 10"
+    CAM_URL="https://${CAMERA_IP}"
+    CAM_CURL="curl -sk --connect-timeout 5 --max-time 10"
 
     # --- Reachability ---
-    if $CAM_CURL -o /dev/null "$CAM_URL/" 2>/dev/null; then
-        pass "Camera HTTP reachable"
+    CAM_HTTP_STATUS=$($CAM_CURL -o /dev/null -w "%{http_code}" "$CAM_URL/" 2>/dev/null) || true
+    if [ "$CAM_HTTP_STATUS" = "200" ] || [ "$CAM_HTTP_STATUS" = "302" ]; then
+        pass "Camera HTTPS reachable (HTTP ${CAM_HTTP_STATUS})"
     else
-        fail "Camera HTTP unreachable at ${CAMERA_IP}"
+        fail "Camera HTTPS unreachable at ${CAMERA_IP} (got ${CAM_HTTP_STATUS:-000})"
         echo ""
         echo -e "${RED}Camera unreachable. Skipping camera tests.${NC}"
         # Jump to summary
@@ -248,29 +275,41 @@ fi
 
 if [ -n "$CAMERA_IP" ]; then
     # --- Try unauthenticated status first ---
-    CAM_STATUS=$($CAM_CURL "${CAM_URL}/api/status" 2>/dev/null) || true
+    if [ -n "$CAMERA_COOKIE_HEADER" ]; then
+        CAM_STATUS=$($CAM_CURL -H "Cookie: ${CAMERA_COOKIE_HEADER}" "${CAM_URL}/api/status" 2>/dev/null) || true
+    else
+        CAM_STATUS=$($CAM_CURL "${CAM_URL}/api/status" 2>/dev/null) || true
+    fi
     CAM_AUTHED=false
 
     if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'camera_id' in d" 2>/dev/null; then
-        # No auth required — status is open
+        # No auth required â€” status is open
         pass "Camera /api/status accessible (no auth)"
         CAM_AUTHED=true
     elif echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'error' in d" 2>/dev/null; then
-        # Auth required — login
+        # Auth required â€” login
         pass "Camera /api/status requires auth (expected)"
 
-        CAM_LOGIN=$($CAM_CURL -c "$CAM_COOKIE_JAR" \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"admin\",\"password\":\"${CAMERA_PASSWORD}\"}" \
-            "${CAM_URL}/login" 2>/dev/null) || true
-
-        if echo "$CAM_LOGIN" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'message' in d" 2>/dev/null; then
-            pass "Camera login successful"
+        if [ -n "$CAMERA_COOKIE_HEADER" ]; then
+            pass "Using pre-authenticated camera session from SMOKE_CAMERA_COOKIE"
             CAM_AUTHED=true
-            # Re-fetch status with session cookie
-            CAM_STATUS=$($CAM_CURL -b "$CAM_COOKIE_JAR" "${CAM_URL}/api/status" 2>/dev/null) || true
+            CAM_STATUS=$($CAM_CURL -H "Cookie: ${CAMERA_COOKIE_HEADER}" "${CAM_URL}/api/status" 2>/dev/null) || true
+        elif [ -n "$CAMERA_PASSWORD" ]; then
+            CAM_LOGIN=$($CAM_CURL -c "$CAM_COOKIE_JAR" \
+                -H "Content-Type: application/json" \
+                -d "{\"username\":\"admin\",\"password\":\"${CAMERA_PASSWORD}\"}" \
+                "${CAM_URL}/login" 2>/dev/null) || true
+
+            if echo "$CAM_LOGIN" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'message' in d" 2>/dev/null; then
+                pass "Camera login successful"
+                CAM_AUTHED=true
+                # Re-fetch status with session cookie
+                CAM_STATUS=$($CAM_CURL -b "$CAM_COOKIE_JAR" "${CAM_URL}/api/status" 2>/dev/null) || true
+            else
+                fail "Camera login failed (check password, tried: admin/${CAMERA_PASSWORD})"
+            fi
         else
-            fail "Camera login failed (check password, tried: admin/${CAMERA_PASSWORD})"
+            skip "Camera auth required but no camera password or SMOKE_CAMERA_COOKIE was provided"
         fi
     else
         fail "Camera /api/status unexpected response"
