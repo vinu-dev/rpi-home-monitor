@@ -1,49 +1,38 @@
 <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
-# AGENTS.md
+# Agent Operating System
 
-This repository is designed to work well with multiple coding agents.
+This repository is designed to be a gold-standard workspace for
+agentic product development. This file is the short, tool-neutral
+entrypoint for any coding agent.
 
-Start here:
-1. `docs/ai/index.md`
-2. `docs/ai/core-principles.md`
-3. `docs/ai/design-standards.md`
-4. `docs/ai/workflow-and-validation.md`
-5. `docs/ai/task-routing.md`
+Canonical source of truth:
+- [`docs/ai/index.md`](docs/ai/index.md)
 
-Then read the deeper technical docs that match the task:
-- `docs/architecture.md`
-- `docs/development-guide.md`
-- `docs/testing-guide.md`
-- `docs/build-setup.md`
-- `docs/hardware-setup.md`
+Read next:
+- [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
+- [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
+- [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
+- [`docs/ai/engineering-standards.md`](docs/ai/engineering-standards.md)
+- [`docs/ai/design-standards.md`](docs/ai/design-standards.md)
+- [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+- [`docs/exec-plans/template.md`](docs/exec-plans/template.md)
 
-Core operating model:
-- Goal first: define product goal, constraints, and exit criteria.
-- Use the smallest complete change.
-- Prefer enforceable process over prose.
-- Update docs and validation when behavior changes.
-- If a rule is impractical, change the rule and its enforcement. Do not keep fake policy.
+Core rules:
+- work from an explicit product or operator goal
+- prefer design-level fixes over local patches
+- keep tool adapters short and keep canonical policy in `docs/ai/`
+- run the right validation for the area you touched
+- do not commit directly to `main`
 
-Required commands by area:
-- Server Python: `ruff check app/ && ruff format --check app/ && pytest app/server/tests/ -v`
-- Camera Python: `ruff check app/ && ruff format --check app/ && pytest app/camera/tests/ -v`
-- Yocto: `bitbake -p` plus build impact note
-- Hardware smoke: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
+Key validation:
+- server: `pytest app/server/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+- camera: `pytest app/camera/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+- Yocto: `bitbake -p` and VM build for affected images
+- hardware deploys: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
 
-Deploy commands live in `docs/ai/task-routing.md`.
-
-Large work:
-- Use `docs/exec-plans/template.md` for cross-cutting or high-risk changes.
-
-Tool adapters are generated:
+Tool adapters:
 - `CLAUDE.md`
 - `.github/copilot-instructions.md`
 - `.github/instructions/*.instructions.md`
 - `.cursor/rules/*.mdc`
 - `.qodo/workflows/*.toml`
-
-Regenerate adapters:
-- `python scripts/ai/build_instruction_files.py`
-
-Validate repo governance:
-- `python scripts/ai/validate_ai_repo.py`

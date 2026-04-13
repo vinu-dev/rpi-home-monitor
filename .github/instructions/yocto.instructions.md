@@ -1,11 +1,11 @@
-        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
-        ---
-        applyTo: "meta-home-monitor/**,config/**,scripts/build*.sh"
-        ---
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+applyTo: "meta-home-monitor/**,config/**"
+---
 
-        # Yocto Instructions
+# Yocto Instructions
 
-        Keep permanent product policy out of developer `local.conf`.
-Extend layers cleanly and document the impact. Build on the VM.
-Run at least `bitbake -p` and document any build or deploy
-implications in the PR.
+- Do not put permanent project policy in `local.conf`.
+- Keep machine policy in machine config, distro policy in distro config, and packaging in recipes.
+- Run `bitbake -p` for affected images.
+- Use the build VM for real Yocto builds.

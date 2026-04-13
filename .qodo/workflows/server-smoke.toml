@@ -1,7 +1,7 @@
+# AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
 name = "server-smoke"
 description = "Run the repository smoke verification flow for the live server and optional camera."
 prompt = """
 Review the deployment context, run the repository smoke verification flow,
-report pass/fail/skip clearly, and call out any drift between the repo and the
-live hardware behavior.
+report pass/fail/skip clearly, and call out drift between the repo and live hardware behavior.
 """

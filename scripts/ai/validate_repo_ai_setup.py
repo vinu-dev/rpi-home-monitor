@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
-"""Validate the repository AI operating system layout."""
+"""Validate the repository AI operating-system surface."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-import sys
+
+from build_instruction_files import ROOT, generated_files
 
 
-ROOT = Path(__file__).resolve().parents[2]
-
-REQUIRED_FILES = [
-    "AGENTS.md",
-    "CLAUDE.md",
+REQUIRED_CANONICAL = [
     "docs/ai/index.md",
     "docs/ai/mission-and-goals.md",
     "docs/ai/repo-map.md",
@@ -22,92 +17,82 @@ REQUIRED_FILES = [
     "docs/ai/validation-and-release.md",
     "docs/exec-plans/template.md",
     ".claude/settings.json",
-    ".github/copilot-instructions.md",
+    ".claude/agents/reviewer.md",
+    ".claude/agents/hardware-smoke.md",
+    ".claude/agents/yocto.md",
     ".github/pull_request_template.md",
-    ".github/instructions/server.instructions.md",
-    ".github/instructions/camera.instructions.md",
-    ".github/instructions/yocto.instructions.md",
-    ".github/instructions/docs.instructions.md",
+    ".github/skills/hardware-smoke/SKILL.md",
+    ".github/skills/yocto-guardrails/SKILL.md",
+    ".gitattributes",
+    "scripts/ai/build_instruction_files.py",
+]
+
+EXPECTED_CURSOR = {
     ".cursor/rules/00-repo-overview.mdc",
     ".cursor/rules/10-goals-and-plans.mdc",
     ".cursor/rules/20-server-python.mdc",
     ".cursor/rules/30-camera-python.mdc",
-    ".cursor/rules/40-yocto-and-release.mdc",
-    ".cursor/rules/50-testing-and-smoke.mdc",
+    ".cursor/rules/40-yocto.mdc",
+    ".cursor/rules/50-validation.mdc",
     ".cursor/rules/60-design-standards.mdc",
+}
+
+EXPECTED_QODO = {
+    ".qodo/workflows/implement.toml",
+    ".qodo/workflows/review.toml",
     ".qodo/workflows/server-smoke.toml",
     ".qodo/workflows/yocto-validate.toml",
-]
-
-ADAPTERS = {
-    "AGENTS.md": "docs/ai/index.md",
-    "CLAUDE.md": "docs/ai/index.md",
-    ".github/copilot-instructions.md": "AGENTS.md",
-}
-
-LINE_BUDGETS = {
-    "AGENTS.md": 140,
-    "CLAUDE.md": 80,
-    ".github/copilot-instructions.md": 60,
 }
 
 
-def _error(message: str, errors: list[str]) -> None:
-    errors.append(message)
+def _collect(relative_root: str, suffix: str) -> set[str]:
+    root = ROOT / relative_root
+    if not root.exists():
+        return set()
+    return {
+        str(path.relative_to(ROOT)).replace("\\", "/")
+        for path in root.rglob(f"*{suffix}")
+        if path.is_file()
+    }
 
 
 def main() -> int:
-    errors: list[str] = []
+    failures: list[str] = []
 
-    for rel_path in REQUIRED_FILES:
-        if not (ROOT / rel_path).exists():
-            _error(f"Missing required file: {rel_path}", errors)
+    for relative_path in REQUIRED_CANONICAL:
+        if not (ROOT / relative_path).exists():
+            failures.append(f"Missing required canonical file: {relative_path}")
 
-    for rel_path, needle in ADAPTERS.items():
-        path = ROOT / rel_path
-        if not path.exists():
+    for relative_path, content in generated_files().items():
+        target = ROOT / relative_path
+        expected = content.replace("\r\n", "\n").rstrip() + "\n"
+        if not target.exists():
+            failures.append(f"Missing generated adapter: {relative_path}")
             continue
-        text = path.read_text(encoding="utf-8")
-        if needle not in text:
-            _error(f"{rel_path} must reference {needle}", errors)
+        actual = target.read_text(encoding="utf-8")
+        if actual != expected:
+            failures.append(f"Generated adapter is stale: {relative_path}")
 
-    for rel_path, max_lines in LINE_BUDGETS.items():
-        path = ROOT / rel_path
-        if not path.exists():
-            continue
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        if line_count > max_lines:
-            _error(f"{rel_path} exceeds line budget ({line_count} > {max_lines})", errors)
+    cursor_files = _collect(".cursor/rules", ".mdc")
+    unexpected_cursor = sorted(cursor_files - EXPECTED_CURSOR)
+    if unexpected_cursor:
+        failures.append(
+            "Unexpected Cursor rules present: " + ", ".join(unexpected_cursor)
+        )
 
-    settings_path = ROOT / ".claude/settings.json"
-    if settings_path.exists():
-        try:
-            json.loads(settings_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            _error(f".claude/settings.json is invalid JSON: {exc}", errors)
+    qodo_files = _collect(".qodo/workflows", ".toml")
+    unexpected_qodo = sorted(qodo_files - EXPECTED_QODO)
+    if unexpected_qodo:
+        failures.append(
+            "Unexpected Qodo workflows present: " + ", ".join(unexpected_qodo)
+        )
 
-    ai_index = ROOT / "docs/ai/index.md"
-    if ai_index.exists():
-        ai_text = ai_index.read_text(encoding="utf-8")
-        required_refs = [
-            "mission-and-goals.md",
-            "repo-map.md",
-            "working-agreement.md",
-            "engineering-standards.md",
-            "design-standards.md",
-            "validation-and-release.md",
-        ]
-        for ref in required_refs:
-            if ref not in ai_text:
-                _error(f"docs/ai/index.md must reference {ref}", errors)
-
-    if errors:
-        print("AI repo validation failed:", file=sys.stderr)
-        for error in errors:
-            print(f"- {error}", file=sys.stderr)
+    if failures:
+        for failure in failures:
+            print(failure)
         return 1
 
-    print("AI repo validation passed.")
+    print("AI repo setup validation passed.")
     return 0
 
 

@@ -1,8 +1,5 @@
-"""Generate tool-specific instruction adapters from the canonical repo policy.
-
-The canonical human-readable source of truth lives in docs/ai/ and docs/.
-This script generates concise tool adapters that point back to those docs.
-"""
+#!/usr/bin/env python3
+"""Build generated tool adapters from the canonical AI docs."""
 
 from __future__ import annotations
 
@@ -10,65 +7,59 @@ import argparse
 from pathlib import Path
 from textwrap import dedent
 
+
 ROOT = Path(__file__).resolve().parents[2]
-AUTOGEN = (
+AUTO = (
     "<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. "
     "Run `python scripts/ai/build_instruction_files.py`. -->"
 )
 
 
+def normalize(text: str) -> str:
+    return text.replace("\r\n", "\n").rstrip() + "\n"
+
+
 def render_agents() -> str:
     return dedent(
         f"""\
-        {AUTOGEN}
-        # AGENTS.md
+        {AUTO}
+        # Agent Operating System
 
-        This repository is designed to work well with multiple coding agents.
+        This repository is designed to be a gold-standard workspace for
+        agentic product development. This file is the short, tool-neutral
+        entrypoint for any coding agent.
 
-        Start here:
-        1. `docs/ai/index.md`
-        2. `docs/ai/core-principles.md`
-        3. `docs/ai/design-standards.md`
-        4. `docs/ai/workflow-and-validation.md`
-        5. `docs/ai/task-routing.md`
+        Canonical source of truth:
+        - [`docs/ai/index.md`](docs/ai/index.md)
 
-        Then read the deeper technical docs that match the task:
-        - `docs/architecture.md`
-        - `docs/development-guide.md`
-        - `docs/testing-guide.md`
-        - `docs/build-setup.md`
-        - `docs/hardware-setup.md`
+        Read next:
+        - [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
+        - [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
+        - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
+        - [`docs/ai/engineering-standards.md`](docs/ai/engineering-standards.md)
+        - [`docs/ai/design-standards.md`](docs/ai/design-standards.md)
+        - [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+        - [`docs/exec-plans/template.md`](docs/exec-plans/template.md)
 
-        Core operating model:
-        - Goal first: define product goal, constraints, and exit criteria.
-        - Use the smallest complete change.
-        - Prefer enforceable process over prose.
-        - Update docs and validation when behavior changes.
-        - If a rule is impractical, change the rule and its enforcement. Do not keep fake policy.
+        Core rules:
+        - work from an explicit product or operator goal
+        - prefer design-level fixes over local patches
+        - keep tool adapters short and keep canonical policy in `docs/ai/`
+        - run the right validation for the area you touched
+        - do not commit directly to `main`
 
-        Required commands by area:
-        - Server Python: `ruff check app/ && ruff format --check app/ && pytest app/server/tests/ -v`
-        - Camera Python: `ruff check app/ && ruff format --check app/ && pytest app/camera/tests/ -v`
-        - Yocto: `bitbake -p` plus build impact note
-        - Hardware smoke: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
+        Key validation:
+        - server: `pytest app/server/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+        - camera: `pytest app/camera/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+        - Yocto: `bitbake -p` and VM build for affected images
+        - hardware deploys: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
 
-        Deploy commands live in `docs/ai/task-routing.md`.
-
-        Large work:
-        - Use `docs/exec-plans/template.md` for cross-cutting or high-risk changes.
-
-        Tool adapters are generated:
+        Tool adapters:
         - `CLAUDE.md`
         - `.github/copilot-instructions.md`
         - `.github/instructions/*.instructions.md`
         - `.cursor/rules/*.mdc`
         - `.qodo/workflows/*.toml`
-
-        Regenerate adapters:
-        - `python scripts/ai/build_instruction_files.py`
-
-        Validate repo governance:
-        - `python scripts/ai/validate_ai_repo.py`
         """
     )
 
@@ -76,27 +67,24 @@ def render_agents() -> str:
 def render_claude() -> str:
     return dedent(
         f"""\
-        {AUTOGEN}
-        # Claude Code Adapter
+        {AUTO}
+        # Claude Adapter
 
-        This repository uses a canonical AI operating system under `docs/ai/`.
-        Treat that directory and the technical docs under `docs/` as the source
-        of truth.
+        This file is the Claude-specific entrypoint for the repository.
+        The canonical, tool-neutral source of truth lives in
+        [`docs/ai/index.md`](docs/ai/index.md).
 
-        Required reading order:
-        1. `AGENTS.md`
-        2. `docs/ai/index.md`
-        3. `docs/ai/core-principles.md`
-        4. `docs/ai/design-standards.md`
-        5. `docs/ai/workflow-and-validation.md`
-        6. `docs/ai/task-routing.md`
+        Start here:
+        1. [`docs/ai/index.md`](docs/ai/index.md)
+        2. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
+        3. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
+        4. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 
         Claude-specific notes:
-        - Use project settings from `.claude/settings.json`.
-        - Use subagents in `.claude/agents/` when they fit the task.
-        - For large tasks, create or follow an exec plan from `docs/exec-plans/`.
-
-        This file is intentionally short. Do not duplicate policy here.
+        - respect [`.claude/settings.json`](.claude/settings.json)
+        - use subagents in [`.claude/agents/`](.claude/agents/) for larger tasks
+        - keep this file as an adapter, not the full handbook
+        - if this file and `docs/ai/` disagree, `docs/ai/` wins
         """
     )
 
@@ -104,76 +92,57 @@ def render_claude() -> str:
 def render_copilot() -> str:
     return dedent(
         f"""\
-        {AUTOGEN}
+        {AUTO}
         # GitHub Copilot Repository Instructions
 
-        Use `AGENTS.md` and `docs/ai/index.md` as the entrypoint to this repo.
+        Read [`AGENTS.md`](../AGENTS.md) first.
 
-        Non-negotiable expectations:
-        - State the goal before implementing substantial work.
-        - Follow `docs/ai/task-routing.md` for validation by subsystem.
-        - Keep behavior, docs, and validation in sync.
-        - Prefer enforceable workflow over ad-hoc conventions.
+        Core rules:
+        - follow [`docs/ai/index.md`](../docs/ai/index.md)
+        - keep changes scoped and update docs when behavior changes
+        - use the correct validation for the area you touched
+        - do not commit directly to `main`
+        - preserve the existing repo architecture
 
-        Technical references:
-        - `docs/architecture.md`
-        - `docs/development-guide.md`
-        - `docs/testing-guide.md`
-        - `docs/build-setup.md`
-        - `docs/hardware-setup.md`
-
-        Large tasks should use `docs/exec-plans/template.md`.
+        Path-specific instructions live under [`.github/instructions/`](./instructions/).
         """
     )
 
 
-def render_gh_instruction(title: str, apply_to: str, body: str) -> str:
-    return dedent(
-        f"""\
-        {AUTOGEN}
-        ---
-        applyTo: "{apply_to}"
-        ---
-
-        # {title}
-
-        {body}
-        """
+def render_instruction(title: str, apply_to: str, body: str) -> str:
+    return (
+        f"{AUTO}\n"
+        "---\n"
+        f'applyTo: "{apply_to}"\n'
+        "---\n\n"
+        f"# {title}\n\n"
+        f"{body}\n"
     )
 
 
-def render_cursor_rule(
-    description: str,
-    globs: list[str],
-    always_apply: bool,
-    body: str,
-) -> str:
-    globs_yaml = "\n".join(f"  - {glob}" for glob in globs)
-    return dedent(
-        f"""\
-        {AUTOGEN}
-        ---
-        description: {description}
-        globs:
-        {globs_yaml}
-        alwaysApply: {"true" if always_apply else "false"}
-        ---
-
-        {body}
-        """
+def render_cursor(description: str, globs: list[str], body: str, always: bool = False) -> str:
+    glob_lines = "\n".join(f"  - {item}" for item in globs)
+    always_line = "true" if always else "false"
+    return (
+        f"{AUTO}\n"
+        "---\n"
+        f"description: {description}\n"
+        "globs:\n"
+        f"{glob_lines}\n"
+        f"alwaysApply: {always_line}\n"
+        "---\n\n"
+        f"{body}\n"
     )
 
 
-def render_qodo_workflow(name: str, description: str, instructions: str) -> str:
-    return dedent(
-        f'''\
-        # AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
-        name = "{name}"
-        description = "{description}"
-        instructions = """
-        {instructions}
-        """
-        '''
+def render_qodo(name: str, description: str, prompt: str) -> str:
+    return (
+        "# AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.\n"
+        f'name = "{name}"\n'
+        f'description = "{description}"\n'
+        'prompt = """\n'
+        f"{prompt}\n"
+        '"""\n'
     )
 
 
@@ -182,189 +151,155 @@ def generated_files() -> dict[str, str]:
         "AGENTS.md": render_agents(),
         "CLAUDE.md": render_claude(),
         ".github/copilot-instructions.md": render_copilot(),
-        ".github/instructions/server.instructions.md": render_gh_instruction(
-            "Server App Instructions",
+        ".github/instructions/server.instructions.md": render_instruction(
+            "Server Instructions",
             "app/server/**",
-            dedent(
-                """\
-                Work through the service layer. Keep Flask routes thin. Run the
-                server test and lint commands from `docs/ai/task-routing.md`.
-                For API behavior changes, update the relevant docs and contract
-                coverage. Read `docs/architecture.md` and `docs/testing-guide.md`
-                before changing auth, sessions, TLS, storage, or API contracts.
-                """
-            ),
+            "- Keep routes thin and logic in services.\n"
+            "- Preserve auth, CSRF, and session behavior unless the task explicitly changes it.\n"
+            "- Run `pytest app/server/tests/ -v`.\n"
+            "- Update docs if API, security, or deploy behavior changed.",
         ),
-        ".github/instructions/camera.instructions.md": render_gh_instruction(
-            "Camera App Instructions",
+        ".github/instructions/camera.instructions.md": render_instruction(
+            "Camera Instructions",
             "app/camera/**",
-            dedent(
-                """\
-                Preserve the camera lifecycle model, status-server behavior, and
-                hardware-aware platform abstractions. Treat mDNS, TLS, pairing,
-                and provisioning as product behavior, not just implementation
-                details. Run the camera validation commands from
-                `docs/ai/task-routing.md`.
-                """
-            ),
+            "- Preserve the lifecycle state machine and platform abstraction.\n"
+            "- Keep the post-provisioning status UI aligned with live HTTPS behavior.\n"
+            "- Run `pytest app/camera/tests/ -v`.\n"
+            "- Validate on hardware for pairing, WiFi, hostname, TLS, or streaming changes.",
         ),
-        ".github/instructions/yocto.instructions.md": render_gh_instruction(
+        ".github/instructions/yocto.instructions.md": render_instruction(
             "Yocto Instructions",
-            "meta-home-monitor/**,config/**,scripts/build*.sh",
-            dedent(
-                """\
-                Keep permanent product policy out of developer `local.conf`.
-                Extend layers cleanly and document the impact. Build on the VM.
-                Run at least `bitbake -p` and document any build or deploy
-                implications in the PR.
-                """
-            ),
+            "meta-home-monitor/**,config/**",
+            "- Do not put permanent project policy in `local.conf`.\n"
+            "- Keep machine policy in machine config, distro policy in distro config, and packaging in recipes.\n"
+            "- Run `bitbake -p` for affected images.\n"
+            "- Use the build VM for real Yocto builds.",
         ),
-        ".github/instructions/docs.instructions.md": render_gh_instruction(
-            "Documentation Instructions",
-            "docs/**,README.md,CHANGELOG.md",
-            dedent(
-                """\
-                Update canonical docs when behavior or workflow changes. Avoid
-                duplicating long policy in multiple places. For AI guidance,
-                canonical content lives in `docs/ai/`; generated adapters should
-                be regenerated, not hand-edited.
-                """
-            ),
+        ".github/instructions/docs.instructions.md": render_instruction(
+            "Docs Instructions",
+            "docs/**,README.md,CHANGELOG.md,AGENTS.md,CLAUDE.md",
+            "- `docs/ai/` is canonical for agent behavior.\n"
+            "- Keep adapters short and linked back to canonical docs.\n"
+            "- Do not duplicate long policy text across tool-specific files.\n"
+            "- Run the repo AI validator after edits.",
         ),
-        ".cursor/rules/00-repo-overview.mdc": render_cursor_rule(
-            "Repo overview and reading order",
+        ".cursor/rules/00-repo-overview.mdc": render_cursor(
+            "Repo-wide overview and source-of-truth rules.",
             ["**/*"],
-            True,
-            dedent(
-                """\
-                Start at `AGENTS.md`, then `docs/ai/index.md`.
-
-                Operate goal-first:
-                - state the product or engineering goal
-                - identify constraints
-                - define exit criteria
-
-                Use `docs/ai/task-routing.md` to decide which commands and docs
-                apply to the current change.
-                """
-            ),
+            "# Repo Overview\n\n"
+            "- Read `AGENTS.md` first.\n"
+            "- Treat `docs/ai/` as the canonical AI operating system.\n"
+            "- Keep tool adapters short and linked back to `docs/ai/`.\n"
+            "- Work toward a clear product goal and success criteria.\n"
+            "- Do not commit directly to `main`.\n",
+            always=True,
         ),
-        ".cursor/rules/10-design-standards.mdc": render_cursor_rule(
-            "Design and product quality standards",
-            ["app/**", "docs/**", "templates/**"],
-            False,
-            dedent(
-                """\
-                The repository is a product sample, not just a code sample.
-
-                Avoid generic AI output. Preserve explicit architecture patterns,
-                deliberate UX, and maintainable module boundaries. Read
-                `docs/ai/design-standards.md` before changing user-facing flows,
-                architecture, or deployment behavior.
-                """
-            ),
+        ".cursor/rules/10-goals-and-plans.mdc": render_cursor(
+            "Goal framing and large-task planning rules.",
+            ["**/*"],
+            "# Goals And Plans\n\n"
+            "- Start from the user or operator outcome, not just the local code change.\n"
+            "- For larger or riskier work, use `docs/exec-plans/template.md`.\n"
+            "- Prefer design-level fixes over symptom patches.\n"
+            "- Note assumptions when the requested goal is underspecified.\n",
+            always=True,
         ),
-        ".cursor/rules/20-server-python.mdc": render_cursor_rule(
-            "Server Python rules",
+        ".cursor/rules/20-server-python.mdc": render_cursor(
+            "Server-side Flask and service-layer rules.",
             ["app/server/**"],
-            False,
-            dedent(
-                """\
-                Keep routes thin and business logic in services. Validate with:
-                `ruff check app/ && ruff format --check app/ && pytest app/server/tests/ -v`
-                """
-            ),
+            "# Server Rules\n\n"
+            "- Keep routes thin and business logic in services.\n"
+            "- Preserve app-factory structure and constructor injection.\n"
+            "- Validate with `pytest app/server/tests/ -v`.\n"
+            "- Update docs if API, auth, or runtime behavior changes.\n",
         ),
-        ".cursor/rules/30-camera-python.mdc": render_cursor_rule(
-            "Camera Python rules",
+        ".cursor/rules/30-camera-python.mdc": render_cursor(
+            "Camera runtime, pairing, hostname, and HTTPS status rules.",
             ["app/camera/**"],
-            False,
-            dedent(
-                """\
-                Preserve lifecycle, pairing, TLS, provisioning, and status-server
-                semantics. Validate with:
-                `ruff check app/ && ruff format --check app/ && pytest app/camera/tests/ -v`
-                """
-            ),
+            "# Camera Rules\n\n"
+            "- Preserve the lifecycle state machine and platform abstraction.\n"
+            "- Validate camera HTTPS, status, pairing, and hostname behavior on hardware for relevant changes.\n"
+            "- Validate with `pytest app/camera/tests/ -v`.\n"
+            "- Keep the post-provisioning URL and live runtime behavior aligned.\n",
         ),
-        ".cursor/rules/40-yocto.mdc": render_cursor_rule(
-            "Yocto and image-policy rules",
+        ".cursor/rules/40-yocto.mdc": render_cursor(
+            "Yocto and release guardrails.",
             ["meta-home-monitor/**", "config/**", "scripts/build*.sh"],
-            False,
-            dedent(
-                """\
-                Keep permanent policy out of developer overrides. Use recipes,
-                machine config, image config, and packagegroups. Validate with
-                `bitbake -p` and document build impact.
-                """
-            ),
+            "# Yocto And Release Rules\n\n"
+            "- No permanent project policy in `local.conf`.\n"
+            "- Put machine policy in machine config and distro policy in distro config.\n"
+            "- Run `bitbake -p` for affected images.\n"
+            "- Build on the VM for real Yocto validation.\n",
         ),
-        ".cursor/rules/50-validation.mdc": render_cursor_rule(
-            "Validation and rollout rules",
+        ".cursor/rules/50-validation.mdc": render_cursor(
+            "Validation rules for tests, smoke, and deployment.",
             ["**/*"],
-            False,
-            dedent(
-                """\
-                If behavior changes, update docs and validation in the same
-                change. Large tasks should use `docs/exec-plans/template.md`.
-                Hardware-affecting changes should include smoke evidence when the
-                hardware is available.
-                """
-            ),
+            "# Validation Rules\n\n"
+            "- Run the right validation for the area you changed.\n"
+            "- Hardware-affecting changes require smoke verification.\n"
+            "- Treat smoke scripts and deploy runbooks as code, not comments.\n"
+            "- If device behavior and docs disagree, update the repo to match reality.\n",
+            always=True,
         ),
-        ".qodo/workflows/implement.toml": render_qodo_workflow(
+        ".cursor/rules/60-design-standards.mdc": render_cursor(
+            "Product and UI design standards.",
+            ["app/**", "docs/**"],
+            "# Design Standards\n\n"
+            "- Optimize for clarity, confidence, and truthful status communication.\n"
+            "- Support mobile-first usage.\n"
+            "- Always provide clear loading, empty, and error states.\n"
+            "- Avoid generic AI-looking layouts or undocumented UX shortcuts.\n",
+        ),
+        ".qodo/workflows/implement.toml": render_qodo(
             "implement",
             "Implement a repository change while following the canonical AI policy.",
-            dedent(
-                """\
-                Start at AGENTS.md, then docs/ai/index.md.
-                State the goal, constraints, and exit criteria.
-                Follow docs/ai/task-routing.md for validation.
-                If the task is cross-cutting or risky, use docs/exec-plans/template.md.
-                Do not hand-edit generated adapter files.
-                """
-            ).strip(),
+            "Start at AGENTS.md, then docs/ai/index.md.\n"
+            "State the goal, constraints, and exit criteria.\n"
+            "Follow docs/ai/repo-map.md and docs/ai/validation-and-release.md.\n"
+            "If the task is cross-cutting or risky, use docs/exec-plans/template.md.",
         ),
-        ".qodo/workflows/review.toml": render_qodo_workflow(
+        ".qodo/workflows/review.toml": render_qodo(
             "review",
             "Review a change for correctness, regressions, and missing validation.",
-            dedent(
-                """\
-                Review for bugs, design regressions, stale docs, missing tests,
-                and workflow drift. Treat docs and deploy paths as product
-                artifacts. Prefer concrete findings with file references and
-                missing validation evidence.
-                """
-            ).strip(),
+            "Review for bugs, design regressions, stale docs, missing tests, and workflow drift.\n"
+            "Treat docs and deploy paths as product artifacts.\n"
+            "Prefer concrete findings with file references and missing validation evidence.",
+        ),
+        ".qodo/workflows/server-smoke.toml": render_qodo(
+            "server-smoke",
+            "Run the repository smoke verification flow for the live server and optional camera.",
+            "Review the deployment context, run the repository smoke verification flow,\n"
+            "report pass/fail/skip clearly, and call out drift between the repo and live hardware behavior.",
+        ),
+        ".qodo/workflows/yocto-validate.toml": render_qodo(
+            "yocto-validate",
+            "Validate Yocto-facing changes with the repository guardrails.",
+            "Inspect the Yocto-related change, confirm the policy is in the correct layer,\n"
+            "run the required parse checks, and report whether the repo and build workflow still match the docs.",
         ),
     }
 
 
-def write_file(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    normalized = content.replace("\r\n", "\n").rstrip() + "\n"
-    path.write_text(normalized, encoding="utf-8", newline="\n")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="Validate only")
+    parser.add_argument("--check", action="store_true", help="Fail if generated files are stale.")
     args = parser.parse_args()
 
     failures: list[str] = []
-    for relative_path, content in generated_files().items():
-        destination = ROOT / relative_path
-        normalized = content.replace("\r\n", "\n").rstrip() + "\n"
+    for rel_path, content in generated_files().items():
+        target = ROOT / rel_path
+        expected = normalize(content)
         if args.check:
-            if not destination.exists():
-                failures.append(f"Missing generated file: {relative_path}")
+            if not target.exists():
+                failures.append(f"Missing generated file: {rel_path}")
                 continue
-            existing = destination.read_text(encoding="utf-8")
-            if existing != normalized:
-                failures.append(f"Out-of-date generated file: {relative_path}")
-        else:
-            write_file(destination, normalized)
+            actual = normalize(target.read_text(encoding="utf-8"))
+            if actual != expected:
+                failures.append(f"Out-of-date generated file: {rel_path}")
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(expected, encoding="utf-8", newline="\n")
 
     if failures:
         for failure in failures:

@@ -10,7 +10,10 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-json
+      - id: check-toml
       - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
       - id: check-added-large-files
         args: ['--maxkb=500']
       - id: no-commit-to-branch

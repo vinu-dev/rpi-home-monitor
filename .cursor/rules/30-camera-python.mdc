@@ -1,11 +1,14 @@
-        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
-        ---
-        description: Camera Python rules
-        globs:
-          - app/camera/**
-        alwaysApply: false
-        ---
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Camera runtime, pairing, hostname, and HTTPS status rules.
+globs:
+  - app/camera/**
+alwaysApply: false
+---
 
-        Preserve lifecycle, pairing, TLS, provisioning, and status-server
-semantics. Validate with:
-`ruff check app/ && ruff format --check app/ && pytest app/camera/tests/ -v`
+# Camera Rules
+
+- Preserve the lifecycle state machine and platform abstraction.
+- Validate camera HTTPS, status, pairing, and hostname behavior on hardware for relevant changes.
+- Validate with `pytest app/camera/tests/ -v`.
+- Keep the post-provisioning URL and live runtime behavior aligned.

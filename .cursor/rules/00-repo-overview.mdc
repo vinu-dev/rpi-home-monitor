@@ -1,17 +1,15 @@
-        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
-        ---
-        description: Repo overview and reading order
-        globs:
-          - **/*
-        alwaysApply: true
-        ---
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Repo-wide overview and source-of-truth rules.
+globs:
+  - **/*
+alwaysApply: true
+---
 
-        Start at `AGENTS.md`, then `docs/ai/index.md`.
+# Repo Overview
 
-Operate goal-first:
-- state the product or engineering goal
-- identify constraints
-- define exit criteria
-
-Use `docs/ai/task-routing.md` to decide which commands and docs
-apply to the current change.
+- Read `AGENTS.md` first.
+- Treat `docs/ai/` as the canonical AI operating system.
+- Keep tool adapters short and linked back to `docs/ai/`.
+- Work toward a clear product goal and success criteria.
+- Do not commit directly to `main`.

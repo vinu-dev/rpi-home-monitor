@@ -1,19 +1,13 @@
 <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
 # GitHub Copilot Repository Instructions
 
-Use `AGENTS.md` and `docs/ai/index.md` as the entrypoint to this repo.
+Read [`AGENTS.md`](../AGENTS.md) first.
 
-Non-negotiable expectations:
-- State the goal before implementing substantial work.
-- Follow `docs/ai/task-routing.md` for validation by subsystem.
-- Keep behavior, docs, and validation in sync.
-- Prefer enforceable workflow over ad-hoc conventions.
+Core rules:
+- follow [`docs/ai/index.md`](../docs/ai/index.md)
+- keep changes scoped and update docs when behavior changes
+- use the correct validation for the area you touched
+- do not commit directly to `main`
+- preserve the existing repo architecture
 
-Technical references:
-- `docs/architecture.md`
-- `docs/development-guide.md`
-- `docs/testing-guide.md`
-- `docs/build-setup.md`
-- `docs/hardware-setup.md`
-
-Large tasks should use `docs/exec-plans/template.md`.
+Path-specific instructions live under [`.github/instructions/`](./instructions/).

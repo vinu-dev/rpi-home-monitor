@@ -1,12 +1,14 @@
-        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
-        ---
-        description: Validation and rollout rules
-        globs:
-          - **/*
-        alwaysApply: false
-        ---
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+---
+description: Validation rules for tests, smoke, and deployment.
+globs:
+  - **/*
+alwaysApply: true
+---
 
-        If behavior changes, update docs and validation in the same
-change. Large tasks should use `docs/exec-plans/template.md`.
-Hardware-affecting changes should include smoke evidence when the
-hardware is available.
+# Validation Rules
+
+- Run the right validation for the area you changed.
+- Hardware-affecting changes require smoke verification.
+- Treat smoke scripts and deploy runbooks as code, not comments.
+- If device behavior and docs disagree, update the repo to match reality.

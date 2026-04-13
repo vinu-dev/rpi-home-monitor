@@ -1,9 +1,9 @@
+<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
 ---
 description: Product and UI design standards.
 globs:
-  - "app/server/monitor/templates/**"
-  - "app/server/monitor/static/**"
-  - "app/camera/camera_streamer/templates/**"
+  - app/**
+  - docs/**
 alwaysApply: false
 ---
 
