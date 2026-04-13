@@ -74,18 +74,9 @@ UNIT
             >> ${D}${sysconfdir}/swupdate/conf.d/00-home-monitor
     fi
 
-    # --- hwrevision: identifies hardware for OTA compatibility checking ---
-    # Must match hardware-compatibility in sw-description templates.
-    if [ "${MACHINE}" = "raspberrypi0-2w-64" ]; then
-        printf "rpi-zero2w-camera 1.0\n" > ${D}${sysconfdir}/hwrevision
-    else
-        printf "rpi-4b-server 1.0\n" > ${D}${sysconfdir}/hwrevision
-    fi
-
-    # --- sw-versions: tracks installed software version ---
-    # Updated by swupdate post-install scripts after an OTA update.
-    printf "home-monitor-image 1.1.0\n" > ${D}${sysconfdir}/sw-versions
 }
+# Note: /etc/hwrevision is provided by the hwrevision recipe.
+#       /etc/sw-versions is provided by the sw-versions recipe.
 
 SYSTEMD_SERVICE:${PN} += "swupdate-check.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
@@ -95,8 +86,6 @@ FILES:${PN} += " \
     ${systemd_system_unitdir}/swupdate-check.service \
     ${sysconfdir}/swupdate.cfg \
     ${sysconfdir}/swupdate/conf.d/00-home-monitor \
-    ${sysconfdir}/hwrevision \
-    ${sysconfdir}/sw-versions \
     "
 
 # Cert file only packaged when signing is enabled (ADR-0014)
