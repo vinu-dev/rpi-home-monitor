@@ -77,7 +77,7 @@ CI_REQUIRED_SNIPPETS = {
     "python scripts/ai/check_doc_links.py",
     "python scripts/ai/check_shell_scripts.py",
     "pre-commit run --all-files",
-    "shellcheck scripts/*.sh",
+    "shellcheck -S warning -e SC1091,SC1111,SC2012,SC2034 scripts/*.sh",
     "bash -n scripts/*.sh",
     "--cov-fail-under=80",
     "--cov-fail-under=70",
