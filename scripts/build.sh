@@ -27,6 +27,18 @@ echo ">>> Release: $RELEASE"
 echo ">>> CPUs: $NCPU"
 echo ">>> Target: $TARGET"
 
+# --- OTA signing cert guard ---
+# swupdate is built with CONFIG_SIGNED_IMAGES=y and expects the public cert
+# baked into the image. Generate it once with: ./scripts/generate-ota-keys.sh
+OTA_CERT="$YOCTO_DIR/meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt"
+if [ ! -f "$OTA_CERT" ]; then
+    echo ""
+    echo "ERROR: OTA signing cert not found: $OTA_CERT"
+    echo "Run './scripts/generate-ota-keys.sh' first to generate the keypair."
+    echo ""
+    exit 1
+fi
+
 # --- Clone Yocto layers ---
 clone_layer() {
     local url=$1 dir=$2 branch=$3
