@@ -8,4 +8,5 @@ applyTo: "app/camera/**"
 - Preserve the lifecycle state machine and platform abstraction.
 - Keep the post-provisioning status UI aligned with live HTTPS behavior.
 - Run `pytest app/camera/tests/ -v`.
+- Run `ruff check .` and `ruff format --check .` before handoff.
 - Validate on hardware for pairing, WiFi, hostname, TLS, or streaming changes.

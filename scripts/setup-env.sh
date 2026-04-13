@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================
 # setup-env.sh — Set up a fresh Ubuntu machine for Yocto builds
 #
@@ -17,7 +17,7 @@
 #   5. Fixes Ubuntu 24.04 AppArmor restriction
 #   6. Installs app packages in dev mode for testing
 # =============================================================
-set -e
+set -euo pipefail
 
 YOCTO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 

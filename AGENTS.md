@@ -25,8 +25,9 @@ Core rules:
 - do not commit directly to `main`
 
 Key validation:
-- server: `pytest app/server/tests/ -v`, `ruff check app/`, `ruff format --check app/`
-- camera: `pytest app/camera/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+- repo governance: `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
+- server: `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .`
+- camera: `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .`
 - Yocto: `bitbake -p` and VM build for affected images
 - hardware deploys: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
 

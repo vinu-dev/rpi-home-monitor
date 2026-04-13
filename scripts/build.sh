@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================
 # build.sh — Clone layers, configure, and build Yocto images
 #
@@ -15,7 +15,7 @@
 #   ./scripts/build.sh camera
 #   ./scripts/build.sh all
 # =============================================================
-set -e
+set -euo pipefail
 
 YOCTO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE="scarthgap"

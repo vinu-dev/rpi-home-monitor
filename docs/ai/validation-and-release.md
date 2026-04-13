@@ -4,13 +4,14 @@
 
 | Area touched | Required validation |
 |--------------|---------------------|
-| Server Python | `pytest app/server/tests/ -v`, `ruff check app/`, `ruff format --check app/` |
-| Camera Python | `pytest app/camera/tests/ -v`, `ruff check app/`, `ruff format --check app/` |
+| Repository governance, docs, adapters | `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `pre-commit run --all-files` |
+| Server Python | `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .` |
+| Camera Python | `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .` |
 | API contract | relevant contract tests |
 | Security-sensitive path | full relevant suite + smoke |
 | Yocto config or recipe | `bitbake -p` and VM build for affected image |
 | Hardware behavior | deploy and `scripts/smoke-test.sh` |
-| Docs or adapters | repo AI validator |
+| Workflow or shell changes | `bash -n scripts/*.sh`, `shellcheck scripts/*.sh`, workflow lint |
 
 ## Release And Deploy Expectations
 
@@ -18,6 +19,16 @@
 - Record deployment impact in PRs.
 - Run live smoke verification after hardware deploys.
 - Treat the smoke script and deploy runbook as code.
+
+## CI Enforcement Baseline
+
+- CI should run `pre-commit`, repository governance checks, Ruff, workflow lint,
+  shell checks, and the relevant test suites.
+- Coverage is enforced, not just reported:
+  - server: `--cov-fail-under=80`
+  - camera: `--cov-fail-under=70`
+- Path filters must include app code, Yocto layers, configs, workflows, docs,
+  scripts, and generated adapters.
 
 ## Hardware Reality Rule
 

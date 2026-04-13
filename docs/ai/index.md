@@ -13,6 +13,15 @@ point back here instead of duplicating the whole handbook.
 - Move important rules from tribal knowledge into versioned, reviewable files.
 - Enforce critical rules in automation wherever practical.
 
+## Governance Surface
+
+- `docs/ai/` is the canonical policy layer.
+- `scripts/ai/build_instruction_files.py` generates tool adapters from that
+  layer.
+- `scripts/ai/validate_repo_ai_setup.py` checks adapter freshness and repo
+  shape.
+- CI and pre-commit must enforce the important rules, not just document them.
+
 ## Read In Order
 
 1. [`mission-and-goals.md`](mission-and-goals.md)
@@ -49,4 +58,7 @@ Validate this instruction surface with:
 
 ```bash
 python scripts/ai/validate_repo_ai_setup.py
+python scripts/ai/check_doc_links.py
+python scripts/ai/check_shell_scripts.py
+pre-commit run --all-files
 ```

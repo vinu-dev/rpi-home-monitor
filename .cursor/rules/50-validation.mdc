@@ -9,6 +9,7 @@ alwaysApply: true
 # Validation Rules
 
 - Run the right validation for the area you changed.
+- Governance changes must pass the repo validator and pre-commit suite.
 - Hardware-affecting changes require smoke verification.
 - Treat smoke scripts and deploy runbooks as code, not comments.
 - If device behavior and docs disagree, update the repo to match reality.

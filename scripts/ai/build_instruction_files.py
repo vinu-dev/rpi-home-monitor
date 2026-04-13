@@ -7,7 +7,6 @@ import argparse
 from pathlib import Path
 from textwrap import dedent
 
-
 ROOT = Path(__file__).resolve().parents[2]
 AUTO = (
     "<!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. "
@@ -49,8 +48,9 @@ def render_agents() -> str:
         - do not commit directly to `main`
 
         Key validation:
-        - server: `pytest app/server/tests/ -v`, `ruff check app/`, `ruff format --check app/`
-        - camera: `pytest app/camera/tests/ -v`, `ruff check app/`, `ruff format --check app/`
+        - repo governance: `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
+        - server: `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .`
+        - camera: `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .`
         - Yocto: `bitbake -p` and VM build for affected images
         - hardware deploys: `bash scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]`
 
@@ -110,17 +110,12 @@ def render_copilot() -> str:
 
 
 def render_instruction(title: str, apply_to: str, body: str) -> str:
-    return (
-        f"{AUTO}\n"
-        "---\n"
-        f'applyTo: "{apply_to}"\n'
-        "---\n\n"
-        f"# {title}\n\n"
-        f"{body}\n"
-    )
+    return f'{AUTO}\n---\napplyTo: "{apply_to}"\n---\n\n# {title}\n\n{body}\n'
 
 
-def render_cursor(description: str, globs: list[str], body: str, always: bool = False) -> str:
+def render_cursor(
+    description: str, globs: list[str], body: str, always: bool = False
+) -> str:
     glob_lines = "\n".join(f"  - {item}" for item in globs)
     always_line = "true" if always else "false"
     return (
@@ -157,6 +152,7 @@ def generated_files() -> dict[str, str]:
             "- Keep routes thin and logic in services.\n"
             "- Preserve auth, CSRF, and session behavior unless the task explicitly changes it.\n"
             "- Run `pytest app/server/tests/ -v`.\n"
+            "- Run `ruff check .` and `ruff format --check .` before handoff.\n"
             "- Update docs if API, security, or deploy behavior changed.",
         ),
         ".github/instructions/camera.instructions.md": render_instruction(
@@ -165,6 +161,7 @@ def generated_files() -> dict[str, str]:
             "- Preserve the lifecycle state machine and platform abstraction.\n"
             "- Keep the post-provisioning status UI aligned with live HTTPS behavior.\n"
             "- Run `pytest app/camera/tests/ -v`.\n"
+            "- Run `ruff check .` and `ruff format --check .` before handoff.\n"
             "- Validate on hardware for pairing, WiFi, hostname, TLS, or streaming changes.",
         ),
         ".github/instructions/yocto.instructions.md": render_instruction(
@@ -173,6 +170,7 @@ def generated_files() -> dict[str, str]:
             "- Do not put permanent project policy in `local.conf`.\n"
             "- Keep machine policy in machine config, distro policy in distro config, and packaging in recipes.\n"
             "- Run `bitbake -p` for affected images.\n"
+            "- Update release docs when build inputs or artifact paths change.\n"
             "- Use the build VM for real Yocto builds.",
         ),
         ".github/instructions/docs.instructions.md": render_instruction(
@@ -181,7 +179,8 @@ def generated_files() -> dict[str, str]:
             "- `docs/ai/` is canonical for agent behavior.\n"
             "- Keep adapters short and linked back to canonical docs.\n"
             "- Do not duplicate long policy text across tool-specific files.\n"
-            "- Run the repo AI validator after edits.",
+            "- Run the repo AI validator after edits.\n"
+            "- Keep README, changelog, and runbooks aligned with live product behavior.",
         ),
         ".cursor/rules/00-repo-overview.mdc": render_cursor(
             "Repo-wide overview and source-of-truth rules.",
@@ -236,6 +235,7 @@ def generated_files() -> dict[str, str]:
             ["**/*"],
             "# Validation Rules\n\n"
             "- Run the right validation for the area you changed.\n"
+            "- Governance changes must pass the repo validator and pre-commit suite.\n"
             "- Hardware-affecting changes require smoke verification.\n"
             "- Treat smoke scripts and deploy runbooks as code, not comments.\n"
             "- If device behavior and docs disagree, update the repo to match reality.\n",
@@ -282,7 +282,9 @@ def generated_files() -> dict[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true", help="Fail if generated files are stale.")
+    parser.add_argument(
+        "--check", action="store_true", help="Fail if generated files are stale."
+    )
     args = parser.parse_args()
 
     failures: list[str] = []

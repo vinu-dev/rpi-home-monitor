@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
 from build_instruction_files import ROOT, generated_files
-
 
 REQUIRED_CANONICAL = [
     "docs/ai/index.md",
@@ -24,7 +23,11 @@ REQUIRED_CANONICAL = [
     ".github/skills/hardware-smoke/SKILL.md",
     ".github/skills/yocto-guardrails/SKILL.md",
     ".gitattributes",
+    ".pre-commit-config.yaml",
+    ".github/workflows/test.yml",
     "scripts/ai/build_instruction_files.py",
+    "scripts/ai/check_doc_links.py",
+    "scripts/ai/check_shell_scripts.py",
 ]
 
 EXPECTED_CURSOR = {
@@ -44,6 +47,43 @@ EXPECTED_QODO = {
     ".qodo/workflows/yocto-validate.toml",
 }
 
+REQUIRED_BACKLINK = "docs/ai/index.md"
+ADAPTERS_WITH_BACKLINKS = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".github/copilot-instructions.md",
+}
+CI_REQUIRED_PATHS = {
+    "app/**",
+    "meta-home-monitor/**",
+    "config/**",
+    "swupdate/**",
+    "docs/**",
+    ".github/**",
+    ".claude/**",
+    ".cursor/**",
+    ".qodo/**",
+    "scripts/**",
+    "README.md",
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".pre-commit-config.yaml",
+    ".gitattributes",
+    "pyproject.toml",
+}
+CI_REQUIRED_SNIPPETS = {
+    "python scripts/ai/validate_repo_ai_setup.py",
+    "python scripts/ai/check_doc_links.py",
+    "python scripts/ai/check_shell_scripts.py",
+    "pre-commit run --all-files",
+    "shellcheck scripts/*.sh",
+    "bash -n scripts/*.sh",
+    "--cov-fail-under=80",
+    "--cov-fail-under=70",
+}
+AUTO_RE = re.compile(r"^\s*[-*]\s+`([^`]+)`", re.MULTILINE)
+
 
 def _collect(relative_root: str, suffix: str) -> set[str]:
     root = ROOT / relative_root
@@ -54,6 +94,21 @@ def _collect(relative_root: str, suffix: str) -> set[str]:
         for path in root.rglob(f"*{suffix}")
         if path.is_file()
     }
+
+
+def _check_markdown_command_paths(relative_path: str, failures: list[str]) -> None:
+    content = (ROOT / relative_path).read_text(encoding="utf-8")
+    for command in AUTO_RE.findall(content):
+        token = command.split()[0]
+        if "/" not in token:
+            continue
+        candidate = token.rstrip(".,:)")
+        if "*" in candidate or candidate.startswith(("http://", "https://")):
+            continue
+        if not (ROOT / candidate).exists():
+            failures.append(
+                f"Markdown command in {relative_path} references missing path: {candidate}"
+            )
 
 
 def main() -> int:
@@ -86,6 +141,34 @@ def main() -> int:
         failures.append(
             "Unexpected Qodo workflows present: " + ", ".join(unexpected_qodo)
         )
+
+    for relative_path in ADAPTERS_WITH_BACKLINKS:
+        content = (ROOT / relative_path).read_text(encoding="utf-8")
+        if REQUIRED_BACKLINK not in content:
+            failures.append(
+                f"Adapter does not link back to canonical docs: {relative_path}"
+            )
+
+    workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+    for required_path in sorted(CI_REQUIRED_PATHS):
+        if required_path not in workflow:
+            failures.append(
+                f"CI workflow is missing required path coverage entry: {required_path}"
+            )
+    for snippet in sorted(CI_REQUIRED_SNIPPETS):
+        if snippet not in workflow:
+            failures.append(
+                "CI workflow is missing required governance check or threshold: "
+                f"{snippet}"
+            )
+
+    for relative_path in (
+        "docs/ai/index.md",
+        "docs/ai/validation-and-release.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+    ):
+        _check_markdown_command_paths(relative_path, failures)
 
     if failures:
         for failure in failures:

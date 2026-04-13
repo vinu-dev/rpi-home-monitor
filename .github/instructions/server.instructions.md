@@ -8,4 +8,5 @@ applyTo: "app/server/**"
 - Keep routes thin and logic in services.
 - Preserve auth, CSRF, and session behavior unless the task explicitly changes it.
 - Run `pytest app/server/tests/ -v`.
+- Run `ruff check .` and `ruff format --check .` before handoff.
 - Update docs if API, security, or deploy behavior changed.

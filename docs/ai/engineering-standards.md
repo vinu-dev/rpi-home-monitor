@@ -29,6 +29,8 @@
 - if a rule is important, try to enforce it in CI or templates
 - prefer scripts over manual checklists when the process is repeatable
 - keep operational scripts aligned with real deployed behavior
+- keep generated adapter files machine-rebuilt from the canonical source
+- treat workflow files and shell scripts as production code
 
 ## Design-Level Fix Rule
 

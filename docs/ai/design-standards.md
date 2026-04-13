@@ -14,6 +14,7 @@ This repository is not only a code sample. It is a product sample.
 
 ## Product Design
 
+- Every substantial change should name the user or operator goal it improves.
 - Every user-facing flow should have a clear primary path and clear failure
   states.
 - Setup, provisioning, login, status, update, and recovery flows matter as much
@@ -25,6 +26,8 @@ This repository is not only a code sample. It is a product sample.
 
 - Avoid generic or placeholder-feeling layouts.
 - Use a deliberate hierarchy, spacing, naming, and state model.
+- Design for confidence: users should understand what the system is doing, what
+  went wrong, and what to do next.
 - Prefer component patterns that can scale with more devices and settings.
 - If changing an existing UI, preserve the established product language unless
   the change intentionally introduces a new system-wide standard.

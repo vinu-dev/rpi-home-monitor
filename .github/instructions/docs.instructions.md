@@ -9,3 +9,4 @@ applyTo: "docs/**,README.md,CHANGELOG.md,AGENTS.md,CLAUDE.md"
 - Keep adapters short and linked back to canonical docs.
 - Do not duplicate long policy text across tool-specific files.
 - Run the repo AI validator after edits.
+- Keep README, changelog, and runbooks aligned with live product behavior.

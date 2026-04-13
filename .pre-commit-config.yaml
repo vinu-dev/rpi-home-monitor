@@ -1,4 +1,4 @@
-# Pre-commit hooks — run automatically before each commit.
+# Pre-commit hooks - run automatically before each commit.
 # Install: pip install pre-commit && pre-commit install
 # Manual run: pre-commit run --all-files
 
@@ -7,20 +7,20 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: "app/server/monitor/static/js/.*\\.min\\.js$"
       - id: end-of-file-fixer
+        exclude: "app/server/monitor/static/js/.*\\.min\\.js$"
       - id: check-yaml
       - id: check-json
       - id: check-toml
       - id: check-merge-conflict
-      - id: mixed-line-ending
-        args: ['--fix=lf']
       - id: check-added-large-files
-        args: ['--maxkb=500']
+        args: ["--maxkb=500"]
       - id: no-commit-to-branch
-        args: ['--branch', 'main']
+        args: ["--branch", "main"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.0
+    rev: v0.15.10
     hooks:
       - id: ruff
         args: [--fix]
@@ -31,5 +31,15 @@ repos:
       - id: validate-ai-repo-setup
         name: validate-ai-repo-setup
         entry: python scripts/ai/validate_repo_ai_setup.py
+        language: system
+        pass_filenames: false
+      - id: check-doc-links
+        name: check-doc-links
+        entry: python scripts/ai/check_doc_links.py
+        language: system
+        pass_filenames: false
+      - id: check-shell-scripts
+        name: check-shell-scripts
+        entry: python scripts/ai/check_shell_scripts.py
         language: system
         pass_filenames: false

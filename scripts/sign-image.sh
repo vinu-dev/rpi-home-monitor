@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================
 # sign-image.sh — Sign OTA images with Ed25519
 #
@@ -8,7 +8,7 @@
 # On first run, generates a signing keypair in ~/.monitor-keys/
 # The public key must be embedded in the device rootfs.
 # =============================================================
-set -e
+set -euo pipefail
 
 KEY_DIR="${HOME}/.monitor-keys"
 PRIVATE_KEY="$KEY_DIR/ota-signing.key"
