@@ -17,6 +17,8 @@ Uses avahi-publish-service which is part of avahi-daemon package.
 import logging
 import subprocess
 
+from camera_streamer import wifi
+
 log = logging.getLogger("camera-streamer.discovery")
 
 SERVICE_TYPE = "_rtsp._tcp"
@@ -30,6 +32,7 @@ class DiscoveryService:
     def __init__(self, config):
         self._config = config
         self._process = None
+        self._host_process = None
         self._running = False
 
     @property
@@ -72,6 +75,7 @@ class DiscoveryService:
                 SERVICE_TYPE,
                 SERVICE_PORT,
             )
+            self._start_host_advertisement()
         except FileNotFoundError:
             log.error("avahi-publish-service not found — mDNS disabled")
             self._running = False
@@ -79,19 +83,58 @@ class DiscoveryService:
             log.error("Failed to start mDNS: %s", e)
             self._running = False
 
+    def _start_host_advertisement(self):
+        """Publish the unique camera hostname as an mDNS A record."""
+        hostname = wifi.get_hostname()
+        ip_address = wifi.get_ip_address()
+        if not hostname or not ip_address:
+            log.warning(
+                "Skipping hostname mDNS advertisement (hostname=%s ip=%s)",
+                hostname or "(missing)",
+                ip_address or "(missing)",
+            )
+            return
+
+        host_label = hostname if hostname.endswith(".local") else f"{hostname}.local"
+        cmd = [
+            "avahi-publish-address",
+            "-R",
+            "-f",
+            host_label,
+            ip_address,
+        ]
+
+        try:
+            self._host_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            log.info(
+                "mDNS hostname advertisement started: %s -> %s", host_label, ip_address
+            )
+        except FileNotFoundError:
+            log.warning("avahi-publish-address not found — hostname mDNS disabled")
+        except OSError as e:
+            log.warning("Failed to start hostname mDNS advertisement: %s", e)
+
     def stop(self):
         """Stop mDNS advertisement."""
         self._running = False
-        if self._process is not None:
+        for attr_name in ["_process", "_host_process"]:
+            process = getattr(self, attr_name)
+            if process is None:
+                continue
             try:
-                self._process.terminate()
-                self._process.wait(timeout=5)
+                process.terminate()
+                process.wait(timeout=5)
             except (OSError, subprocess.TimeoutExpired):
                 try:
-                    self._process.kill()
+                    process.kill()
                 except OSError:
                     pass
-            self._process = None
+            setattr(self, attr_name, None)
+        if self._process is None and self._host_process is None:
             log.info("mDNS advertisement stopped")
 
     def update_paired_status(self, paired):

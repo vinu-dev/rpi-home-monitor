@@ -30,6 +30,10 @@ class Store:
         """Create config directory if it doesn't exist."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
+    def has_file(self, filename: str) -> bool:
+        """Return True when a config file exists on disk."""
+        return (self.config_dir / filename).exists()
+
     def _read_json(self, filename: str) -> list | dict:
         """Read a JSON file, returning empty list/dict if missing."""
         filepath = self.config_dir / filename

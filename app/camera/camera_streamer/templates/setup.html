@@ -168,7 +168,7 @@ function showForm() { showView('view-form'); }
 
 function showConnecting(hostname) {
   var h = hostname || CAMERA_HOSTNAME;
-  var url = h ? 'http://' + h + '.local' : '';
+  var url = h ? 'https://' + h + '.local' : '';
   $('cam-address-display').textContent = url || 'Resolving...';
   if ($('cam-login-user')) {
     var user = $('in-admin-user') ? $('in-admin-user').value.trim() : 'admin';
@@ -269,7 +269,7 @@ fetch('/api/status')
     if (d.setup_complete) {
       showView('view-result');
       $('result-msg').className = 'msg msg-ok';
-      var url = d.hostname ? 'http://' + d.hostname + '.local' : '';
+      var url = d.hostname ? 'https://' + d.hostname + '.local' : '';
       $('result-msg').innerHTML = 'Setup complete! Camera is on your home WiFi.'
         + (url ? '<br><br>Camera settings page:<br><a href="' + url
         + '" style="color:#4ade80;font-weight:600;font-size:1.1em">' + esc(url) + '</a>' : '');

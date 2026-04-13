@@ -13,7 +13,7 @@ Routes are thin — all orchestration is in StorageService.
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required
+from monitor.auth import admin_required, csrf_protect
 
 storage_bp = Blueprint("storage", __name__)
 
@@ -38,6 +38,7 @@ def list_devices():
 
 @storage_bp.route("/select", methods=["POST"])
 @admin_required
+@csrf_protect
 def select_device():
     """Select a USB device for recordings."""
     data = request.get_json(silent=True)
@@ -60,6 +61,7 @@ def select_device():
 
 @storage_bp.route("/format", methods=["POST"])
 @admin_required
+@csrf_protect
 def format_device():
     """Format a USB device to ext4."""
     data = request.get_json(silent=True)
@@ -86,6 +88,7 @@ def format_device():
 
 @storage_bp.route("/eject", methods=["POST"])
 @admin_required
+@csrf_protect
 def eject_device():
     """Unmount USB and switch recordings back to /data."""
     result, error, status = current_app.storage_service.eject(

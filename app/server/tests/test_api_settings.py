@@ -15,13 +15,14 @@ def _login(app, client, role="admin"):
             role=role,
         )
     )
-    client.post(
+    response = client.post(
         "/api/v1/auth/login",
         json={
             "username": "admin",
             "password": "pass",
         },
     )
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
 
 
 class TestGetSettings:

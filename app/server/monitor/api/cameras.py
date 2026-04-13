@@ -14,7 +14,7 @@ Routes are thin — all orchestration is in CameraService.
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 
 cameras_bp = Blueprint("cameras", __name__)
 
@@ -29,6 +29,7 @@ def list_cameras():
 
 @cameras_bp.route("", methods=["POST"])
 @admin_required
+@csrf_protect
 def add_camera():
     """Register a new camera as pending. Admin only."""
     data = request.get_json(silent=True) or {}
@@ -44,6 +45,7 @@ def add_camera():
 
 @cameras_bp.route("/<camera_id>/confirm", methods=["POST"])
 @admin_required
+@csrf_protect
 def confirm_camera(camera_id):
     """Confirm a discovered (pending) camera. Admin only."""
     data = request.get_json(silent=True) or {}
@@ -61,6 +63,7 @@ def confirm_camera(camera_id):
 
 @cameras_bp.route("/<camera_id>", methods=["PUT"])
 @admin_required
+@csrf_protect
 def update_camera(camera_id):
     """Update camera settings. Admin only."""
     data = request.get_json(silent=True)
@@ -80,6 +83,7 @@ def update_camera(camera_id):
 
 @cameras_bp.route("/<camera_id>", methods=["DELETE"])
 @admin_required
+@csrf_protect
 def delete_camera(camera_id):
     """Remove a camera and revoke its cert. Admin only."""
     # Revoke cert first (if paired)

@@ -338,7 +338,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-CAM-05: Camera Local Authentication
 
-- Camera status page (port 80) requires login with credentials set during provisioning
+- Camera status page (HTTPS, port 443) requires login with credentials set during provisioning
 - Password hashing: PBKDF2-SHA256, 100,000 iterations, random 16-byte salt
 - Session management: in-memory sessions, `cam_session` HttpOnly cookie, 2-hour timeout with activity refresh
 - Authenticated endpoints: `/` (status), `/api/status`, `/api/networks`, `/api/wifi`, `/api/password`
@@ -560,6 +560,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 > **Status: Implemented.** HTTPS, RTSPS, and mTLS all operational. See ADR-0009.
 
 - HTTPS (TLS 1.3) for all browser-to-server traffic (port 443)
+- HTTPS (TLS 1.3) for the camera status page after provisioning (port 443)
 - RTSPS (RTSP over TLS) for all camera-to-server streams
 - Self-signed CA (ECDSA P-256, 10-year validity) generated on server first boot
 - Server TLS certificate signed by local CA (5-year validity, auto-renewal via systemd timer)

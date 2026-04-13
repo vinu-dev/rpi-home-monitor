@@ -171,7 +171,7 @@ class PairingService:
                 "client_key": cert_data["key"],
                 "ca_cert": ca_cert,
                 "pairing_secret": pairing_secret,
-                "rtsps_url": f"rtsps://home-monitor.local:8554/{camera_id}",
+                "rtsps_url": self._build_rtsps_url(camera_id),
             },
             "",
             200,
@@ -358,6 +358,20 @@ class PairingService:
             return Path(path).read_text(encoding="utf-8")
         except OSError:
             return None
+
+    def _build_rtsps_url(self, camera_id: str) -> str:
+        """Build the canonical RTSPS endpoint returned during pairing."""
+        hostname = "home-monitor"
+        try:
+            settings = self._store.get_settings()
+            configured = getattr(settings, "hostname", "").strip()
+            if configured:
+                hostname = configured
+        except Exception:
+            pass
+        if "." not in hostname:
+            hostname = f"{hostname}.local"
+        return f"rtsps://{hostname}:8322/{camera_id}"
 
     def _log_audit(self, event, user, ip, detail):
         """Log audit event, swallowing errors."""

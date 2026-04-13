@@ -12,7 +12,7 @@ Endpoints:
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -27,6 +27,7 @@ def get_settings():
 
 @settings_bp.route("", methods=["PUT"])
 @admin_required
+@csrf_protect
 def update_settings():
     """Update system settings. Admin only."""
     data = request.get_json(silent=True)
@@ -53,6 +54,7 @@ def get_wifi():
 
 @settings_bp.route("/wifi", methods=["POST"])
 @admin_required
+@csrf_protect
 def set_wifi():
     """Connect to a new WiFi network via nmcli."""
     data = request.get_json(silent=True)

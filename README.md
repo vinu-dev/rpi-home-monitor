@@ -46,7 +46,7 @@ Both the server and camera use a **captive portal** for zero-config WiFi provisi
 2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`)
 3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address + camera login (camera)
 4. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
-5. **Access camera** at `http://rpi-divinu-cam-XXXX.local` (shown after setup completes)
+5. **Access camera** at `https://rpi-divinu-cam-XXXX.local` (shown after setup completes)
 
 ### LED Status Indicators
 
@@ -60,7 +60,7 @@ Both the server and camera use a **captive portal** for zero-config WiFi provisi
 
 ### Server Discovery (mDNS)
 
-The server advertises itself as `rpi-divinu.local` on the local network via Avahi/mDNS. Cameras find the server automatically — no need to know the server's IP address. Each camera also gets its own `.local` address (e.g., `http://rpi-divinu-cam-d8ee.local`) for direct access to its status page. If mDNS doesn't work on your network, enter IPs manually.
+The server advertises itself as `rpi-divinu.local` on the local network via Avahi/mDNS. Cameras find the server automatically — no need to know the server's IP address. Each camera also gets its own `.local` address (e.g., `https://rpi-divinu-cam-d8ee.local`) for direct access to its status page. If mDNS doesn't work on your network, enter IPs manually.
 
 ## Key Features
 

@@ -33,6 +33,7 @@ def _login(app, client, role="admin"):
         "/api/v1/auth/login",
         json={"username": "testadmin", "password": "testpass"},
     )
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = resp.get_json().get("csrf_token", "")
     return resp.get_json().get("csrf_token", "")
 
 

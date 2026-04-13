@@ -44,10 +44,12 @@ class StorageManager:
         recordings_dir: str,
         data_dir: str = "/data",
         reserve_mb: int = RESERVE_INTERNAL_MB,
+        threshold_percent: int | None = None,
     ):
         self._recordings_dir = Path(recordings_dir)
         self._data_dir = Path(data_dir)
         self._reserve_mb = reserve_mb
+        self._threshold_percent = threshold_percent
         self._running = False
         self._thread = None
         self._lock = threading.Lock()
@@ -75,6 +77,11 @@ class StorageManager:
                 self._on_dir_change(new_dir)
             except Exception as e:
                 log.error("Error in dir change callback: %s", e)
+
+    def set_threshold_percent(self, threshold_percent: int | None):
+        """Update the cleanup trigger threshold used by the background loop."""
+        with self._lock:
+            self._threshold_percent = threshold_percent
 
     def set_dir_change_callback(self, callback):
         """Set callback(new_dir: str) for when recordings dir changes."""
@@ -160,12 +167,16 @@ class StorageManager:
             "recordings_dir": str(rec_dir),
             "is_usb": self._is_usb_path(rec_dir),
             "reserve_mb": self._reserve_mb,
+            "threshold_percent": self._threshold_percent,
         }
 
     def needs_cleanup(self) -> bool:
         """Check if the recordings partition needs cleanup."""
         try:
             usage = shutil.disk_usage(str(self._recordings_dir))
+            if self._threshold_percent is not None and usage.total > 0:
+                used_percent = (usage.used / usage.total) * 100
+                return used_percent >= self._threshold_percent
             free_mb = usage.free / (1024 * 1024)
             return free_mb < self._reserve_mb
         except OSError:

@@ -13,6 +13,7 @@ Layer 4 of the testing pyramid (see docs/development-guide.md Section 3.8).
 """
 
 import json
+import ssl
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
@@ -24,6 +25,7 @@ from camera_streamer.wifi_setup import WifiSetupServer
 
 # Use a non-privileged port for CI (port 80 requires root on Linux)
 TEST_PORT = 18080
+TLS_CONTEXT = ssl._create_unverified_context()
 
 
 # ---------------------------------------------------------------------------
@@ -47,23 +49,29 @@ def _assert_has_fields(data, required_fields, msg=""):
     assert not missing, f"Missing fields {missing}. {msg}"
 
 
-def _json_get(path):
+def _json_get(path, scheme="http"):
     """GET a JSON endpoint on localhost:TEST_PORT."""
-    req = Request(f"http://127.0.0.1:{TEST_PORT}{path}")
-    with urlopen(req, timeout=5) as resp:
+    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}")
+    kwargs = {"timeout": 5}
+    if scheme == "https":
+        kwargs["context"] = TLS_CONTEXT
+    with urlopen(req, **kwargs) as resp:
         return json.loads(resp.read()), resp.status
 
 
-def _json_post(path, body, headers=None):
+def _json_post(path, body, headers=None, scheme="http"):
     """POST JSON to an endpoint on localhost:TEST_PORT."""
     data = json.dumps(body).encode()
     req = Request(
-        f"http://127.0.0.1:{TEST_PORT}{path}",
+        f"{scheme}://127.0.0.1:{TEST_PORT}{path}",
         data=data,
         headers={"Content-Type": "application/json", **(headers or {})},
     )
+    kwargs = {"timeout": 5}
+    if scheme == "https":
+        kwargs["context"] = TLS_CONTEXT
     try:
-        with urlopen(req, timeout=5) as resp:
+        with urlopen(req, **kwargs) as resp:
             return json.loads(resp.read()), resp.status
     except Exception as e:
         # urllib raises on 4xx/5xx — read the error body
@@ -315,7 +323,7 @@ class TestStatusServerApiStatusContract:
         )
         server.start()
         try:
-            data, status = _json_get("/api/status")
+            data, status = _json_get("/api/status", scheme="https")
             _assert_fields(data, STATUS_API_FIELDS)
         finally:
             server.stop()
@@ -332,7 +340,7 @@ class TestStatusServerNetworksContract:
         server = CameraStatusServer(noauth_config)
         server.start()
         try:
-            data, status = _json_get("/api/networks")
+            data, status = _json_get("/api/networks", scheme="https")
             _assert_fields(data, {"networks"})
             assert isinstance(data["networks"], list)
         finally:
@@ -349,7 +357,9 @@ class TestStatusServerWifiContract:
         server.start()
         try:
             data, status = _json_post(
-                "/api/wifi", {"ssid": "NewNet", "password": "pass123"}
+                "/api/wifi",
+                {"ssid": "NewNet", "password": "pass123"},
+                scheme="https",
             )
             _assert_has_fields(data, {"message"})
         finally:
@@ -360,7 +370,11 @@ class TestStatusServerWifiContract:
         server = CameraStatusServer(noauth_config)
         server.start()
         try:
-            data, status = _json_post("/api/wifi", {"ssid": "", "password": "pass"})
+            data, status = _json_post(
+                "/api/wifi",
+                {"ssid": "", "password": "pass"},
+                scheme="https",
+            )
             _assert_fields(data, {"error"})
         finally:
             server.stop()
@@ -381,6 +395,7 @@ class TestStatusServerPasswordContract:
             data, status = _json_post(
                 "/api/password",
                 {"current_password": "oldpass", "new_password": "ab"},
+                scheme="https",
             )
             _assert_fields(data, {"error"})
         finally:
@@ -398,6 +413,7 @@ class TestStatusServerLoginContract:
             data, status = _json_post(
                 "/login",
                 {"username": "wrong", "password": "wrong"},
+                scheme="https",
             )
             _assert_fields(data, {"error"})
         finally:
@@ -411,6 +427,7 @@ class TestStatusServerLoginContract:
             data, status = _json_post(
                 "/login",
                 {"username": "admin", "password": "testpass"},
+                scheme="https",
             )
             _assert_fields(data, {"message"})
         finally:

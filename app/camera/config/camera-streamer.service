@@ -1,7 +1,7 @@
 [Unit]
 Description=Camera RTSP Streamer
-After=network-online.target avahi-daemon.service local-fs.target NetworkManager.service sys-subsystem-net-devices-wlan0.device
-Wants=network-online.target NetworkManager.service
+After=avahi-daemon.service local-fs.target NetworkManager.service sys-subsystem-net-devices-wlan0.device
+Wants=NetworkManager.service
 
 [Service]
 Type=simple

@@ -15,7 +15,7 @@ Endpoints:
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 from monitor.services.health import get_health_summary, get_uptime
 
 system_bp = Blueprint("system", __name__)
@@ -92,6 +92,7 @@ def tailscale_status():
 
 @system_bp.route("/tailscale/connect", methods=["POST"])
 @admin_required
+@csrf_protect
 def tailscale_connect():
     """Start Tailscale with saved flags. Returns auth URL if needed. Admin only."""
     ts = current_app.tailscale_service
@@ -114,6 +115,7 @@ def tailscale_connect():
 
 @system_bp.route("/tailscale/disconnect", methods=["POST"])
 @admin_required
+@csrf_protect
 def tailscale_disconnect():
     """Stop Tailscale (keeps authentication). Admin only."""
     ts = current_app.tailscale_service
@@ -126,6 +128,7 @@ def tailscale_disconnect():
 
 @system_bp.route("/tailscale/enable", methods=["POST"])
 @admin_required
+@csrf_protect
 def tailscale_enable():
     """Enable and start tailscaled daemon. Admin only."""
     ts = current_app.tailscale_service
@@ -137,6 +140,7 @@ def tailscale_enable():
 
 @system_bp.route("/tailscale/disable", methods=["POST"])
 @admin_required
+@csrf_protect
 def tailscale_disable():
     """Disable and stop tailscaled daemon. Admin only."""
     ts = current_app.tailscale_service
@@ -148,6 +152,7 @@ def tailscale_disable():
 
 @system_bp.route("/tailscale/apply-config", methods=["POST"])
 @admin_required
+@csrf_protect
 def tailscale_apply_config():
     """Apply saved Tailscale settings (enable/disable, auto-connect). Admin only."""
     ts = current_app.tailscale_service
@@ -170,6 +175,7 @@ def tailscale_apply_config():
 
 @system_bp.route("/factory-reset", methods=["POST"])
 @admin_required
+@csrf_protect
 def factory_reset():
     """Wipe all data and return to first-boot state. Admin only.
 
@@ -178,7 +184,7 @@ def factory_reset():
     body = request.get_json(silent=True) or {}
     keep_recordings = bool(body.get("keep_recordings", False))
 
-    user = session.get("user", "")
+    user = session.get("username", "")
     ip = request.remote_addr or ""
 
     svc = current_app.factory_reset_service
