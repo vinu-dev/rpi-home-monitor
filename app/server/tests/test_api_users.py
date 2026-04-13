@@ -14,13 +14,14 @@ def _login(app, client, role="admin"):
         role=role,
     )
     app.store.save_user(user)
-    client.post(
+    response = client.post(
         "/api/v1/auth/login",
         json={
             "username": "admin",
             "password": "adminpass1234",
         },
     )
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
     return user.id
 
 
@@ -265,13 +266,16 @@ class TestChangePassword:
             role="viewer",
         )
         app.store.save_user(viewer)
-        client.post(
+        login_response = client.post(
             "/api/v1/auth/login",
             json={
                 "username": "viewer1",
                 "password": "oldpass12345",
             },
         )
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = login_response.get_json()[
+            "csrf_token"
+        ]
         response = client.put(
             "/api/v1/users/user-viewer/password",
             json={
@@ -300,13 +304,16 @@ class TestChangePassword:
                 role="viewer",
             )
         )
-        client.post(
+        login_response = client.post(
             "/api/v1/auth/login",
             json={
                 "username": "viewer1",
                 "password": "pass12345",
             },
         )
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = login_response.get_json()[
+            "csrf_token"
+        ]
         response = client.put(
             "/api/v1/users/user-other/password",
             json={

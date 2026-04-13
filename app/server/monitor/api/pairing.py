@@ -13,13 +13,14 @@ Routes are thin — all orchestration is in PairingService.
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required
+from monitor.auth import admin_required, csrf_protect
 
 pairing_bp = Blueprint("pairing", __name__)
 
 
 @pairing_bp.route("/cameras/<camera_id>/pair", methods=["POST"])
 @admin_required
+@csrf_protect
 def initiate_pairing(camera_id):
     """Initiate pairing for a camera. Admin only.
 
@@ -37,6 +38,7 @@ def initiate_pairing(camera_id):
 
 @pairing_bp.route("/cameras/<camera_id>/unpair", methods=["POST"])
 @admin_required
+@csrf_protect
 def unpair_camera(camera_id):
     """Unpair a camera and revoke its certificate. Admin only."""
     error, status = current_app.pairing_service.unpair(

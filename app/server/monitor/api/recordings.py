@@ -13,7 +13,7 @@ Endpoints:
 
 from flask import Blueprint, current_app, jsonify, request, send_file, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 
 recordings_bp = Blueprint("recordings", __name__)
 
@@ -66,6 +66,7 @@ def get_clip(camera_id, clip_date, filename):
 
 @recordings_bp.route("/<camera_id>/<clip_date>/<filename>", methods=["DELETE"])
 @admin_required
+@csrf_protect
 def delete_clip(camera_id, clip_date, filename):
     """Delete a specific clip. Admin only."""
     result, error, status = _svc().delete_clip(

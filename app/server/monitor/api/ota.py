@@ -18,7 +18,7 @@ import tempfile
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 
 ota_bp = Blueprint("ota", __name__)
 
@@ -56,6 +56,7 @@ def get_status():
 
 @ota_bp.route("/server/upload", methods=["POST"])
 @admin_required
+@csrf_protect
 def upload_server_image():
     """Upload a .swu image for server OTA update. Admin only."""
     if "file" not in request.files:
@@ -105,6 +106,7 @@ def upload_server_image():
 
 @ota_bp.route("/server/install", methods=["POST"])
 @admin_required
+@csrf_protect
 def install_server_image():
     """Install a staged .swu bundle. Admin only."""
     ota = current_app.ota_service
@@ -130,6 +132,7 @@ def install_server_image():
 
 @ota_bp.route("/camera/<camera_id>/push", methods=["POST"])
 @admin_required
+@csrf_protect
 def push_camera_update(camera_id):
     """Push an update to a camera. Admin only.
 
@@ -172,6 +175,7 @@ def scan_usb():
 
 @ota_bp.route("/usb/import", methods=["POST"])
 @admin_required
+@csrf_protect
 def import_from_usb():
     """Import a .swu bundle from a USB device. Admin only.
 

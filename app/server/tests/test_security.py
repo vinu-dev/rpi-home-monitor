@@ -27,10 +27,12 @@ def _login(app, client, username="admin", password="pass", role="admin"):
             role=role,
         )
     )
-    return client.post(
+    response = client.post(
         "/api/v1/auth/login",
         json={"username": username, "password": password},
     )
+    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
+    return response
 
 
 def _add_camera(app, camera_id="cam-001"):

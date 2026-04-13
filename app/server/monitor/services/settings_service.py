@@ -14,6 +14,8 @@ import logging
 import subprocess
 import time
 
+from flask import current_app
+
 log = logging.getLogger("monitor.services.settings_service")
 
 UPDATABLE_FIELDS = {
@@ -82,6 +84,7 @@ class SettingsService:
         for key, value in data.items():
             setattr(settings, key, value)
         self._store.save_settings(settings)
+        self._apply_runtime_changes(settings, set(data.keys()))
 
         self._log_audit(
             "SETTINGS_UPDATED",
@@ -91,6 +94,29 @@ class SettingsService:
         )
 
         return "Settings updated", 200
+
+    def _apply_runtime_changes(self, settings, updated_fields: set[str]):
+        """Apply settings that affect the running process immediately."""
+        if "session_timeout_minutes" in updated_fields:
+            current_app.config["SESSION_TIMEOUT_MINUTES"] = (
+                settings.session_timeout_minutes
+            )
+
+        if "clip_duration_seconds" in updated_fields:
+            current_app.config["CLIP_DURATION_SECONDS"] = settings.clip_duration_seconds
+            streaming = getattr(current_app, "streaming", None)
+            if streaming:
+                streaming.set_clip_duration(settings.clip_duration_seconds)
+
+        if "storage_threshold_percent" in updated_fields:
+            current_app.config["STORAGE_THRESHOLD_PERCENT"] = (
+                settings.storage_threshold_percent
+            )
+            storage_manager = getattr(current_app, "storage_manager", None)
+            if storage_manager:
+                storage_manager.set_threshold_percent(
+                    settings.storage_threshold_percent
+                )
 
     def get_wifi_status(self) -> dict:
         """Return current WiFi SSID and available networks."""

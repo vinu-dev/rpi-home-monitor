@@ -16,6 +16,7 @@ from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
+from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
@@ -58,6 +59,9 @@ def _ensure_default_admin(store):
     """Create a default admin user if no users exist."""
     users = store.get_users()
     if users:
+        return
+    if store.has_file("users.json"):
+        log.warning("users.json exists but no users could be loaded; refusing to reset")
         return
 
     from datetime import UTC, datetime
@@ -114,6 +118,9 @@ def create_app(config=None):
     # --- Core infrastructure ---
     _init_infrastructure(app)
 
+    # --- Persisted settings ---
+    _load_persisted_settings(app)
+
     # --- Application services ---
     _init_services(app)
 
@@ -139,7 +146,22 @@ def _init_infrastructure(app):
     app.storage_manager = StorageManager(
         recordings_dir=app.config["RECORDINGS_DIR"],
         data_dir=app.config["DATA_DIR"],
+        threshold_percent=app.config.get("STORAGE_THRESHOLD_PERCENT"),
     )
+
+
+def _load_persisted_settings(app):
+    """Load persisted runtime settings before service initialization."""
+    try:
+        settings = app.store.get_settings()
+    except Exception as exc:
+        log.warning("Failed to load persisted settings: %s", exc)
+        return
+
+    app.config["CLIP_DURATION_SECONDS"] = settings.clip_duration_seconds
+    app.config["STORAGE_THRESHOLD_PERCENT"] = settings.storage_threshold_percent
+    app.config["SESSION_TIMEOUT_MINUTES"] = settings.session_timeout_minutes
+    app.storage_manager.set_threshold_percent(settings.storage_threshold_percent)
 
 
 def _init_services(app):
@@ -185,6 +207,8 @@ def _init_services(app):
         audit=app.audit,
         certs_dir=app.config["CERTS_DIR"],
     )
+
+    app.discovery_service = DiscoveryService(store=app.store, audit=app.audit)
 
     # Settings service — system config + WiFi management
     app.settings_service = SettingsService(store=app.store, audit=app.audit)

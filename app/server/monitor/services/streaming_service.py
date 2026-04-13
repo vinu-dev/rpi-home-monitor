@@ -75,6 +75,22 @@ class StreamingService:
             self._start_recorder(cam_id, rtsp_url)
             log.info("Restarted recorder for %s with new dir", cam_id)
 
+    def set_clip_duration(self, new_duration):
+        """Update clip duration and restart active recorder pipelines."""
+        if new_duration == self._clip_duration:
+            return
+
+        old_duration = self._clip_duration
+        self._clip_duration = new_duration
+        log.info("Clip duration changed: %ss -> %ss", old_duration, new_duration)
+
+        active = self.active_cameras
+        for cam_id in active:
+            self._stop_process(cam_id, self._rec_procs, "recorder")
+            rtsp_url = f"{MEDIAMTX_URL}/{cam_id}"
+            self._start_recorder(cam_id, rtsp_url)
+            log.info("Restarted recorder for %s with new clip duration", cam_id)
+
     def start(self):
         """Start the streaming service and watchdog thread."""
         self._running = True

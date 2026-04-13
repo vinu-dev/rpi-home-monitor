@@ -12,7 +12,7 @@ Endpoints:
 
 from flask import Blueprint, current_app, jsonify, request, session
 
-from monitor.auth import admin_required, login_required
+from monitor.auth import admin_required, csrf_protect, login_required
 
 users_bp = Blueprint("users", __name__)
 
@@ -27,6 +27,7 @@ def list_users():
 
 @users_bp.route("", methods=["POST"])
 @admin_required
+@csrf_protect
 def create_user():
     """Create a new user (admin only)."""
     data = request.get_json(silent=True)
@@ -47,6 +48,7 @@ def create_user():
 
 @users_bp.route("/<user_id>", methods=["DELETE"])
 @admin_required
+@csrf_protect
 def delete_user(user_id):
     """Delete a user (admin only). Cannot delete yourself."""
     msg, status = current_app.user_service.delete_user(
@@ -62,6 +64,7 @@ def delete_user(user_id):
 
 @users_bp.route("/<user_id>/password", methods=["PUT"])
 @login_required
+@csrf_protect
 def change_password(user_id):
     """Change a user's password. Admin can change any, users can change own."""
     data = request.get_json(silent=True)
