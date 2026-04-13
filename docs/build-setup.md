@@ -34,10 +34,10 @@ This single script:
 1. Installs all Yocto build dependencies (apt packages)
 2. Installs Python test dependencies (pytest, pytest-cov)
 3. Sets the locale to `en_US.UTF-8`
-4. Creates 8 GB swap file (if not already present)
-5. Fixes Ubuntu 24.04 AppArmor restriction for bitbake
+4. Creates an 8 GB swap file if one is not already present
+5. Fixes the Ubuntu 24.04 AppArmor restriction for bitbake
 
-After it completes, you're ready to build.
+After it completes, you are ready to build.
 
 ---
 
@@ -45,7 +45,7 @@ After it completes, you're ready to build.
 
 ### System Packages (apt)
 
-```
+```text
 gawk wget git diffstat unzip texinfo gcc build-essential chrpath socat
 cpio python3 python3-pip python3-pexpect xz-utils debianutils iputils-ping
 python3-git python3-jinja2 libegl1 libsdl1.2-dev pylint xterm
@@ -57,7 +57,7 @@ These are the [Yocto Project required packages](https://docs.yoctoproject.org/re
 
 ### Python Test Packages (pip)
 
-```
+```text
 pytest >= 8.0
 pytest-cov >= 5.0
 flask >= 3.0
@@ -101,8 +101,8 @@ Installed automatically by the setup script for running unit tests.
 |--------|---------------|
 | server-dev | `build/tmp/deploy/images/raspberrypi4-64/home-monitor-image-dev-*.wic.bz2` |
 | server-prod | `build/tmp/deploy/images/raspberrypi4-64/home-monitor-image-prod-*.wic.bz2` |
-| camera-dev | `build-zero2w/tmp/deploy/images/raspberrypi0-2w-64/home-camera-image-dev-*.wic.bz2` |
-| camera-prod | `build-zero2w/tmp/deploy/images/raspberrypi0-2w-64/home-camera-image-prod-*.wic.bz2` |
+| camera-dev | `build-zero2w/tmp-glibc/deploy/images/raspberrypi0-2w-64/home-camera-image-dev-*.wic.bz2` |
+| camera-prod | `build-zero2w/tmp-glibc/deploy/images/raspberrypi0-2w-64/home-camera-image-prod-*.wic.bz2` |
 
 ### 4.4 Build Times
 
@@ -117,7 +117,7 @@ Installed automatically by the setup script for running unit tests.
 
 ## 5. Custom Distro: `home-monitor`
 
-We use a **custom distribution** instead of the reference `poky` distro. This is industry best practice for product development.
+We use a custom distribution instead of the reference `poky` distro. This is industry best practice for product development.
 
 **What the distro controls** (in `meta-home-monitor/conf/distro/home-monitor.conf`):
 - Init system: systemd (not sysvinit)
@@ -128,22 +128,30 @@ We use a **custom distribution** instead of the reference `poky` distro. This is
 - Build settings: SPDX license manifests, rm_work
 
 **What local.conf controls** (machine-specific only):
-- `MACHINE` — which board to build for
-- `GPU_MEM` — GPU memory split
-- `MACHINE_EXTRA_RRECOMMENDS` — WiFi firmware for specific chip
+- `MACHINE` - which board or project-owned machine variant to build for
+- `GPU_MEM` - GPU memory split
+- `MACHINE_EXTRA_RRECOMMENDS` - WiFi firmware for a specific chip
 - CPU threads for parallel build
 
 ### Multi-Machine Build
 
 Both boards share `bblayers.conf` and the `home-monitor` distro. Only `local.conf` differs:
 
-```
+```text
 config/bblayers.conf        shared (identical layers for both)
 config/rpi4b/local.conf     MACHINE="raspberrypi4-64", GPU_MEM=128
-config/zero2w/local.conf    MACHINE="raspberrypi0-2w-64", GPU_MEM=64
+config/zero2w/local.conf    MACHINE="home-monitor-camera", GPU_MEM=64
 ```
 
-Shared `downloads/` and `sstate-cache/` — the second board reuses most compiled artifacts.
+The `home-monitor-camera` machine in `meta-home-monitor/conf/machine/`
+extends `raspberrypi0-2w-64` and carries the permanent OV5647 sensor
+policy for the PiHut ZeroCam.
+
+Yocto still publishes the final camera image artifacts under the upstream
+`raspberrypi0-2w-64` deploy directory, so use that path when collecting
+`.wic.bz2` and rootfs outputs from the build VM.
+
+Shared `downloads/` and `sstate-cache/` mean the second board reuses most compiled artifacts.
 
 ---
 
@@ -162,7 +170,7 @@ Shared `downloads/` and `sstate-cache/` — the second board reuses most compile
 
 ## 7. Development Workflow
 
-### Fast iteration (app changes — seconds)
+### Fast iteration (app changes - seconds)
 
 ```bash
 rsync -av app/server/monitor/ root@<rpi4b-ip>:/opt/monitor/monitor/
@@ -205,7 +213,7 @@ nmcli device wifi connect "SSID" password "pass"
 
 ### Build fails with "No space left on device"
 
-Yocto builds need ~100GB. Free up disk or resize your VM disk.
+Yocto builds need about 100 GB. Free up disk or resize your VM disk.
 
 ```bash
 # Check disk usage
@@ -234,17 +242,17 @@ The setup script does this automatically.
 
 ### Slow builds
 
-- Increase CPU cores: edit `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in local.conf
-- Add more RAM (or swap)
-- Use an SSD, not HDD
-- Don't run other heavy processes during the build
+- Increase CPU cores by editing `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in `local.conf`
+- Add more RAM or swap
+- Use an SSD, not an HDD
+- Do not run other heavy processes during the build
 
 ### "do_fetch" failures
 
 Network issues downloading source tarballs. Retry:
 
 ```bash
-bitbake home-monitor-image-dev  # Just re-run, it resumes
+bitbake home-monitor-image-dev
 ```
 
-Or if a mirror is down, wait and retry later. Downloaded sources are cached in `downloads/`.
+Bitbake resumes where it left off. Downloaded sources are cached in `downloads/`.
