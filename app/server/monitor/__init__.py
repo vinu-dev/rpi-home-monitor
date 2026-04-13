@@ -91,6 +91,7 @@ def create_app(config=None):
 
     app = Flask(__name__)
     config_dir = os.environ.get("MONITOR_CONFIG_DIR", "/data/config")
+    explicit_config_keys = set(config.keys()) if config else set()
 
     # Default config
     app.config.update(
@@ -119,7 +120,7 @@ def create_app(config=None):
     _init_infrastructure(app)
 
     # --- Persisted settings ---
-    _load_persisted_settings(app)
+    _load_persisted_settings(app, explicit_config_keys)
 
     # --- Application services ---
     _init_services(app)
@@ -150,18 +151,23 @@ def _init_infrastructure(app):
     )
 
 
-def _load_persisted_settings(app):
+def _load_persisted_settings(app, explicit_config_keys=None):
     """Load persisted runtime settings before service initialization."""
+    explicit_config_keys = explicit_config_keys or set()
     try:
         settings = app.store.get_settings()
     except Exception as exc:
         log.warning("Failed to load persisted settings: %s", exc)
         return
 
-    app.config["CLIP_DURATION_SECONDS"] = settings.clip_duration_seconds
-    app.config["STORAGE_THRESHOLD_PERCENT"] = settings.storage_threshold_percent
-    app.config["SESSION_TIMEOUT_MINUTES"] = settings.session_timeout_minutes
-    app.storage_manager.set_threshold_percent(settings.storage_threshold_percent)
+    if "CLIP_DURATION_SECONDS" not in explicit_config_keys:
+        app.config["CLIP_DURATION_SECONDS"] = settings.clip_duration_seconds
+    if "STORAGE_THRESHOLD_PERCENT" not in explicit_config_keys:
+        app.config["STORAGE_THRESHOLD_PERCENT"] = settings.storage_threshold_percent
+    if "SESSION_TIMEOUT_MINUTES" not in explicit_config_keys:
+        app.config["SESSION_TIMEOUT_MINUTES"] = settings.session_timeout_minutes
+
+    app.storage_manager.set_threshold_percent(app.config["STORAGE_THRESHOLD_PERCENT"])
 
 
 def _init_services(app):
