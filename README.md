@@ -129,7 +129,9 @@ First build takes 2-4 hours. Subsequent builds use cached artifacts and are much
 ```bash
 cd app/server && pytest    # threshold: 80% coverage
 cd app/camera && pytest    # threshold: 55% coverage
-``` Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
+```
+
+Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
 
 ## Documentation
 
