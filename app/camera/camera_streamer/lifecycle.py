@@ -265,7 +265,7 @@ class CameraLifecycle:
         else:
             log.warning("Server not configured — streaming disabled")
 
-        # Status HTTP server (port 80)
+        # Status HTTPS server (port 443)
         self._status_server = CameraStatusServer(
             self._config,
             self._stream,

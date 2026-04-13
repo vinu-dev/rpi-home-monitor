@@ -1,16 +1,24 @@
 """Tests for camera_streamer.status_server — session management + system helpers."""
 
+import os
 import time
+from pathlib import Path
+from subprocess import CalledProcessError, TimeoutExpired
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
 from camera_streamer.status_server import (
     SESSION_TIMEOUT,
+    TLS_CERT_NAME,
+    TLS_KEY_NAME,
     CameraStatusServer,
+    _build_session_cookie,
     _check_session,
+    _clear_session_cookie,
     _create_session,
     _destroy_session,
+    _ensure_tls_material,
     _get_cpu_temp,
     _get_memory_mb,
     _get_session_cookie,
@@ -18,6 +26,9 @@ from camera_streamer.status_server import (
     _html_escape,
     _session_lock,
     _sessions,
+    _status_server_names,
+    _status_tls_paths,
+    _wrap_https_server,
 )
 
 
@@ -117,6 +128,121 @@ class TestSessionCookie:
         headers = MagicMock()
         headers.get.return_value = "a=1; cam_session=tok; b=2"
         assert _get_session_cookie(headers) == "tok"
+
+    def test_build_session_cookie_is_secure(self):
+        cookie = _build_session_cookie("abc123")
+        assert "cam_session=abc123" in cookie
+        assert "HttpOnly" in cookie
+        assert "Secure" in cookie
+        assert "SameSite=Strict" in cookie
+        assert f"Max-Age={SESSION_TIMEOUT}" in cookie
+
+    def test_clear_session_cookie_is_secure(self):
+        cookie = _clear_session_cookie()
+        assert "cam_session=" in cookie
+        assert "Max-Age=0" in cookie
+        assert "HttpOnly" in cookie
+        assert "Secure" in cookie
+        assert "SameSite=Strict" in cookie
+
+
+class TestTlsHelpers:
+    """Test HTTPS cert generation and wrapping."""
+
+    @pytest.fixture
+    def tls_config(self, tmp_path):
+        cfg = MagicMock()
+        cfg.certs_dir = str(tmp_path / "certs")
+        return cfg
+
+    def test_status_tls_paths(self, tls_config):
+        cert_path, key_path = _status_tls_paths(tls_config)
+        assert cert_path == os.path.join(tls_config.certs_dir, TLS_CERT_NAME)
+        assert key_path == os.path.join(tls_config.certs_dir, TLS_KEY_NAME)
+
+    def test_status_server_names_includes_mdns(self):
+        with patch("camera_streamer.status_server.wifi.get_hostname") as mock_hostname:
+            mock_hostname.return_value = "rpi-divinu-cam-d8ee"
+            names = _status_server_names()
+        assert "rpi-divinu-cam-d8ee" in names
+        assert "rpi-divinu-cam-d8ee.local" in names
+        assert "localhost" in names
+
+    @patch("camera_streamer.status_server.os.chmod")
+    @patch("camera_streamer.status_server.subprocess.run")
+    @patch("camera_streamer.status_server._status_server_names")
+    def test_ensure_tls_material_generates_cert(
+        self, mock_names, mock_run, mock_chmod, tls_config
+    ):
+        cert_path, key_path = _status_tls_paths(tls_config)
+        Path(cert_path).parent.mkdir(parents=True, exist_ok=True)
+        mock_names.return_value = ["rpi-divinu-cam-d8ee", "rpi-divinu-cam-d8ee.local"]
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["openssl", "ecparam"]:
+                Path(key_path).write_text("KEY")
+            elif cmd[:2] == ["openssl", "req"]:
+                Path(cert_path).write_text("CERT")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = fake_run
+
+        result_cert, result_key = _ensure_tls_material(tls_config)
+        assert result_cert == cert_path
+        assert result_key == key_path
+        assert mock_run.call_count == 2
+        req_cmd = mock_run.call_args_list[1].args[0]
+        assert "-addext" in req_cmd
+        assert any("subjectAltName=" in part for part in req_cmd)
+        mock_chmod.assert_called_once_with(key_path, 0o600)
+
+    def test_ensure_tls_material_reuses_existing_files(self, tls_config):
+        cert_path, key_path = _status_tls_paths(tls_config)
+        Path(cert_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cert_path).write_text("CERT")
+        Path(key_path).write_text("KEY")
+        with patch("camera_streamer.status_server.subprocess.run") as mock_run:
+            result_cert, result_key = _ensure_tls_material(tls_config)
+        assert result_cert == cert_path
+        assert result_key == key_path
+        mock_run.assert_not_called()
+
+    @patch("camera_streamer.status_server.subprocess.run")
+    def test_ensure_tls_material_requires_openssl(self, mock_run, tls_config):
+        mock_run.side_effect = FileNotFoundError
+        with pytest.raises(RuntimeError, match="openssl is required"):
+            _ensure_tls_material(tls_config)
+
+    @patch("camera_streamer.status_server.subprocess.run")
+    def test_ensure_tls_material_surfaces_openssl_error(self, mock_run, tls_config):
+        mock_run.side_effect = CalledProcessError(
+            1, ["openssl"], stderr="bad cert request"
+        )
+        with pytest.raises(RuntimeError, match="bad cert request"):
+            _ensure_tls_material(tls_config)
+
+    @patch("camera_streamer.status_server.subprocess.run")
+    def test_ensure_tls_material_handles_timeout(self, mock_run, tls_config):
+        mock_run.side_effect = TimeoutExpired("openssl", 15)
+        with pytest.raises(RuntimeError, match="timed out"):
+            _ensure_tls_material(tls_config)
+
+    @patch("camera_streamer.status_server.ssl.SSLContext")
+    @patch("camera_streamer.status_server._ensure_tls_material")
+    def test_wrap_https_server_wraps_socket(
+        self, mock_ensure_tls_material, mock_ssl_context, tls_config
+    ):
+        mock_ensure_tls_material.return_value = ("cert.pem", "key.pem")
+        mock_server = MagicMock()
+        original_socket = mock_server.socket
+        ctx = MagicMock()
+        mock_ssl_context.return_value = ctx
+
+        wrapped = _wrap_https_server(mock_server, tls_config)
+
+        assert wrapped is mock_server
+        ctx.load_cert_chain.assert_called_once_with("cert.pem", "key.pem")
+        ctx.wrap_socket.assert_called_once_with(original_socket, server_side=True)
 
 
 # ---- System info helpers ----

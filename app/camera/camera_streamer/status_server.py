@@ -1,7 +1,7 @@
 """
 Camera status page server (post-setup).
 
-Runs on port 80 after first-boot setup is complete. Provides a
+Runs on port 443 after first-boot setup is complete. Provides a
 login-protected status page where the user can view camera info,
 system health, and change WiFi settings.
 
@@ -11,7 +11,11 @@ Requires the admin password set during provisioning.
 import http.server
 import json
 import logging
+import os
 import secrets
+import socket
+import ssl
+import subprocess
 import threading
 import time
 
@@ -20,8 +24,10 @@ from camera_streamer.factory_reset import FactoryResetService
 
 log = logging.getLogger("camera-streamer.status-server")
 
-LISTEN_PORT = 80
+LISTEN_PORT = 443
 SESSION_TIMEOUT = 7200  # 2 hours
+TLS_CERT_NAME = "status.crt"
+TLS_KEY_NAME = "status.key"
 
 # ---- Session store (in-memory) ----
 _sessions = {}
@@ -66,6 +72,111 @@ def _get_session_cookie(headers):
         if part.startswith("cam_session="):
             return part.split("=", 1)[1]
     return ""
+
+
+def _build_session_cookie(token):
+    """Build a secure session cookie value."""
+    return (
+        f"cam_session={token}; Path=/; Max-Age={SESSION_TIMEOUT}; "
+        "HttpOnly; Secure; SameSite=Strict"
+    )
+
+
+def _clear_session_cookie():
+    """Build a secure expired session cookie value."""
+    return "cam_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+
+
+def _status_tls_paths(config):
+    """Return cert/key paths for the camera status HTTPS endpoint."""
+    certs_dir = config.certs_dir
+    return (
+        os.path.join(certs_dir, TLS_CERT_NAME),
+        os.path.join(certs_dir, TLS_KEY_NAME),
+    )
+
+
+def _status_server_names():
+    """Return hostname variants that should be present in the cert SAN."""
+    names = []
+    hostname = wifi.get_hostname() or socket.gethostname()
+    if hostname:
+        names.append(hostname)
+        if "." not in hostname:
+            names.append(f"{hostname}.local")
+    names.extend(["localhost"])
+    return list(dict.fromkeys(n for n in names if n))
+
+
+def _ensure_tls_material(config):
+    """Create a self-signed cert for the camera HTTPS status page if needed."""
+    cert_path, key_path = _status_tls_paths(config)
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        return cert_path, key_path
+
+    os.makedirs(config.certs_dir, exist_ok=True)
+    names = _status_server_names()
+    common_name = names[0]
+    san = ",".join(f"DNS:{name}" for name in names)
+    san = f"{san},IP:127.0.0.1"
+
+    try:
+        subprocess.run(
+            [
+                "openssl",
+                "ecparam",
+                "-genkey",
+                "-name",
+                "prime256v1",
+                "-out",
+                key_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-new",
+                "-x509",
+                "-key",
+                key_path,
+                "-out",
+                cert_path,
+                "-days",
+                "1825",
+                "-subj",
+                f"/CN={common_name}",
+                "-addext",
+                f"subjectAltName={san}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        os.chmod(key_path, 0o600)
+    except FileNotFoundError as e:
+        raise RuntimeError("openssl is required for camera HTTPS status page") from e
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        raise RuntimeError(f"failed to generate camera HTTPS cert: {stderr}") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("timed out generating camera HTTPS cert") from e
+
+    return cert_path, key_path
+
+
+def _wrap_https_server(server, config):
+    """Wrap the status server socket with TLS."""
+    cert_path, key_path = _ensure_tls_material(config)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert_path, key_path)
+    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    return server
 
 
 def _get_cpu_temp(thermal_path=None):
@@ -137,9 +248,9 @@ def _load_template(name):
 
 
 class CameraStatusServer:
-    """HTTP server showing camera status after setup.
+    """HTTPS server showing camera status after setup.
 
-    Runs on port 80. Requires login with the password set during
+    Runs on port 443. Requires login with the password set during
     provisioning. Shows camera ID, WiFi, server connection, stream
     status, system health, and a form to change WiFi.
 
@@ -167,7 +278,7 @@ class CameraStatusServer:
         self._thread = None
 
     def start(self):
-        """Start the status HTTP server on port 80."""
+        """Start the status HTTPS server on port 443."""
         handler = _make_status_handler(
             self._config,
             self._stream,
@@ -178,20 +289,21 @@ class CameraStatusServer:
         )
         try:
             self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
+            self._server = _wrap_https_server(self._server, self._config)
             self._thread = threading.Thread(
                 target=self._server.serve_forever,
                 daemon=True,
-                name="status-http",
+                name="status-https",
             )
             self._thread.start()
-            log.info("Status server listening on port %d", LISTEN_PORT)
+            log.info("Status server listening on HTTPS port %d", LISTEN_PORT)
             return True
         except Exception as e:
             log.error("Failed to start status server: %s", e)
             return False
 
     def stop(self):
-        """Stop the status HTTP server."""
+        """Stop the status HTTPS server."""
         if self._server:
             self._server.shutdown()
             self._server = None
@@ -243,7 +355,7 @@ def _make_status_handler(
 
     class StatusHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            log.debug("Status HTTP: " + format % args)
+            log.debug("Status HTTPS: " + format % args)
 
         def _is_authenticated(self):
             if not config.has_password:
@@ -269,9 +381,7 @@ def _make_status_handler(
                 token = _get_session_cookie(self.headers)
                 _destroy_session(token)
                 self.send_response(302)
-                self.send_header(
-                    "Set-Cookie", "cam_session=; Path=/; Max-Age=0; HttpOnly"
-                )
+                self.send_header("Set-Cookie", _clear_session_cookie())
                 self.send_header("Location", "/login")
                 self.end_headers()
             elif self.path == "/pair":
@@ -392,20 +502,14 @@ def _make_status_handler(
                 if "application/json" in content_type:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
-                    self.send_header(
-                        "Set-Cookie",
-                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict",
-                    )
+                    self.send_header("Set-Cookie", _build_session_cookie(token))
                     resp = json.dumps({"message": "Login successful"}).encode()
                     self.send_header("Content-Length", str(len(resp)))
                     self.end_headers()
                     self.wfile.write(resp)
                 else:
                     self.send_response(302)
-                    self.send_header(
-                        "Set-Cookie",
-                        f"cam_session={token}; Path=/; HttpOnly; SameSite=Strict",
-                    )
+                    self.send_header("Set-Cookie", _build_session_cookie(token))
                     self.send_header("Location", "/")
                     self.end_headers()
             else:

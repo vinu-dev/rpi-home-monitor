@@ -145,7 +145,7 @@ They are separate codebases because they run on different hardware with differen
 │  │  └──────────────────────────────────────┘  │  │
 │  │                                            │  │
 │  │  ┌──────────────────────────────────────┐  │  │
-│  │  │ Status Server (post-setup, port 80)  │  │  │
+│  │  │ Status Server (post-setup, port 443) │  │  │
 │  │  │ Login: PBKDF2-SHA256 + sessions      │  │  │
 │  │  │ Pages: /login, /, /api/status        │  │  │
 │  │  │ Actions: WiFi change, password change│  │  │
@@ -207,7 +207,7 @@ Both server and cameras advertise via Avahi/mDNS:
 | Device | Hostname | URL | Service |
 |--------|----------|-----|---------|
 | Server | `rpi-divinu` | `https://rpi-divinu.local` | `_homemonitor._tcp`, `_https._tcp` |
-| Camera | `rpi-divinu-cam-XXXX` | `http://rpi-divinu-cam-XXXX.local` | `_rtsp._tcp` |
+| Camera | `rpi-divinu-cam-XXXX` | `https://rpi-divinu-cam-XXXX.local` | `_rtsp._tcp` |
 
 Camera hostnames are derived from the CPU serial number: last 4 hex chars become the suffix (e.g., serial `...351ad8ee` → hostname `rpi-divinu-cam-d8ee`). This ensures uniqueness in multi-camera deployments.
 
