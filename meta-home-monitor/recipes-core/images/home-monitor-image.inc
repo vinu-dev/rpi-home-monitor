@@ -55,5 +55,13 @@ WKS_FILE_DEPENDS = "e2fsprogs-native dosfstools-native mtools-native"
 # --- Default hostname (overridden by first-boot and provisioning) ---
 hostname = "rpi-divinu"
 
+# Write hostname into /etc/hostname at image creation time.
+# (base-files defaults to MACHINE; this override ensures the image
+# ships with our product hostname out of the box.)
+set_product_hostname() {
+    echo "${hostname}" > ${IMAGE_ROOTFS}${sysconfdir}/hostname
+}
+ROOTFS_POSTPROCESS_COMMAND += "set_product_hostname;"
+
 # --- Extra space for video recordings (1GB) ---
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
