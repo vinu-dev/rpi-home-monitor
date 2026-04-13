@@ -27,6 +27,21 @@ echo ">>> Release: $RELEASE"
 echo ">>> CPUs: $NCPU"
 echo ">>> Target: $TARGET"
 
+# --- OTA signing cert guard (prod only) ---
+# Signing is disabled by default (SWUPDATE_SIGNING=0 in local.conf, see ADR-0014).
+# For production builds with SWUPDATE_SIGNING=1, the cert must be present first:
+#   ./scripts/generate-ota-keys.sh
+OTA_CERT="$YOCTO_DIR/meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt"
+if grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$YOCTO_DIR/config/"*"/local.conf" 2>/dev/null; then
+    if [ ! -f "$OTA_CERT" ]; then
+        echo ""
+        echo "ERROR: SWUPDATE_SIGNING=1 but OTA cert not found: $OTA_CERT"
+        echo "Run './scripts/generate-ota-keys.sh' first to generate the keypair."
+        echo ""
+        exit 1
+    fi
+fi
+
 # --- Clone Yocto layers ---
 clone_layer() {
     local url=$1 dir=$2 branch=$3

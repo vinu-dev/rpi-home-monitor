@@ -1,0 +1,7 @@
+# Home Monitor OTA signing configuration (ADR-0008)
+# This file is sourced by /usr/lib/swupdate/swupdate.sh from
+# /etc/swupdate/conf.d/, overriding the default SWUPDATE_ARGS.
+#
+# -k passes the OTA signing public certificate so swupdate can
+# verify bundle signatures compiled with CONFIG_SIGNED_IMAGES=y.
+SWUPDATE_ARGS="-v -k /etc/swupdate-public.crt ${SWUPDATE_EXTRA_ARGS}"

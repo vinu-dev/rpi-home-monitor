@@ -41,6 +41,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWU_TEMPLATES="$REPO_DIR/swupdate"
 KEY_DIR="${KEY_DIR:-$HOME/.monitor-keys}"
+SIGNING_KEY="$KEY_DIR/ota-signing.key"
+SIGNING_CERT="$KEY_DIR/ota-signing.crt"
 
 # --- Parse arguments ---
 TARGET=""
@@ -123,25 +125,10 @@ cp "$ROOTFS" "$WORK_DIR/rootfs.ext4.gz"
 
 # 4. Sign sw-description if requested (CMS/PKCS7 for SWUpdate)
 if [ "$SIGN" = true ]; then
-    SIGNING_KEY="$KEY_DIR/ota-signing.key"
-    SIGNING_CERT="$KEY_DIR/ota-signing.crt"
-
     if [ ! -f "$SIGNING_KEY" ]; then
-        echo ">>> Generating OTA signing keypair + self-signed cert..."
-        mkdir -p "$KEY_DIR"
-        # Generate Ed25519 private key
-        openssl genpkey -algorithm Ed25519 -out "$SIGNING_KEY"
-        # Generate self-signed certificate (needed for CMS)
-        openssl req -new -x509 -key "$SIGNING_KEY" -out "$SIGNING_CERT" \
-            -days 3650 -subj "/CN=Home Monitor OTA Signing"
-        # Export public key for device
-        openssl x509 -in "$SIGNING_CERT" -pubkey -noout > "$KEY_DIR/ota-signing.pub"
-        chmod 600 "$SIGNING_KEY"
-        echo "    Private key: $SIGNING_KEY"
-        echo "    Certificate: $SIGNING_CERT"
-        echo "    Public key:  $KEY_DIR/ota-signing.pub"
-        echo ""
-        echo "    IMPORTANT: Deploy ota-signing.crt to /etc/swupdate-public.pem on devices"
+        echo ">>> Keys not found. Run './scripts/generate-ota-keys.sh' first."
+        echo "    Expected: $SIGNING_KEY"
+        exit 1
     fi
 
     # CMS sign sw-description
