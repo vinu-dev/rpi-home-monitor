@@ -1,0 +1,17 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Repo overview and reading order
+        globs:
+          - **/*
+        alwaysApply: true
+        ---
+
+        Start at `AGENTS.md`, then `docs/ai/index.md`.
+
+Operate goal-first:
+- state the product or engineering goal
+- identify constraints
+- define exit criteria
+
+Use `docs/ai/task-routing.md` to decide which commands and docs
+apply to the current change.

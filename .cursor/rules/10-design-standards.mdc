@@ -1,0 +1,16 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Design and product quality standards
+        globs:
+          - app/**
+  - docs/**
+  - templates/**
+        alwaysApply: false
+        ---
+
+        The repository is a product sample, not just a code sample.
+
+Avoid generic AI output. Preserve explicit architecture patterns,
+deliberate UX, and maintainable module boundaries. Read
+`docs/ai/design-standards.md` before changing user-facing flows,
+architecture, or deployment behavior.

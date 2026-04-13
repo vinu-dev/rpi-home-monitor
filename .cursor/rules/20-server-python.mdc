@@ -1,0 +1,10 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Server Python rules
+        globs:
+          - app/server/**
+        alwaysApply: false
+        ---
+
+        Keep routes thin and business logic in services. Validate with:
+`ruff check app/ && ruff format --check app/ && pytest app/server/tests/ -v`

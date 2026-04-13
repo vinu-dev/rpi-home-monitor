@@ -1,0 +1,15 @@
+---
+description: Product and UI design standards.
+globs:
+  - "app/server/monitor/templates/**"
+  - "app/server/monitor/static/**"
+  - "app/camera/camera_streamer/templates/**"
+alwaysApply: false
+---
+
+# Design Standards
+
+- Optimize for clarity, confidence, and truthful status communication.
+- Support mobile-first usage.
+- Always provide clear loading, empty, and error states.
+- Avoid generic AI-looking layouts or undocumented UX shortcuts.

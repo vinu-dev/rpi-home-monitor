@@ -1,0 +1,13 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Yocto and image-policy rules
+        globs:
+          - meta-home-monitor/**
+  - config/**
+  - scripts/build*.sh
+        alwaysApply: false
+        ---
+
+        Keep permanent policy out of developer overrides. Use recipes,
+machine config, image config, and packagegroups. Validate with
+`bitbake -p` and document build impact.

@@ -1,0 +1,9 @@
+        # AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
+        name = "review"
+        description = "Review a change for correctness, regressions, and missing validation."
+        instructions = """
+        Review for bugs, design regressions, stale docs, missing tests,
+and workflow drift. Treat docs and deploy paths as product
+artifacts. Prefer concrete findings with file references and
+missing validation evidence.
+        """

@@ -1,0 +1,12 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Validation and rollout rules
+        globs:
+          - **/*
+        alwaysApply: false
+        ---
+
+        If behavior changes, update docs and validation in the same
+change. Large tasks should use `docs/exec-plans/template.md`.
+Hardware-affecting changes should include smoke evidence when the
+hardware is available.

@@ -1,0 +1,11 @@
+        <!-- AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY. Run `python scripts/ai/build_instruction_files.py`. -->
+        ---
+        description: Camera Python rules
+        globs:
+          - app/camera/**
+        alwaysApply: false
+        ---
+
+        Preserve lifecycle, pairing, TLS, provisioning, and status-server
+semantics. Validate with:
+`ruff check app/ && ruff format --check app/ && pytest app/camera/tests/ -v`

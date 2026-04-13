@@ -4,15 +4,45 @@ on:
   push:
     paths:
       - 'app/**'
+      - 'docs/**'
+      - '.github/**'
+      - '.claude/**'
+      - '.cursor/**'
+      - '.qodo/**'
+      - 'scripts/**'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.pre-commit-config.yaml'
       - '.github/workflows/test.yml'
       - 'pyproject.toml'
   pull_request:
     paths:
       - 'app/**'
+      - 'docs/**'
+      - '.github/**'
+      - '.claude/**'
+      - '.cursor/**'
+      - '.qodo/**'
+      - 'scripts/**'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.pre-commit-config.yaml'
       - '.github/workflows/test.yml'
       - 'pyproject.toml'
 
 jobs:
+  ai-governance:
+    name: AI Governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate AI repo setup
+        run: |
+          python scripts/ai/validate_repo_ai_setup.py
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest

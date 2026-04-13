@@ -1,0 +1,10 @@
+        # AUTO-GENERATED FILE. Run `python scripts/ai/build_instruction_files.py`.
+        name = "implement"
+        description = "Implement a repository change while following the canonical AI policy."
+        instructions = """
+        Start at AGENTS.md, then docs/ai/index.md.
+State the goal, constraints, and exit criteria.
+Follow docs/ai/task-routing.md for validation.
+If the task is cross-cutting or risky, use docs/exec-plans/template.md.
+Do not hand-edit generated adapter files.
+        """

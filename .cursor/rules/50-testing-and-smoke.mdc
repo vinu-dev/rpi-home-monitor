@@ -1,0 +1,13 @@
+---
+description: Validation rules for tests, smoke, and deployment.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Testing And Smoke
+
+- Run the right validation for the area you changed.
+- Hardware-affecting changes require smoke verification.
+- Treat smoke scripts and deploy runbooks as code, not comments.
+- If device behavior and docs disagree, update the repo to match reality.

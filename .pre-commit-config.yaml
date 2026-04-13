@@ -22,3 +22,11 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: validate-ai-repo-setup
+        name: validate-ai-repo-setup
+        entry: python scripts/ai/validate_repo_ai_setup.py
+        language: system
+        pass_filenames: false
