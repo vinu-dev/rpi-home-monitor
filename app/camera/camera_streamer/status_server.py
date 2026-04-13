@@ -357,6 +357,37 @@ def _make_status_handler(
         def log_message(self, format, *args):
             log.debug("Status HTTPS: " + format % args)
 
+        def do_HEAD(self):
+            if self.path == "/login":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+            elif self.path == "/logout":
+                self.send_response(302)
+                self.send_header("Set-Cookie", _clear_session_cookie())
+                self.send_header("Location", "/login")
+                self.end_headers()
+            elif self.path == "/pair":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+            elif self.path == "/" or self.path == "/status":
+                if not self._require_auth():
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+            elif self.path == "/api/status" or self.path == "/api/networks":
+                if not self._require_auth():
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
+
         def _is_authenticated(self):
             if not config.has_password:
                 return True

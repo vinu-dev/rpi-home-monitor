@@ -284,6 +284,20 @@ def _make_handler(config, setup_server):
         def log_message(self, format, *args):
             log.info("HTTP: " + format % args)
 
+        def do_HEAD(self):
+            if self.path == "/" or self.path == "/setup":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+            elif self.path == "/api/networks" or self.path == "/api/status":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+            else:
+                self.send_response(302)
+                self.send_header("Location", "http://10.42.0.1/setup")
+                self.end_headers()
+
         def do_GET(self):
             if self.path == "/" or self.path == "/setup":
                 self._serve_setup_page()

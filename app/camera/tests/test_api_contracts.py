@@ -80,6 +80,16 @@ def _json_post(path, body, headers=None, scheme="http"):
         raise
 
 
+def _head(path, scheme="http"):
+    """HEAD request to localhost:TEST_PORT."""
+    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}", method="HEAD")
+    kwargs = {"timeout": 5}
+    if scheme == "https":
+        kwargs["context"] = TLS_CONTEXT
+    with urlopen(req, **kwargs) as resp:
+        return resp.status
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -194,6 +204,17 @@ class TestSetupStatusContract:
         try:
             data, status = _json_get("/api/status")
             _assert_fields(data, SETUP_STATUS_FIELDS)
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.get_hostname", return_value="cam-test")
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_head_setup_page(self, mock_hotspot, mock_scan, mock_host, setup_config):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            assert _head("/") == 200
         finally:
             server.stop()
 
@@ -430,6 +451,16 @@ class TestStatusServerLoginContract:
                 scheme="https",
             )
             _assert_fields(data, {"message"})
+        finally:
+            server.stop()
+
+    def test_head_root_redirects_or_serves(self, configured_config):
+        """HEAD / should not fail for browser/probe checks."""
+        server = CameraStatusServer(configured_config)
+        server.start()
+        try:
+            status = _head("/", scheme="https")
+            assert status in {200, 302}
         finally:
             server.stop()
 
