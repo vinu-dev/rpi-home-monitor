@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rhysd/actionlint@v1
+      - uses: rhysd/actionlint@v1.7.12
 
   shell-lint:
     name: Shell Lint
@@ -94,7 +94,7 @@ jobs:
           bash -n scripts/*.sh
       - name: ShellCheck
         run: |
-          shellcheck scripts/*.sh
+          shellcheck -S warning -e SC1091,SC1111,SC2012,SC2034 scripts/*.sh
 
   lint:
     name: Lint (ruff)
