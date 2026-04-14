@@ -14,9 +14,9 @@ CAMERA_APP_ROOT = REPO_ROOT / "app" / "camera"
 if str(CAMERA_APP_ROOT) not in sys.path:
     sys.path.insert(0, str(CAMERA_APP_ROOT))
 
+import camera_streamer.status_server as status_server_module
 from camera_streamer.config import ConfigManager
 from camera_streamer.status_server import CameraStatusServer
-import camera_streamer.status_server as status_server_module
 
 
 def _seed_config(data_dir: Path) -> ConfigManager:

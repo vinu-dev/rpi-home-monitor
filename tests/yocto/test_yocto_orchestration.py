@@ -13,7 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.integration
 def test_parse_prerequisites_are_present():
-    assert (REPO_ROOT / "meta-home-monitor" / "conf" / "distro" / "home-monitor.conf").is_file()
+    assert (
+        REPO_ROOT / "meta-home-monitor" / "conf" / "distro" / "home-monitor.conf"
+    ).is_file()
     assert (REPO_ROOT / "config" / "bblayers.conf").is_file()
 
 

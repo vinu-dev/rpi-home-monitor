@@ -47,6 +47,7 @@ export default defineConfig({
       command:
         `python scripts/testing/run_server_app.py --mode seeded --port ${serverPort}`,
       url: `https://127.0.0.1:${serverPort}/login`,
+      ignoreHTTPSErrors: true,
       reuseExistingServer: !process.env.CI,
       timeout: 120000,
     },
@@ -54,6 +55,7 @@ export default defineConfig({
       command:
         `python scripts/testing/run_camera_status_server.py --port ${cameraPort}`,
       url: `https://127.0.0.1:${cameraPort}/login`,
+      ignoreHTTPSErrors: true,
       reuseExistingServer: !process.env.CI,
       timeout: 120000,
     },
