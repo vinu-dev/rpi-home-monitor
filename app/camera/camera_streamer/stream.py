@@ -50,7 +50,6 @@ class StreamManager:
         self._thread = None
         self._backoff = INITIAL_BACKOFF
         self._consecutive_failures = 0
-        self._mtls_failed = False
         self._lock = threading.Lock()
 
     @property
@@ -97,21 +96,6 @@ class StreamManager:
             if not self._running:
                 break
 
-            # If mTLS is enabled and we've failed twice, fall back to plain RTSP
-            if (
-                not self._mtls_failed
-                and self._config.has_client_cert
-                and self._consecutive_failures >= 2
-            ):
-                log.warning(
-                    "mTLS connection failed %d times — falling back to plain RTSP",
-                    self._consecutive_failures,
-                )
-                self._mtls_failed = True
-                self._consecutive_failures = 0
-                self._backoff = INITIAL_BACKOFF
-                continue
-
             # Reconnect with backoff
             self._consecutive_failures += 1
             wait = min(
@@ -128,34 +112,16 @@ class StreamManager:
                     return
                 time.sleep(0.1)
 
-    def _is_port_open(self, host, port, timeout=3):
-        """Check if a TCP port is reachable."""
-        import socket
-
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True
-        except (OSError, TimeoutError):
-            return False
-
     @property
     def _use_mtls(self):
-        """Return True if mTLS certs are available AND RTSPS is configured.
+        """Return True if mTLS certs are available.
 
-        mTLS requires both client certs and a server-side RTSPS listener.
-        We detect this by checking if port 8322 is reachable. If not,
-        fall back to plain RTSP to avoid connection failures.
+        When the camera is paired (client cert exists), always use mTLS.
+        Connection failures are handled by the reconnect backoff loop,
+        not by falling back to plain RTSP — the server may simply be
+        slower to boot than the camera.
         """
-        if not self._config.has_client_cert:
-            return False
-        if self._mtls_failed:
-            return False
-        # Check if RTSPS port is actually listening
-        if not self._is_port_open(self._config.server_ip, 8322):
-            log.info("RTSPS port 8322 not reachable — using plain RTSP")
-            self._mtls_failed = True
-            return False
-        return True
+        return self._config.has_client_cert
 
     @property
     def _stream_url(self):
