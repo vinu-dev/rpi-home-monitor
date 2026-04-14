@@ -65,6 +65,8 @@ This plan is the durable handoff record for the work.
   - signed server `.swu` packaging now succeeds from the clean validation workspace
   - signed camera `.swu` packaging now succeeds from the clean validation workspace
   - `scripts/build-swu.sh` is executable in the repo checkout and can be run directly as documented
+  - both signed `.swu` bundles were copied to the live server and camera and installed successfully with SWUpdate
+  - after reboot, neither live device returned on the expected SSH/HTTPS addresses within the current polling window
 - Last completed step:
   - completed signed `server-prod` and `camera-prod` build validation on the VM with:
     - `SWUPDATE_SIGNING = "1"` in `config/rpi4b/local.conf`
@@ -72,9 +74,11 @@ This plan is the durable handoff record for the work.
     - local OTA signing cert/key copied to `~/.monitor-keys/` on the VM
     - `./scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-20260414.swu`
     - `./scripts/build-swu.sh --target camera ... --sign` producing `camera-update-1.1.0-20260414.swu`
+    - `swupdate -i` on both live devices reporting successful slot switches
 - Next step:
-  - keep the production flow honest by validating the actual install/reboot/rollback path on hardware
-  - verify the signed `.swu` bundles apply correctly on server and camera
+  - determine whether the devices are simply on a different network surface or whether the new production images are not joining the LAN
+  - if the network surface is gone, use console/recovery access to inspect boot state and rollback behavior
+  - verify the signed `.swu` bundles apply correctly on server and camera once the devices are reachable again
   - record the exact validated full-system update path and remaining hardware gaps
 - Branch / PR:
   - current branch: `codex/add-resumption-workflow`
@@ -95,6 +99,10 @@ This plan is the durable handoff record for the work.
   - `ssh vinu_emailme@35.197.216.132 "tail -n 50 /home/vinu_emailme/ota-validation/camera-prod.log"`
   - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
   - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
+  - `ssh root@192.168.1.245 "swupdate -i /data/ota/server-update-1.1.0-20260414.swu"`
+  - `ssh root@192.168.1.186 "swupdate -i /data/ota/camera-update-1.1.0-20260414.swu"`
+  - `ssh root@192.168.1.245 "reboot"`
+  - `ssh root@192.168.1.186 "reboot"`
 - Open risks / blockers:
   - production OTA validation may require long Yocto builds and multiple reboots
   - signed production flow may still expose implementation gaps not visible in dev builds
@@ -122,6 +130,7 @@ This plan is the durable handoff record for the work.
 - long-running hardware work diverging from the written plan
 - merging multiple concerns into one branch and losing review clarity
 - executable-bit drift on repo scripts can break the documented fresh-clone command path if not kept in Git
+- live OTA validation can leave devices unreachable until the right boot slot or recovery path is confirmed
 
 ## Completion Criteria
 
