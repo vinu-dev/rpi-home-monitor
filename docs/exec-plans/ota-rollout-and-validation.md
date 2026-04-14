@@ -65,6 +65,8 @@ This plan is the durable handoff record for the work.
   - signed server `.swu` packaging now succeeds from the clean validation workspace
   - signed camera `.swu` packaging now succeeds from the clean validation workspace
   - `scripts/build-swu.sh` is executable in the repo checkout and can be run directly as documented
+  - encrypted local backup of the active OTA signing keypair now exists
+  - GitHub Actions secrets `OTA_SIGNING_KEY` and `OTA_SIGNING_CERT` are populated for `vinu-dev/rpi-home-monitor`
   - both signed `.swu` bundles were copied to the live server and camera and installed successfully with SWUpdate
   - after reboot, neither live device returned on the expected SSH/HTTPS addresses within the current polling window
 - Last completed step:
@@ -74,6 +76,8 @@ This plan is the durable handoff record for the work.
     - local OTA signing cert/key copied to `~/.monitor-keys/` on the VM
     - `./scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-20260414.swu`
     - `./scripts/build-swu.sh --target camera ... --sign` producing `camera-update-1.1.0-20260414.swu`
+    - encrypted OTA key backup generated via `scripts/backup-ota-keys.sh`
+    - GitHub Actions OTA signing secrets published via `scripts/publish-ota-github-secrets.sh`
     - `swupdate -i` on both live devices reporting successful slot switches
 - Next step:
   - determine whether the devices are simply on a different network surface or whether the new production images are not joining the LAN

@@ -6,9 +6,9 @@
 #   ./scripts/sign-image.sh <image.swu>
 #
 # On first run, generates an ECDSA P-256 signing keypair in ~/.monitor-keys/.
-# This script produces a detached signature. For full-system SWUpdate bundles,
-# prefer `./scripts/build-swu.sh --sign`, which generates the CMS signature that
-# SWUpdate actually verifies on-device.
+# This script produces a detached signature for non-SWUpdate artifacts.
+# For full-system SWUpdate bundles, prefer `./scripts/build-swu.sh --sign`,
+# which generates the CMS signature that SWUpdate actually verifies on-device.
 # =============================================================
 set -euo pipefail
 
@@ -37,7 +37,7 @@ if [ ! -f "$PRIVATE_KEY" ]; then
     chmod 600 "$PRIVATE_KEY"
     echo ">>> Keys generated:"
     echo "    Private: $PRIVATE_KEY (KEEP SECRET)"
-    echo "    Public:  $PUBLIC_KEY (embed in device rootfs)"
+    echo "    Public:  $PUBLIC_KEY (detached-signature verification only)"
 fi
 
 # Sign the image with a detached SHA-256 / ECDSA signature

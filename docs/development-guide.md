@@ -570,13 +570,14 @@ When changing one, check if the others need updating:
 - **The signing private key is never committed to git.** It lives in `~/.monitor-keys/` on the build machine only.
 - **Rollback:** If a new rootfs fails to boot 3 times, the device automatically rolls back. Never disable this.
 - **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/update-roadmap.md`.
+- **OTA key backup/recovery:** use [`docs/ota-key-management.md`](ota-key-management.md) and the `backup-ota-keys.sh` / `restore-ota-keys.sh` scripts.
 
 ### 6.3 Secrets Management
 
 | Secret | Where it lives | Who can access |
 |--------|---------------|---------------|
 | OTA signing private key | `~/.monitor-keys/ota-signing.key` on build machine | Build operator only |
-| OTA signing public key | Embedded in rootfs (`/etc/monitor/ota-signing.pub`) | All devices (read-only) |
+| OTA signing public cert | Embedded in rootfs (`/etc/swupdate-public.crt`) | All devices (read-only) |
 | CA private key | `/data/certs/ca.key` on server | Server process only (0600) |
 | Server TLS key | `/data/certs/server.key` on server | nginx process (0640) |
 | Camera client keys | `/data/certs/client.key` on each camera | Camera process only (0600) |
@@ -589,6 +590,7 @@ When changing one, check if the others need updating:
 - Never log any of the above.
 - Never transmit any private key over unencrypted channels.
 - `.gitignore` must block `*.key`, `*.pem`, `users.json`.
+- Encrypted OTA key backups are allowed outside git if they are created with `scripts/backup-ota-keys.sh` and the passphrase is stored separately.
 
 ---
 
@@ -605,6 +607,7 @@ When changing one, check if the others need updating:
 | New Yocto recipe/package | Update `README.md` (if it affects build) |
 | Build process change | Update `README.md` and `scripts/build.sh` |
 | New dev workflow | Update this file (`docs/development-guide.md`) |
+| OTA key backup / rotation process | `docs/ota-key-management.md` |
 
 ### 7.2 Documentation Style
 

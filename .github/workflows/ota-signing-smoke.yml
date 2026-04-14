@@ -1,0 +1,50 @@
+name: OTA Signing Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sign-smoke:
+    name: Restore OTA Secrets And Sign Test Bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore OTA signing materials
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.monitor-keys"
+          printf '%s' "${{ secrets.OTA_SIGNING_KEY }}" > "$HOME/.monitor-keys/ota-signing.key"
+          printf '%s' "${{ secrets.OTA_SIGNING_CERT }}" > "$HOME/.monitor-keys/ota-signing.crt"
+          chmod 600 "$HOME/.monitor-keys/ota-signing.key" "$HOME/.monitor-keys/ota-signing.crt"
+
+      - name: Verify secret cert matches repo public cert
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_hash="$(openssl x509 -in "$HOME/.monitor-keys/ota-signing.crt" -outform DER | sha256sum | awk '{print $1}')"
+          repo_hash="$(openssl x509 -in meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt -outform DER | sha256sum | awk '{print $1}')"
+          if [ "$secret_hash" != "$repo_hash" ]; then
+              echo "Secret OTA cert does not match the repo public cert" >&2
+              exit 1
+          fi
+
+      - name: Build signed smoke bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          printf 'smoke rootfs payload\n' | gzip -c > tmp/rootfs.ext4.gz
+          bash scripts/build-swu.sh \
+            --target server \
+            --rootfs tmp/rootfs.ext4.gz \
+            --version gha-smoke-${{ github.run_number }} \
+            --sign
+
+      - name: Upload smoke bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-signing-smoke-bundle
+          path: server-update-gha-smoke-${{ github.run_number }}.swu

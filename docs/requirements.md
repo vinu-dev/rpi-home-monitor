@@ -356,7 +356,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - App-only updates use symlink swap (`/opt/camera/releases/<version>/` with `current` symlink), no reboot
 - Automatic rollback if new rootfs fails health check within 90 seconds
 - Report current firmware version to server via mDNS TXT record
-- Production target: signature verification before install (public key in rootfs)
+- Production target: signature verification before install (verification certificate in rootfs)
 - Dev policy: signing may be disabled to reduce iteration friction
 
 #### SR-CAM-07: System Watchdog
