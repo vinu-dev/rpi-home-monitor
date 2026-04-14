@@ -131,11 +131,12 @@ if [ "$SIGN" = true ]; then
         exit 1
     fi
 
-    # CMS sign sw-description
+    # CMS signing is what SWUpdate verifies on-device. Use a certificate-based
+    # keypair that OpenSSL CMS supports cleanly (ECDSA P-256 in this repo).
     openssl cms -sign -in "$WORK_DIR/sw-description" \
         -out "$WORK_DIR/sw-description.sig" \
         -signer "$SIGNING_CERT" -inkey "$SIGNING_KEY" \
-        -outform DER -noattr -binary
+        -outform DER -nosmimecap -binary -noattr
     echo ">>> sw-description signed (CMS/PKCS7)"
 fi
 

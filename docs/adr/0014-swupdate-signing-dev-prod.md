@@ -40,7 +40,7 @@ The repo must not describe production OTA signing as fully proven until that har
 - Comment explains how to flip to `"1"` for prod
 
 **`scripts/generate-ota-keys.sh`**
-- One-time script: generates Ed25519 keypair in `~/.monitor-keys/`, copies cert to recipe files dir
+- One-time script: generates an ECDSA P-256 keypair in `~/.monitor-keys/`, copies cert to recipe files dir
 - Must be run before building with `SWUPDATE_SIGNING = "1"`
 
 **`scripts/build.sh`**
@@ -64,6 +64,17 @@ The repo must not describe production OTA signing as fully proven until that har
 - **Private key:** `~/.monitor-keys/ota-signing.key` — never committed, stays on build machine
 - **Public cert:** `meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt` — committed to git, public information
 - **Key rotation:** delete `~/.monitor-keys/ota-signing.{key,crt}`, re-run `generate-ota-keys.sh`, rebuild image and redeploy cert
+
+## Signing algorithm
+
+The production SWUpdate path uses **CMS / PKCS7 with an ECDSA P-256 certificate**.
+
+This is deliberate:
+- `build-swu.sh --sign` signs `sw-description` via `openssl cms -sign`
+- the SWUpdate daemon verifies that CMS signature against `/etc/swupdate-public.crt`
+- the repo previously documented Ed25519 here, but OpenSSL CMS signing did not validate cleanly in the tested build path
+
+Detached signatures for non-SWUpdate artifacts can still use different tooling, but the validated `.swu` flow in this repo is certificate-based CMS signing with ECDSA P-256.
 
 ## Consequences
 

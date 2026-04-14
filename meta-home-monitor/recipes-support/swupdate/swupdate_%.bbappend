@@ -1,5 +1,5 @@
 # Home Monitor SWUpdate configuration (ADR-0008, ADR-0014)
-# - Custom defconfig with U-Boot A/B handler and optional CMS/Ed25519 verification
+# - Custom defconfig with U-Boot A/B handler and optional CMS certificate verification
 # - conf.d override supplies -k flag so swupdate daemon finds the public cert
 # - Post-boot health check service for automatic rollback
 #

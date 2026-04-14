@@ -57,16 +57,21 @@ This plan is the durable handoff record for the work.
   - resumability rules and exec-plan workflow have been added on this branch
   - scripted dev app deploy flow now exists at `scripts/deploy-dev-app.sh`
   - scripted dev deploy has been validated on live server and camera hardware
+  - `scripts/build.sh` has been fixed to work with `oe-init-build-env` under `set -u`
+  - clean production validation workspace created on the build VM at `/home/vinu_emailme/ota-validation`
+  - signed `server-prod` Yocto build completed successfully in the clean validation workspace
+  - OTA signing material has been rotated from the old Ed25519 assumption to the validated ECDSA P-256 CMS flow
+  - signed server `.swu` packaging now succeeds from the clean validation workspace
+  - `camera-prod` signed Yocto build is currently running in the same clean validation workspace
 - Last completed step:
-  - completed live dev deploy validation on:
-    - server `192.168.1.245`
-    - camera `192.168.1.186`
+  - completed signed `server-prod` build validation on the VM with:
+    - `SWUPDATE_SIGNING = "1"` in `config/rpi4b/local.conf`
+    - local OTA signing cert/key copied to `~/.monitor-keys/` on the VM
+    - `scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-ota-validation.swu`
 - Next step:
-  - commit the resumability + dev deploy workflow changes
-  - then begin production OTA validation:
-    - signing prerequisites
-    - build artifacts
-    - what is already validated vs still blocked
+  - wait for `camera-prod` to finish in `/home/vinu_emailme/ota-validation`
+  - generate signed camera `.swu` artifacts from the clean production build outputs
+  - record the exact validated full-system update path and remaining hardware gaps
 - Branch / PR:
   - current branch: `codex/add-resumption-workflow`
   - next PR: not created yet
@@ -80,11 +85,18 @@ This plan is the durable handoff record for the work.
   - `python scripts/ai/check_doc_links.py`
   - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
   - `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
-  - after commit: inspect signing/build scripts and begin production OTA validation
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && grep -n SWUPDATE_SIGNING config/rpi4b/local.conf config/zero2w/local.conf"`
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh camera-prod"`
+  - `ssh vinu_emailme@35.197.216.132 "tail -n 50 /home/vinu_emailme/ota-validation/camera-prod.log"`
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && bash scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --version 1.1.0-ota-validation --sign"`
+  - after camera build: inspect artifacts and run `scripts/build-swu.sh --target camera ... --sign`
 - Open risks / blockers:
   - production OTA validation may require long Yocto builds and multiple reboots
   - signed production flow may still expose implementation gaps not visible in dev builds
   - deploy scripts must preserve permissions/ownership to avoid the static-asset regression we already hit once
+  - OTA docs still contain some drift between older signing text and the `build-swu.sh`-based path, so doc updates should follow the validated artifact flow rather than assumptions
+  - production device images must be rebuilt with the rotated ECDSA P-256 cert before on-device signature verification can be called validated
 
 ## Validation
 
@@ -94,6 +106,9 @@ This plan is the durable handoff record for the work.
 - `bash -n scripts/deploy-dev-app.sh`
 - `pre-commit run --files scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
 - `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
+- `pre-commit run --files scripts/build.sh`
+- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
+- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && bash scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --version 1.1.0-ota-validation --sign"`
 
 ## Risks
 

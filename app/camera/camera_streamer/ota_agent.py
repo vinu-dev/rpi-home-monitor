@@ -4,7 +4,7 @@ OTA update agent (ADR-0008).
 Listens for update pushes from the home server over mTLS.
 When an update is received:
 1. Stream .swu bundle to disk (never buffer in RAM — 512MB camera)
-2. Verify Ed25519 signature via swupdate -c
+2. Verify CMS signature via swupdate -c
 3. Install via swupdate -i (A/B partition swap)
 4. Report status back to server
 5. If boot fails 3 times → automatic rollback (U-Boot bootlimit)
@@ -218,19 +218,23 @@ class OTAAgent:
         self._send_json(handler, 200, {"message": "Installed — reboot required"})
 
     def _verify_bundle(self, bundle_path):
-        """Verify Ed25519 signature of a .swu bundle.
+        """Verify CMS signature of a .swu bundle.
 
         Returns:
             (valid, error) tuple.
         """
-        public_key = os.path.join(self._config.certs_dir, "swupdate-public.pem")
-        if not os.path.isfile(public_key):
-            log.warning("No public key found — skipping verification (dev mode)")
+        public_cert = "/etc/swupdate-public.crt"
+        if not os.path.isfile(public_cert):
+            public_cert = os.path.join(self._config.certs_dir, "swupdate-public.crt")
+        if not os.path.isfile(public_cert):
+            log.warning(
+                "No SWUpdate verification cert found — skipping verification (dev mode)"
+            )
             return True, ""
 
         try:
             result = subprocess.run(
-                ["swupdate", "-c", "-i", bundle_path, "-k", public_key],
+                ["swupdate", "-c", "-i", bundle_path, "-k", public_cert],
                 capture_output=True,
                 text=True,
                 timeout=60,

@@ -563,7 +563,7 @@ When changing one, check if the others need updating:
 
 ### 6.2 OTA Updates
 
-- **Production OTA images must be signed** with Ed25519 (`scripts/sign-image.sh`).
+- **Production OTA images must be signed** with the CMS certificate flow used by `scripts/build-swu.sh --sign`.
 - **Dev builds may intentionally bypass signing** via `SWUPDATE_SIGNING = "0"` to remove iteration friction in the lab.
 - **Unsigned OTA is never production-ready.**
 - **Test OTA on a dev device first** before pushing to prod.
@@ -701,7 +701,7 @@ Since this is a public GitHub repository:
 [ ] Merge to main
 [ ] Tag: git tag vX.Y.Z
 [ ] Create GitHub Release with prod .wic.bz2 images attached
-[ ] Sign prod images: ./scripts/sign-image.sh <image.swu>
+[ ] Build signed prod bundle: ./scripts/build-swu.sh --target <server|camera> --rootfs <path/to/rootfs.ext4.gz> --sign
 ```
 
 ### Security Fix

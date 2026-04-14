@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/generate-ota-keys.sh
 #
-# Generates an Ed25519 keypair for signing OTA (.swu) bundles.
+# Generates an ECDSA P-256 keypair for signing OTA (.swu) bundles.
 # The private key is stored locally in ~/.monitor-keys/ (never
 # in the repo). The public certificate is copied into the Yocto
 # recipe so it gets baked into device images at build time.
@@ -32,12 +32,12 @@ if [ -f "$KEY_DIR/ota-signing.key" ] && [ -f "$KEY_DIR/ota-signing.crt" ]; then
     echo ">>> Keys already exist at $KEY_DIR/ — skipping generation."
     echo "    To rotate keys, delete $KEY_DIR/ota-signing.key and re-run."
 else
-    echo ">>> Generating Ed25519 OTA signing keypair..."
+    echo ">>> Generating ECDSA P-256 OTA signing keypair..."
     mkdir -p "$KEY_DIR"
     chmod 700 "$KEY_DIR"
 
-    # Generate Ed25519 private key
-    openssl genpkey -algorithm Ed25519 -out "$KEY_DIR/ota-signing.key"
+    # Generate ECDSA P-256 private key for CMS/PKCS7 bundle signing.
+    openssl ecparam -name prime256v1 -genkey -noout -out "$KEY_DIR/ota-signing.key"
     chmod 600 "$KEY_DIR/ota-signing.key"
 
     # Generate self-signed certificate (CMS/PKCS7 requires a cert, not raw pubkey)

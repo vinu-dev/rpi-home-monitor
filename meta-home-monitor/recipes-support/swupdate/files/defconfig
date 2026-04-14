@@ -58,8 +58,8 @@ CONFIG_EXTRA_LDLIBS=""
 # CONFIG_MONGOOSE is not set
 #
 # Signing — bundle signature verification (ADR-0008)
-# Uses CMS (PKCS7) with OpenSSL 3.x backend, which supports
-# Ed25519 keys natively. Public key at /etc/swupdate-public.pem.
+# Uses CMS (PKCS7) with the OpenSSL backend and a certificate at
+# /etc/swupdate-public.crt.
 #
 CONFIG_SIGNED_IMAGES=y
 CONFIG_SIGALG_CMS=y

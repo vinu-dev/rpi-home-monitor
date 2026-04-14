@@ -2,7 +2,7 @@
 OTA update service (ADR-0008).
 
 Manages the server-side OTA update lifecycle:
-1. Verify .swu bundle (Ed25519 signature)
+1. Verify .swu bundle (CMS signature via SWUpdate)
 2. Stage bundle to /data/ota/staging/
 3. Check available disk space
 4. Install via swupdate (A/B partition swap)
@@ -45,16 +45,14 @@ class OTAService:
         store: Store instance for settings persistence.
         audit: AuditLogger instance (optional).
         data_dir: Base data directory (default: /data).
-        public_key_path: Ed25519 public key for signature verification.
+        public_key_path: SWUpdate certificate path for bundle verification.
     """
 
     def __init__(self, store, audit=None, data_dir="/data", public_key_path=None):
         self._store = store
         self._audit = audit
         self._data_dir = data_dir
-        self._public_key_path = public_key_path or os.path.join(
-            data_dir, "certs", "swupdate-public.pem"
-        )
+        self._public_key_path = public_key_path or "/etc/swupdate-public.crt"
         self._status = {}
         self._status_lock = threading.Lock()
 
@@ -158,7 +156,7 @@ class OTAService:
         return staged_path, ""
 
     def verify_bundle(self, bundle_path):
-        """Verify Ed25519 signature of a .swu bundle.
+        """Verify CMS signature of a .swu bundle.
 
         Uses openssl to verify the signature embedded in the SWU image.
 
@@ -173,7 +171,7 @@ class OTAService:
 
         if not os.path.isfile(self._public_key_path):
             log.warning(
-                "Ed25519 public key not found at %s — skipping verification",
+                "SWUpdate verification cert not found at %s — skipping verification",
                 self._public_key_path,
             )
             return True, ""  # No key = skip verification (dev mode)

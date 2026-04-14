@@ -10,7 +10,7 @@ Endpoints:
   POST /ota/usb/import         - import .swu bundle from USB (admin)
 
 OTA uses swupdate with A/B partition scheme.
-Images must be Ed25519 signed — unsigned images are rejected.
+Production images are verified via CMS signatures and SWUpdate certificates.
 """
 
 import os

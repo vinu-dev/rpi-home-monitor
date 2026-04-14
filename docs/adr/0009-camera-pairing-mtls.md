@@ -59,8 +59,8 @@ The server's first-boot provisioning already generates the CA. This ADR formaliz
         └── cam-<id>.crt    # Revoked certs (audit trail)
 ```
 
-**Why ECDSA P-256 (not Ed25519 for TLS certs):**
-Ed25519 is used for OTA image signing (ADR-0008) where we control both sides. For TLS certificates, ECDSA P-256 has broader library support — OpenSSL, nginx, MediaMTX, and Python's `ssl` module all handle P-256 natively. Ed25519 TLS cert support is still inconsistent across components.
+**Why ECDSA P-256 for TLS certs:**
+ECDSA P-256 has broad library support — OpenSSL, nginx, MediaMTX, and Python's `ssl` module all handle P-256 natively. The OTA path in ADR-0008 also uses a certificate-based CMS flow, so this repo now standardizes on P-256 for both TLS certs and SWUpdate signing certs.
 
 **Certificate validity:**
 
@@ -242,7 +242,7 @@ This makes pairing the single trust establishment ceremony. One pairing flow →
 
 - **Server-local CA**: No external CA dependency. The server IS the trust root — appropriate for a self-hosted home system
 - **PIN-based pairing**: Familiar pattern (Bluetooth, WiFi Direct, HomeKit). Simple to implement, easy for non-technical users, secure enough for LAN-only. HomeKit uses a similar SRP-based PIN exchange (8-digit) — our 6-digit PIN with rate limiting is comparable security for the threat model
-- **ECDSA P-256**: Already in use (CA cert exists). Best balance of security, library support, and performance. Ed25519 TLS cert support is inconsistent across nginx, MediaMTX, and Python ssl
+- **ECDSA P-256**: Already in use (CA cert exists). Best balance of security, library support, and performance across nginx, MediaMTX, Python ssl, and the SWUpdate CMS flow
 - **5-year cert validity**: 1-year (current) is too short — requires frequent renewal on a home device. 10-year is lazy — no crypto rotation. 5-year with renewal reminder balances both
 - **In-memory revocation**: With <10 cameras, a revocation set rebuilt from disk on startup is simpler and more reliable than CRL/OCSP infrastructure
 - **Single pairing ceremony**: One flow establishes mTLS identity, OTA trust, and LUKS key material. Avoids three separate provisioning steps
