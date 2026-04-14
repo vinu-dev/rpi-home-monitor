@@ -607,7 +607,7 @@ Server browses:
 
 ### 6.3 OTA Update Flow
 
-> **Status: Implemented.** Server OTA service (verify, stage, install), camera OTA agent (port 8080, mTLS), and USB detection are operational. See ADR-0008.
+> **Status: Partially implemented.** The target OTA architecture is defined and major pieces exist, but the full production path (signed bundles, full-system update, rollback, USB/import modes) is not yet fully validated on real hardware. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
 
 **Delivery modes** (all feed into single `inbox → verify → staging → install` pipeline):
 ```
@@ -620,7 +620,7 @@ Server browses:
 
 **Full-system update (.swu):**
 ```
-1. Ed25519 signature verification in inbox
+1. Ed25519 signature verification in inbox (production target; dev builds may bypass signing per ADR-0014)
 2. SWUpdate installs to inactive rootfs (A→B or B→A)
 3. U-Boot env: upgrade_available=1, boot_count=0, bootlimit=3
 4. Reboot into new partition
@@ -630,7 +630,7 @@ Server browses:
 
 **App-only update (.tar.zst + .sig):**
 ```
-1. Ed25519 signature verification
+1. Signature verification in production; dev builds may bypass signing per ADR-0014
 2. Extract to /opt/monitor/releases/<version>/
 3. Symlink swap: current → new version
 4. systemctl restart <service>

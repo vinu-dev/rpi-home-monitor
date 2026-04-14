@@ -73,7 +73,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
-| OTA Updates | Signed firmware updates with A/B rollback |
+| OTA Updates | Dev path works today; production-signed OTA with A/B rollback is designed but not yet fully hardware-validated |
 | Audit Logging | All admin actions logged (append-only) |
 | Encrypted Storage | LUKS-encrypted /data partition for recordings and config |
 | Firewall | nftables — cameras can only talk to server, minimal open ports |
@@ -92,7 +92,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
 | Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
-| OTA updates | **Implemented** | Server OTA service (verify, stage, install) + camera OTA agent (port 8080, mTLS) |
+| OTA updates | **Partial** | Dev-oriented flow exists; production signing and full end-to-end OTA validation are still in progress. See `docs/update-roadmap.md` |
 
 ## Quick Start
 

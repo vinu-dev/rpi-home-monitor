@@ -20,6 +20,14 @@ OTA bundle signing is **disabled for dev builds** and **enabled for production b
 - **`SWUPDATE_SIGNING = "0"` (default):** `CONFIG_SIGNED_IMAGES` is patched out of the swupdate defconfig at build time. The daemon accepts any bundle without signature verification. No cert is required in the image or at build time.
 - **`SWUPDATE_SIGNING = "1"` (prod):** `CONFIG_SIGNED_IMAGES=y` and `CONFIG_SIGALG_CMS=y` remain in the defconfig. The public signing certificate (`swupdate-public.crt`) is baked into the image at `/etc/swupdate-public.crt`. The swupdate daemon is configured via `/etc/swupdate/conf.d/00-home-monitor` to pass `-k /etc/swupdate-public.crt` at startup.
 
+## Current validation status
+
+- **Dev signing bypass:** actively used and intentional
+- **Production signing design:** implemented in the build/config pipeline
+- **Production signing on real hardware:** not yet fully validated end-to-end
+
+The repo must not describe production OTA signing as fully proven until that hardware validation is complete. See `docs/update-roadmap.md`.
+
 ## Implementation
 
 **`meta-home-monitor/recipes-support/swupdate/swupdate_%.bbappend`**

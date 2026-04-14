@@ -482,8 +482,10 @@ MicroSD cards degrade with writes. Signs of failure:
 
 ### 8.3 Firmware Updates (OTA)
 
+> **Current status:** dev builds are the primary tested update path right now. Production signing and full production OTA validation are not yet fully proven on real hardware. See [update-roadmap.md](./update-roadmap.md).
+
 ```bash
-# On your build machine, sign the update:
+# Production build: sign the update
 ./scripts/sign-image.sh build/tmp/deploy/images/raspberrypi4-64/home-monitor-image-prod-*.wic.bz2
 
 # Upload via the web dashboard: System → OTA Update

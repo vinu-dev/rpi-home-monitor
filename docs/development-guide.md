@@ -562,11 +562,13 @@ When changing one, check if the others need updating:
 
 ### 6.2 OTA Updates
 
-- **All OTA images must be signed** with Ed25519 (`scripts/sign-image.sh`).
-- **Never push an unsigned image.** Devices will reject it.
+- **Production OTA images must be signed** with Ed25519 (`scripts/sign-image.sh`).
+- **Dev builds may intentionally bypass signing** via `SWUPDATE_SIGNING = "0"` to remove iteration friction in the lab.
+- **Unsigned OTA is never production-ready.**
 - **Test OTA on a dev device first** before pushing to prod.
 - **The signing private key is never committed to git.** It lives in `~/.monitor-keys/` on the build machine only.
 - **Rollback:** If a new rootfs fails to boot 3 times, the device automatically rolls back. Never disable this.
+- **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/update-roadmap.md`.
 
 ### 6.3 Secrets Management
 

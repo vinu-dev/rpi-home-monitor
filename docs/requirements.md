@@ -348,7 +348,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-CAM-06: OTA Update Support
 
-> **Status: Implemented.** Camera OTA agent at `app/camera/camera_streamer/ota_agent.py` (HTTP server on port 8080, mTLS). See ADR-0008.
+> **Status: Partially implemented.** Camera OTA agent and supporting code exist, but the full production update path is not yet fully validated on real hardware. Dev builds intentionally allow signing bypass. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - Accept update images pushed from server over HTTPS (mTLS authenticated, ADR-0009)
@@ -356,7 +356,8 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - App-only updates use symlink swap (`/opt/camera/releases/<version>/` with `current` symlink), no reboot
 - Automatic rollback if new rootfs fails health check within 90 seconds
 - Report current firmware version to server via mDNS TXT record
-- Ed25519 signature verification before any install (public key in rootfs)
+- Production target: signature verification before install (public key in rootfs)
+- Dev policy: signing may be disabled to reduce iteration friction
 
 #### SR-CAM-07: System Watchdog
 
@@ -448,7 +449,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-SRV-10: OTA Update Management
 
-> **Status: Implemented.** Server OTA service at `app/server/monitor/services/ota_service.py` with API at `app/server/monitor/api/ota.py`. See ADR-0008.
+> **Status: Partially implemented.** Server OTA service and API exist, but the production-grade end-to-end path (signed full-system update, rollback, USB/import validation) is not yet fully proven on real hardware. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):
@@ -460,7 +461,8 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - **Two artifact types:**
   - `.swu` — full-system A/B rootfs update (requires reboot)
   - `.tar.zst` + detached `.sig` — app-only update (symlink swap, no reboot)
-- Ed25519 signature verification before any install (source is never trust)
+- Production target: signature verification before any install (source is never trust)
+- Dev policy: signing may be disabled on dev images to support fast lab iteration
 - Artifact naming: `hm-<target>-<type>-<version>.<ext>` (e.g., `hm-server-system-1.2.0.swu`)
 - Update status tracking: idle, downloading, verifying, staging, installing, rebooting, confirming, success, failed, rolled-back
 - Automatic rollback on failed boot (3-attempt threshold) or failed health check (90s window)
