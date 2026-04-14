@@ -207,9 +207,21 @@ class TestConfirm:
         store.get_camera.return_value = cam
         svc = CameraService(store)
         result, error, status = svc.confirm("cam-001")
-        assert status == 400
-        assert error == "Camera is already confirmed"
-        assert result is None
+        assert status == 200
+        assert error == ""
+        assert result["status"] == "online"
+        store.save_camera.assert_not_called()
+
+    def test_confirm_is_idempotent_for_offline_camera(self):
+        cam = _make_camera(status="offline", paired_at="2026-04-11T10:00:00Z")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        result, error, status = svc.confirm("cam-001")
+        assert status == 200
+        assert error == ""
+        assert result["status"] == "offline"
+        assert result["paired_at"] == "2026-04-11T10:00:00Z"
         store.save_camera.assert_not_called()
 
     def test_returns_404_when_camera_not_found(self):

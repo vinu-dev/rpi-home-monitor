@@ -128,7 +128,7 @@ class CameraService:
             return None, "Camera not found", 404
 
         if camera.status != "pending":
-            return None, "Camera is already confirmed", 400
+            return self._confirmed_result(camera), "", 200
 
         camera.name = name or camera.name or camera_id
         camera.location = location or camera.location
@@ -149,16 +149,7 @@ class CameraService:
             f"confirmed camera {camera_id} as '{camera.name}'",
         )
 
-        return (
-            {
-                "id": camera.id,
-                "name": camera.name,
-                "status": camera.status,
-                "paired_at": camera.paired_at,
-            },
-            "",
-            200,
-        )
+        return self._confirmed_result(camera), "", 200
 
     def update(
         self, camera_id: str, data: dict, user: str = "", ip: str = ""
@@ -257,6 +248,16 @@ class CameraService:
                 return "name must be 1-64 characters"
 
         return ""
+
+    @staticmethod
+    def _confirmed_result(camera) -> dict:
+        """Serialize the minimal dashboard payload for a confirmed camera."""
+        return {
+            "id": camera.id,
+            "name": camera.name or camera.id,
+            "status": camera.status,
+            "paired_at": camera.paired_at,
+        }
 
     def _log_audit(self, event, user, ip, detail):
         """Log audit event, swallowing errors."""

@@ -19,8 +19,11 @@ Design patterns:
 import logging
 import os
 import socket
+import ssl
 import subprocess
 import time
+import urllib.error
+import urllib.request
 
 from camera_streamer import led
 from camera_streamer.capture import CaptureManager
@@ -183,9 +186,6 @@ class CameraLifecycle:
         log.info("Camera not paired — starting status server for /pair endpoint")
         led.setup_mode()
 
-        # Register with server so it appears in the dashboard
-        self._register_with_server()
-
         # Start status server so /pair endpoint is accessible
         self._status_server = CameraStatusServer(
             self._config,
@@ -197,7 +197,12 @@ class CameraLifecycle:
         self._status_server.start()
 
         # Poll until paired or shutdown
+        last_registration_attempt = 0.0
         while not self._is_shutdown():
+            now = time.monotonic()
+            if now - last_registration_attempt >= 10:
+                self._register_with_server()
+                last_registration_attempt = now
             if self._pairing.is_paired:
                 log.info("Pairing complete — certificates stored")
                 self._status_server.stop()
@@ -310,19 +315,29 @@ class CameraLifecycle:
             return
         server = self._config.server_ip
         camera_id = self._config.camera_id
-        url = f"http://{server}:5000/api/v1/pair/register"
+        if not server:
+            return
+        if "://" in server:
+            base_url = server.rstrip("/")
+        else:
+            base_url = f"https://{server}"
+        url = f"{base_url}/api/v1/pair/register"
         try:
             import json
-            import urllib.request
 
             data = json.dumps({"camera_id": camera_id}).encode()
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
             req = urllib.request.Request(
                 url, data=data, headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
                 log.info("Registered with server as pending (status=%d)", resp.status)
-        except Exception as e:
-            log.debug("Server registration failed (will retry via mDNS): %s", e)
+        except urllib.error.HTTPError as e:
+            log.debug("Server registration rejected by %s: HTTP %s", url, e.code)
+        except (urllib.error.URLError, OSError) as e:
+            log.debug("Server registration failed for %s: %s", url, e)
 
     HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
 

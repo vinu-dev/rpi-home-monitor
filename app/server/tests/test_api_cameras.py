@@ -156,7 +156,8 @@ class TestConfirmCamera:
         _login(app, client)
         _add_camera(app, "cam-001", "online")
         response = client.post("/api/v1/cameras/cam-001/confirm")
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.get_json()["status"] == "online"
 
     def test_confirm_nonexistent(self, app, client):
         _login(app, client)
