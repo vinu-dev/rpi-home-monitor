@@ -76,7 +76,9 @@ def test_server_runtime_layout_exists_over_ssh(server_target):
 
 @pytest.mark.hardware
 def test_camera_service_is_healthy_over_ssh(camera_target):
-    camera_streamer = camera_target.ssh("systemctl is-active camera-streamer").stdout.strip()
+    camera_streamer = camera_target.ssh(
+        "systemctl is-active camera-streamer"
+    ).stdout.strip()
     assert camera_streamer == "active"
 
 

@@ -4,6 +4,7 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 88
+exclude = [".claude/worktrees"]
 
 [tool.ruff.lint]
 select = [
@@ -33,6 +34,7 @@ ignore = [
 "tests/**" = ["B011", "SIM300"]  # assert True/False, yoda conditions in tests
 "**/conftest.py" = ["F811"]       # fixture redefinitions
 "**/wifi_setup.py" = ["I001"]     # backward compat re-exports need manual import order
+"scripts/testing/**" = ["E402"]   # sys.path manipulation before imports
 
 [tool.ruff.lint.isort]
 known-first-party = ["monitor", "camera_streamer"]

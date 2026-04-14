@@ -6,9 +6,9 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import pytest
 
@@ -35,7 +35,9 @@ class HardwareTarget:
     def target(self) -> str:
         return f"{self.ssh_user}@{self.host}"
 
-    def ssh(self, command: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def ssh(
+        self, command: str, *, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         if shutil.which("ssh") is None:
             pytest.skip("ssh client not installed on this runner")
         return subprocess.run(
@@ -60,7 +62,9 @@ class HardwareTarget:
 
     def read_journal(self, services: Iterable[str], *, lines: int = 200) -> str:
         service_args = " ".join(f"-u {service}" for service in services)
-        result = self.ssh(f"journalctl {service_args} -n {lines} --no-pager", check=False)
+        result = self.ssh(
+            f"journalctl {service_args} -n {lines} --no-pager", check=False
+        )
         return result.stdout or result.stderr
 
 
@@ -91,7 +95,9 @@ def hardware_artifact_root() -> Path:
 @pytest.fixture
 def hardware_artifact_dir(request, hardware_artifact_root: Path) -> Path:
     """Per-test artifact directory."""
-    node_name = request.node.nodeid.replace("::", "__").replace("/", "_").replace("\\", "_")
+    node_name = (
+        request.node.nodeid.replace("::", "__").replace("/", "_").replace("\\", "_")
+    )
     path = hardware_artifact_root / node_name
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -118,8 +124,8 @@ def wait_for_http():
     """Poll an HTTP(S) endpoint until it responds."""
 
     def _wait(url: str, *, timeout: int = 60, insecure: bool = True) -> None:
-        import urllib.request
         import ssl
+        import urllib.request
 
         deadline = time.time() + timeout
         context = ssl._create_unverified_context() if insecure else None
