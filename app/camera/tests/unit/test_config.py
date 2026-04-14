@@ -125,6 +125,60 @@ class TestMTLSConfig:
         assert camera_config.has_client_cert is True
 
 
+class TestServerHttpsUrl:
+    """Test server_https_url property used for API registration and pairing."""
+
+    def test_https_url_from_hostname(self, camera_config):
+        """Should build HTTPS URL from bare hostname."""
+        assert camera_config.server_https_url == "https://192.168.1.100"
+
+    def test_https_url_empty_when_no_server(self, unconfigured_config):
+        """Should return empty string when server_ip is not set."""
+        assert unconfigured_config.server_https_url == ""
+
+    def test_https_url_passthrough_existing_scheme(self, data_dir):
+        """Should pass through URL with existing scheme unchanged."""
+        mgr = ConfigManager(data_dir=str(data_dir))
+        (data_dir / "config").mkdir(parents=True, exist_ok=True)
+        (data_dir / "config" / "camera.conf").write_text(
+            'SERVER_IP="https://my-server.local"\n'
+            'SERVER_PORT="8554"\n'
+            'STREAM_NAME="stream"\n'
+            'WIDTH="1920"\nHEIGHT="1080"\nFPS="25"\n'
+            'CAMERA_ID="cam-test"\n'
+        )
+        mgr.load()
+        assert mgr.server_https_url == "https://my-server.local"
+
+    def test_https_url_strips_trailing_slash(self, data_dir):
+        """Should strip trailing slash from URL with existing scheme."""
+        mgr = ConfigManager(data_dir=str(data_dir))
+        (data_dir / "config").mkdir(parents=True, exist_ok=True)
+        (data_dir / "config" / "camera.conf").write_text(
+            'SERVER_IP="https://my-server.local/"\n'
+            'SERVER_PORT="8554"\n'
+            'STREAM_NAME="stream"\n'
+            'WIDTH="1920"\nHEIGHT="1080"\nFPS="25"\n'
+            'CAMERA_ID="cam-test"\n'
+        )
+        mgr.load()
+        assert mgr.server_https_url == "https://my-server.local"
+
+    def test_https_url_from_mdns_hostname(self, data_dir):
+        """Should build HTTPS URL from .local mDNS hostname."""
+        mgr = ConfigManager(data_dir=str(data_dir))
+        (data_dir / "config").mkdir(parents=True, exist_ok=True)
+        (data_dir / "config" / "camera.conf").write_text(
+            'SERVER_IP="rpi-divinu.local"\n'
+            'SERVER_PORT="8554"\n'
+            'STREAM_NAME="stream"\n'
+            'WIDTH="1920"\nHEIGHT="1080"\nFPS="25"\n'
+            'CAMERA_ID="cam-test"\n'
+        )
+        mgr.load()
+        assert mgr.server_https_url == "https://rpi-divinu.local"
+
+
 class TestPasswordManagement:
     """Test camera admin password hashing and verification."""
 

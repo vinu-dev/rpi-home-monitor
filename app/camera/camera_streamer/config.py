@@ -102,6 +102,19 @@ class ConfigManager:
         return f"rtsps://{self.server_ip}:8322/{path}"
 
     @property
+    def server_https_url(self):
+        """Server HTTPS base URL for API calls (registration, pairing).
+
+        Returns empty string when server_ip is not configured.
+        Handles both bare hostnames and URLs with existing schemes.
+        """
+        if not self.server_ip:
+            return ""
+        if "://" in self.server_ip:
+            return self.server_ip.rstrip("/")
+        return f"https://{self.server_ip}"
+
+    @property
     def has_client_cert(self):
         """Return True if client certificate exists (camera is paired)."""
         return os.path.isfile(os.path.join(self.certs_dir, "client.crt"))

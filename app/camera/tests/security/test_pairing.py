@@ -257,6 +257,7 @@ class TestPairingLifecycleState:
 
         config = MagicMock(
             server_ip="192.168.1.100",
+            server_https_url="https://192.168.1.100",
             camera_id="cam-test",
             is_configured=True,
         )
