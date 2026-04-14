@@ -124,16 +124,23 @@ The repo uses these GitHub Actions secrets:
 
 - `OTA_SIGNING_KEY`
 - `OTA_SIGNING_CERT`
+- `OTA_BACKUP_RECOVERY_PASSPHRASE`
 
 To publish the current local keypair into the repo secrets:
 
 ```bash
-./scripts/publish-ota-github-secrets.sh --repo vinu-dev/rpi-home-monitor
+./scripts/publish-ota-github-secrets.sh \
+  --repo vinu-dev/rpi-home-monitor \
+  --recovery-passphrase-file ~/.monitor-keys/ota-backup-passphrase.txt
 ```
 
 The smoke workflow is:
 
 - [.github/workflows/ota-signing-smoke.yml](../.github/workflows/ota-signing-smoke.yml)
+
+The emergency recovery workflow is:
+
+- [.github/workflows/ota-key-recovery.yml](../.github/workflows/ota-key-recovery.yml)
 
 What it proves:
 
@@ -142,6 +149,23 @@ What it proves:
 3. `scripts/build-swu.sh --sign` can generate a signed `.swu` bundle in GitHub Actions
 
 This does not replace real hardware OTA validation. It only validates secret-based signing plumbing.
+
+### 5.1 Emergency Recovery From GitHub Secrets
+
+If the local keypair and local encrypted backup are both lost, recovery can still be performed from GitHub Actions secrets.
+
+Use the manual workflow:
+
+- `OTA Key Recovery`
+
+Recommended protection model:
+
+1. keep the workflow behind a protected GitHub environment named `ota-key-recovery`
+2. require manual approval before jobs in that environment can start
+3. download the emitted encrypted artifact
+4. decrypt it locally with the stored recovery passphrase
+
+The recovery workflow does **not** expose the raw private key in normal logs. It emits an encrypted backup artifact instead.
 
 ---
 
