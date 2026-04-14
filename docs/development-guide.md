@@ -457,6 +457,7 @@ cd app/camera && pytest     # Camera: coverage + tests
 
 - **Test on actual hardware** before merging significant changes. QEMU doesn't have camera hardware.
 - **For app changes:** Use the rsync workflow on a dev image. Don't rebuild the full Yocto image for every code change.
+- **For app changes:** Use `scripts/deploy-dev-app.sh` on a dev image. It preserves permissions and validates services after deploy.
 - **For recipe changes:** Full bitbake build + parse check required.
 - **API testing:** Document curl commands for each endpoint in the PR description.
 - **Security testing:** Run through the threat model checklist (docs/architecture.md Section 3.1) for any change that touches auth, networking, or data storage.

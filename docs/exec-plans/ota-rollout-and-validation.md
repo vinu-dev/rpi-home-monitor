@@ -54,12 +54,19 @@ This plan is the durable handoff record for the work.
 - Current status:
   - PR `#52` has already been merged to `main`
   - OTA/update docs now distinguish dev flow vs production readiness
-  - this branch is adding the repo-level resumption workflow first, per user request
+  - resumability rules and exec-plan workflow have been added on this branch
+  - scripted dev app deploy flow now exists at `scripts/deploy-dev-app.sh`
+  - scripted dev deploy has been validated on live server and camera hardware
 - Last completed step:
-  - synced local repo to merged `main` and created `codex/add-resumption-workflow`
+  - completed live dev deploy validation on:
+    - server `192.168.1.245`
+    - camera `192.168.1.186`
 - Next step:
-  - commit the resumption workflow changes
-  - then start the dev scripted app-only deploy workflow on a follow-up change or same branch if still coherent
+  - commit the resumability + dev deploy workflow changes
+  - then begin production OTA validation:
+    - signing prerequisites
+    - build artifacts
+    - what is already validated vs still blocked
 - Branch / PR:
   - current branch: `codex/add-resumption-workflow`
   - next PR: not created yet
@@ -71,8 +78,9 @@ This plan is the durable handoff record for the work.
   - `git status --short --branch`
   - `python scripts/ai/validate_repo_ai_setup.py`
   - `python scripts/ai/check_doc_links.py`
-  - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md`
-  - after commit: inspect `docs/update-roadmap.md` and begin deploy-script implementation
+  - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
+  - `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
+  - after commit: inspect signing/build scripts and begin production OTA validation
 - Open risks / blockers:
   - production OTA validation may require long Yocto builds and multiple reboots
   - signed production flow may still expose implementation gaps not visible in dev builds
@@ -83,6 +91,9 @@ This plan is the durable handoff record for the work.
 - `python scripts/ai/validate_repo_ai_setup.py`
 - `python scripts/ai/check_doc_links.py`
 - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md`
+- `bash -n scripts/deploy-dev-app.sh`
+- `pre-commit run --files scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
+- `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
 
 ## Risks
 
