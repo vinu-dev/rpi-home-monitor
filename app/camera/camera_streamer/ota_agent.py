@@ -254,6 +254,17 @@ class OTAAgent:
         except OSError as e:
             return False, str(e)
 
+    def _install_command(self, bundle_path):
+        """Build the swupdate install command for the current environment."""
+        public_cert = "/etc/swupdate-public.crt"
+        if not os.path.isfile(public_cert):
+            public_cert = os.path.join(self._config.certs_dir, "swupdate-public.crt")
+
+        cmd = ["swupdate", "-i", bundle_path]
+        if os.path.isfile(public_cert):
+            cmd.extend(["-k", public_cert])
+        return cmd
+
     def _install_bundle(self, bundle_path):
         """Install a .swu bundle via swupdate.
 
@@ -262,7 +273,7 @@ class OTAAgent:
         """
         try:
             result = subprocess.run(
-                ["swupdate", "-i", bundle_path],
+                self._install_command(bundle_path),
                 capture_output=True,
                 text=True,
                 timeout=600,

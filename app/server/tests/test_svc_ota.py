@@ -212,17 +212,31 @@ class TestInstallBundle:
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         ok, err = svc.install_bundle(bundle, user="admin", ip="1.2.3.4")
         assert ok is True
         assert svc.get_status("server")["state"] == "installed"
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0] == [
+            "swupdate",
+            "-i",
+            bundle,
+            "-k",
+            key,
+        ]
 
     @patch("monitor.services.ota_service.subprocess.run")
     def test_install_failure(self, mock_run, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
 
         mock_run.return_value = MagicMock(
             returncode=1, stdout="", stderr="write failed"
@@ -230,6 +244,25 @@ class TestInstallBundle:
         ok, err = svc.install_bundle(bundle)
         assert ok is False
         assert svc.get_status("server")["state"] == "error"
+        assert mock_run.call_args[0][0] == [
+            "swupdate",
+            "-i",
+            bundle,
+            "-k",
+            key,
+        ]
+
+    @patch("monitor.services.ota_service.subprocess.run")
+    def test_install_without_key_uses_plain_command(self, mock_run, svc, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        ok, err = svc.install_bundle(bundle)
+        assert ok is True
+        assert err == ""
+        assert mock_run.call_args[0][0] == ["swupdate", "-i", bundle]
 
     @patch("monitor.services.ota_service.subprocess.run")
     def test_install_swupdate_not_found(self, mock_run, svc, data_dir):

@@ -143,7 +143,51 @@ class TestInstallBundle:
     """Test bundle installation via swupdate."""
 
     @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_success(self, mock_run, agent, tmp_path):
+    def test_install_success(self, mock_run, agent, config, tmp_path):
+        bundle = str(tmp_path / "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
+        with open(key_path, "w") as f:
+            f.write("PUBLIC KEY")
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        ok, err = agent._install_bundle(bundle)
+        assert ok is True
+        assert err == ""
+        assert mock_run.call_args[0][0] == [
+            "swupdate",
+            "-i",
+            bundle,
+            "-k",
+            key_path,
+        ]
+
+    @patch("camera_streamer.ota_agent.subprocess.run")
+    def test_install_failure(self, mock_run, agent, config, tmp_path):
+        bundle = str(tmp_path / "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
+        with open(key_path, "w") as f:
+            f.write("PUBLIC KEY")
+
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="write failed"
+        )
+        ok, err = agent._install_bundle(bundle)
+        assert ok is False
+        assert "write failed" in err
+        assert mock_run.call_args[0][0] == [
+            "swupdate",
+            "-i",
+            bundle,
+            "-k",
+            key_path,
+        ]
+
+    @patch("camera_streamer.ota_agent.subprocess.run")
+    def test_install_without_key_uses_plain_command(self, mock_run, agent, tmp_path):
         bundle = str(tmp_path / "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
@@ -152,19 +196,7 @@ class TestInstallBundle:
         ok, err = agent._install_bundle(bundle)
         assert ok is True
         assert err == ""
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_failure(self, mock_run, agent, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="write failed"
-        )
-        ok, err = agent._install_bundle(bundle)
-        assert ok is False
-        assert "write failed" in err
+        assert mock_run.call_args[0][0] == ["swupdate", "-i", bundle]
 
     @patch("camera_streamer.ota_agent.subprocess.run")
     def test_install_not_found(self, mock_run, agent, tmp_path):
