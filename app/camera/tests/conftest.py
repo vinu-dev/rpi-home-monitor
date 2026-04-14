@@ -1,13 +1,50 @@
 """
-Shared test fixtures for the camera-streamer test suite.
+Shared fixtures and collection rules for layered camera-streamer tests."""
 
-Provides temporary data directories and mock configurations
-that mirror the production /data layout on the Zero 2W.
-"""
+from pathlib import Path
 
 import pytest
 
 from camera_streamer.config import ConfigManager
+
+LAYER_MARKERS = {
+    "unit": "unit",
+    "integration": "integration",
+    "contracts": "contract",
+    "security": "security",
+}
+
+
+def _required_marker(node_path: Path) -> str | None:
+    parts = node_path.parts
+    if "tests" not in parts:
+        return None
+    tests_index = parts.index("tests")
+    if tests_index + 1 >= len(parts):
+        return None
+    return LAYER_MARKERS.get(parts[tests_index + 1])
+
+
+def pytest_collection_modifyitems(config, items):
+    """Enforce that camera tests live in an explicit layer directory."""
+    for item in items:
+        marker = _required_marker(Path(str(item.fspath)))
+        if marker is None:
+            continue
+
+        marker_names = {mark.name for mark in item.iter_markers()}
+        if marker not in marker_names:
+            item.add_marker(getattr(pytest.mark, marker))
+
+        conflicting = (
+            set(LAYER_MARKERS.values())
+            .difference({"security", marker})
+            .intersection(marker_names)
+        )
+        if conflicting:
+            raise pytest.UsageError(
+                f"{item.nodeid} has conflicting layer markers: {sorted(conflicting)}"
+            )
 
 
 @pytest.fixture

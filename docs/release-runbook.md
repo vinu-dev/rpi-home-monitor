@@ -54,6 +54,11 @@ the default path users should depend on.
 - copying restored signing keys to a new VM
 - final hardware validation and release sign-off
 
+Bridge-phase note:
+
+- until the full hardware lab is installed, the repo uses SSH-based hardware validation as an interim step
+- the active hardware lab rollout plan is tracked in [Hardware Lab Rollout](./exec-plans/hardware-lab-rollout.md)
+
 ---
 
 ## 3. Current Truth

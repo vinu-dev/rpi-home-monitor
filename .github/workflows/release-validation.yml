@@ -1,0 +1,80 @@
+name: Release Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  signed-artifacts:
+    name: Signed Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pytest tests/yocto -k "parse"
+          echo "Signed production artifact build belongs on the release runner."
+
+  server-ota-gate:
+    name: Server OTA Gate
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest labgrid
+          mkdir -p artifacts/hardware/release-server-ota
+          export HIL_ARTIFACT_DIR="$PWD/artifacts/hardware/release-server-ota"
+          pytest tests/hardware -m "hardware and ota" -v
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-server-ota-artifacts
+          path: artifacts/hardware/release-server-ota
+
+  camera-ota-gate:
+    name: Camera OTA Gate
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest labgrid
+          mkdir -p artifacts/hardware/release-camera-ota
+          export HIL_ARTIFACT_DIR="$PWD/artifacts/hardware/release-camera-ota"
+          pytest tests/hardware -m "hardware and ota" -v
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-camera-ota-artifacts
+          path: artifacts/hardware/release-camera-ota
+
+  post-update-health:
+    name: Post Update Health
+    runs-on: self-hosted
+    needs:
+      - server-ota-gate
+      - camera-ota-gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest labgrid
+          mkdir -p artifacts/hardware/release-post-update
+          export HIL_ARTIFACT_DIR="$PWD/artifacts/hardware/release-post-update"
+          pytest tests/hardware -m "hardware and not ota" -v
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-post-update-artifacts
+          path: artifacts/hardware/release-post-update

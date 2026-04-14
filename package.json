@@ -1,0 +1,12 @@
+{
+  "name": "rpi-home-monitor-test-automation",
+  "private": true,
+  "scripts": {
+    "playwright:install": "playwright install --with-deps chromium",
+    "test:e2e:smoke": "playwright test --project=smoke",
+    "test:e2e:full": "playwright test --project=full"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.1"
+  }
+}

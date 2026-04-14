@@ -1,0 +1,723 @@
+openapi: 3.0.3
+info:
+  title: RPi Home Monitor Server API
+  version: "1.0"
+servers:
+  - url: https://127.0.0.1:5443
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    UserSession:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, viewer]
+    LoginResponse:
+      type: object
+      required: [user, csrf_token]
+      properties:
+        user:
+          $ref: "#/components/schemas/UserSession"
+        csrf_token:
+          type: string
+        must_change_password:
+          type: boolean
+    SetupStatus:
+      type: object
+      required: [setup_complete]
+      properties:
+        setup_complete:
+          type: boolean
+        wifi_saved:
+          type: boolean
+        admin_password_set:
+          type: boolean
+        hostname:
+          type: string
+    Camera:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+        ip:
+          type: string
+        recording_mode:
+          type: string
+        resolution:
+          type: string
+        fps:
+          type: integer
+        paired_at:
+          type: string
+        last_seen:
+          type: string
+        firmware_version:
+          type: string
+    CameraStatus:
+      allOf:
+        - $ref: "#/components/schemas/Camera"
+        - type: object
+          properties:
+            uptime:
+              type: string
+    PairingResponse:
+      type: object
+      required: [pin, expires_in]
+      properties:
+        pin:
+          type: string
+        expires_in:
+          type: integer
+    PairExchangeRequest:
+      type: object
+      required: [pin, camera_id]
+      properties:
+        pin:
+          type: string
+        camera_id:
+          type: string
+    PairExchangeResponse:
+      type: object
+      required: [client_cert, client_key, ca_cert, pairing_secret, rtsps_url]
+      properties:
+        client_cert:
+          type: string
+        client_key:
+          type: string
+        ca_cert:
+          type: string
+        pairing_secret:
+          type: string
+        rtsps_url:
+          type: string
+    HealthResponse:
+      type: object
+      required: [cpu_temp_c, cpu_usage_percent, memory, disk, warnings, status]
+      properties:
+        cpu_temp_c:
+          type: number
+        cpu_usage_percent:
+          type: number
+        memory:
+          type: object
+          properties:
+            percent:
+              type: number
+        disk:
+          type: object
+          properties:
+            percent:
+              type: number
+        warnings:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+    SystemInfo:
+      type: object
+      required: [hostname, firmware_version, uptime]
+      properties:
+        hostname:
+          type: string
+        firmware_version:
+          type: string
+        uptime:
+          type: object
+          properties:
+            seconds:
+              type: integer
+            display:
+              type: string
+        os_name:
+          type: string
+        os_version:
+          type: string
+        os_build:
+          type: string
+        os_variant:
+          type: string
+    Settings:
+      type: object
+      properties:
+        timezone:
+          type: string
+        hostname:
+          type: string
+        storage_threshold_percent:
+          type: integer
+        clip_duration_seconds:
+          type: integer
+        firmware_version:
+          type: string
+    WifiStatus:
+      type: object
+      properties:
+        ssid:
+          type: string
+        networks:
+          type: array
+          items:
+            type: object
+            properties:
+              ssid:
+                type: string
+    UserSummary:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+    OtaDeviceStatus:
+      type: object
+      properties:
+        state:
+          type: string
+        version:
+          type: string
+        progress:
+          type: integer
+        error:
+          type: string
+        current_version:
+          type: string
+    OtaStatus:
+      type: object
+      required: [server, cameras]
+      properties:
+        server:
+          $ref: "#/components/schemas/OtaDeviceStatus"
+        cameras:
+          type: array
+          items:
+            type: object
+    UploadResponse:
+      type: object
+      required: [message, filename, staged_path]
+      properties:
+        message:
+          type: string
+        filename:
+          type: string
+        staged_path:
+          type: string
+    UsbScanResponse:
+      type: object
+      required: [bundles]
+      properties:
+        bundles:
+          type: array
+          items:
+            type: object
+            properties:
+              filename:
+                type: string
+              path:
+                type: string
+              size:
+                type: integer
+              size_human:
+                type: string
+              device:
+                type: string
+paths:
+  /api/v1/setup/status:
+    get:
+      tags: [setup]
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "423":
+          description: Account locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, csrf_token]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/UserSession"
+                  csrf_token:
+                    type: string
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras:
+    get:
+      tags: [cameras]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Cameras listed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Camera"
+    post:
+      tags: [cameras]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                location:
+                  type: string
+      responses:
+        "201":
+          description: Camera registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Camera"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Duplicate camera
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras/{camera_id}/status:
+    get:
+      tags: [cameras]
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Camera status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraStatus"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras/{camera_id}/pair:
+    post:
+      tags: [pairing]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pairing initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras/{camera_id}/unpair:
+    post:
+      tags: [pairing]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Camera unpaired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /api/v1/pair/register:
+    post:
+      tags: [pairing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [camera_id]
+              properties:
+                camera_id:
+                  type: string
+                firmware_version:
+                  type: string
+      responses:
+        "200":
+          description: Camera registered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+  /api/v1/pair/exchange:
+    post:
+      tags: [pairing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairExchangeRequest"
+      responses:
+        "200":
+          description: Certificates exchanged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairExchangeResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Invalid PIN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Pairing not in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/system/health:
+    get:
+      tags: [system]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Health summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/system/info:
+    get:
+      tags: [system]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: System info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemInfo"
+  /api/v1/settings:
+    get:
+      tags: [settings]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Settings returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+  /api/v1/settings/wifi:
+    get:
+      tags: [settings]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: WiFi status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WifiStatus"
+  /api/v1/users:
+    get:
+      tags: [users]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Users listed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+  /api/v1/ota/status:
+    get:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: OTA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtaStatus"
+  /api/v1/ota/server/upload:
+    post:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: OTA bundle uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Upload validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/ota/server/install:
+    post:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "200":
+          description: OTA install triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /api/v1/ota/camera/{camera_id}/push:
+    post:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version:
+                  type: string
+      responses:
+        "200":
+          description: Camera update queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /api/v1/ota/usb/scan:
+    get:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: USB bundles scanned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsbScanResponse"
+  /api/v1/ota/usb/import:
+    post:
+      tags: [ota]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path:
+                  type: string
+      responses:
+        "200":
+          description: USB bundle imported
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, staged_path]
+                properties:
+                  message:
+                    type: string
+                  staged_path:
+                    type: string

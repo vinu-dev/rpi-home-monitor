@@ -1,0 +1,136 @@
+name: Nightly Validation
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  server-nightly:
+    name: Server Nightly
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/server/requirements-test.txt
+      - run: |
+          pip install -e . -r requirements-test.txt
+          pytest tests/unit tests/integration tests/contracts tests/security \
+            --cov=monitor \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+  camera-nightly:
+    name: Camera Nightly
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/camera
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/camera/requirements-test.txt
+      - run: |
+          pip install -e . -r requirements-test.txt
+          pytest tests/unit tests/integration tests/contracts tests/security \
+            --cov=camera_streamer \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+
+  browser-e2e-full:
+    name: Browser E2E Full
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: |
+          pip install -e app/server -r app/server/requirements-test.txt
+          pip install -e app/camera -r app/camera/requirements-test.txt
+          npm install
+          npx playwright install --with-deps chromium
+          npx playwright test --project=full
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-playwright-report
+          path: |
+            playwright-report
+            test-results
+
+  yocto-runtime:
+    name: Yocto Runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pytest tests/yocto
+
+  hardware-smoke:
+    name: Hardware Smoke
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest labgrid
+          mkdir -p artifacts/hardware/nightly-smoke
+          export HIL_ARTIFACT_DIR="$PWD/artifacts/hardware/nightly-smoke"
+          pytest tests/hardware -m "hardware and not ota" -v
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-hardware-artifacts
+          path: artifacts/hardware/nightly-smoke
+
+  ota-smoke:
+    name: OTA Smoke
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest labgrid
+          mkdir -p artifacts/hardware/nightly-ota
+          export HIL_ARTIFACT_DIR="$PWD/artifacts/hardware/nightly-ota"
+          pytest tests/hardware -m "hardware and ota" -v
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-ota-artifacts
+          path: artifacts/hardware/nightly-ota
+
+  soak:
+    name: Soak
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pytest tests/soak -m soak -v

@@ -1,0 +1,21 @@
+targets:
+  server-dut:
+    resources:
+      - NetworkService:
+          address: 192.168.10.10
+      - RawSerialPort:
+          port: /dev/ttyUSB0
+      - NetworkPowerPort:
+          model: shelly
+          host: 192.168.10.20
+          index: 0
+  camera-dut:
+    resources:
+      - NetworkService:
+          address: 192.168.10.11
+      - RawSerialPort:
+          port: /dev/ttyUSB1
+      - NetworkPowerPort:
+          model: shelly
+          host: 192.168.10.21
+          index: 0

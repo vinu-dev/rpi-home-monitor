@@ -29,6 +29,10 @@ __pycache__/
 htmlcov/
 .coverage
 coverage.xml
+playwright-report/
+test-results/
+node_modules/
+artifacts/hardware/
 
 # Editor
 *.swp

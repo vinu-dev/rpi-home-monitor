@@ -408,58 +408,62 @@ Every PR must satisfy the appropriate layers:
 | Layer | What | Where | When to run | Required? |
 |-------|------|-------|-------------|-----------|
 | **1. Static checks** | `ruff check` + `ruff format --check` | CI + pre-commit | Every push | Always |
-| **2. Unit tests** | Service logic, models, helpers | `tests/test_*.py` | Every push | Always |
-| **3. Integration tests** | Flask routes + services wired together | `tests/test_api_*.py` | Every push | Always |
-| **4. Contract tests** | Exact JSON field names per endpoint | `tests/test_api_contracts.py` | Every push | Always |
-| **5. Smoke tests** | Live hardware: HTTPS, auth, health, cameras | `scripts/smoke-test.sh` | After deploy | Before merge |
+| **2. Unit tests** | Service logic, models, helpers | `tests/unit/` | Every push | Always |
+| **3. Integration tests** | Flask routes + services wired together | `tests/integration/` | Every push | Always |
+| **4. Contract tests** | Hand-written pins + OpenAPI/Schemathesis | `tests/contracts/`, `openapi/` | Every push | Always |
+| **5. Browser E2E** | User-visible dashboard and camera flows | `tests/e2e/playwright/` | Every push | Always |
+| **6. Hardware tests** | Live devices: provisioning, pairing, streaming, OTA | `tests/hardware/` | Nightly / release | Required for release |
 
 **Why contract tests (Layer 4)?** A renamed response field passes unit tests but breaks the frontend. Contract tests pin the exact field names returned by every API endpoint. If a field changes, the contract test fails immediately.
 
-**Why smoke tests (Layer 5)?** Unit/integration tests use mocks. Smoke tests hit a real RPi with real HTTPS, real disk, real systemd services. Run after deploying to hardware:
+**Why hardware tests?** Unit/integration tests use mocks. Hardware tests hit real RPis with real HTTPS, real disk, real services, and OTA flows. The shell smoke scripts remain fallback operator tools, but pytest HIL is the primary automated path.
+
+```bash
+pytest tests/hardware -m hardware
+```
+
+Fallback operator helpers:
 
 ```bash
 ./scripts/smoke-test.sh <server-ip> <password> [camera-ip] [camera-password]
+./scripts/e2e-smoke-test.sh <server-ip> <camera-ip> [admin-password]
 ```
-
-`scripts/smoke-test.sh` expects the camera status UI over HTTPS. If you need
-to validate a live server without the current admin password, set
-`SMOKE_SERVER_COOKIE="session=..."` to reuse a valid authenticated server
-session for read-only smoke checks.
 
 #### Key Rules (non-negotiable)
 
 1. **Every code change must include unit tests.** No PR is merged without tests for the changed code.
-2. **Minimum coverage: Server 80%, Camera 55%.** PRs that drop coverage below these thresholds are blocked. Target: server 90%+, camera 70%+.
+2. **Minimum coverage: Server 80%, Camera 70%.** PRs that drop coverage below these thresholds are blocked. Target: server 90%+, camera 70%+.
 3. **Security-critical code (auth, sessions, passwords, pairing, TLS, certs) must aim for 95%+ coverage.** This includes camera PBKDF2 password hashing and session management.
 4. **Run tests before every commit.** If tests fail, do not commit.
 5. **Test file naming:** `test_<module>.py` — mirrors the module it tests.
-6. **Test location:** `app/server/tests/` and `app/camera/tests/`.
+6. **Test location:** layered directories under `app/server/tests/` and `app/camera/tests/`.
 7. **Contract tests are mandatory for new API endpoints.** Add field assertions to `test_api_contracts.py`.
-8. **Run smoke tests after every deploy to hardware.** Report results in the PR.
+8. **Run browser E2E on every PR and pytest HIL for nightly/release hardware gates.**
 
 ```bash
 # Run before every commit
-cd app/server && pytest     # Server: coverage + tests
-cd app/camera && pytest     # Camera: coverage + tests
+cd app/server && pytest tests/unit tests/integration tests/contracts
+cd app/camera && pytest tests/unit tests/integration tests/contracts
+npx playwright test --project=smoke
 ```
 
 #### Test File Organization
 
 | Pattern | Purpose | Example |
 |---------|---------|---------|
-| `test_<service>.py` | Unit tests for a service | `test_user_service.py` |
-| `test_api_<domain>.py` | Integration tests for API routes | `test_api_cameras.py` |
-| `test_api_contracts.py` | Contract tests (all endpoints) | Field name assertions |
-| `test_svc_<module>.py` | Unit tests for infrastructure services | `test_svc_audit.py` |
-| `test_<module>.py` | Unit tests for non-service modules | `test_auth.py`, `test_store.py` |
+| `unit/test_<service>.py` | Unit tests for a service | `unit/test_user_service.py` |
+| `integration/test_api_<domain>.py` | Integration tests for API routes | `integration/test_api_cameras.py` |
+| `contracts/test_api_contracts.py` | Contract tests (all endpoints) | Field name assertions |
+| `security/test_security.py` | Security regression tests | `security/test_security.py` |
+| `tests/e2e/playwright/` | Browser E2E | `smoke/server-auth-and-dashboard.spec.ts` |
 
 #### Integration / Hardware Testing
 
-- **Test on actual hardware** before merging significant changes. QEMU doesn't have camera hardware.
+- **Test on actual hardware** before release for significant changes. QEMU doesn't have camera hardware.
 - **For app changes:** Use the rsync workflow on a dev image. Don't rebuild the full Yocto image for every code change.
 - **For app changes:** Use `scripts/deploy-dev-app.sh` on a dev image. It preserves permissions and validates services after deploy.
 - **For recipe changes:** Full bitbake build + parse check required.
-- **API testing:** Document curl commands for each endpoint in the PR description.
+- **API testing:** OpenAPI specs and Schemathesis are required for documented endpoints.
 - **Security testing:** Run through the threat model checklist (docs/architecture.md Section 3.1) for any change that touches auth, networking, or data storage.
 
 ---

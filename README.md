@@ -127,8 +127,9 @@ First build takes 2-4 hours. Subsequent builds use cached artifacts and are much
 ## Run Tests
 
 ```bash
-cd app/server && pytest    # threshold: 80% coverage
-cd app/camera && pytest    # threshold: 70% coverage
+cd app/server && pytest tests/unit tests/integration tests/contracts
+cd app/camera && pytest tests/unit tests/integration tests/contracts
+npx playwright test --project=smoke
 ```
 
 Results and coverage reports are available in the [CI workflow](https://github.com/vinu-dev/rpi-home-monitor/actions).

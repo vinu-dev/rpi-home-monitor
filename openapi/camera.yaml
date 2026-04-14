@@ -1,0 +1,253 @@
+openapi: 3.0.3
+info:
+  title: RPi Home Monitor Camera API
+  version: "1.0"
+servers:
+  - url: https://127.0.0.1:5444
+components:
+  securitySchemes:
+    cameraSession:
+      type: apiKey
+      in: cookie
+      name: cam_session
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    CameraLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    CameraStatus:
+      type: object
+      required:
+        [
+          camera_id,
+          hostname,
+          ip_address,
+          wifi_ssid,
+          server_address,
+          server_connected,
+          streaming,
+          paired,
+          cpu_temp,
+          uptime,
+          memory_total_mb,
+          memory_used_mb,
+        ]
+      properties:
+        camera_id:
+          type: string
+        hostname:
+          type: string
+        ip_address:
+          type: string
+        wifi_ssid:
+          type: string
+        server_address:
+          type: string
+        server_connected:
+          type: boolean
+        streaming:
+          type: boolean
+        paired:
+          type: boolean
+        cpu_temp:
+          type: number
+        uptime:
+          type: string
+        memory_total_mb:
+          type: integer
+        memory_used_mb:
+          type: integer
+    NetworkList:
+      type: object
+      required: [networks]
+      properties:
+        networks:
+          type: array
+          items:
+            type: object
+            properties:
+              ssid:
+                type: string
+              signal:
+                type: integer
+    WifiRequest:
+      type: object
+      required: [ssid, password]
+      properties:
+        ssid:
+          type: string
+        password:
+          type: string
+    PasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+    PairRequest:
+      type: object
+      required: [pin, server_url]
+      properties:
+        pin:
+          type: string
+        server_url:
+          type: string
+paths:
+  /login:
+    post:
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CameraLoginRequest"
+      responses:
+        "200":
+          description: Camera login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/status:
+    get:
+      tags: [status]
+      security:
+        - cameraSession: []
+      responses:
+        "200":
+          description: Camera status summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraStatus"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/networks:
+    get:
+      tags: [wifi]
+      security:
+        - cameraSession: []
+      responses:
+        "200":
+          description: WiFi networks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkList"
+  /api/wifi:
+    post:
+      tags: [wifi]
+      security:
+        - cameraSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WifiRequest"
+      responses:
+        "200":
+          description: WiFi updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/password:
+    post:
+      tags: [auth]
+      security:
+        - cameraSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Current password incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/factory-reset:
+    post:
+      tags: [system]
+      security:
+        - cameraSession: []
+      responses:
+        "200":
+          description: Factory reset triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /pair:
+    post:
+      tags: [pairing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairRequest"
+      responses:
+        "200":
+          description: Pairing successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Pairing failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
