@@ -44,8 +44,8 @@
 <div class="section-header">
     Cameras
     <span style="float:right;margin-top:-4px;display:flex;gap:8px;">
-        <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
-            <span x-show="!scanning">Scan</span>
+        <button class="btn btn--secondary btn--small" @click="refreshCameras()" :disabled="scanning">
+            <span x-show="!scanning">Refresh</span>
             <span x-show="scanning">Scanning...</span>
         </button>
         <button class="btn btn--primary btn--small" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
@@ -117,7 +117,6 @@
                 <template x-if="cam.status === 'pending'">
                     <div class="camera-card__btns">
                         <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
-                        <button class="btn btn--secondary btn--small" @click.stop="confirmCamera(cam.id)">Confirm</button>
                         <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
                     </div>
                 </template>
@@ -178,7 +177,7 @@ function dashboardPage() {
             } catch(e) {}
         },
 
-        async scanCameras() {
+        async refreshCameras() {
             this.scanning = true;
             await this.loadCameras();
             // Brief delay so user sees the scanning state
@@ -209,15 +208,6 @@ function dashboardPage() {
                 this.pairingCameraId = camId;
             } catch(e) {
                 alert(e.message || 'Failed to initiate pairing');
-            }
-        },
-
-        async confirmCamera(camId) {
-            try {
-                await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(camId) + '/confirm', {});
-                await this.loadCameras();
-            } catch(e) {
-                alert(e.message || 'Failed to confirm camera');
             }
         },
 
