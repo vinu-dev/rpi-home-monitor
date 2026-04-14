@@ -14,10 +14,10 @@ PASSPHRASE_FILE=""
 
 resolve_path() {
     case "$1" in
-        "~")
+        \~)
             printf '%s\n' "$HOME"
             ;;
-        "~/"*)
+        \~/*)
             printf '%s/%s\n' "$HOME" "${1#~/}"
             ;;
         *)
