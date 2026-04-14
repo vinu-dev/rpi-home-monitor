@@ -115,7 +115,7 @@ app/
     │   ├── test_led.py             ← Tests for led.py
     │   ├── test_fixtures.py        ← Tests for test infrastructure
     │   └── test_package.py         ← Package import tests
-    ├── pytest.ini                  ← pytest config (--cov-fail-under=55)
+    ├── pytest.ini                  ← pytest config (--cov-fail-under=70)
     ├── requirements.txt            ← Runtime deps
     └── requirements-test.txt       ← Test deps
 ```
@@ -176,7 +176,7 @@ This automatically:
 - Runs all tests in `tests/`
 - Measures coverage of the source package
 - Shows missing lines in terminal
-- **Fails if coverage drops below threshold** (server: 80%, camera: 55%)
+- **Fails if coverage drops below threshold** (server: 80%, camera: 70%)
 
 ### 5.2 Run a Specific Test File
 
@@ -278,7 +278,7 @@ Jenkins) to track coverage over time and post coverage comments on PRs.
 
 | Level | Server | Camera | Enforced By |
 |-------|--------|--------|-------------|
-| Minimum (blocking) | 80% | 55% | `pytest.ini` (`--cov-fail-under`) |
+| Minimum (blocking) | 80% | 70% | `pytest.ini` (`--cov-fail-under`) |
 | Target | 90%+ | 70%+ | Code review |
 | Security-critical code | 95%+ | 95%+ | Code review (auth, sessions, passwords) |
 
@@ -290,7 +290,7 @@ pipelines require real hardware (port 80, /dev/video0) that CI environments cann
 | App | Command | Threshold |
 |-----|---------|-----------|
 | Server (`monitor`) | `pytest app/server/tests/ -v` | 80% coverage |
-| Camera (`camera_streamer`) | `pytest app/camera/tests/ -v` | 55% coverage |
+| Camera (`camera_streamer`) | `pytest app/camera/tests/ -v` | 70% coverage |
 
 Run the commands above to see current test counts and coverage. Don't hardcode counts here — they change every PR.
 
