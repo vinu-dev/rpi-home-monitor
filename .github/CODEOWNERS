@@ -2,22 +2,22 @@
 # See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
 # Default: project maintainer reviews everything
-* @vinu-engineer
+* @vinu-dev
 
 # Server application
-app/server/ @vinu-engineer
+app/server/ @vinu-dev
 
 # Camera application
-app/camera/ @vinu-engineer
+app/camera/ @vinu-dev
 
 # Yocto layer
-meta-home-monitor/ @vinu-engineer
+meta-home-monitor/ @vinu-dev
 
 # CI/CD and tooling
-.github/ @vinu-engineer
-pyproject.toml @vinu-engineer
-.pre-commit-config.yaml @vinu-engineer
+.github/ @vinu-dev
+pyproject.toml @vinu-dev
+.pre-commit-config.yaml @vinu-dev
 
 # Documentation
-docs/ @vinu-engineer
-CLAUDE.md @vinu-engineer
+docs/ @vinu-dev
+CLAUDE.md @vinu-dev

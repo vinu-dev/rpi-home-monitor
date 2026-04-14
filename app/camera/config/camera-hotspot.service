@@ -1,6 +1,6 @@
 [Unit]
 Description=Camera WiFi Setup Hotspot
-Documentation=https://github.com/vinu-engineer/rpi-home-monitor
+Documentation=https://github.com/vinu-dev/rpi-home-monitor
 After=NetworkManager.service local-fs.target sys-subsystem-net-devices-wlan0.device gpio-trigger.service
 Wants=NetworkManager.service
 Before=camera-streamer.service

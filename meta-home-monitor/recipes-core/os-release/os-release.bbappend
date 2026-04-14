@@ -10,7 +10,7 @@ NAME = "Home Monitor OS"
 ID = "home-monitor"
 VERSION_ID = "${DISTRO_VERSION}"
 PRETTY_NAME = "Home Monitor OS ${DISTRO_VERSION} (${DISTRO_CODENAME})"
-HOME_URL = "https://github.com/vinu-engineer/rpi-home-monitor"
+HOME_URL = "https://github.com/vinu-dev/rpi-home-monitor"
 
 # BUILD_ID uses ISO 8601 date format (industry standard for build identification)
 BUILD_ID = "${DATE}"

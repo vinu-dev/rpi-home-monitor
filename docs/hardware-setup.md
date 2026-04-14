@@ -149,7 +149,7 @@ Buy one set per camera location.
 
 **Option A: Download pre-built images**
 
-Go to [GitHub Releases](https://github.com/vinu-engineer/rpi-home-monitor/releases) and download:
+Go to [GitHub Releases](https://github.com/vinu-dev/rpi-home-monitor/releases) and download:
 - `home-monitor-image-dev-*.wic.bz2` — Server (RPi 4B) development image
 - `home-camera-image-dev-*.wic.bz2` — Camera (Zero 2W) development image
 

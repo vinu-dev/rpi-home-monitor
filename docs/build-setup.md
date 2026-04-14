@@ -25,7 +25,7 @@ GCP, AWS, or a local VM all work. The setup script handles everything.
 ## 2. One-Command Setup
 
 ```bash
-git clone git@github.com:vinu-engineer/rpi-home-monitor.git ~/yocto
+git clone git@github.com:vinu-dev/rpi-home-monitor.git ~/yocto
 cd ~/yocto
 ./scripts/setup-env.sh
 ```

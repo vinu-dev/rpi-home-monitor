@@ -1,6 +1,6 @@
 [Unit]
 Description=Home Monitor WiFi Watchdog — fallback to setup hotspot if WiFi fails
-Documentation=https://github.com/vinu-engineer/rpi-home-monitor
+Documentation=https://github.com/vinu-dev/rpi-home-monitor
 After=network-online.target NetworkManager-wait-online.service
 Wants=network-online.target
 

@@ -1,6 +1,6 @@
 [Unit]
 Description=GPIO Trigger Detection (Provisioning / Factory Reset)
-Documentation=https://github.com/vinu-engineer/rpi-home-monitor
+Documentation=https://github.com/vinu-dev/rpi-home-monitor
 After=local-fs.target
 Before=monitor-hotspot.service camera-hotspot.service monitor.service camera-streamer.service
 DefaultDependencies=no
