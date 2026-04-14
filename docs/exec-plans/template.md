@@ -26,6 +26,16 @@ Which files, services, devices, and docs matter?
 3. validation
 4. rollout
 
+## Resumption
+
+- Current status:
+- Last completed step:
+- Next step:
+- Branch / PR:
+- Devices / environments:
+- Commands to resume:
+- Open risks / blockers:
+
 ## Validation
 
 - exact commands
