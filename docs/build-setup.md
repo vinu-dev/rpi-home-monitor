@@ -5,6 +5,10 @@ Date: 2026-04-09
 
 How to set up a fresh machine to build Home Monitor OS images.
 
+For the full operator flow after the machine is ready, including release,
+recovery, and OTA signing steps, use
+[Release Operator Runbook](./release-runbook.md).
+
 ---
 
 ## 1. Requirements
@@ -239,6 +243,13 @@ echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/9
 ```
 
 The setup script does this automatically.
+
+### Production signing note
+
+Production builds do not require a repo-committed signing certificate.
+Instead, `./scripts/build.sh` stages the operator's local certificate from
+`~/.monitor-keys/ota-signing.crt` into an ignored generated path before the
+Yocto build starts.
 
 ### Slow builds
 

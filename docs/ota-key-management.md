@@ -7,6 +7,15 @@ This document defines how the production OTA signing keypair is backed up,
 rotated, recovered, and wired into GitHub Actions without ever committing the
 private key to git.
 
+Default model:
+
+- self-hosted operators generate and own their own keypair
+- dev builds stay unsigned
+- GitHub secret-based signing is optional maintainer automation, not the default user path
+
+For the operator-facing release and recovery sequence, use
+[Release Operator Runbook](./release-runbook.md).
+
 ---
 
 ## 1. Active Key Material
@@ -16,9 +25,10 @@ The active OTA signing keypair lives only on the build operator machine:
 - Private key: `~/.monitor-keys/ota-signing.key`
 - Public verification cert: `~/.monitor-keys/ota-signing.crt`
 
-The repo stores only the public verification cert copy:
+Production builds stage the operator's public certificate into an ignored
+generated path before bitbake runs:
 
-- [meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt](../meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt)
+- `meta-home-monitor/recipes-support/swupdate/files/generated/swupdate-public.crt`
 
 Devices verify OTA bundles with the baked-in copy at:
 
@@ -103,13 +113,9 @@ rm -f ~/.monitor-keys/ota-signing.key ~/.monitor-keys/ota-signing.crt
 ./scripts/generate-ota-keys.sh
 ```
 
-4. Commit the new public cert copy:
-
-- [meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt](../meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt)
-
-5. Rebuild production images so devices carry the new verification cert.
-6. Update GitHub Actions secrets.
-7. Create a fresh encrypted backup of the rotated keypair.
+4. Rebuild production images so devices carry the new verification cert.
+5. Update GitHub Actions secrets if you use the optional maintainer automation path.
+6. Create a fresh encrypted backup of the rotated keypair.
 
 Important:
 
@@ -120,13 +126,13 @@ Important:
 
 ## 5. GitHub Actions Secret-Based Signing
 
-The repo uses these GitHub Actions secrets:
+The repo can optionally use these GitHub Actions secrets:
 
 - `OTA_SIGNING_KEY`
 - `OTA_SIGNING_CERT`
 - `OTA_BACKUP_RECOVERY_PASSPHRASE`
 
-To publish the current local keypair into the repo secrets:
+To publish the current local keypair into the repo secrets for maintainer automation:
 
 ```bash
 ./scripts/publish-ota-github-secrets.sh \
@@ -145,10 +151,10 @@ The emergency recovery workflow is:
 What it proves:
 
 1. the secrets can be restored into `~/.monitor-keys/`
-2. the secret cert matches the public cert committed in the repo
+2. the secret cert is usable by OpenSSL CMS in GitHub Actions
 3. `scripts/build-swu.sh --sign` can generate a signed `.swu` bundle in GitHub Actions
 
-This does not replace real hardware OTA validation. It only validates secret-based signing plumbing.
+This does not replace real hardware OTA validation. It only validates optional secret-based signing plumbing.
 
 ### 5.1 Emergency Recovery From GitHub Secrets
 

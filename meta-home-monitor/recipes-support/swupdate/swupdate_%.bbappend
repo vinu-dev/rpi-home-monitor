@@ -8,7 +8,7 @@
 #   "1"           — prod builds: CONFIG_SIGNED_IMAGES enabled, cert baked into image
 #
 # See ADR-0014 for rationale.
-FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/files/generated:${THISDIR}/files:"
 
 inherit systemd
 

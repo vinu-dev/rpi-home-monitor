@@ -81,6 +81,7 @@ gh secret set OTA_SIGNING_CERT --repo "$REPO" < "$SIGNING_CERT"
 echo "Uploaded GitHub Actions secrets for $REPO:"
 echo "  OTA_SIGNING_KEY"
 echo "  OTA_SIGNING_CERT"
+echo "This is optional maintainer automation, not the default self-hosted user flow."
 
 if [ -n "$RECOVERY_PASSPHRASE_FILE" ]; then
     gh secret set OTA_BACKUP_RECOVERY_PASSPHRASE --repo "$REPO" < "$RECOVERY_PASSPHRASE_FILE"

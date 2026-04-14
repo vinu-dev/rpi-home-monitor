@@ -567,10 +567,12 @@ When changing one, check if the others need updating:
 - **Dev builds may intentionally bypass signing** via `SWUPDATE_SIGNING = "0"` to remove iteration friction in the lab.
 - **Unsigned OTA is never production-ready.**
 - **Test OTA on a dev device first** before pushing to prod.
+- **Self-hosted operators generate and own their own OTA signing keypair.**
 - **The signing private key is never committed to git.** It lives in `~/.monitor-keys/` on the build machine only.
 - **Rollback:** If a new rootfs fails to boot 3 times, the device automatically rolls back. Never disable this.
 - **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/update-roadmap.md`.
 - **OTA key backup/recovery:** use [`docs/ota-key-management.md`](ota-key-management.md) and the `backup-ota-keys.sh` / `restore-ota-keys.sh` scripts.
+- **Release/recovery operator flow:** use [`docs/release-runbook.md`](release-runbook.md) for normal release, new VM recovery, and lost-key recovery paths.
 
 ### 6.3 Secrets Management
 
@@ -608,6 +610,7 @@ When changing one, check if the others need updating:
 | Build process change | Update `README.md` and `scripts/build.sh` |
 | New dev workflow | Update this file (`docs/development-guide.md`) |
 | OTA key backup / rotation process | `docs/ota-key-management.md` |
+| Release / operator recovery flow | `docs/release-runbook.md` |
 
 ### 7.2 Documentation Style
 

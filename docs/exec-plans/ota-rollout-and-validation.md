@@ -64,6 +64,8 @@ This plan is the durable handoff record for the work.
   - OTA signing material has been rotated from the old Ed25519 assumption to the validated ECDSA P-256 CMS flow
   - signed server `.swu` packaging now succeeds from the clean validation workspace
   - signed camera `.swu` packaging now succeeds from the clean validation workspace
+  - release/recovery docs now explicitly treat self-hosted operators as owning their own OTA signing keypair by default
+  - production builds now stage the operator's local public cert into an ignored generated path instead of requiring a repo-tracked cert change
   - `scripts/build-swu.sh` is executable in the repo checkout and can be run directly as documented
   - encrypted local backup of the active OTA signing keypair now exists
   - GitHub Actions secrets `OTA_SIGNING_KEY` and `OTA_SIGNING_CERT` are populated for `vinu-dev/rpi-home-monitor`
@@ -76,9 +78,10 @@ This plan is the durable handoff record for the work.
     - local OTA signing cert/key copied to `~/.monitor-keys/` on the VM
     - `./scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-20260414.swu`
     - `./scripts/build-swu.sh --target camera ... --sign` producing `camera-update-1.1.0-20260414.swu`
-    - encrypted OTA key backup generated via `scripts/backup-ota-keys.sh`
-    - GitHub Actions OTA signing secrets published via `scripts/publish-ota-github-secrets.sh`
-    - `swupdate -i` on both live devices reporting successful slot switches
+  - encrypted OTA key backup generated via `scripts/backup-ota-keys.sh`
+  - GitHub Actions OTA signing secrets published via `scripts/publish-ota-github-secrets.sh`
+  - `swupdate -i` on both live devices reporting successful slot switches
+  - `docs/release-runbook.md` added as the single operator path for release, new VM recovery, and key-loss recovery
 - Next step:
   - determine whether the devices are simply on a different network surface or whether the new production images are not joining the LAN
   - if the network surface is gone, use console/recovery access to inspect boot state and rollback behavior

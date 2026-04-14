@@ -20,16 +20,11 @@ jobs:
           printf '%s' "${{ secrets.OTA_SIGNING_CERT }}" > "$HOME/.monitor-keys/ota-signing.crt"
           chmod 600 "$HOME/.monitor-keys/ota-signing.key" "$HOME/.monitor-keys/ota-signing.crt"
 
-      - name: Verify secret cert matches repo public cert
+      - name: Show OTA signing cert fingerprint
         shell: bash
         run: |
           set -euo pipefail
-          secret_hash="$(openssl x509 -in "$HOME/.monitor-keys/ota-signing.crt" -outform DER | sha256sum | awk '{print $1}')"
-          repo_hash="$(openssl x509 -in meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt -outform DER | sha256sum | awk '{print $1}')"
-          if [ "$secret_hash" != "$repo_hash" ]; then
-              echo "Secret OTA cert does not match the repo public cert" >&2
-              exit 1
-          fi
+          openssl x509 -in "$HOME/.monitor-keys/ota-signing.crt" -sha256 -fingerprint -noout
 
       - name: Build signed smoke bundle
         shell: bash

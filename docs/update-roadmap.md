@@ -90,6 +90,7 @@ This is intentional. It avoids signing friction during normal development.
 
 Production builds are intended to be stricter:
 
+- self-hosted operators should generate and own their own OTA signing keypair
 - production OTA bundles must be signed
 - production devices should verify signatures before install
 - production updates should go through the supported OTA pipeline, not manual file sync
@@ -171,3 +172,4 @@ Production OTA should only be called fully implemented when all of the following
 - [Architecture](./architecture.md)
 - [Requirements](./requirements.md)
 - [Development Guide](./development-guide.md)
+- [Release Operator Runbook](./release-runbook.md)

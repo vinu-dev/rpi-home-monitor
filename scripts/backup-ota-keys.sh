@@ -124,7 +124,7 @@ cat > "$WORK_DIR/metadata.txt" <<EOF
 created_at_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 signing_cert_sha256_fingerprint=$CERT_FINGERPRINT
 signing_public_key_sha256=$KEY_FINGERPRINT
-repo_public_cert_path=meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt
+repo_public_cert_path=meta-home-monitor/recipes-support/swupdate/files/generated/swupdate-public.crt
 notes=Store the encrypted archive and the passphrase separately.
 EOF
 
