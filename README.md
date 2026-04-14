@@ -1,6 +1,6 @@
 # RPi Home Monitor
 
-[![CI](https://github.com/vinu-engineer/rpi-home-monitor/actions/workflows/test.yml/badge.svg)](https://github.com/vinu-engineer/rpi-home-monitor/actions/workflows/test.yml)
+[![CI](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml/badge.svg)](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml)
 
 **A self-hosted home security camera system built on Raspberry Pi.** Open-source alternative to Ring, Tapo, and Nest — with no cloud subscriptions, no vendor lock-in, and complete control over your data.
 
@@ -98,7 +98,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 
 ```bash
 # Clone
-git clone git@github.com:vinu-engineer/rpi-home-monitor.git ~/yocto
+git clone git@github.com:vinu-dev/rpi-home-monitor.git ~/yocto
 cd ~/yocto
 
 # Install prerequisites (Ubuntu 24.04)
@@ -131,7 +131,7 @@ cd app/server && pytest    # threshold: 80% coverage
 cd app/camera && pytest    # threshold: 55% coverage
 ```
 
-Results and coverage reports are available in the [CI workflow](https://github.com/vinu-engineer/rpi-home-monitor/actions).
+Results and coverage reports are available in the [CI workflow](https://github.com/vinu-dev/rpi-home-monitor/actions).
 
 ## Documentation
 
