@@ -229,7 +229,7 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 | SD card theft (server) | Physical access to RPi 4B | All recordings, WiFi creds, user passwords | LUKS encryption on /data partition |
 | SD card theft (camera) | Physical access to Zero 2W | WiFi password, server address | LUKS encryption on /data partition |
 | Default credentials | SSH as root with no password | Full device control | No debug-tweaks in production, key-only SSH |
-| Rogue firmware update | Push malicious update to device | Persistent backdoor | Signed OTA images (Ed25519) |
+| Rogue firmware update | Push malicious update to device | Persistent backdoor | Signed OTA images (production target; dev builds may bypass signing) |
 | Network scanning | Port scan from compromised device on LAN | Discover attack surface | nftables firewall, minimal open ports |
 | Session hijacking | Steal session cookie | Access dashboard as victim | Secure/HttpOnly/SameSite cookies, HTTPS only |
 | CSRF attack | Trick admin into clicking malicious link | Change settings, delete clips | CSRF tokens on all state-changing requests |

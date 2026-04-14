@@ -279,7 +279,7 @@ Camera Node                    Server                          Client
 
 ### 4.7 Partition Scheme (OTA-ready, SWUpdate A/B with U-Boot)
 
-> **Status: Implemented.** A/B partition layout defined in WKS files with U-Boot boot counting (see ADR-0008).
+> **Status: Partially implemented.** The partition layout is defined in WKS files, but the full U-Boot/SWUpdate production path is still being validated on hardware. See [update-roadmap.md](./update-roadmap.md) and ADR-0008.
 
 | Partition | Type | Size (Server) | Size (Camera) | Purpose |
 |-----------|------|---------------|---------------|---------|
@@ -582,7 +582,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-03: Encryption at Rest
 
-> **Status: Implemented.** LUKS2 with Adiantum cipher on `/data` partition. See ADR-0010.
+> **Status: Partially implemented.** The LUKS design and supporting plumbing exist, but production-grade validation is still in progress. Dev builds intentionally skip encryption for iteration speed. See ADR-0010.
 
 - `/data` partition encrypted with LUKS2 (`xchacha20,aes-adiantum-plain64`) — 2-3.5x faster than AES on ARM without hardware acceleration
 - **Server:** passphrase set during first-boot setup wizard, argon2id KDF (1 GB memory, 4 iterations, 4 parallelism). Optional auto-unlock keyfile or Dropbear SSH unlock for headless operation
@@ -631,14 +631,14 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-09: Signed OTA Updates
 
-> **Status: Implemented.** Ed25519 signature verification in OTA service. See ADR-0008.
+> **Status: Partially implemented.** The signing design exists, but dev builds may bypass signing and the full production signing path is not yet fully hardware-validated. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
 
-- All artifacts signed with Ed25519 keypair (both `.swu` and `.tar.zst` app bundles)
+- Production target: all artifacts signed with Ed25519 keypair (both `.swu` and `.tar.zst` app bundles)
 - Build machine holds private signing key (never on devices)
 - Devices hold public verification key (in rootfs, not `/data` — survives factory reset)
-- Update rejected if signature verification fails — source is never trust, only signature
+- Production target: update rejected if signature verification fails — source is never trust, only signature
 - Artifact naming convention: `hm-<target>-<type>-<version>.<ext>` with detached `.sig` for app bundles
-- Prevents installation of malicious firmware regardless of delivery mode (USB, upload, push, SCP)
+- Production goal: prevents installation of malicious firmware regardless of delivery mode (USB, upload, push, SCP)
 
 #### SR-SEC-10: Camera Pairing Protocol
 

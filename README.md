@@ -12,7 +12,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 - **Security by design.** HTTPS for web, mTLS camera streaming, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting, PIN-based camera pairing.
 - **Built on real hardware.** Runs on a $35 Raspberry Pi 4B (server) and $15 Zero 2W (cameras). No proprietary hardware required.
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
-- **OTA updates with rollback.** A/B partition scheme means failed updates automatically roll back. No bricked devices.
+- **OTA design includes rollback.** The target system uses A/B rollback; dev update flows are working now, while the full production OTA path is still being validated.
 - **Tapo-style recording.** Continuous 3-minute MP4 clips organized by camera and date, with timeline playback.
 - **Fully open source.** Inspect every line, from the OS image to the web dashboard. AGPL-3.0 licensed.
 
@@ -85,7 +85,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | HTTPS (TLS) | **Implemented** | Self-signed certs, NGINX terminates TLS |
 | bcrypt auth + CSRF | **Implemented** | Cost 12, rate limiting (warn at 5, block at 10) |
 | Session management | **Implemented** | 30min idle / 24hr absolute timeout |
-| LUKS encryption | **Implemented** | /data partition encrypted at rest |
+| LUKS encryption | **Partial** | Design and implementation work exist, but production-grade validation is still in progress |
 | nftables firewall | **Implemented** | Default DROP, minimal open ports |
 | Audit logging | **Implemented** | Append-only JSON, all admin actions |
 | Default admin warning | **Implemented** | `admin`/`admin` created on first boot, must change during setup |

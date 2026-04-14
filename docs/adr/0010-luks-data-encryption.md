@@ -1,10 +1,10 @@
 # ADR-0010: LUKS Data Partition Encryption
 
 ## Status
-Proposed
+Accepted (implementation in progress)
 
 ## Context
-Both server and camera store sensitive data on the `/data` partition: video recordings, WiFi credentials, user passwords (hashed), session secrets, the CA private key (server), and client certs (camera). Physical theft of an SD card should not expose this data.
+Both server and camera store sensitive data on the `/data` partition: video recordings, WiFi credentials, user passwords (hashed), session secrets, the CA private key (server), and client certs (camera). Physical theft of an SD card should not expose this data. This ADR is the target design; implementation exists in parts, but full production validation is still in progress.
 
 Neither device has a TPM, HSM, or secure enclave — the RPi 4B and Zero 2W have no hardware key storage. Neither has AES hardware acceleration. The LUKS key must be derived from something the device knows or the user provides, and the cipher must perform well in software.
 
