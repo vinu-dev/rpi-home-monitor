@@ -71,7 +71,10 @@ build_image() {
     echo "============================================"
     echo ""
 
+    # oe-init-build-env is not nounset-safe when BBSERVER is absent.
+    set +u
     source "$YOCTO_DIR/poky/oe-init-build-env" "$builddir"
+    set -u
 
     cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
