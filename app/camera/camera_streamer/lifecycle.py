@@ -311,16 +311,12 @@ class CameraLifecycle:
         before pairing is complete. Best-effort — pairing still works
         if this fails (admin can add camera manually).
         """
-        if not self._config.is_configured:
+        base_url = self._config.server_https_url
+        if not base_url:
             return
-        server = self._config.server_ip
         camera_id = self._config.camera_id
-        if not server:
+        if not camera_id:
             return
-        if "://" in server:
-            base_url = server.rstrip("/")
-        else:
-            base_url = f"https://{server}"
         url = f"{base_url}/api/v1/pair/register"
         try:
             import json

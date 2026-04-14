@@ -19,6 +19,8 @@ SRC_URI = " \
     file://config/nftables-camera.conf \
     file://config/captive-portal-dnsmasq.conf \
     file://config/camera.conf.default \
+    file://config/ensure-camera-overlay.sh \
+    file://config/ensure-camera-overlay.service \
     file://setup.py \
     "
 
@@ -36,7 +38,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service ensure-camera-overlay.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create camera system user/group
@@ -53,14 +55,16 @@ do_install() {
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default
 
-    # Hotspot setup script (WiFi provisioning + factory reset wipe)
+    # Scripts (WiFi provisioning, factory reset, boot-time overlay check)
     install -d ${D}/opt/camera/scripts
     install -m 0755 ${WORKDIR}/config/camera-hotspot.sh ${D}/opt/camera/scripts/camera-hotspot.sh
+    install -m 0755 ${WORKDIR}/config/ensure-camera-overlay.sh ${D}/opt/camera/scripts/ensure-camera-overlay.sh
 
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/camera-streamer.service ${D}${systemd_system_unitdir}/camera-streamer.service
     install -m 0644 ${WORKDIR}/config/camera-hotspot.service ${D}${systemd_system_unitdir}/camera-hotspot.service
+    install -m 0644 ${WORKDIR}/config/ensure-camera-overlay.service ${D}${systemd_system_unitdir}/ensure-camera-overlay.service
 
     # Firewall rules
     install -d ${D}${sysconfdir}/nftables.d
@@ -75,6 +79,7 @@ FILES:${PN} = " \
     /opt/camera \
     ${systemd_system_unitdir}/camera-streamer.service \
     ${systemd_system_unitdir}/camera-hotspot.service \
+    ${systemd_system_unitdir}/ensure-camera-overlay.service \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     "

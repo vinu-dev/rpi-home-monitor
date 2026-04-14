@@ -1,0 +1,15 @@
+[Unit]
+Description=Ensure camera sensor overlay in config.txt
+DefaultDependencies=no
+After=local-fs.target
+Before=camera-streamer.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/camera/scripts/ensure-camera-overlay.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

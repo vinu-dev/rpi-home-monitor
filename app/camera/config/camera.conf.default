@@ -2,7 +2,7 @@
 # This file is stored on /data partition and survives OTA updates.
 
 # Server connection
-SERVER_IP="192.168.1.100"
+SERVER_IP=""
 SERVER_PORT="8554"
 STREAM_NAME="stream"
 

@@ -383,3 +383,69 @@ class TestCameraStatusServer:
             ok, err = server.connect_wifi("BadNet", "bad")
             assert ok is False
             assert "Connection refused" in err
+
+
+# ---- Pair page template ----
+
+
+class TestPairPageTemplate:
+    """Test /pair page HTML rendering with server URL pre-fill."""
+
+    def test_pair_page_prefills_server_url(self):
+        """When server_ip is configured, /pair page should pre-fill the URL."""
+        from camera_streamer.status_server import _PAIR_PAGE_HTML
+
+        server_url = "https://rpi-divinu.local"
+        html = (
+            _PAIR_PAGE_HTML.replace("{{CAMERA_ID}}", "cam-test")
+            .replace("{{PAIRED_STATUS}}", "Not paired")
+            .replace("{{ERROR}}", "")
+            .replace("{{ERROR_DISPLAY}}", "none")
+            .replace("{{SUCCESS}}", "")
+            .replace("{{SUCCESS_DISPLAY}}", "none")
+            .replace("{{FORM_DISPLAY}}", "block")
+            .replace("{{SERVER_URL}}", server_url)
+            .replace("{{SERVER_INFO_DISPLAY}}", "block")
+            .replace("{{SERVER_INPUT_DISPLAY}}", "none")
+        )
+        # Server URL should appear as hidden input value
+        assert f'value="{server_url}"' in html
+        # Manual input should be hidden
+        assert "display:none" in html
+
+    def test_pair_page_shows_input_when_no_server(self):
+        """When no server_ip, /pair page should show the URL input field."""
+        from camera_streamer.status_server import _PAIR_PAGE_HTML
+
+        html = (
+            _PAIR_PAGE_HTML.replace("{{CAMERA_ID}}", "cam-test")
+            .replace("{{PAIRED_STATUS}}", "Not paired")
+            .replace("{{ERROR}}", "")
+            .replace("{{ERROR_DISPLAY}}", "none")
+            .replace("{{SUCCESS}}", "")
+            .replace("{{SUCCESS_DISPLAY}}", "none")
+            .replace("{{FORM_DISPLAY}}", "block")
+            .replace("{{SERVER_URL}}", "")
+            .replace("{{SERVER_INFO_DISPLAY}}", "none")
+            .replace("{{SERVER_INPUT_DISPLAY}}", "block")
+        )
+        # Manual server URL input should be visible
+        assert 'placeholder="https://your-server.local"' in html
+
+    def test_pair_page_hides_form_when_paired(self):
+        """When paired, /pair form should be hidden."""
+        from camera_streamer.status_server import _PAIR_PAGE_HTML
+
+        html = (
+            _PAIR_PAGE_HTML.replace("{{CAMERA_ID}}", "cam-test")
+            .replace("{{PAIRED_STATUS}}", "Paired")
+            .replace("{{ERROR}}", "")
+            .replace("{{ERROR_DISPLAY}}", "none")
+            .replace("{{SUCCESS}}", "")
+            .replace("{{SUCCESS_DISPLAY}}", "none")
+            .replace("{{FORM_DISPLAY}}", "none")
+            .replace("{{SERVER_URL}}", "https://server")
+            .replace("{{SERVER_INFO_DISPLAY}}", "block")
+            .replace("{{SERVER_INPUT_DISPLAY}}", "none")
+        )
+        assert "display:none" in html

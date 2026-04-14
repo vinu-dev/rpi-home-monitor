@@ -9,6 +9,7 @@ from camera_streamer.lifecycle import CameraLifecycle, State
 def _make_config(**overrides):
     defaults = dict(
         server_ip="192.168.1.100",
+        server_https_url="https://192.168.1.100",
         camera_id="cam-test",
         data_dir="/tmp/test",
         is_configured=True,
@@ -172,7 +173,11 @@ class TestPairingRegistration:
     def test_registers_with_https_pair_register_endpoint(
         self, mock_urlopen, mock_create_context
     ):
-        config = _make_config(server_ip="rpi-divinu.local", camera_id="cam-test")
+        config = _make_config(
+            server_ip="rpi-divinu.local",
+            server_https_url="https://rpi-divinu.local",
+            camera_id="cam-test",
+        )
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
 
@@ -191,7 +196,9 @@ class TestPairingRegistration:
     @patch("camera_streamer.lifecycle.urllib.request.urlopen")
     def test_register_respects_explicit_scheme(self, mock_urlopen):
         config = _make_config(
-            server_ip="https://rpi-divinu.local", camera_id="cam-test"
+            server_ip="https://rpi-divinu.local",
+            server_https_url="https://rpi-divinu.local",
+            camera_id="cam-test",
         )
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)

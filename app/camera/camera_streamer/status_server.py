@@ -337,8 +337,14 @@ button{margin-top:16px;padding:10px 24px;font-size:1em;cursor:pointer}
 <div class="success">{{SUCCESS}}</div>
 <div style="display:{{FORM_DISPLAY}}">
 <form method="POST" action="/pair">
-<label>Server URL<input type="text" name="server_url" placeholder="https://192.168.1.100" required></label>
-<label>PIN<input type="text" name="pin" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit PIN from server" required></label>
+<div style="display:{{SERVER_INFO_DISPLAY}}">
+<div class="status">Server: {{SERVER_URL}}</div>
+<input type="hidden" name="server_url" value="{{SERVER_URL}}">
+</div>
+<div style="display:{{SERVER_INPUT_DISPLAY}}">
+<label>Server URL<input type="text" name="server_url" placeholder="https://your-server.local" required></label>
+</div>
+<label>PIN<input type="text" name="pin" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit PIN from server" required autofocus></label>
 <button type="submit">Pair</button>
 </form>
 </div>
@@ -628,6 +634,8 @@ def _make_status_handler(
 
         def _serve_pair_page(self, error="", success=""):
             is_paired = pairing_manager.is_paired if pairing_manager else False
+            server_url = config.server_https_url
+            has_server = bool(server_url)
             html = (
                 _PAIR_PAGE_HTML.replace("{{CAMERA_ID}}", _html_escape(config.camera_id))
                 .replace(
@@ -639,6 +647,9 @@ def _make_status_handler(
                 .replace("{{SUCCESS}}", _html_escape(success))
                 .replace("{{SUCCESS_DISPLAY}}", "block" if success else "none")
                 .replace("{{FORM_DISPLAY}}", "none" if is_paired else "block")
+                .replace("{{SERVER_URL}}", _html_escape(server_url))
+                .replace("{{SERVER_INFO_DISPLAY}}", "block" if has_server else "none")
+                .replace("{{SERVER_INPUT_DISPLAY}}", "none" if has_server else "block")
             )
             body = html.encode()
             self.send_response(200)
@@ -670,6 +681,9 @@ def _make_status_handler(
                 params = parse_qs(body.decode("utf-8", errors="replace"))
                 pin = params.get("pin", [""])[0].strip()
                 server_url = params.get("server_url", [""])[0].strip()
+
+            if not server_url:
+                server_url = config.server_https_url
 
             if not pin or not server_url:
                 if "application/json" in content_type:
