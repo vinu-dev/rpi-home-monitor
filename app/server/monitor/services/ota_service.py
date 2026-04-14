@@ -206,6 +206,13 @@ class OTAService:
         except OSError as e:
             return False, str(e)
 
+    def _install_command(self, bundle_path):
+        """Build the swupdate install command for the current environment."""
+        cmd = ["swupdate", "-i", bundle_path]
+        if os.path.isfile(self._public_key_path):
+            cmd.extend(["-k", self._public_key_path])
+        return cmd
+
     def install_bundle(self, bundle_path, user="", ip=""):
         """Install a verified .swu bundle via swupdate.
 
@@ -228,7 +235,7 @@ class OTAService:
 
         try:
             result = subprocess.run(
-                ["swupdate", "-i", bundle_path],
+                self._install_command(bundle_path),
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout for large images
