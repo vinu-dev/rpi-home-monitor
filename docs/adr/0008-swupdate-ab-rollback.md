@@ -1,10 +1,10 @@
 # ADR-0008: SWUpdate with A/B Rollback and Multi-Mode Delivery
 
 ## Status
-Proposed
+Accepted (implementation in progress)
 
 ## Context
-The partition layout (WKS files) provisions A/B root partitions on both server and camera, but no update engine, image format, delivery pipeline, or rollback mechanism is implemented. The OTA API (`ota.py`) stages `.swu` files and tracks status, but the install path is stubbed. The camera `ota_agent.py` is a placeholder.
+The partition layout (WKS files) provisions A/B root partitions on both server and camera. Since this ADR was first drafted, parts of the OTA stack have been implemented, but the full production-grade update path is still incomplete and not yet fully validated on real hardware. The repo uses this ADR as the target architecture; see `docs/update-roadmap.md` for current status.
 
 ### Hardware (measured 2026-04-11)
 

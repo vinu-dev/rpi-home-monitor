@@ -1,10 +1,10 @@
 # ADR-0009: Camera Pairing and mTLS
 
 ## Status
-Proposed
+Accepted
 
 ## Context
-Camera-to-server communication currently uses plaintext RTSP. The architecture (Section 3) specifies mTLS for camera identity and RTSPS for stream encryption, but `pairing.py` is a stub. Without mutual authentication, any device on the LAN can impersonate a camera and inject video, or eavesdrop on streams.
+This ADR defined the pairing and mTLS design for camera identity, RTSPS encryption, and OTA trust establishment. Core pairing and certificate exchange behavior now exists in the codebase and on dev hardware, and this document remains the architectural reference for that design.
 
 The pairing flow must also produce the client certificates used for OTA push authentication (ADR-0008) and establish the trust relationship that LUKS key derivation relies on for the camera (ADR-0010).
 
