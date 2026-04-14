@@ -165,8 +165,8 @@ Production OTA should only be called fully implemented when all of the following
 
 ## 7. References
 
-- [docs/adr/0008-swupdate-ab-rollback.md](/C:/Users/vinun/codex/rpi-home-monitor/docs/adr/0008-swupdate-ab-rollback.md)
-- [docs/adr/0014-swupdate-signing-dev-prod.md](/C:/Users/vinun/codex/rpi-home-monitor/docs/adr/0014-swupdate-signing-dev-prod.md)
-- [docs/architecture.md](/C:/Users/vinun/codex/rpi-home-monitor/docs/architecture.md)
-- [docs/requirements.md](/C:/Users/vinun/codex/rpi-home-monitor/docs/requirements.md)
-- [docs/development-guide.md](/C:/Users/vinun/codex/rpi-home-monitor/docs/development-guide.md)
+- [ADR-0008](./adr/0008-swupdate-ab-rollback.md)
+- [ADR-0014](./adr/0014-swupdate-signing-dev-prod.md)
+- [Architecture](./architecture.md)
+- [Requirements](./requirements.md)
+- [Development Guide](./development-guide.md)
