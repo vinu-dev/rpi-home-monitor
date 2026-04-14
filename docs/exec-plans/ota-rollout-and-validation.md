@@ -60,17 +60,21 @@ This plan is the durable handoff record for the work.
   - `scripts/build.sh` has been fixed to work with `oe-init-build-env` under `set -u`
   - clean production validation workspace created on the build VM at `/home/vinu_emailme/ota-validation`
   - signed `server-prod` Yocto build completed successfully in the clean validation workspace
+  - signed `camera-prod` Yocto build completed successfully in the same clean validation workspace
   - OTA signing material has been rotated from the old Ed25519 assumption to the validated ECDSA P-256 CMS flow
   - signed server `.swu` packaging now succeeds from the clean validation workspace
-  - `camera-prod` signed Yocto build is currently running in the same clean validation workspace
+  - signed camera `.swu` packaging now succeeds from the clean validation workspace
+  - `scripts/build-swu.sh` is executable in the repo checkout and can be run directly as documented
 - Last completed step:
-  - completed signed `server-prod` build validation on the VM with:
+  - completed signed `server-prod` and `camera-prod` build validation on the VM with:
     - `SWUPDATE_SIGNING = "1"` in `config/rpi4b/local.conf`
+    - `SWUPDATE_SIGNING = "1"` in `config/zero2w/local.conf`
     - local OTA signing cert/key copied to `~/.monitor-keys/` on the VM
-    - `scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-ota-validation.swu`
+    - `./scripts/build-swu.sh --target server ... --sign` producing `server-update-1.1.0-20260414.swu`
+    - `./scripts/build-swu.sh --target camera ... --sign` producing `camera-update-1.1.0-20260414.swu`
 - Next step:
-  - wait for `camera-prod` to finish in `/home/vinu_emailme/ota-validation`
-  - generate signed camera `.swu` artifacts from the clean production build outputs
+  - keep the production flow honest by validating the actual install/reboot/rollback path on hardware
+  - verify the signed `.swu` bundles apply correctly on server and camera
   - record the exact validated full-system update path and remaining hardware gaps
 - Branch / PR:
   - current branch: `codex/add-resumption-workflow`
@@ -89,8 +93,8 @@ This plan is the durable handoff record for the work.
   - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
   - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh camera-prod"`
   - `ssh vinu_emailme@35.197.216.132 "tail -n 50 /home/vinu_emailme/ota-validation/camera-prod.log"`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && bash scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --version 1.1.0-ota-validation --sign"`
-  - after camera build: inspect artifacts and run `scripts/build-swu.sh --target camera ... --sign`
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
+  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
 - Open risks / blockers:
   - production OTA validation may require long Yocto builds and multiple reboots
   - signed production flow may still expose implementation gaps not visible in dev builds
@@ -108,13 +112,16 @@ This plan is the durable handoff record for the work.
 - `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
 - `pre-commit run --files scripts/build.sh`
 - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
-- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && bash scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --version 1.1.0-ota-validation --sign"`
+- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh camera-prod"`
+- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
+- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
 
 ## Risks
 
 - resumability rules that live only in docs but are not followed in practice
 - long-running hardware work diverging from the written plan
 - merging multiple concerns into one branch and losing review clarity
+- executable-bit drift on repo scripts can break the documented fresh-clone command path if not kept in Git
 
 ## Completion Criteria
 
