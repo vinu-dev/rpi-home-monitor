@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import os
+import sys
 import tempfile
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVER_APP_ROOT = REPO_ROOT / "app" / "server"
+if str(SERVER_APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVER_APP_ROOT))
 
 from monitor import create_app
 from monitor.auth import hash_password

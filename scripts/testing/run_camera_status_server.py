@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import argparse
 import signal
+import sys
 import tempfile
 import time
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CAMERA_APP_ROOT = REPO_ROOT / "app" / "camera"
+if str(CAMERA_APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(CAMERA_APP_ROOT))
 
 from camera_streamer.config import ConfigManager
 from camera_streamer.status_server import CameraStatusServer

@@ -192,17 +192,28 @@ jobs:
             fi
             sleep 1
           done
-          LOGIN_JSON="$(curl -sk -c server.cookies -H 'Content-Type: application/json' \
-            -d '{"username":"admin","password":"pass1234"}' \
-            https://127.0.0.1:5443/api/v1/auth/login)"
-          printf '%s' "$LOGIN_JSON" > server-login.json
-          CSRF="$(python -c "import json, pathlib; print(json.loads(pathlib.Path('server-login.json').read_text())['csrf_token'])")"
-          COOKIE="$(python -c "from pathlib import Path; lines=[line for line in Path('server.cookies').read_text().splitlines() if line and not line.startswith('#')]; parts=lines[0].split(); print(f'{parts[5]}={parts[6]}')")"
+          eval "$(python - <<'PY'
+          import requests
+
+          session = requests.Session()
+          response = session.post(
+              'https://127.0.0.1:5443/api/v1/auth/login',
+              json={'username': 'admin', 'password': 'pass1234'},
+              verify=False,
+              timeout=10,
+          )
+          response.raise_for_status()
+          csrf = response.json()['csrf_token']
+          cookie = '; '.join(f'{k}={v}' for k, v in session.cookies.get_dict().items())
+          print(f"COOKIE={cookie!r}")
+          print(f"CSRF={csrf!r}")
+          PY
+          )"
           schemathesis run openapi/server.yaml \
-            --base-url=https://127.0.0.1:5443 \
+            --url https://127.0.0.1:5443 \
             --tls-verify=false \
-            --header "Cookie: $COOKIE" \
-            --header "X-CSRF-Token: $CSRF" \
+            -H "Cookie:$COOKIE" \
+            -H "X-CSRF-Token:$CSRF" \
             --phases=examples
 
   server-security:
@@ -304,14 +315,25 @@ jobs:
             fi
             sleep 1
           done
-          curl -sk -c camera.cookies -H 'Content-Type: application/json' \
-            -d '{"username":"admin","password":"pass1234"}' \
-            https://127.0.0.1:5444/login > camera-login.json
-          COOKIE="$(python -c "from pathlib import Path; lines=[line for line in Path('camera.cookies').read_text().splitlines() if line and not line.startswith('#')]; parts=lines[0].split(); print(f'{parts[5]}={parts[6]}')")"
+          eval "$(python - <<'PY'
+          import requests
+
+          session = requests.Session()
+          response = session.post(
+              'https://127.0.0.1:5444/login',
+              json={'username': 'admin', 'password': 'pass1234'},
+              verify=False,
+              timeout=10,
+          )
+          response.raise_for_status()
+          cookie = '; '.join(f'{k}={v}' for k, v in session.cookies.get_dict().items())
+          print(f"COOKIE={cookie!r}")
+          PY
+          )"
           schemathesis run openapi/camera.yaml \
-            --base-url=https://127.0.0.1:5444 \
+            --url https://127.0.0.1:5444 \
             --tls-verify=false \
-            --header "Cookie: $COOKIE" \
+            -H "Cookie:$COOKIE" \
             --phases=examples
 
   camera-security:

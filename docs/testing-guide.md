@@ -140,11 +140,11 @@ pytest tests/unit tests/integration tests/security \
 ```bash
 # Server contract tests
 pytest app/server/tests/contracts
-schemathesis run openapi/server.yaml --base-url=https://127.0.0.1:5443 --tls-verify=false
+schemathesis run openapi/server.yaml --url https://127.0.0.1:5443 --tls-verify=false
 
 # Camera contract tests
 pytest app/camera/tests/contracts
-schemathesis run openapi/camera.yaml --base-url=https://127.0.0.1:5444 --tls-verify=false
+schemathesis run openapi/camera.yaml --url https://127.0.0.1:5444 --tls-verify=false
 ```
 
 ---
