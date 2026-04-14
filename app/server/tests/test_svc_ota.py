@@ -21,7 +21,13 @@ def svc(data_dir):
     """Create OTAService with mock dependencies."""
     store = MagicMock()
     audit = MagicMock()
-    return OTAService(store=store, audit=audit, data_dir=data_dir)
+    public_key_path = os.path.join(data_dir, "certs", "swupdate-public.crt")
+    return OTAService(
+        store=store,
+        audit=audit,
+        data_dir=data_dir,
+        public_key_path=public_key_path,
+    )
 
 
 class TestGetSetStatus:
@@ -153,7 +159,7 @@ class TestVerifyBundle:
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
-        key = os.path.join(data_dir, "certs", "swupdate-public.pem")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
         with open(key, "w") as f:
             f.write("PUBLIC KEY")
 
@@ -167,7 +173,7 @@ class TestVerifyBundle:
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
-        key = os.path.join(data_dir, "certs", "swupdate-public.pem")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
         with open(key, "w") as f:
             f.write("PUBLIC KEY")
 
@@ -184,7 +190,7 @@ class TestVerifyBundle:
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
-        key = os.path.join(data_dir, "certs", "swupdate-public.pem")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
         with open(key, "w") as f:
             f.write("PUBLIC KEY")
 

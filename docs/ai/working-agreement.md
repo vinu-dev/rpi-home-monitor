@@ -20,6 +20,27 @@
 - explain deployment impact in the PR
 - preserve design intent, not just functional behavior
 - treat hardware verification as first-class when the product touches devices
+- keep multi-step work resumable inside the repo, not just in chat history
+
+## Resumption Discipline
+
+- Any task likely to span multiple sessions, hardware steps, or long validations
+  must have a living exec plan under `docs/exec-plans/`.
+- The exec plan must include:
+  - current goal
+  - exact current status
+  - completed steps
+  - next step
+  - validation already run
+  - commands, devices, branches, PRs, and artifacts needed to resume
+  - known blockers or risks
+- Update the exec plan before stopping when:
+  - a session limit is approaching
+  - hardware work is paused
+  - CI is still running
+  - a task is handed off to another agent or another day
+- Do not leave critical progress only in terminal state or chat context.
+- If a task has no durable resumption artifact, it is not in a healthy stopping state.
 
 ## When To Escalate
 

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================
-# sign-image.sh — Sign OTA images with Ed25519
+# sign-image.sh — Legacy detached signer for OTA artifacts
 #
 # Usage:
 #   ./scripts/sign-image.sh <image.swu>
 #
-# On first run, generates a signing keypair in ~/.monitor-keys/
-# The public key must be embedded in the device rootfs.
+# On first run, generates an ECDSA P-256 signing keypair in ~/.monitor-keys/.
+# This script produces a detached signature for non-SWUpdate artifacts.
+# For full-system SWUpdate bundles, prefer `./scripts/build-swu.sh --sign`,
+# which generates the CMS signature that SWUpdate actually verifies on-device.
 # =============================================================
 set -euo pipefail
 
@@ -30,17 +32,17 @@ fi
 if [ ! -f "$PRIVATE_KEY" ]; then
     echo ">>> Generating OTA signing keypair..."
     mkdir -p "$KEY_DIR"
-    openssl genpkey -algorithm Ed25519 -out "$PRIVATE_KEY"
+    openssl ecparam -name prime256v1 -genkey -noout -out "$PRIVATE_KEY"
     openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
     chmod 600 "$PRIVATE_KEY"
     echo ">>> Keys generated:"
     echo "    Private: $PRIVATE_KEY (KEEP SECRET)"
-    echo "    Public:  $PUBLIC_KEY (embed in device rootfs)"
+    echo "    Public:  $PUBLIC_KEY (detached-signature verification only)"
 fi
 
-# Sign the image
+# Sign the image with a detached SHA-256 / ECDSA signature
 SIGNATURE="${IMAGE}.sig"
-openssl pkeyutl -sign -inkey "$PRIVATE_KEY" -rawin -in "$IMAGE" -out "$SIGNATURE"
+openssl dgst -sha256 -sign "$PRIVATE_KEY" -out "$SIGNATURE" "$IMAGE"
 
 echo ">>> Signed: $SIGNATURE"
-echo ">>> Verify with: openssl pkeyutl -verify -pubin -inkey $PUBLIC_KEY -rawin -in $IMAGE -sigfile $SIGNATURE"
+echo ">>> Verify with: openssl dgst -sha256 -verify $PUBLIC_KEY -signature $SIGNATURE $IMAGE"

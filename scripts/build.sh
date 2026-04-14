@@ -21,26 +21,39 @@ YOCTO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE="scarthgap"
 NCPU=$(nproc)
 TARGET="${1:-server-dev}"
+KEY_DIR="${KEY_DIR:-$HOME/.monitor-keys}"
+LOCAL_OTA_CERT="$KEY_DIR/ota-signing.crt"
+GENERATED_CERT_DIR="$YOCTO_DIR/meta-home-monitor/recipes-support/swupdate/files/generated"
+GENERATED_CERT="$GENERATED_CERT_DIR/swupdate-public.crt"
 
 echo ">>> Working in: $YOCTO_DIR"
 echo ">>> Release: $RELEASE"
 echo ">>> CPUs: $NCPU"
 echo ">>> Target: $TARGET"
 
-# --- OTA signing cert guard (prod only) ---
-# Signing is disabled by default (SWUPDATE_SIGNING=0 in local.conf, see ADR-0014).
-# For production builds with SWUPDATE_SIGNING=1, the cert must be present first:
-#   ./scripts/generate-ota-keys.sh
-OTA_CERT="$YOCTO_DIR/meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt"
-if grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$YOCTO_DIR/config/"*"/local.conf" 2>/dev/null; then
-    if [ ! -f "$OTA_CERT" ]; then
+stage_local_ota_cert() {
+    local configdir=$1
+    local config_path="$YOCTO_DIR/config/$configdir/local.conf"
+
+    if ! grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+        return 0
+    fi
+
+    if [ ! -f "$LOCAL_OTA_CERT" ]; then
         echo ""
-        echo "ERROR: SWUPDATE_SIGNING=1 but OTA cert not found: $OTA_CERT"
-        echo "Run './scripts/generate-ota-keys.sh' first to generate the keypair."
+        echo "ERROR: production signing is enabled in $config_path"
+        echo "Missing local OTA signing certificate: $LOCAL_OTA_CERT"
+        echo "Run './scripts/generate-ota-keys.sh' first to generate your own keypair."
         echo ""
         exit 1
     fi
-fi
+
+    mkdir -p "$GENERATED_CERT_DIR"
+    cp "$LOCAL_OTA_CERT" "$GENERATED_CERT"
+    chmod 0644 "$GENERATED_CERT"
+    echo ">>> Staged local OTA verification cert for build:"
+    echo "    $GENERATED_CERT"
+}
 
 # --- Clone Yocto layers ---
 clone_layer() {
@@ -71,10 +84,14 @@ build_image() {
     echo "============================================"
     echo ""
 
+    # oe-init-build-env is not nounset-safe when BBSERVER is absent.
+    set +u
     source "$YOCTO_DIR/poky/oe-init-build-env" "$builddir"
+    set -u
 
     cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
+    stage_local_ota_cert "$configdir"
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"

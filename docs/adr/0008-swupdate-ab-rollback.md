@@ -112,7 +112,7 @@ Primary production update. Contains a compressed rootfs image written to the ina
 ```
 hm-server-pi4-full-2.1.0.swu
 ├── sw-description              # libconfig manifest (signed)
-├── sw-description.sig          # Ed25519 detached signature
+├── sw-description.sig          # CMS signature (ECDSA P-256 certificate)
 └── home-monitor-rootfs.ext4.gz # compressed rootfs (~150-200 MB)
 ```
 
@@ -129,7 +129,7 @@ hm-server-pi4-app-2.1.1.tar.zst
 ├── monitor/                    # Flask app (routes, services, templates, static)
 └── metadata.json               # version, compat, migration hooks
 
-hm-server-pi4-app-2.1.1.tar.zst.sig   # Ed25519 detached signature
+hm-server-pi4-app-2.1.1.tar.zst.sig   # Detached signature
 ```
 
 **Install mechanism — symlink swap:**
@@ -183,9 +183,9 @@ Examples:
 
 ### 4. Signing — one trust model for all artifacts
 
-- **Algorithm**: Ed25519
+- **Algorithm**: CMS / PKCS7 signature with an ECDSA P-256 certificate
 - **Build machine** holds the private key (`swupdate-signing.key`) — never on devices, never in repo, CI secret
-- **Devices** hold the public key at `/etc/swupdate-public.pem` (baked into rootfs at build time)
+- **Devices** hold the public verification cert at `/etc/swupdate-public.crt` (baked into rootfs at build time)
 - **Full-system bundles**: SWUpdate verifies `sw-description.sig`, then checks hashes of each included image
 - **App-only bundles**: Detached `.sig` file verified against the same public key before extraction
 - **Trust anchor**: The signing key is the only trust. The delivery mechanism (USB, upload, network, SCP) is never proof of trust. All paths go through identical verification.
@@ -305,7 +305,7 @@ Designed into the pipeline from day one. Implementation deferred.
 ```
  1. Bundle arrives in /data/update/inbox/ (via any delivery mode)
  2. Verification:
-    a. Ed25519 signature on sw-description
+    a. CMS signature on sw-description
     b. Metadata: target_device == server-pi4
     c. hardware_compat matches board revision
     d. version > current AND version >= min_base_version
@@ -442,7 +442,7 @@ With ~47 GB on `/data`, space is generous. Policies exist as safety nets.
 | Recipe / Class | Purpose |
 |----------------|---------|
 | `recipes-bsp/u-boot/` | U-Boot for RPi 4B + Zero 2W, A/B boot script, env setup, `bootdelay=0` |
-| `recipes-support/swupdate/swupdate_%.bbappend` | SWUpdate with Ed25519 verification, U-Boot handler (`CONFIG_UBOOT=y`) |
+| `recipes-support/swupdate/swupdate_%.bbappend` | SWUpdate with CMS certificate verification, U-Boot handler (`CONFIG_UBOOT=y`) |
 | `recipes-support/swupdate/swupdate-check.service` | Post-boot health check, resize2fs, `fw_setenv upgrade_available 0` |
 | `classes/swupdate-image.bbclass` | Generates `.swu` from built rootfs (compact image + signed sw-description) |
 | `u-boot-fw-utils` in IMAGE_INSTALL | `fw_printenv`/`fw_setenv` userspace tools |
@@ -482,7 +482,7 @@ With ~47 GB on `/data`, space is generous. Policies exist as safety nets.
 - **512 MB boot**: Room for U-Boot, two kernel images (if per-slot kernels needed later), DTBs, overlays, U-Boot env. Generous on a 64 GB card.
 - **Multiple delivery modes, one trust model**: Signing key is the sole trust anchor. Adding a delivery mode is cheap because verification is shared. USB handles offline/field. Upload handles admin. SCP handles dev. Suricatta handles future polling.
 - **App-only bundles**: Most development changes are Python-only. Full rootfs reboot for a one-line fix is wasteful. Symlink swap provides instant rollback. Same signing guarantees as full-system bundles.
-- **Ed25519**: Same algorithm as existing certificate infrastructure. Small keys (32 bytes), fast verify on ARM without hardware crypto.
+- **ECDSA P-256 for SWUpdate CMS**: Matches the tested OpenSSL / SWUpdate certificate flow and works cleanly with `openssl cms -sign`.
 - **inbox/staging/history**: Clear state machine prevents accidental install of unverified bundles. History provides audit trail.
 
 ## Alternatives Considered
@@ -506,7 +506,7 @@ Read-only rootfs with writable overlay. Interesting but OverlayFS is a filesyste
 
 - Both devices need U-Boot recipe and config — one-time setup using `meta-raspberrypi`'s `u-boot-rpi`. Zero 2W has less community U-Boot testing — may need debugging during integration.
 - Boot time increases ~0.1-2s from U-Boot — irrelevant for 24/7 devices.
-- Build machine needs Ed25519 signing key — CI secret.
+- Build machine needs OTA signing keypair — CI secret.
 - Five delivery modes increase test surface — mitigated by shared verification pipeline.
 - App-only updates maintain up to 3 version directories (~150 MB on server, ~75 MB on camera) — negligible on 8 GB rootfs.
 - Config schema migrations must be backward-compatible — rollback returns to old code reading same `/data`.

@@ -273,7 +273,7 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 | Data at rest (server) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (1 GB, 4 iter) | Passphrase set during first-boot setup; optional auto-unlock keyfile. See ADR-0010 |
 | Data at rest (camera) | LUKS2 (`xchacha20,aes-adiantum-plain64`), argon2id (64 MB, 4 iter) | Key derived via HKDF-SHA256 from `pairing_secret` + CPU serial. See ADR-0010 |
 | Passwords | bcrypt (cost 12) | Stored in /data/config/users.json |
-| OTA images | Ed25519 signature | Build machine holds signing key, devices hold public key |
+| OTA images | CMS signature with ECDSA P-256 certificate | Build machine holds signing key, devices hold public cert |
 | Session tokens | cryptographically random (32 bytes) | Server-side session store |
 
 ### 3.4 Certificate Authority & Camera Pairing
@@ -620,7 +620,7 @@ Server browses:
 
 **Full-system update (.swu):**
 ```
-1. Ed25519 signature verification in inbox (production target; dev builds may bypass signing per ADR-0014)
+1. CMS signature verification in inbox (production target; dev builds may bypass signing per ADR-0014)
 2. SWUpdate installs to inactive rootfs (A→B or B→A)
 3. U-Boot env: upgrade_available=1, boot_count=0, bootlimit=3
 4. Reboot into new partition
@@ -779,7 +779,7 @@ rpi-home-monitor/
 ├── scripts/                           # BUILD & UTILITY SCRIPTS
 │   ├── setup-env.sh                   # One-time host dependency install
 │   ├── build.sh                       # Yocto build (dev/prod × server/camera)
-│   └── sign-image.sh                  # Sign .swu images for OTA
+│   └── sign-image.sh                  # Legacy detached signer (build-swu.sh is the SWUpdate path)
 │
 ├── docs/                              # DOCUMENTATION
 │   ├── requirements.md                # User needs + SW requirements

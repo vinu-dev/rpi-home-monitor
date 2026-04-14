@@ -43,6 +43,7 @@ coverage.xml
 *.key
 *.p12
 *.pfx
+meta-home-monitor/recipes-support/swupdate/files/generated/
 
 # OS
 .DS_Store

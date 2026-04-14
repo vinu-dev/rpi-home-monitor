@@ -48,7 +48,7 @@ The intended trust model is:
 |---|---|---|
 | OTA API surface | Partial | Server API endpoints exist, but not every documented flow is proven end-to-end on hardware |
 | App-only hot deploy for development | Working | We use direct app sync in the lab today; this is practical but not the final signed OTA path |
-| Full-system SWUpdate flow | Partial | Design is strong; end-to-end production-grade validation is still incomplete |
+| Full-system SWUpdate flow | Partial | Design is strong; signed bundle creation is validated in the clean VM, but live install/reboot validation is still blocked because both test devices did not return on the network after update |
 | A/B rollback with U-Boot | Partial | Planned and partially wired in Yocto/docs; not yet fully validated across real upgrade/rollback cycles |
 | USB update flow | Partial | Inbox/import model is designed; must be validated end-to-end on hardware |
 | Camera OTA push via server | Partial | Agent/service pieces exist; needs stronger end-to-end validation and release hardening |
@@ -90,6 +90,7 @@ This is intentional. It avoids signing friction during normal development.
 
 Production builds are intended to be stricter:
 
+- self-hosted operators should generate and own their own OTA signing keypair
 - production OTA bundles must be signed
 - production devices should verify signatures before install
 - production updates should go through the supported OTA pipeline, not manual file sync
@@ -98,6 +99,7 @@ Production builds are intended to be stricter:
 ### 4.3 Important Current Limitation
 
 Production OTA signing and the full production update pipeline are **not yet fully tested on real hardware**.
+The clean VM proves signed `.swu` generation works, but install/reboot/rollback still need device validation and the current live reboot attempt left both devices unreachable on the LAN.
 
 That means:
 - the design exists
@@ -170,3 +172,4 @@ Production OTA should only be called fully implemented when all of the following
 - [Architecture](./architecture.md)
 - [Requirements](./requirements.md)
 - [Development Guide](./development-guide.md)
+- [Release Operator Runbook](./release-runbook.md)

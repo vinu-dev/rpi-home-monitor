@@ -40,11 +40,11 @@ The repo must not describe production OTA signing as fully proven until that har
 - Comment explains how to flip to `"1"` for prod
 
 **`scripts/generate-ota-keys.sh`**
-- One-time script: generates Ed25519 keypair in `~/.monitor-keys/`, copies cert to recipe files dir
+- One-time script: generates an ECDSA P-256 keypair in `~/.monitor-keys/`, stages the public cert into an ignored generated path for local builds
 - Must be run before building with `SWUPDATE_SIGNING = "1"`
 
 **`scripts/build.sh`**
-- Guards prod builds: if `SWUPDATE_SIGNING = "1"` is in any local.conf, checks that cert file exists before invoking bitbake
+- Guards prod builds: if `SWUPDATE_SIGNING = "1"` is enabled for the target, stages the operator's local cert before invoking bitbake
 
 **`scripts/build-swu.sh`**
 - Requires pre-generated keys (no inline keygen); fails fast with a clear message if `~/.monitor-keys/ota-signing.key` is missing
@@ -62,8 +62,19 @@ The repo must not describe production OTA signing as fully proven until that har
 ## Key pair management
 
 - **Private key:** `~/.monitor-keys/ota-signing.key` — never committed, stays on build machine
-- **Public cert:** `meta-home-monitor/recipes-support/swupdate/files/swupdate-public.crt` — committed to git, public information
+- **Generated cert staging path:** `meta-home-monitor/recipes-support/swupdate/files/generated/swupdate-public.crt` — ignored by git, created from the operator's local cert at build time
 - **Key rotation:** delete `~/.monitor-keys/ota-signing.{key,crt}`, re-run `generate-ota-keys.sh`, rebuild image and redeploy cert
+
+## Signing algorithm
+
+The production SWUpdate path uses **CMS / PKCS7 with an ECDSA P-256 certificate**.
+
+This is deliberate:
+- `build-swu.sh --sign` signs `sw-description` via `openssl cms -sign`
+- the SWUpdate daemon verifies that CMS signature against `/etc/swupdate-public.crt`
+- the repo previously documented Ed25519 here, but OpenSSL CMS signing did not validate cleanly in the tested build path
+
+Detached signatures for non-SWUpdate artifacts can still use different tooling, but the validated `.swu` flow in this repo is certificate-based CMS signing with ECDSA P-256.
 
 ## Consequences
 
@@ -72,10 +83,11 @@ The repo must not describe production OTA signing as fully proven until that har
 - Full OTA signing infrastructure remains in the codebase and works for prod
 - One variable flip (`SWUPDATE_SIGNING = "1"`) enables production hardening
 - No separate dev/prod recipes or distro configs needed
+- Self-hosted users can own their own trust chain instead of depending on a repo-held private key
 
 **Negative:**
 - Dev images accept unsigned (potentially malicious) OTA bundles — acceptable since dev devices are on a trusted LAN and credentials are known
-- Build machine must run `generate-ota-keys.sh` before first prod build — documented in build-setup.md
+- Build machine must run `generate-ota-keys.sh` before first prod build — documented in build-setup.md and release-runbook.md
 
 ## Alternatives considered
 

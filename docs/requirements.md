@@ -57,7 +57,7 @@ The system aims to provide a similar experience to TP-Link Tapo or Ring cameras:
 - RPi 4B server with live view and clip recording
 - Mobile web dashboard with authentication (HTMX + Alpine.js)
 - System health monitoring
-- OTA updates with SWUpdate A/B partitions and Ed25519 signing (ADR-0008)
+- OTA updates with SWUpdate A/B partitions and CMS-signed bundles (ADR-0008)
 - SD card and USB external disk storage with loop recording
 - Ethernet + WiFi support on server
 - mTLS camera authentication with pairing protocol (ADR-0009)
@@ -356,7 +356,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - App-only updates use symlink swap (`/opt/camera/releases/<version>/` with `current` symlink), no reboot
 - Automatic rollback if new rootfs fails health check within 90 seconds
 - Report current firmware version to server via mDNS TXT record
-- Production target: signature verification before install (public key in rootfs)
+- Production target: signature verification before install (verification certificate in rootfs)
 - Dev policy: signing may be disabled to reduce iteration friction
 
 #### SR-CAM-07: System Watchdog
@@ -633,7 +633,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 > **Status: Partially implemented.** The signing design exists, but dev builds may bypass signing and the full production signing path is not yet fully hardware-validated. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
 
-- Production target: all artifacts signed with Ed25519 keypair (both `.swu` and `.tar.zst` app bundles)
+- Production target: all artifacts signed through the configured OTA signing trust chain (`.swu` via CMS certificate flow, app bundles via detached signatures)
 - Build machine holds private signing key (never on devices)
 - Devices hold public verification key (in rootfs, not `/data` — survives factory reset)
 - Production target: update rejected if signature verification fails — source is never trust, only signature
@@ -683,7 +683,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - Encrypted data partition (LUKS2) — SD card theft yields nothing
 - Firewall (nftables) — minimal open ports, camera IPs allowlisted
 - Mutual TLS camera authentication — no rogue device injection
-- Signed OTA images (Ed25519) — no malicious firmware
+- Signed OTA images — no malicious firmware
 - Audit logging of all security events
 - Rate limiting on auth endpoints (5 attempts per minute, block after 10 failures)
 - See Section 5.3 (SR-SEC-01 through SR-SEC-10) for detailed security requirements
@@ -781,7 +781,7 @@ The architecture must support future additions without redesign:
 | TLS | Self-signed CA (ECDSA P-256, OpenSSL), mTLS for cameras |
 | Encryption at rest | LUKS2 with Adiantum cipher (`xchacha20,aes-adiantum-plain64`), argon2id KDF |
 | Firewall | nftables |
-| OTA updates | SWUpdate (dual A/B rootfs + app-only symlink swap), Ed25519 signed |
+| OTA updates | SWUpdate (dual A/B rootfs + app-only symlink swap), signed bundles |
 | Build system | Yocto BitBake |
 | CI/Releases | GitHub Releases |
 

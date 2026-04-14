@@ -77,8 +77,8 @@ class TestVerifyBundle:
     @patch("camera_streamer.ota_agent.subprocess.run")
     def test_verify_success(self, mock_run, agent, config, tmp_path):
         """Should return True when swupdate verification passes."""
-        # Create public key so verification runs
-        key_path = os.path.join(config.certs_dir, "swupdate-public.pem")
+        # Create verification cert so verification runs
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
         with open(key_path, "w") as f:
             f.write("PUBLIC KEY")
 
@@ -93,7 +93,7 @@ class TestVerifyBundle:
     @patch("camera_streamer.ota_agent.subprocess.run")
     def test_verify_failure(self, mock_run, agent, config, tmp_path):
         """Should return False when signature is invalid."""
-        key_path = os.path.join(config.certs_dir, "swupdate-public.pem")
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
         with open(key_path, "w") as f:
             f.write("PUBLIC KEY")
 
@@ -111,7 +111,7 @@ class TestVerifyBundle:
     @patch("camera_streamer.ota_agent.subprocess.run")
     def test_swupdate_not_found(self, mock_run, agent, config, tmp_path):
         """Should skip verification when swupdate not installed."""
-        key_path = os.path.join(config.certs_dir, "swupdate-public.pem")
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
         with open(key_path, "w") as f:
             f.write("PUBLIC KEY")
 
@@ -125,7 +125,7 @@ class TestVerifyBundle:
 
     @patch("camera_streamer.ota_agent.subprocess.run")
     def test_verify_timeout(self, mock_run, agent, config, tmp_path):
-        key_path = os.path.join(config.certs_dir, "swupdate-public.pem")
+        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
         with open(key_path, "w") as f:
             f.write("PUBLIC KEY")
 

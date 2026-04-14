@@ -486,7 +486,7 @@ MicroSD cards degrade with writes. Signs of failure:
 
 ```bash
 # Production build: sign the update
-./scripts/sign-image.sh build/tmp/deploy/images/raspberrypi4-64/home-monitor-image-prod-*.wic.bz2
+./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --sign
 
 # Upload via the web dashboard: System → OTA Update
 # Or push via API:

@@ -1,5 +1,5 @@
 # Home Monitor SWUpdate configuration (ADR-0008, ADR-0014)
-# - Custom defconfig with U-Boot A/B handler and optional CMS/Ed25519 verification
+# - Custom defconfig with U-Boot A/B handler and optional CMS certificate verification
 # - conf.d override supplies -k flag so swupdate daemon finds the public cert
 # - Post-boot health check service for automatic rollback
 #
@@ -8,7 +8,7 @@
 #   "1"           — prod builds: CONFIG_SIGNED_IMAGES enabled, cert baked into image
 #
 # See ADR-0014 for rationale.
-FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+FILESEXTRAPATHS:prepend := "${THISDIR}/files/generated:${THISDIR}/files:"
 
 inherit systemd
 

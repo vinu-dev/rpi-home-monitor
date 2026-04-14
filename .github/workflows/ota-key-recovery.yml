@@ -1,0 +1,48 @@
+name: OTA Key Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_name:
+        description: "Artifact name suffix for the recovered encrypted backup"
+        required: false
+        default: "github-recovery"
+
+jobs:
+  recover:
+    name: Recover OTA Key Backup Artifact
+    runs-on: ubuntu-latest
+    environment: ota-key-recovery
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore OTA signing materials from secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.monitor-keys"
+          printf '%s' "${{ secrets.OTA_SIGNING_KEY }}" > "$HOME/.monitor-keys/ota-signing.key"
+          printf '%s' "${{ secrets.OTA_SIGNING_CERT }}" > "$HOME/.monitor-keys/ota-signing.crt"
+          chmod 600 "$HOME/.monitor-keys/ota-signing.key" "$HOME/.monitor-keys/ota-signing.crt"
+
+      - name: Build encrypted recovery backup
+        shell: bash
+        env:
+          OTA_BACKUP_PASSPHRASE: ${{ secrets.OTA_BACKUP_RECOVERY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OTA_BACKUP_PASSPHRASE:-}" ]; then
+            echo "OTA_BACKUP_RECOVERY_PASSPHRASE is not configured" >&2
+            exit 1
+          fi
+          mkdir -p tmp/recovery
+          bash scripts/backup-ota-keys.sh --output "tmp/recovery/ota-key-recovery-${{ github.event.inputs.backup_name }}.tar.gz.enc"
+
+      - name: Upload encrypted recovery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-key-recovery-${{ github.event.inputs.backup_name }}
+          path: |
+            tmp/recovery/ota-key-recovery-${{ github.event.inputs.backup_name }}.tar.gz.enc
+            tmp/recovery/ota-key-recovery-${{ github.event.inputs.backup_name }}.tar.gz.enc.sha256
