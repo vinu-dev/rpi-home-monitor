@@ -143,7 +143,8 @@ function dashboardPage() {
         pairingPin: '',
         pairingCameraId: '',
         scanning: false,
-        _interval: null,
+        _healthInterval: null,
+        _cameraInterval: null,
 
         tempColor(c) {
             if (c === null) return '';
@@ -228,11 +229,15 @@ function dashboardPage() {
         init() {
             this.loadHealth();
             this.loadCameras();
-            this._interval = setInterval(() => { this.loadHealth(); this.loadCameras(); }, 30000);
+            // Health: 10s (CPU/mem/disk change frequently, matches requirements SR-SRV-07)
+            // Cameras: 30s (status changes are infrequent)
+            this._healthInterval = setInterval(() => { this.loadHealth(); }, 10000);
+            this._cameraInterval = setInterval(() => { this.loadCameras(); }, 30000);
         },
 
         destroy() {
-            if (this._interval) clearInterval(this._interval);
+            if (this._healthInterval) clearInterval(this._healthInterval);
+            if (this._cameraInterval) clearInterval(this._cameraInterval);
         }
     };
 }
