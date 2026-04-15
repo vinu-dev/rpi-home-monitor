@@ -99,7 +99,7 @@ class PairingService:
 
         return pin, "", 200
 
-    def exchange_certs(self, pin, camera_id):
+    def exchange_certs(self, pin, camera_id, ip=""):
         """Validate PIN and return certs + pairing_secret.
 
         Returns (result_dict, error, status_code).
@@ -153,6 +153,8 @@ class PairingService:
         camera.status = "online"
         camera.cert_serial = cert_data["serial"]
         camera.pairing_secret = pairing_secret
+        if ip:
+            camera.ip = ip
         self._store.save_camera(camera)
 
         # Clean up pending state
