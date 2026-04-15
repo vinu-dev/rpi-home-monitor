@@ -193,6 +193,20 @@ def csrf_protect(f):
     return decorated
 
 
+@auth_bp.route("/check", methods=["GET", "HEAD"])
+def auth_check():
+    """Lightweight session validation for nginx auth_request.
+
+    Returns 200 if the session is valid, 401 otherwise. No body —
+    nginx only inspects the status code. Called on every video segment
+    request via auth_request, so it must be fast (no JSON, no DB).
+    """
+    if _is_session_valid():
+        session["last_active"] = time.time()
+        return "", 200
+    return "", 401
+
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
     """Authenticate user and create session."""

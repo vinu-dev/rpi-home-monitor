@@ -76,5 +76,8 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 12 blueprints (10 API + views + setup)."""
-        assert len(app.blueprints) == 12
+        """We expect exactly 13 blueprints (11 API + views + setup)."""
+        assert len(app.blueprints) == 13
+
+    def test_webrtc_blueprint_registered(self, app):
+        assert "webrtc" in app.blueprints

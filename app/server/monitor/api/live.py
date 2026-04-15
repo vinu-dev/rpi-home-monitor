@@ -39,6 +39,39 @@ def hls_playlist(camera_id):
     return send_file(str(playlist), mimetype="application/vnd.apple.mpegurl")
 
 
+@live_bp.route("/<camera_id>/<path:filename>", methods=["GET"])
+@login_required
+def hls_segment(camera_id, filename):
+    """Serve an HLS segment (.ts) or any live file for a camera.
+
+    Previously served directly by nginx without auth. Now routed
+    through Flask to enforce session validation via @login_required.
+    """
+    # Only serve expected file types
+    if not filename.endswith((".ts", ".m3u8", ".jpg")):
+        return jsonify({"error": "Invalid file type"}), 400
+
+    live_dir = Path(current_app.config["LIVE_DIR"])
+    file_path = live_dir / camera_id / filename
+
+    # Prevent path traversal
+    try:
+        file_path.resolve().relative_to(live_dir.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not file_path.is_file():
+        return jsonify({"error": "File not found"}), 404
+
+    mimetypes = {
+        ".ts": "video/mp2t",
+        ".m3u8": "application/vnd.apple.mpegurl",
+        ".jpg": "image/jpeg",
+    }
+    mimetype = mimetypes.get(file_path.suffix, "application/octet-stream")
+    return send_file(str(file_path), mimetype=mimetype)
+
+
 @live_bp.route("/<camera_id>/snapshot", methods=["GET"])
 @login_required
 def snapshot(camera_id):

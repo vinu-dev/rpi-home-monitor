@@ -376,3 +376,91 @@ class TestRateLimitBypass:
             json={"username": "nobody", "password": "wrong"},
         )
         assert response.status_code == 429
+
+
+class TestAuthCheckEndpoint:
+    """Test /auth/check used by nginx auth_request for video content.
+
+    This endpoint gates all video serving: /live/, /clips/, /webrtc/,
+    /snapshots/. A failure here means unauthenticated video access.
+    """
+
+    def test_returns_200_when_authenticated(self, app, client):
+        """Valid session must get 200."""
+        _login(app, client)
+        response = client.get("/api/v1/auth/check")
+        assert response.status_code == 200
+
+    def test_returns_401_when_not_authenticated(self, app, client):
+        """No session must get 401."""
+        response = client.get("/api/v1/auth/check")
+        assert response.status_code == 401
+
+    def test_returns_401_after_logout(self, app, client):
+        """Logged-out session must get 401."""
+        csrf = _login(app, client)
+        client.post(
+            "/api/v1/auth/logout",
+            headers={"X-CSRF-Token": csrf},
+        )
+        response = client.get("/api/v1/auth/check")
+        assert response.status_code == 401
+
+    def test_returns_401_on_expired_session(self, app, client):
+        """Expired idle session must get 401."""
+        _login(app, client)
+        with client.session_transaction() as sess:
+            sess["last_active"] = time.time() - 7200  # 2 hours ago
+        response = client.get("/api/v1/auth/check")
+        assert response.status_code == 401
+
+    def test_updates_last_active(self, app, client):
+        """Auth check must refresh idle timeout (viewing video = active)."""
+        _login(app, client)
+        with client.session_transaction() as sess:
+            sess["last_active"] = time.time() - 1700  # 28 min ago
+        response = client.get("/api/v1/auth/check")
+        assert response.status_code == 200
+        # Should still be valid after refresh
+        response2 = client.get("/api/v1/auth/check")
+        assert response2.status_code == 200
+
+    def test_empty_body(self, app, client):
+        """Auth check must return empty body (performance)."""
+        _login(app, client)
+        response = client.get("/api/v1/auth/check")
+        assert response.data == b""
+
+    def test_head_method(self, app, client):
+        """Auth check must accept HEAD requests."""
+        _login(app, client)
+        response = client.head("/api/v1/auth/check")
+        assert response.status_code == 200
+
+
+class TestSessionCookieSecurity:
+    """Verify session cookie security attributes."""
+
+    def test_session_cookie_secure_default(self, tmp_path):
+        """SESSION_COOKIE_SECURE must default to True in production."""
+        from monitor import create_app
+
+        for d in ("config", "recordings", "live", "certs", "logs"):
+            (tmp_path / d).mkdir()
+        app = create_app(
+            config={
+                "TESTING": True,
+                "DATA_DIR": str(tmp_path),
+                "CONFIG_DIR": str(tmp_path / "config"),
+                "RECORDINGS_DIR": str(tmp_path / "recordings"),
+                "LIVE_DIR": str(tmp_path / "live"),
+                "CERTS_DIR": str(tmp_path / "certs"),
+            }
+        )
+        assert app.config["SESSION_COOKIE_SECURE"] is True
+
+    def test_session_cookie_httponly(self, app):
+        assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+
+    def test_session_cookie_samesite(self, app):
+        assert app.config["SESSION_COOKIE_SAMESITE"] == "Strict"
