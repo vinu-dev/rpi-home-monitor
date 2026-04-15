@@ -447,7 +447,16 @@ class TestSessionCookieSecurity:
 
         for d in ("config", "recordings", "live", "certs", "logs"):
             (tmp_path / d).mkdir()
-        app = create_app(config={"DATA_DIR": str(tmp_path)})
+        app = create_app(
+            config={
+                "TESTING": True,
+                "DATA_DIR": str(tmp_path),
+                "CONFIG_DIR": str(tmp_path / "config"),
+                "RECORDINGS_DIR": str(tmp_path / "recordings"),
+                "LIVE_DIR": str(tmp_path / "live"),
+                "CERTS_DIR": str(tmp_path / "certs"),
+            }
+        )
         assert app.config["SESSION_COOKIE_SECURE"] is True
 
     def test_session_cookie_httponly(self, app):
