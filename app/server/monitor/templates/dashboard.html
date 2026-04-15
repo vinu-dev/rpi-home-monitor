@@ -29,16 +29,6 @@
     </div>
 </div>
 
-<!-- Network -->
-<div class="grid grid--health" style="margin-top:8px;" x-show="health.network.length > 0">
-    <template x-for="iface in health.network" :key="iface.name">
-        <div class="card health-card">
-            <div class="health-card__value health-card__value--green" x-text="iface.ip || '--'" style="font-size:1em;"></div>
-            <div class="health-card__label" x-text="iface.name + ' (' + iface.type + ')'"></div>
-        </div>
-    </template>
-</div>
-
 <!-- Warnings -->
 <div class="warnings-list">
     <template x-for="w in health.warnings" :key="w">
@@ -146,7 +136,7 @@
 <script>
 function dashboardPage() {
     return {
-        health: { temp: null, cpu: null, mem: null, memDetail: '', disk: null, diskDetail: '', warnings: [], uptime: '', network: [] },
+        health: { temp: null, cpu: null, mem: null, memDetail: '', disk: null, diskDetail: '', warnings: [], uptime: '' },
         cameras: [],
         showAddForm: false,
         newCam: { id: '', name: '', location: '' },
@@ -177,7 +167,6 @@ function dashboardPage() {
                 this.health.memDetail = data.memory ? (data.memory.used_mb + ' / ' + data.memory.total_mb + ' MB') : '';
                 this.health.disk = (data.disk && data.disk.percent) || 0;
                 this.health.diskDetail = data.disk ? (data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB') : '';
-                this.health.network = data.network || [];
                 this.health.warnings = data.warnings || [];
             } catch(e) {}
             try {
