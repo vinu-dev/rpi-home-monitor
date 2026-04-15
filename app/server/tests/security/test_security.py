@@ -441,11 +441,13 @@ class TestAuthCheckEndpoint:
 class TestSessionCookieSecurity:
     """Verify session cookie security attributes."""
 
-    def test_session_cookie_secure_default(self):
+    def test_session_cookie_secure_default(self, tmp_path):
         """SESSION_COOKIE_SECURE must default to True in production."""
         from monitor import create_app
 
-        app = create_app()
+        for d in ("config", "recordings", "live", "certs", "logs"):
+            (tmp_path / d).mkdir()
+        app = create_app(config={"DATA_DIR": str(tmp_path)})
         assert app.config["SESSION_COOKIE_SECURE"] is True
 
     def test_session_cookie_httponly(self, app):
