@@ -240,6 +240,39 @@ class CameraService:
 
         return "", 200
 
+    def accept_camera_config(
+        self, camera_id: str, stream_config: dict
+    ) -> tuple[str, int]:
+        """Accept a config notification from the camera (source of truth).
+
+        Updates stored config without pushing back to camera.
+        Returns (error_string, http_status_code).
+        """
+        camera = self._store.get_camera(camera_id)
+        if not camera:
+            return "Camera not found", 404
+
+        # Only accept known stream params
+        for key in stream_config:
+            if key not in STREAM_PARAMS:
+                return f"Unknown parameter: {key}", 400
+
+        for key, value in stream_config.items():
+            setattr(camera, key, value)
+
+        camera.config_sync = "synced"
+        self._store.save_camera(camera)
+
+        self._log_audit(
+            "CAMERA_CONFIG_RECEIVED",
+            "camera",
+            "",
+            f"config notification from {camera_id}: "
+            f"{', '.join(f'{k}={v}' for k, v in stream_config.items())}",
+        )
+
+        return "", 200
+
     def delete(self, camera_id: str, user: str = "", ip: str = "") -> tuple[str, int]:
         """Remove a camera and stop its video pipelines.
 

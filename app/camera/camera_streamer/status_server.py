@@ -22,6 +22,7 @@ import time
 from camera_streamer import wifi
 from camera_streamer.control import ControlHandler, parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
+from camera_streamer.server_notifier import notify_config_change
 
 log = logging.getLogger("camera-streamer.status-server")
 
@@ -519,6 +520,35 @@ def _make_status_handler(
                     self._json_response({"error": error}, status)
                 else:
                     self._json_response(result, status)
+            elif self.path == "/api/stream-config":
+                if not self._require_auth():
+                    return
+                params, _, err = parse_control_request(body)
+                if err:
+                    self._json_response({"error": err}, 400)
+                    return
+                result, error, status = control_handler.set_config(
+                    params, request_id=0, origin="local"
+                )
+                if error:
+                    self._json_response({"error": error}, status)
+                    return
+                self._json_response(result, status)
+                # Notify server of local config change (fire-and-forget)
+                if (
+                    result
+                    and result.get("origin") == "local"
+                    and result.get("status") == "ok"
+                    and pairing_manager
+                    and pairing_manager.is_paired
+                    and config.server_ip
+                ):
+                    threading.Thread(
+                        target=notify_config_change,
+                        args=(config, pairing_manager),
+                        daemon=True,
+                        name="config-notify",
+                    ).start()
             else:
                 self.send_error(404)
 

@@ -205,6 +205,18 @@ class TestSetConfigApply:
         assert status == 200
         assert result["restarted"] is False
 
+    def test_origin_defaults_to_server(self, control):
+        result, err, status = control.set_config({"fps": 15})
+        assert result["origin"] == "server"
+
+    def test_origin_local(self, control):
+        result, err, status = control.set_config({"fps": 15}, origin="local")
+        assert result["origin"] == "local"
+
+    def test_origin_server_explicit(self, control):
+        result, err, status = control.set_config({"fps": 15}, origin="server")
+        assert result["origin"] == "server"
+
 
 # --- rate limiting ---
 

@@ -684,6 +684,13 @@ Supported resolutions are auto-detected from the OV5647 sensor hardware.
 copy. If push fails, server marks `config_sync=pending` and retries on
 next health check cycle.
 
+**Bidirectional sync:** Camera GUI can also edit stream settings. When
+changed locally, the camera notifies the server via HMAC-signed POST to
+`/api/v1/cameras/config-notify`. The server verifies the HMAC using the
+shared `pairing_secret` and updates its stored copy. Ping-pong prevention:
+server-originated changes use `origin="server"` (no notification back),
+camera-originated changes use `origin="local"` (notification triggered).
+
 ---
 
 ## 7. Directory Structure

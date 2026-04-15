@@ -1,8 +1,8 @@
 # ADR-0015: Server-to-Camera Control Channel
 
-**Status:** Proposed  
-**Date:** 2026-04-15  
-**Deciders:** Vinu  
+**Status:** Proposed
+**Date:** 2026-04-15
+**Deciders:** Vinu
 **Relates to:** ADR-0004 (camera lifecycle), ADR-0006 (modular monolith), ADR-0009 (mTLS pairing)
 
 ## Context
@@ -375,5 +375,33 @@ Strongly typed APIs with code generation. But: adds protobuf dependency, `grpcio
 | `app/server/monitor/services/camera_control_client.py` | **New** — HTTP client with mTLS |
 | `app/server/monitor/services/camera_service.py` | Push config on update, sync state tracking |
 | `app/server/monitor/models.py` | Add `config_sync` field to Camera |
-| `app/camera/tests/` | Unit + integration tests for control API |
-| `app/server/tests/` | Unit + integration tests for control client |
+| `app/camera/camera_streamer/server_notifier.py` | **New** — HMAC-signed camera→server config push |
+| `app/camera/camera_streamer/templates/status.html` | Editable stream settings form |
+| `app/server/monitor/api/cameras.py` | `POST /config-notify` endpoint with HMAC auth |
+| `app/camera/tests/` | Unit + contract tests for control API + notifier |
+| `app/server/tests/` | Unit + contract tests for control client + config-notify |
+
+## 8. Bidirectional Sync
+
+### Camera→Server Notification
+
+When the camera admin changes stream settings via the camera's own status page,
+the camera notifies the server using HMAC-SHA256 authentication:
+
+1. Camera applies config locally via `ControlHandler.set_config(origin="local")`
+2. Camera POSTs to `https://<server_ip>/api/v1/cameras/config-notify`
+3. Request signed with `HMAC-SHA256(pairing_secret, camera_id:timestamp:sha256(body))`
+4. Server verifies HMAC + 5-minute timestamp window
+5. Server updates stored camera config, marks `config_sync=synced`
+
+### Ping-Pong Prevention
+
+`ControlHandler.set_config()` accepts an `origin` parameter:
+- `origin="server"` (default) — change came from server push, no notification
+- `origin="local"` — change from camera GUI, triggers server notification
+
+### Conflict Resolution
+
+Camera is always source of truth. If both sides change simultaneously,
+the camera's rate limiter (5s cooldown) rejects the server push. The camera's
+local change succeeds and its notification overwrites the server's stored copy.

@@ -114,7 +114,7 @@ class ControlHandler:
             "vflip": self._config.vflip,
         }
 
-    def set_config(self, params, request_id=0):
+    def set_config(self, params, request_id=0, origin="server"):
         """Validate and apply configuration changes.
 
         Args:
@@ -189,6 +189,7 @@ class ControlHandler:
                 "restart_required": restart_required,
                 "restarted": restarted,
                 "status": "ok",
+                "origin": origin,
             },
             "",
             200,
