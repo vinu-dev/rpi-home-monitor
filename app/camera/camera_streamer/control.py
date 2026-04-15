@@ -9,11 +9,14 @@ Controllable parameters (all require stream pipeline restart):
   width, height, fps, bitrate, h264_profile, keyframe_interval,
   rotation, hflip, vflip
 
-OV5647 sensor modes (libcamera on RPi Zero 2W):
+OV5647 sensor modes usable for H264 streaming (libcamera on RPi Zero 2W):
   640x480   @ up to 58 fps
   1296x972  @ up to 43 fps
   1920x1080 @ up to 30 fps
-  2592x1944 @ up to 15 fps
+
+Note: 2592x1944 (full 5MP) is a valid sensor mode but the Pi Zero 2W
+cannot encode it fast enough for real-time H264 streaming — ffmpeg
+fails to detect codec parameters. Excluded from allowed resolutions.
 """
 
 import json
@@ -28,7 +31,6 @@ SENSOR_MODES = {
     (640, 480): 58,
     (1296, 972): 43,
     (1920, 1080): 30,
-    (2592, 1944): 15,
 }
 
 VALID_RESOLUTIONS = set(SENSOR_MODES.keys())

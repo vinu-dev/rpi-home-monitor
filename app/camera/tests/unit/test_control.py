@@ -35,7 +35,7 @@ class TestGetCapabilities:
     def test_returns_sensor_info(self, control):
         caps = control.get_capabilities()
         assert caps["sensor"] == "OV5647"
-        assert len(caps["sensor_modes"]) == 4
+        assert len(caps["sensor_modes"]) == 3
 
     def test_sensor_modes_match_constants(self, control):
         caps = control.get_capabilities()
@@ -113,10 +113,8 @@ class TestSetConfigValidation:
         assert "Invalid resolution" in err
 
     def test_rejects_fps_exceeding_sensor_max(self, control):
-        # 2592x1944 max is 15 fps
-        result, err, status = control.set_config(
-            {"width": 2592, "height": 1944, "fps": 30}
-        )
+        # 1920x1080 max is 30 fps
+        result, err, status = control.set_config({"fps": 31})
         assert status == 400
         assert "exceeds maximum" in err
 
@@ -302,12 +300,12 @@ class TestParseControlRequest:
 
 class TestCrossFieldValidation:
     def test_fps_validated_against_new_resolution(self, control):
-        """If changing to 2592x1944, fps must not exceed 15."""
+        """If changing to 1296x972, fps must not exceed 43."""
         result, err, status = control.set_config(
-            {"width": 2592, "height": 1944, "fps": 16}
+            {"width": 1296, "height": 972, "fps": 44}
         )
         assert status == 400
-        assert "exceeds maximum 15" in err
+        assert "exceeds maximum 43" in err
 
     def test_fps_validated_against_current_resolution(self, control):
         """If only changing fps, validate against current resolution."""

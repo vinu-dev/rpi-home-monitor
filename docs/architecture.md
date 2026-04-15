@@ -670,7 +670,7 @@ Server                              Camera
 
 | Parameter | Values | Default |
 |-----------|--------|---------|
-| Resolution (width x height) | 640x480, 1296x972, 1920x1080, 2592x1944 | 1920x1080 |
+| Resolution (width x height) | 640x480, 1296x972, 1920x1080 | 1920x1080 |
 | Framerate (fps) | 1-58 (limited by sensor mode) | 25 |
 | Bitrate | 0.5-8 Mbps | 4 Mbps |
 | H.264 Profile | baseline, main, high | high |

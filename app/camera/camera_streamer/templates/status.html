@@ -260,7 +260,6 @@ body {
                     <option value="640x480">640x480 (max 58 fps)</option>
                     <option value="1296x972">1296x972 (max 43 fps)</option>
                     <option value="1920x1080">1920x1080 (max 30 fps)</option>
-                    <option value="2592x1944">2592x1944 (max 15 fps)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -657,7 +656,7 @@ function doReset() {
     });
 }
 
-var _resMaxFps = {'640x480': 58, '1296x972': 43, '1920x1080': 30, '2592x1944': 15};
+var _resMaxFps = {'640x480': 58, '1296x972': 43, '1920x1080': 30};
 var _streamConfig = null;
 
 function toggleStreamEdit() {

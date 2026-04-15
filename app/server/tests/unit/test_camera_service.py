@@ -341,7 +341,7 @@ class TestUpdate:
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
-        error, status = svc.update("cam-001", {"fps": 59})
+        error, status = svc.update("cam-001", {"fps": 31})
         assert status == 400
         assert "fps" in error
 

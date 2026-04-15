@@ -330,8 +330,8 @@ class CameraService:
 
         if "fps" in data:
             fps = data["fps"]
-            if not isinstance(fps, int) or fps < 1 or fps > 58:
-                return "fps must be an integer between 1 and 58"
+            if not isinstance(fps, int) or fps < 1 or fps > 30:
+                return "fps must be an integer between 1 and 30"
 
         if "name" in data:
             name = data["name"]
