@@ -930,6 +930,38 @@ select.form-input {
     }
 }
 
+/* --- Modal Overlay --- */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.6); z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: var(--space-4);
+}
+.modal-card {
+    width: 100%; max-width: 420px; max-height: 90vh;
+    overflow-y: auto; animation: modalIn 0.15s ease-out;
+}
+.modal-card__header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: var(--space-4); padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+}
+@keyframes modalIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Camera Card Meta --- */
+.camera-card__meta {
+    display: flex; gap: var(--space-2); align-items: center;
+    margin-top: 2px;
+}
+
+/* --- Messages --- */
+.msg { padding: 8px 12px; border-radius: var(--radius-sm); font-size: var(--text-sm); }
+.msg--ok { background: rgba(46, 204, 113, 0.15); border: 1px solid var(--color-success); color: var(--color-success); }
+.msg--err { background: rgba(231, 76, 60, 0.15); border: 1px solid var(--color-danger); color: var(--color-danger); }
+
 /* --- Utility --- */
 .hidden { display: none !important; }
 .mt-8 { margin-top: var(--space-2); }
@@ -939,6 +971,9 @@ select.form-input {
 .text-center { text-align: center; }
 .text-muted { color: var(--color-text-muted); }
 .text-small { font-size: var(--text-sm); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger { color: var(--color-danger); }
 .gap-8 { gap: var(--space-2); }
 .flex { display: flex; }
 .flex-between {

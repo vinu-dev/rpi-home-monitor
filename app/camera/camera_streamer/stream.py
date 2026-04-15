@@ -84,6 +84,17 @@ class StreamManager:
             self._thread.join(timeout=10)
         log.info("Stream manager stopped")
 
+    def restart(self):
+        """Restart the streaming pipeline with current config values.
+
+        Stops the existing pipeline and starts a new one. The config
+        should already be updated before calling this method.
+        Returns True if restart was initiated successfully.
+        """
+        log.info("Restarting stream pipeline...")
+        self.stop()
+        return self.start()
+
     def _stream_loop(self):
         """Main loop: start ffmpeg, monitor, reconnect on failure."""
         while self._running:
@@ -184,19 +195,27 @@ class StreamManager:
             "--codec",
             "h264",
             "--profile",
-            "high",
+            cfg.h264_profile,
             "--level",
             "4.2",
             "--bitrate",
-            "4000000",  # 4 Mbps
+            str(cfg.bitrate),
             "--inline",  # SPS/PPS with every keyframe
             "--intra",
-            "30",  # keyframe every 30 frames (~1.2s at 25fps)
+            str(cfg.keyframe_interval),
             "--nopreview",
             "--listen",  # TCP server mode
             "-o",
             f"tcp://0.0.0.0:{tcp_port}",
         ]
+        # Rotation and flip (OV5647 supports 0 and 180 via --rotation,
+        # plus independent --hflip and --vflip)
+        if cfg.rotation == 180:
+            libcamera_cmd.extend(["--rotation", "180"])
+        if cfg.hflip:
+            libcamera_cmd.append("--hflip")
+        if cfg.vflip:
+            libcamera_cmd.append("--vflip")
         # ffmpeg: read H.264 from TCP, push to RTSP
         # Key: probesize must be large enough for ffmpeg to see a keyframe
         # with SPS/PPS from libcamera-vid. At 4Mbps + 25fps, a keyframe

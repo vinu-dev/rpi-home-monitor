@@ -14,6 +14,7 @@ from flask import Flask
 
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
+from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
@@ -181,11 +182,17 @@ def _init_services(app):
         clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
     )
 
+    # Camera control client — pushes config to cameras via mTLS (ADR-0015)
+    app.camera_control_client = CameraControlClient(
+        certs_dir=app.config["CERTS_DIR"],
+    )
+
     # Camera service — orchestrates store + streaming + audit
     app.camera_service = CameraService(
         store=app.store,
         streaming=app.streaming,
         audit=app.audit,
+        control_client=app.camera_control_client,
     )
 
     # Storage service — orchestrates USB + storage manager + store + audit

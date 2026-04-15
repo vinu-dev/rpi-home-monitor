@@ -32,6 +32,16 @@ class Camera:
     firmware_version: str = ""
     cert_serial: str = ""
     pairing_secret: str = ""  # hex-encoded, for camera LUKS key derivation (ADR-0010)
+    # Stream parameters (ADR-0015: server-camera control channel)
+    width: int = 1920
+    height: int = 1080
+    bitrate: int = 4000000
+    h264_profile: str = "high"
+    keyframe_interval: int = 30
+    rotation: int = 0
+    hflip: bool = False
+    vflip: bool = False
+    config_sync: str = "unknown"  # synced | pending | error | unknown
 
 
 @dataclass

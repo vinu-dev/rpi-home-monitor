@@ -29,6 +29,12 @@ DEFAULTS = {
     "WIDTH": "1920",
     "HEIGHT": "1080",
     "FPS": "25",
+    "BITRATE": "4000000",
+    "H264_PROFILE": "high",
+    "KEYFRAME_INTERVAL": "30",
+    "ROTATION": "0",
+    "HFLIP": "false",
+    "VFLIP": "false",
     "CAMERA_ID": "",
     "ADMIN_USERNAME": "admin",  # default username
     "ADMIN_PASSWORD": "",  # salt:hash (PBKDF2-SHA256)
@@ -67,6 +73,30 @@ class ConfigManager:
     @property
     def fps(self):
         return int(self._values["FPS"])
+
+    @property
+    def bitrate(self):
+        return int(self._values["BITRATE"])
+
+    @property
+    def h264_profile(self):
+        return self._values["H264_PROFILE"]
+
+    @property
+    def keyframe_interval(self):
+        return int(self._values["KEYFRAME_INTERVAL"])
+
+    @property
+    def rotation(self):
+        return int(self._values["ROTATION"])
+
+    @property
+    def hflip(self):
+        return self._values["HFLIP"].lower() == "true"
+
+    @property
+    def vflip(self):
+        return self._values["VFLIP"].lower() == "true"
 
     @property
     def camera_id(self):

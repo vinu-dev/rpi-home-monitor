@@ -80,6 +80,27 @@ def _json_post(path, body, headers=None, scheme="http"):
         raise
 
 
+def _json_put(path, body, headers=None, scheme="http"):
+    """PUT JSON to an endpoint on localhost:TEST_PORT."""
+    data = json.dumps(body).encode()
+    req = Request(
+        f"{scheme}://127.0.0.1:{TEST_PORT}{path}",
+        data=data,
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method="PUT",
+    )
+    kwargs = {"timeout": 5}
+    if scheme == "https":
+        kwargs["context"] = TLS_CONTEXT
+    try:
+        with urlopen(req, **kwargs) as resp:
+            return json.loads(resp.read()), resp.status
+    except Exception as e:
+        if hasattr(e, "read"):
+            return json.loads(e.read()), e.code
+        raise
+
+
 def _head(path, scheme="http"):
     """HEAD request to localhost:TEST_PORT."""
     req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}", method="HEAD")
@@ -307,6 +328,7 @@ STATUS_API_FIELDS = {
     "uptime",
     "memory_total_mb",
     "memory_used_mb",
+    "stream_config",
 }
 
 
@@ -461,6 +483,47 @@ class TestStatusServerLoginContract:
         try:
             status = _head("/", scheme="https")
             assert status in {200, 302}
+        finally:
+            server.stop()
+
+
+STREAM_CONFIG_SUCCESS_FIELDS = {
+    "applied",
+    "restart_required",
+    "restarted",
+    "status",
+    "origin",
+}
+
+
+class TestStatusServerStreamConfigContract:
+    """PUT /api/stream-config on status server (session auth)."""
+
+    def test_requires_auth(self, noauth_config):
+        """Without password, /api/stream-config works without auth."""
+        server = CameraStatusServer(noauth_config)
+        server.start()
+        try:
+            data, status = _json_put(
+                "/api/stream-config",
+                {"fps": 20},
+                scheme="https",
+            )
+            _assert_has_fields(data, {"applied", "status"})
+        finally:
+            server.stop()
+
+    def test_error_on_invalid_param(self, noauth_config):
+        """Invalid param returns {error}."""
+        server = CameraStatusServer(noauth_config)
+        server.start()
+        try:
+            data, status = _json_put(
+                "/api/stream-config",
+                {"unknown_field": 42},
+                scheme="https",
+            )
+            _assert_fields(data, {"error"})
         finally:
             server.stop()
 

@@ -19,6 +19,19 @@ log = logging.getLogger("monitor.camera_service")
 VALID_RECORDING_MODES = {"continuous", "off"}
 VALID_RESOLUTIONS = {"720p", "1080p"}
 
+# Stream parameters that should be pushed to the camera (ADR-0015)
+STREAM_PARAMS = {
+    "width",
+    "height",
+    "fps",
+    "bitrate",
+    "h264_profile",
+    "keyframe_interval",
+    "rotation",
+    "hflip",
+    "vflip",
+}
+
 
 class CameraService:
     """Orchestrates camera CRUD operations across store, streaming, and audit.
@@ -29,10 +42,11 @@ class CameraService:
         audit: Security audit logger (AuditLogger instance or None).
     """
 
-    def __init__(self, store, streaming=None, audit=None):
+    def __init__(self, store, streaming=None, audit=None, control_client=None):
         self._store = store
         self._streaming = streaming
         self._audit = audit
+        self._control = control_client
 
     def add_camera(
         self, camera_id: str, name: str = "", location: str = ""
@@ -83,6 +97,15 @@ class CameraService:
                 "paired_at": c.paired_at,
                 "last_seen": c.last_seen,
                 "firmware_version": c.firmware_version,
+                "width": c.width,
+                "height": c.height,
+                "bitrate": c.bitrate,
+                "h264_profile": c.h264_profile,
+                "keyframe_interval": c.keyframe_interval,
+                "rotation": c.rotation,
+                "hflip": c.hflip,
+                "vflip": c.vflip,
+                "config_sync": c.config_sync,
             }
             for c in cameras
         ]
@@ -106,6 +129,15 @@ class CameraService:
             "resolution": camera.resolution,
             "fps": camera.fps,
             "recording_mode": camera.recording_mode,
+            "width": camera.width,
+            "height": camera.height,
+            "bitrate": camera.bitrate,
+            "h264_profile": camera.h264_profile,
+            "keyframe_interval": camera.keyframe_interval,
+            "rotation": camera.rotation,
+            "hflip": camera.hflip,
+            "vflip": camera.vflip,
+            "config_sync": camera.config_sync,
         }, ""
 
     def confirm(
@@ -178,6 +210,18 @@ class CameraService:
         for key, value in data.items():
             setattr(camera, key, value)
 
+        # Push stream params to camera if any changed (ADR-0015)
+        stream_changes = {k: v for k, v in data.items() if k in STREAM_PARAMS}
+        if stream_changes and camera.ip and self._control:
+            result, err = self._control.set_config(camera.ip, stream_changes)
+            if err:
+                log.warning("Failed to push config to camera %s: %s", camera_id, err)
+                camera.config_sync = "pending"
+            else:
+                camera.config_sync = "synced"
+        elif stream_changes and not camera.ip:
+            camera.config_sync = "pending"
+
         self._store.save_camera(camera)
 
         # Handle recording mode transitions
@@ -192,6 +236,39 @@ class CameraService:
             user,
             ip,
             f"updated camera {camera_id}: {', '.join(sorted(data.keys()))}",
+        )
+
+        return "", 200
+
+    def accept_camera_config(
+        self, camera_id: str, stream_config: dict
+    ) -> tuple[str, int]:
+        """Accept a config notification from the camera (source of truth).
+
+        Updates stored config without pushing back to camera.
+        Returns (error_string, http_status_code).
+        """
+        camera = self._store.get_camera(camera_id)
+        if not camera:
+            return "Camera not found", 404
+
+        # Only accept known stream params
+        for key in stream_config:
+            if key not in STREAM_PARAMS:
+                return f"Unknown parameter: {key}", 400
+
+        for key, value in stream_config.items():
+            setattr(camera, key, value)
+
+        camera.config_sync = "synced"
+        self._store.save_camera(camera)
+
+        self._log_audit(
+            "CAMERA_CONFIG_RECEIVED",
+            "camera",
+            "",
+            f"config notification from {camera_id}: "
+            f"{', '.join(f'{k}={v}' for k, v in stream_config.items())}",
         )
 
         return "", 200
@@ -220,7 +297,21 @@ class CameraService:
 
     def _validate_update(self, data: dict) -> str:
         """Validate camera update fields. Returns error string or empty."""
-        allowed = {"name", "location", "recording_mode", "resolution", "fps"}
+        allowed = {
+            "name",
+            "location",
+            "recording_mode",
+            "resolution",
+            "fps",
+            "width",
+            "height",
+            "bitrate",
+            "h264_profile",
+            "keyframe_interval",
+            "rotation",
+            "hflip",
+            "vflip",
+        }
         unknown = set(data.keys()) - allowed
         if unknown:
             return f"Unknown fields: {', '.join(sorted(unknown))}"
@@ -246,6 +337,42 @@ class CameraService:
             name = data["name"]
             if not isinstance(name, str) or len(name) < 1 or len(name) > 64:
                 return "name must be 1-64 characters"
+
+        if "width" in data and (
+            not isinstance(data["width"], int) or data["width"] < 1
+        ):
+            return "width must be a positive integer"
+
+        if "height" in data and (
+            not isinstance(data["height"], int) or data["height"] < 1
+        ):
+            return "height must be a positive integer"
+
+        if "bitrate" in data:
+            br = data["bitrate"]
+            if not isinstance(br, int) or br < 500000 or br > 8000000:
+                return "bitrate must be between 500000 and 8000000"
+
+        if "keyframe_interval" in data:
+            ki = data["keyframe_interval"]
+            if not isinstance(ki, int) or ki < 1 or ki > 120:
+                return "keyframe_interval must be between 1 and 120"
+
+        if "h264_profile" in data and data["h264_profile"] not in (
+            "baseline",
+            "main",
+            "high",
+        ):
+            return "h264_profile must be one of: baseline, main, high"
+
+        if "rotation" in data and data["rotation"] not in (0, 180):
+            return "rotation must be 0 or 180"
+
+        if "hflip" in data and not isinstance(data["hflip"], bool):
+            return "hflip must be a boolean"
+
+        if "vflip" in data and not isinstance(data["vflip"], bool):
+            return "vflip must be a boolean"
 
         return ""
 

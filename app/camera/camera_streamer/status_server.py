@@ -20,7 +20,9 @@ import threading
 import time
 
 from camera_streamer import wifi
+from camera_streamer.control import ControlHandler, parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
+from camera_streamer.server_notifier import notify_config_change
 
 log = logging.getLogger("camera-streamer.status-server")
 
@@ -171,10 +173,24 @@ def _ensure_tls_material(config):
 
 
 def _wrap_https_server(server, config):
-    """Wrap the status server socket with TLS."""
+    """Wrap the status server socket with TLS.
+
+    If a CA certificate exists (camera is paired), enables CERT_OPTIONAL
+    so the server can verify mTLS client certificates from the paired
+    server for control API requests. Browser clients without certs
+    still work for human-facing endpoints.
+    """
     cert_path, key_path = _ensure_tls_material(config)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
+
+    # Enable optional client cert verification if CA cert exists (paired)
+    ca_path = os.path.join(config.certs_dir, "ca.crt")
+    if os.path.isfile(ca_path):
+        ctx.load_verify_locations(ca_path)
+        ctx.verify_mode = ssl.CERT_OPTIONAL
+        log.info("mTLS enabled for control API (CA: %s)", ca_path)
+
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
     return server
 
@@ -274,6 +290,7 @@ class CameraStatusServer:
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
         self._pairing = pairing_manager
+        self._control = ControlHandler(config, stream_manager)
         self._server = None
         self._thread = None
 
@@ -286,6 +303,7 @@ class CameraStatusServer:
             self._wifi_interface,
             self._thermal_path,
             self._pairing,
+            self._control,
         )
         try:
             self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
@@ -355,13 +373,39 @@ button{margin-top:16px;padding:10px 24px;font-size:1em;cursor:pointer}
 
 
 def _make_status_handler(
-    config, stream_manager, status_server, wifi_interface, thermal_path, pairing_manager
+    config,
+    stream_manager,
+    status_server,
+    wifi_interface,
+    thermal_path,
+    pairing_manager,
+    control_handler=None,
 ):
     """Create HTTP handler for the camera status page."""
 
     class StatusHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             log.debug("Status HTTPS: " + format % args)
+
+        def _has_mtls_client_cert(self):
+            """Check if request has a valid mTLS client certificate.
+
+            Returns True if the client presented a certificate that was
+            verified by the TLS stack against our CA. Used for control
+            API endpoints (ADR-0015).
+            """
+            try:
+                peer_cert = self.request.getpeercert()
+                return peer_cert is not None and len(peer_cert) > 0
+            except (AttributeError, ValueError):
+                return False
+
+        def _require_mtls(self):
+            """Require mTLS client certificate for control API endpoints."""
+            if self._has_mtls_client_cert():
+                return True
+            self._json_response({"error": "Client certificate required"}, 401)
+            return False
 
         def do_HEAD(self):
             if self.path == "/login":
@@ -401,6 +445,7 @@ def _make_status_handler(
             return _check_session(token)
 
         def _require_auth(self):
+            """Require session auth OR mTLS for non-control API paths."""
             if self._is_authenticated():
                 return True
             if self.path.startswith("/api/"):
@@ -412,6 +457,23 @@ def _make_status_handler(
             return False
 
         def do_GET(self):
+            # Control API — mTLS auth
+            if self.path == "/api/v1/control/config":
+                if not self._require_mtls():
+                    return
+                self._json_response(control_handler.get_config())
+                return
+            if self.path == "/api/v1/control/capabilities":
+                if not self._require_mtls():
+                    return
+                self._json_response(control_handler.get_capabilities())
+                return
+            if self.path == "/api/v1/control/status":
+                if not self._require_mtls():
+                    return
+                self._json_response(control_handler.get_status())
+                return
+
             if self.path == "/login":
                 self._serve_login_page()
             elif self.path == "/logout":
@@ -442,9 +504,68 @@ def _make_status_handler(
                 self.send_header("Location", "/")
                 self.end_headers()
 
+        def do_PUT(self):
+            content_len = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_len) if content_len > 0 else b""
+
+            if self.path == "/api/v1/control/config":
+                if not self._require_mtls():
+                    return
+                params, request_id, err = parse_control_request(body)
+                if err:
+                    self._json_response({"error": err}, 400)
+                    return
+                result, error, status = control_handler.set_config(params, request_id)
+                if error:
+                    self._json_response({"error": error}, status)
+                else:
+                    self._json_response(result, status)
+            elif self.path == "/api/stream-config":
+                if not self._require_auth():
+                    return
+                params, _, err = parse_control_request(body)
+                if err:
+                    self._json_response({"error": err}, 400)
+                    return
+                result, error, status = control_handler.set_config(
+                    params, request_id=0, origin="local"
+                )
+                if error:
+                    self._json_response({"error": error}, status)
+                    return
+                self._json_response(result, status)
+                # Notify server of local config change (fire-and-forget)
+                if (
+                    result
+                    and result.get("origin") == "local"
+                    and result.get("status") == "ok"
+                    and pairing_manager
+                    and pairing_manager.is_paired
+                    and config.server_ip
+                ):
+                    threading.Thread(
+                        target=notify_config_change,
+                        args=(config, pairing_manager),
+                        daemon=True,
+                        name="config-notify",
+                    ).start()
+            else:
+                self.send_error(404)
+
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len) if content_len > 0 else b""
+
+            # Control API — restart stream
+            if self.path == "/api/v1/control/restart-stream":
+                if not self._require_mtls():
+                    return
+                if stream_manager:
+                    ok = stream_manager.restart()
+                    self._json_response({"restarted": ok, "status": "ok"})
+                else:
+                    self._json_response({"error": "Stream manager not available"}, 503)
+                return
 
             if self.path == "/login":
                 self._handle_login(body)
@@ -597,6 +718,16 @@ def _make_status_handler(
                 "uptime": uptime,
                 "memory_total_mb": mem_total,
                 "memory_used_mb": mem_used,
+                "stream_config": {
+                    "width": config.width,
+                    "height": config.height,
+                    "fps": config.fps,
+                    "bitrate": config.bitrate,
+                    "h264_profile": config.h264_profile,
+                    "rotation": config.rotation,
+                    "hflip": config.hflip,
+                    "vflip": config.vflip,
+                },
             }
 
         def _json_response(self, data, code=200):

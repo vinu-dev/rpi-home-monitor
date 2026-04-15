@@ -223,6 +223,88 @@ body {
         </div>
     </div>
 
+    <!-- Stream Settings -->
+    <div class="card">
+        <div class="card__title" style="display:flex;justify-content:space-between;align-items:center">
+            Stream Settings
+            <button class="btn btn--secondary btn--small" id="btn-stream-edit" onclick="toggleStreamEdit()">Edit</button>
+        </div>
+        <!-- Read-only view -->
+        <div id="stream-view">
+            <div class="info-row">
+                <span class="info-row__label">Resolution</span>
+                <span class="info-row__value" id="s-resolution">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Framerate</span>
+                <span class="info-row__value" id="s-fps">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Bitrate</span>
+                <span class="info-row__value" id="s-bitrate">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">H.264 Profile</span>
+                <span class="info-row__value" id="s-profile">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Orientation</span>
+                <span class="info-row__value" id="s-orientation">--</span>
+            </div>
+        </div>
+        <!-- Edit form -->
+        <div id="stream-edit" style="display:none">
+            <div class="form-group">
+                <label class="form-label">Resolution</label>
+                <select class="form-input" id="se-resolution" onchange="onResChange()">
+                    <option value="640x480">640x480 (max 58 fps)</option>
+                    <option value="1296x972">1296x972 (max 43 fps)</option>
+                    <option value="1920x1080">1920x1080 (max 30 fps)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">FPS</label>
+                <input class="form-input" type="number" id="se-fps" min="1" max="58">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Bitrate (Mbps)</label>
+                <input class="form-input" type="number" id="se-bitrate" min="0.5" max="8" step="0.5">
+            </div>
+            <div class="form-group">
+                <label class="form-label">H.264 Profile</label>
+                <select class="form-input" id="se-profile">
+                    <option value="baseline">Baseline</option>
+                    <option value="main">Main</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Keyframe Interval</label>
+                <input class="form-input" type="number" id="se-keyframe" min="1" max="120">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Rotation</label>
+                <select class="form-input" id="se-rotation">
+                    <option value="0">0 (Normal)</option>
+                    <option value="180">180</option>
+                </select>
+            </div>
+            <div class="form-group" style="display:flex;gap:var(--space-4)">
+                <label style="display:flex;align-items:center;gap:var(--space-1)">
+                    <input type="checkbox" id="se-hflip"> H-Flip
+                </label>
+                <label style="display:flex;align-items:center;gap:var(--space-1)">
+                    <input type="checkbox" id="se-vflip"> V-Flip
+                </label>
+            </div>
+            <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
+                <button class="btn btn--primary" id="btn-stream-save" onclick="saveStreamConfig()">Save</button>
+                <button class="btn btn--secondary" onclick="toggleStreamEdit()">Cancel</button>
+            </div>
+            <div id="stream-result"></div>
+        </div>
+    </div>
+
     <!-- System Health -->
     <div class="card">
         <div class="card__title">System Health</div>
@@ -348,6 +430,22 @@ function loadStatus() {
             var memPct = d.memory_total_mb > 0 ? Math.round(d.memory_used_mb / d.memory_total_mb * 100) : 0;
             $('s-mem').textContent = d.memory_used_mb + ' / ' + d.memory_total_mb + ' MB (' + memPct + '%)';
             $('s-uptime').textContent = d.uptime || '--';
+
+            // Update stream settings
+            if (d.stream_config) {
+                _streamConfig = d.stream_config;
+                var sc = d.stream_config;
+                $('s-resolution').textContent = sc.width + 'x' + sc.height;
+                $('s-fps').textContent = sc.fps + ' fps';
+                var brMbps = (sc.bitrate / 1000000).toFixed(1);
+                $('s-bitrate').textContent = brMbps + ' Mbps';
+                $('s-profile').textContent = sc.h264_profile || '--';
+                var orient = [];
+                if (sc.rotation === 180) orient.push('180\u00B0');
+                if (sc.hflip) orient.push('H-Flip');
+                if (sc.vflip) orient.push('V-Flip');
+                $('s-orientation').textContent = orient.length > 0 ? orient.join(', ') : 'Normal';
+            }
 
             // Update pairing section
             updatePairingUI(d);
@@ -555,6 +653,92 @@ function doReset() {
     .catch(function() {
         $('reset-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
         cancelReset();
+    });
+}
+
+var _resMaxFps = {'640x480': 58, '1296x972': 43, '1920x1080': 30};
+var _streamConfig = null;
+
+function toggleStreamEdit() {
+    var view = $('stream-view');
+    var edit = $('stream-edit');
+    var btn = $('btn-stream-edit');
+    if (edit.style.display === 'none') {
+        // Populate form from current config
+        if (_streamConfig) {
+            var sc = _streamConfig;
+            $('se-resolution').value = sc.width + 'x' + sc.height;
+            $('se-fps').value = sc.fps;
+            $('se-bitrate').value = (sc.bitrate / 1000000).toFixed(1);
+            $('se-profile').value = sc.h264_profile || 'high';
+            $('se-keyframe').value = sc.keyframe_interval || 30;
+            $('se-rotation').value = String(sc.rotation || 0);
+            $('se-hflip').checked = !!sc.hflip;
+            $('se-vflip').checked = !!sc.vflip;
+            onResChange();
+        }
+        view.style.display = 'none';
+        edit.style.display = 'block';
+        btn.style.display = 'none';
+        $('stream-result').innerHTML = '';
+    } else {
+        view.style.display = 'block';
+        edit.style.display = 'none';
+        btn.style.display = '';
+    }
+}
+
+function onResChange() {
+    var res = $('se-resolution').value;
+    var maxFps = _resMaxFps[res] || 30;
+    var fpsInput = $('se-fps');
+    fpsInput.max = maxFps;
+    if (parseInt(fpsInput.value) > maxFps) {
+        fpsInput.value = maxFps;
+    }
+}
+
+function saveStreamConfig() {
+    var res = $('se-resolution').value.split('x');
+    var payload = {
+        width: parseInt(res[0]),
+        height: parseInt(res[1]),
+        fps: parseInt($('se-fps').value),
+        bitrate: Math.round(parseFloat($('se-bitrate').value) * 1000000),
+        h264_profile: $('se-profile').value,
+        keyframe_interval: parseInt($('se-keyframe').value),
+        rotation: parseInt($('se-rotation').value),
+        hflip: $('se-hflip').checked,
+        vflip: $('se-vflip').checked
+    };
+
+    $('btn-stream-save').disabled = true;
+    $('btn-stream-save').textContent = 'Saving...';
+    $('stream-result').innerHTML = '';
+
+    fetch('/api/stream-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        $('btn-stream-save').disabled = false;
+        $('btn-stream-save').textContent = 'Save';
+        if (d.error) {
+            $('stream-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
+        } else {
+            $('stream-result').innerHTML = '<div class="msg msg--ok">Settings applied. Stream restarting...</div>';
+            setTimeout(function() {
+                toggleStreamEdit();
+                loadStatus();
+            }, 1500);
+        }
+    })
+    .catch(function() {
+        $('btn-stream-save').disabled = false;
+        $('btn-stream-save').textContent = 'Save';
+        $('stream-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
     });
 }
 

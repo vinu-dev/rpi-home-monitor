@@ -21,6 +21,15 @@ def _make_camera(**overrides):
         "last_seen": "2026-04-11T10:00:00Z",
         "firmware_version": "1.0.0",
         "rtsp_url": "",
+        "width": 1920,
+        "height": 1080,
+        "bitrate": 4000000,
+        "h264_profile": "high",
+        "keyframe_interval": 30,
+        "rotation": 0,
+        "hflip": False,
+        "vflip": False,
+        "config_sync": "unknown",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -499,3 +508,60 @@ class TestAuditLogging:
         svc = CameraService(store, audit=None)
         result, error, status = svc.confirm("cam-001")
         assert status == 200
+
+
+class TestAcceptCameraConfig:
+    """Test accept_camera_config (camera-initiated config push)."""
+
+    def test_updates_stream_params(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.accept_camera_config(
+            "cam-001", {"width": 640, "height": 480, "fps": 30}
+        )
+        assert status == 200
+        assert error == ""
+        assert cam.width == 640
+        assert cam.height == 480
+        assert cam.fps == 30
+        assert cam.config_sync == "synced"
+        store.save_camera.assert_called_once_with(cam)
+
+    def test_rejects_unknown_camera(self):
+        store = MagicMock()
+        store.get_camera.return_value = None
+        svc = CameraService(store)
+        error, status = svc.accept_camera_config("cam-nope", {"fps": 15})
+        assert status == 404
+        assert "not found" in error.lower()
+
+    def test_rejects_unknown_param(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.accept_camera_config("cam-001", {"unknown": 42})
+        assert status == 400
+        assert "Unknown" in error
+
+    def test_does_not_push_back_to_camera(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        control = MagicMock()
+        svc = CameraService(store, control_client=control)
+        svc.accept_camera_config("cam-001", {"fps": 15})
+        control.set_config.assert_not_called()
+
+    def test_logs_audit_event(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_camera_config("cam-001", {"fps": 15})
+        audit.log_event.assert_called_once()
+        call_args = audit.log_event.call_args
+        assert call_args[0][0] == "CAMERA_CONFIG_RECEIVED"

@@ -142,6 +142,15 @@ CAMERA_LIST_FIELDS = {
     "paired_at",
     "last_seen",
     "firmware_version",
+    "width",
+    "height",
+    "bitrate",
+    "h264_profile",
+    "keyframe_interval",
+    "rotation",
+    "hflip",
+    "vflip",
+    "config_sync",
 }
 
 
@@ -845,3 +854,69 @@ class TestErrorResponseConsistency:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+
+class TestConfigNotifyContract:
+    """POST /api/v1/cameras/config-notify (HMAC auth from camera)."""
+
+    def test_missing_headers_returns_401(self, app, client):
+        _add_camera(app)
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            json={"fps": 15},
+        )
+        assert resp.status_code == 401
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_invalid_signature_returns_401(self, app, client):
+        import time
+
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = "ab" * 32
+        app.store.save_camera(cam)
+
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            json={"fps": 15},
+            headers={
+                "X-Camera-ID": "cam-001",
+                "X-Timestamp": str(int(time.time())),
+                "X-Signature": "bad_signature",
+            },
+        )
+        assert resp.status_code == 401
+
+    def test_valid_signature_returns_200(self, app, client):
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = "ab" * 32
+        app.store.save_camera(cam)
+
+        body = json.dumps({"fps": 15}).encode()
+        timestamp = str(int(time.time()))
+        body_hash = hashlib.sha256(body).hexdigest()
+        message = f"cam-001:{timestamp}:{body_hash}"
+        sig = hmac.new(
+            bytes.fromhex("ab" * 32), message.encode(), hashlib.sha256
+        ).hexdigest()
+
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            data=body,
+            content_type="application/json",
+            headers={
+                "X-Camera-ID": "cam-001",
+                "X-Timestamp": timestamp,
+                "X-Signature": sig,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "message" in data
