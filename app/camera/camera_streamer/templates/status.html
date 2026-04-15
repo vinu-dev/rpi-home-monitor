@@ -223,6 +223,31 @@ body {
         </div>
     </div>
 
+    <!-- Stream Settings -->
+    <div class="card">
+        <div class="card__title">Stream Settings</div>
+        <div class="info-row">
+            <span class="info-row__label">Resolution</span>
+            <span class="info-row__value" id="s-resolution">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Framerate</span>
+            <span class="info-row__value" id="s-fps">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Bitrate</span>
+            <span class="info-row__value" id="s-bitrate">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">H.264 Profile</span>
+            <span class="info-row__value" id="s-profile">--</span>
+        </div>
+        <div class="info-row">
+            <span class="info-row__label">Orientation</span>
+            <span class="info-row__value" id="s-orientation">--</span>
+        </div>
+    </div>
+
     <!-- System Health -->
     <div class="card">
         <div class="card__title">System Health</div>
@@ -348,6 +373,21 @@ function loadStatus() {
             var memPct = d.memory_total_mb > 0 ? Math.round(d.memory_used_mb / d.memory_total_mb * 100) : 0;
             $('s-mem').textContent = d.memory_used_mb + ' / ' + d.memory_total_mb + ' MB (' + memPct + '%)';
             $('s-uptime').textContent = d.uptime || '--';
+
+            // Update stream settings
+            if (d.stream_config) {
+                var sc = d.stream_config;
+                $('s-resolution').textContent = sc.width + 'x' + sc.height;
+                $('s-fps').textContent = sc.fps + ' fps';
+                var brMbps = (sc.bitrate / 1000000).toFixed(1);
+                $('s-bitrate').textContent = brMbps + ' Mbps';
+                $('s-profile').textContent = sc.h264_profile || '--';
+                var orient = [];
+                if (sc.rotation === 180) orient.push('180\u00B0');
+                if (sc.hflip) orient.push('H-Flip');
+                if (sc.vflip) orient.push('V-Flip');
+                $('s-orientation').textContent = orient.length > 0 ? orient.join(', ') : 'Normal';
+            }
 
             // Update pairing section
             updatePairingUI(d);

@@ -307,6 +307,7 @@ STATUS_API_FIELDS = {
     "uptime",
     "memory_total_mb",
     "memory_used_mb",
+    "stream_config",
 }
 
 

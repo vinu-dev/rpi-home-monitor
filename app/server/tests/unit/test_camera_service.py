@@ -21,6 +21,15 @@ def _make_camera(**overrides):
         "last_seen": "2026-04-11T10:00:00Z",
         "firmware_version": "1.0.0",
         "rtsp_url": "",
+        "width": 1920,
+        "height": 1080,
+        "bitrate": 4000000,
+        "h264_profile": "high",
+        "keyframe_interval": 30,
+        "rotation": 0,
+        "hflip": False,
+        "vflip": False,
+        "config_sync": "unknown",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -332,7 +341,7 @@ class TestUpdate:
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
-        error, status = svc.update("cam-001", {"fps": 31})
+        error, status = svc.update("cam-001", {"fps": 59})
         assert status == 400
         assert "fps" in error
 

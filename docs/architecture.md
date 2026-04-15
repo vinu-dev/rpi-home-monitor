@@ -643,6 +643,47 @@ Admin triggers push → server sends artifact to camera OTA agent (port 8080, mT
 Camera runs same inbox → verify → install pipeline locally
 ```
 
+### 6.4 Server-to-Camera Control Channel (ADR-0015)
+
+The server pushes stream configuration to cameras via HTTPS REST calls to
+the camera's existing status server (port 443). Authentication uses mTLS —
+the server presents its certificate (signed by the server CA), and the
+camera verifies it against the `ca.crt` received during pairing.
+
+```
+Server                              Camera
+┌──────────────┐                   ┌──────────────────┐
+│ Dashboard UI │                   │ Status Server    │
+│   (admin)    │                   │ (port 443, HTTPS)│
+│      │       │    PUT /api/v1/   │      │           │
+│      └───────│────control/config─│──────┤           │
+│              │    (mTLS)         │      ▼           │
+│              │                   │ ControlHandler   │
+│              │                   │   • validate     │
+│              │                   │   • persist conf │
+│              │   200 {applied}   │   • restart      │
+│   ◄──────────│───────────────────│──── stream       │
+└──────────────┘                   └──────────────────┘
+```
+
+**Controllable parameters** (all require ~2-5s stream restart):
+
+| Parameter | Values | Default |
+|-----------|--------|---------|
+| Resolution (width x height) | 640x480, 1296x972, 1920x1080, 2592x1944 | 1920x1080 |
+| Framerate (fps) | 1-58 (limited by sensor mode) | 25 |
+| Bitrate | 0.5-8 Mbps | 4 Mbps |
+| H.264 Profile | baseline, main, high | high |
+| Keyframe Interval | 1-120 frames | 30 |
+| Rotation | 0, 180 | 0 |
+| Horizontal/Vertical Flip | true/false | false |
+
+Supported resolutions are auto-detected from the OV5647 sensor hardware.
+
+**Config sync model:** Camera is source of truth. Server stores a cached
+copy. If push fails, server marks `config_sync=pending` and retries on
+next health check cycle.
+
 ---
 
 ## 7. Directory Structure

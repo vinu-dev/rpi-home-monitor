@@ -104,10 +104,19 @@
         </div>
     </template>
     <template x-for="cam in cameras" :key="cam.id">
-        <div class="card camera-card">
+        <div class="card camera-card" :data-cam-id="cam.id">
             <div class="camera-card__info" @click="cam.status === 'online' && (window.location.href = '/live?camera=' + encodeURIComponent(cam.id))" :style="cam.status === 'online' ? 'cursor:pointer' : ''">
                 <div class="camera-card__name" x-text="cam.name || cam.id"></div>
                 <div class="camera-card__location" x-text="cam.location || 'No location set'"></div>
+                <div class="camera-card__meta">
+                    <span class="text-small text-muted" x-text="cam.width + 'x' + cam.height + ' @ ' + cam.fps + 'fps'"></span>
+                    <span class="text-small" :class="{
+                        'text-success': cam.config_sync === 'synced',
+                        'text-warning': cam.config_sync === 'pending',
+                        'text-danger': cam.config_sync === 'error',
+                        'text-muted': cam.config_sync === 'unknown'
+                    }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
+                </div>
                 <div class="camera-card__last-seen" x-text="cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : ''"></div>
             </div>
             <div class="camera-card__actions">
@@ -123,8 +132,76 @@
                     </div>
                 </template>
                 <template x-if="cam.status !== 'pending'">
-                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                    <div class="camera-card__btns">
+                        <button class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
+                        <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                    </div>
                 </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- Stream Settings Modal -->
+    <template x-if="editCam">
+        <div class="modal-overlay" @click.self="editCam = null">
+            <div class="card modal-card">
+                <div class="modal-card__header">
+                    <span style="font-weight:600" x-text="'Stream Settings \u2014 ' + (editCam.name || editCam.id)"></span>
+                    <button class="btn btn--secondary btn--small btn--icon" @click="editCam = null">&#x2715;</button>
+                </div>
+                <div class="form-group">
+                    <label>Resolution</label>
+                    <select class="form-input" x-model="editForm.resolution" @change="onResolutionChange()">
+                        <option value="640x480">640x480 (max 58 fps)</option>
+                        <option value="1296x972">1296x972 (max 43 fps)</option>
+                        <option value="1920x1080">1920x1080 (max 30 fps)</option>
+                        <option value="2592x1944">2592x1944 (max 15 fps)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Framerate (fps)</label>
+                    <input type="number" class="form-input" x-model.number="editForm.fps" min="1" :max="editForm.maxFps">
+                    <div class="text-small text-muted" x-text="'Max: ' + editForm.maxFps + ' fps for this resolution'"></div>
+                </div>
+                <div class="form-group">
+                    <label>Bitrate (Mbps)</label>
+                    <input type="number" class="form-input" x-model.number="editForm.bitrateMbps" min="0.5" max="8" step="0.5">
+                </div>
+                <div class="form-group">
+                    <label>H.264 Profile</label>
+                    <select class="form-input" x-model="editForm.h264_profile">
+                        <option value="baseline">Baseline</option>
+                        <option value="main">Main</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Keyframe Interval (frames)</label>
+                    <input type="number" class="form-input" x-model.number="editForm.keyframe_interval" min="1" max="120">
+                </div>
+                <div class="form-group">
+                    <label>Rotation</label>
+                    <select class="form-input" x-model.number="editForm.rotation">
+                        <option value="0">0&deg; (Normal)</option>
+                        <option value="180">180&deg;</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display:flex;gap:16px;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" x-model="editForm.hflip"> Horizontal Flip
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" x-model="editForm.vflip"> Vertical Flip
+                    </label>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button class="btn btn--primary" @click="saveStreamSettings()" :disabled="savingStream">
+                        <span x-text="savingStream ? 'Saving...' : 'Save & Apply'"></span>
+                    </button>
+                    <button class="btn btn--secondary" @click="editCam = null">Cancel</button>
+                </div>
+                <div class="text-small text-muted" style="margin-top:8px;">Changing settings will briefly interrupt the stream (~2-5s).</div>
+                <div x-show="streamSaveMsg" class="msg mt-8" :class="streamSaveOk ? 'msg--ok' : 'msg--err'" x-text="streamSaveMsg"></div>
             </div>
         </div>
     </template>
@@ -143,6 +220,11 @@ function dashboardPage() {
         pairingPin: '',
         pairingCameraId: '',
         scanning: false,
+        editCam: null,
+        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, maxFps: 30 },
+        savingStream: false,
+        streamSaveMsg: '',
+        streamSaveOk: false,
         _healthInterval: null,
         _cameraInterval: null,
 
@@ -223,6 +305,63 @@ function dashboardPage() {
                 await this.loadCameras();
             } catch(e) {
                 alert(e.message || 'Failed to remove camera');
+            }
+        },
+
+        // --- Stream Settings (ADR-0015) ---
+        _resMaxFps: { '640x480': 58, '1296x972': 43, '1920x1080': 30, '2592x1944': 15 },
+
+        openStreamSettings(cam) {
+            this.editCam = cam;
+            var resKey = cam.width + 'x' + cam.height;
+            this.editForm = {
+                resolution: resKey,
+                fps: cam.fps,
+                bitrateMbps: (cam.bitrate / 1000000),
+                h264_profile: cam.h264_profile || 'high',
+                keyframe_interval: cam.keyframe_interval || 30,
+                rotation: cam.rotation || 0,
+                hflip: cam.hflip || false,
+                vflip: cam.vflip || false,
+                maxFps: this._resMaxFps[resKey] || 30,
+            };
+            this.streamSaveMsg = '';
+        },
+
+        onResolutionChange() {
+            this.editForm.maxFps = this._resMaxFps[this.editForm.resolution] || 30;
+            if (this.editForm.fps > this.editForm.maxFps) {
+                this.editForm.fps = this.editForm.maxFps;
+            }
+        },
+
+        async saveStreamSettings() {
+            if (!this.editCam) return;
+            this.savingStream = true;
+            this.streamSaveMsg = '';
+            var parts = this.editForm.resolution.split('x');
+            var payload = {
+                width: parseInt(parts[0]),
+                height: parseInt(parts[1]),
+                fps: this.editForm.fps,
+                bitrate: Math.round(this.editForm.bitrateMbps * 1000000),
+                h264_profile: this.editForm.h264_profile,
+                keyframe_interval: this.editForm.keyframe_interval,
+                rotation: parseInt(this.editForm.rotation),
+                hflip: this.editForm.hflip,
+                vflip: this.editForm.vflip,
+            };
+            try {
+                await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(this.editCam.id), payload);
+                this.streamSaveOk = true;
+                this.streamSaveMsg = 'Settings saved and pushed to camera.';
+                await this.loadCameras();
+                setTimeout(() => { this.editCam = null; }, 1500);
+            } catch(e) {
+                this.streamSaveOk = false;
+                this.streamSaveMsg = e.message || 'Failed to save settings';
+            } finally {
+                this.savingStream = false;
             }
         },
 

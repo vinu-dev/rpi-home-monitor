@@ -142,6 +142,15 @@ CAMERA_LIST_FIELDS = {
     "paired_at",
     "last_seen",
     "firmware_version",
+    "width",
+    "height",
+    "bitrate",
+    "h264_profile",
+    "keyframe_interval",
+    "rotation",
+    "hflip",
+    "vflip",
+    "config_sync",
 }
 
 
