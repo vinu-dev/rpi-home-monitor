@@ -15,7 +15,12 @@ Warning thresholds:
 """
 
 import shutil
+import time
 from pathlib import Path
+
+# Cached CPU sample for delta calculation between calls
+_prev_cpu_sample: tuple[float, ...] | None = None
+_prev_cpu_time: float = 0.0
 
 
 def get_cpu_temperature() -> float:
@@ -31,20 +36,50 @@ def get_cpu_temperature() -> float:
         return 0.0
 
 
-def get_cpu_usage() -> float:
-    """Get CPU usage percentage.
+def _read_cpu_times() -> tuple[float, ...] | None:
+    """Read aggregate CPU times from /proc/stat.
 
-    Uses /proc/stat to calculate CPU usage between two samples.
-    Returns 0.0 if not available.
+    Returns (user, nice, system, idle, iowait, irq, softirq, steal)
+    or None if unavailable.
     """
     try:
         with open("/proc/stat") as f:
             line = f.readline()
-        values = list(map(int, line.split()[1:]))  # noqa: F841
-        # Need two samples for delta — return 0 for single-call
-        return 0.0
+        return tuple(map(float, line.split()[1:8]))
     except (OSError, ValueError, IndexError):
+        return None
+
+
+def get_cpu_usage() -> float:
+    """Get CPU usage percentage since last call.
+
+    Compares /proc/stat counters between two successive calls. The
+    first call returns 0.0 (no previous sample) and caches a baseline.
+    Subsequent calls return the delta-based usage percentage.
+    """
+    global _prev_cpu_sample, _prev_cpu_time
+
+    current = _read_cpu_times()
+    if current is None:
         return 0.0
+
+    now = time.monotonic()
+    prev = _prev_cpu_sample
+    _prev_cpu_sample = current
+    _prev_cpu_time = now
+
+    if prev is None:
+        return 0.0
+
+    # Delta between samples: user, nice, system, idle, iowait, irq, softirq
+    deltas = tuple(c - p for c, p in zip(current, prev, strict=False))
+    total = sum(deltas)
+    if total <= 0:
+        return 0.0
+
+    idle = deltas[3]  # idle column
+    usage = ((total - idle) / total) * 100
+    return round(min(usage, 100.0), 1)
 
 
 def get_memory_info() -> dict:
@@ -127,6 +162,76 @@ def get_uptime() -> dict:
     }
 
 
+def get_network_info() -> list[dict]:
+    """Get active network interfaces with IP addresses.
+
+    Returns a list of dicts with name, ip, mac, and type.
+    Reads from /sys/class/net/. Linux-only (uses fcntl ioctl for
+    IP address lookup). Returns empty list on non-Linux systems.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return []  # Not on Linux (CI, Windows dev machine)
+
+    import socket
+    import struct
+
+    interfaces = []
+    net_dir = Path("/sys/class/net")
+    if not net_dir.is_dir():
+        return interfaces
+
+    for iface in sorted(net_dir.iterdir()):
+        name = iface.name
+        if name == "lo":
+            continue
+
+        info: dict = {"name": name, "ip": "", "mac": "", "type": ""}
+
+        # Determine type
+        if name.startswith("wlan") or name.startswith("wlp"):
+            info["type"] = "wifi"
+        elif name.startswith("eth") or name.startswith("enp"):
+            info["type"] = "ethernet"
+        elif name.startswith("tailscale"):
+            info["type"] = "vpn"
+        else:
+            info["type"] = "other"
+
+        # Read MAC address
+        try:
+            info["mac"] = (iface / "address").read_text().strip()
+        except OSError:
+            pass
+
+        # Get IPv4 address via ioctl
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            result = fcntl.ioctl(
+                sock.fileno(),
+                0x8915,  # SIOCGIFADDR
+                struct.pack("256s", name.encode()[:15]),
+            )
+            info["ip"] = socket.inet_ntoa(result[20:24])
+            sock.close()
+        except OSError:
+            pass
+
+        # Only include interfaces that are UP
+        try:
+            flags = (iface / "flags").read_text().strip()
+            if int(flags, 16) & 0x1 == 0:  # IFF_UP
+                continue
+        except (OSError, ValueError):
+            pass
+
+        if info["ip"]:
+            interfaces.append(info)
+
+    return interfaces
+
+
 def get_health_summary(data_dir: str = "/data") -> dict:
     """Collect all health metrics in one call.
 
@@ -150,6 +255,7 @@ def get_health_summary(data_dir: str = "/data") -> dict:
         "cpu_usage_percent": get_cpu_usage(),
         "memory": memory,
         "disk": disk,
+        "network": get_network_info(),
         "uptime": uptime,
         "warnings": warnings,
         "status": "warning" if warnings else "healthy",

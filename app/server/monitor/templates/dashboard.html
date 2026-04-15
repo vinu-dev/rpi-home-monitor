@@ -20,11 +20,23 @@
     <div class="card health-card">
         <div class="health-card__value" :class="usageColor(health.mem)" x-text="health.mem !== null ? health.mem.toFixed(0) + '%' : '--'"></div>
         <div class="health-card__label">Memory</div>
+        <div class="health-card__detail" x-text="health.memDetail"></div>
     </div>
     <div class="card health-card">
         <div class="health-card__value" :class="usageColor(health.disk)" x-text="health.disk !== null ? health.disk.toFixed(0) + '%' : '--'"></div>
-        <div class="health-card__label">Disk Usage</div>
+        <div class="health-card__label">Disk</div>
+        <div class="health-card__detail" x-text="health.diskDetail"></div>
     </div>
+</div>
+
+<!-- Network -->
+<div class="grid grid--health" style="margin-top:8px;" x-show="health.network.length > 0">
+    <template x-for="iface in health.network" :key="iface.name">
+        <div class="card health-card">
+            <div class="health-card__value health-card__value--green" x-text="iface.ip || '--'" style="font-size:1em;"></div>
+            <div class="health-card__label" x-text="iface.name + ' (' + iface.type + ')'"></div>
+        </div>
+    </template>
 </div>
 
 <!-- Warnings -->
@@ -134,7 +146,7 @@
 <script>
 function dashboardPage() {
     return {
-        health: { temp: null, cpu: null, mem: null, disk: null, warnings: [], uptime: '' },
+        health: { temp: null, cpu: null, mem: null, memDetail: '', disk: null, diskDetail: '', warnings: [], uptime: '', network: [] },
         cameras: [],
         showAddForm: false,
         newCam: { id: '', name: '', location: '' },
@@ -162,7 +174,10 @@ function dashboardPage() {
                 this.health.temp = data.cpu_temp_c || 0;
                 this.health.cpu = data.cpu_usage_percent || 0;
                 this.health.mem = (data.memory && data.memory.percent) || 0;
+                this.health.memDetail = data.memory ? (data.memory.used_mb + ' / ' + data.memory.total_mb + ' MB') : '';
                 this.health.disk = (data.disk && data.disk.percent) || 0;
+                this.health.diskDetail = data.disk ? (data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB') : '';
+                this.health.network = data.network || [];
                 this.health.warnings = data.warnings || [];
             } catch(e) {}
             try {

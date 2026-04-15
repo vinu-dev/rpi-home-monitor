@@ -113,6 +113,22 @@
      NETWORK TAB (admin only) — WiFi + Tailscale
      ══════════════���════════════════════════════════════════════ -->
 <div x-show="isAdmin && tab === 'network'" x-cloak>
+    <!-- Network Interfaces -->
+    <div class="settings-section" x-show="networkInterfaces.length > 0">
+        <div class="settings-section__title">Network Interfaces</div>
+        <div class="card">
+            <template x-for="iface in networkInterfaces" :key="iface.name">
+                <div class="info-row" style="padding:4px 0;">
+                    <span class="info-row__label" x-text="iface.name"></span>
+                    <span class="info-row__value">
+                        <span x-text="iface.ip" style="font-family:monospace;"></span>
+                        <span class="text-muted text-small" x-text="'(' + iface.type + ')'"></span>
+                    </span>
+                </div>
+            </template>
+        </div>
+    </div>
+
     <!-- WiFi Network -->
     <div class="settings-section">
         <div class="settings-section__title">WiFi Network</div>
@@ -590,6 +606,7 @@ function settingsPage() {
         showAddUser: false,
         showWifiForm: false,
 
+        networkInterfaces: [],
         settings: { hostname: '', timezone: '', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
         sysInfo: { firmware_version: '', uptime: '', disk_total: '', disk_used: '', disk_free: '' },
         users: [],
@@ -620,6 +637,7 @@ function settingsPage() {
                 this.loadWifi();
                 this.loadStorageStatus();
                 this.scanUsb();
+                this.loadNetworkInterfaces();
                 this.loadTailscale();
             }
         },
@@ -853,6 +871,14 @@ function settingsPage() {
                 await this.loadTailscale();
             } catch(e) { window.HM.toast(e.message || 'Failed to save config', 'error'); }
             this.tailscale.loading = false;
+        },
+
+        /* --- Network --- */
+        async loadNetworkInterfaces() {
+            try {
+                var data = await window.HM.api.get('/api/v1/system/health');
+                this.networkInterfaces = data.network || [];
+            } catch(e) {}
         },
 
         /* --- Storage --- */

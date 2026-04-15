@@ -261,6 +261,11 @@ a:hover { text-decoration: underline; }
     color: var(--color-text-muted);
     margin-top: var(--space-1);
 }
+.health-card__detail {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-top: 2px;
+}
 .health-card__value--green { color: var(--color-success); }
 .health-card__value--yellow { color: var(--color-warning); }
 .health-card__value--red { color: var(--color-danger); }
