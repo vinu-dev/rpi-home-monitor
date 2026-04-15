@@ -106,6 +106,7 @@ def create_app(config=None):
         SESSION_TIMEOUT_MINUTES=60,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
+        SESSION_COOKIE_SECURE=True,
     )
     if config:
         app.config.update(config)
@@ -376,6 +377,7 @@ def _register_blueprints(app):
     from monitor.api.storage import storage_bp
     from monitor.api.system import system_bp
     from monitor.api.users import users_bp
+    from monitor.api.webrtc import webrtc_bp
     from monitor.auth import auth_bp
     from monitor.provisioning import provisioning_bp as setup_bp
     from monitor.views import views_bp
@@ -392,3 +394,4 @@ def _register_blueprints(app):
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
+    app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")

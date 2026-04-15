@@ -73,6 +73,7 @@ def app(data_dir):
             "CLIP_DURATION_SECONDS": 180,
             "STORAGE_THRESHOLD_PERCENT": 90,
             "SESSION_TIMEOUT_MINUTES": 30,
+            "SESSION_COOKIE_SECURE": False,
         }
     )
     return app
