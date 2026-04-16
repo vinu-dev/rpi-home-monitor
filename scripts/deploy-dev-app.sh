@@ -316,7 +316,7 @@ SVCEOF
         # Tailscale: skip if unconfigured — saves ~50MB RAM on Zero 2W
         state_keys=0
         if [ -f /data/tailscale/tailscaled.state ]; then
-            state_keys=\$(python3 -c 'import json; d=json.load(open("/data/tailscale/tailscaled.state")); print(len(d))' 2>/dev/null || echo 0)
+            state_keys=\$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' /data/tailscale/tailscaled.state 2>/dev/null || echo 0)
         fi
         if [ \"\$state_keys\" = '0' ]; then
             systemctl stop tailscaled 2>/dev/null || true
