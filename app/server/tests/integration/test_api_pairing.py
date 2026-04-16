@@ -111,6 +111,24 @@ class TestUnpairCamera:
         resp = client.post("/api/v1/cameras/nonexistent/unpair")
         assert resp.status_code == 404
 
+    def test_unpair_stops_streaming(self, app, client):
+        """Unpair should stop the streaming pipeline."""
+        from unittest.mock import MagicMock
+
+        _login(app, client)
+        _add_camera(app, status="online")
+        app.streaming.stop_camera = MagicMock()
+
+        resp = client.post("/api/v1/cameras/cam-001/unpair")
+        assert resp.status_code == 200
+        app.streaming.stop_camera.assert_called_once_with("cam-001")
+
+    def test_unpair_unknown_camera(self, app, client):
+        """Unpair non-existent camera returns 404."""
+        _login(app, client)
+        resp = client.post("/api/v1/cameras/no-such-cam/unpair")
+        assert resp.status_code == 404
+
 
 class TestExchangeCerts:
     """Test POST /api/v1/pair/exchange."""
@@ -173,6 +191,60 @@ class TestExchangeCerts:
             assert "ca_cert" in data
             assert "pairing_secret" in data
             assert "rtsps_url" in data
+
+    @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
+    def test_exchange_starts_streaming_for_continuous_camera(
+        self, mock_gen, app, client
+    ):
+        """Streaming pipeline starts automatically after successful pairing."""
+        from unittest.mock import MagicMock
+
+        _login(app, client)
+        cam = _add_camera(app)
+        cam.recording_mode = "continuous"
+        app.store.save_camera(cam)
+        mock_gen.return_value = (
+            {"cert": "CERT", "key": "KEY", "serial": "S1"},
+            "",
+        )
+        app.streaming.start_camera = MagicMock()
+
+        resp = client.post("/api/v1/cameras/cam-001/pair")
+        pin = resp.get_json()["pin"]
+
+        with app.test_client() as camera_client:
+            camera_client.post(
+                "/api/v1/pair/exchange",
+                json={"pin": pin, "camera_id": "cam-001"},
+            )
+
+        app.streaming.start_camera.assert_called_once_with("cam-001")
+
+    @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
+    def test_exchange_skips_streaming_for_on_demand_camera(self, mock_gen, app, client):
+        """Streaming pipeline does NOT start if recording_mode is on_demand."""
+        from unittest.mock import MagicMock
+
+        _login(app, client)
+        cam = _add_camera(app)
+        cam.recording_mode = "on_demand"
+        app.store.save_camera(cam)
+        mock_gen.return_value = (
+            {"cert": "CERT", "key": "KEY", "serial": "S2"},
+            "",
+        )
+        app.streaming.start_camera = MagicMock()
+
+        resp = client.post("/api/v1/cameras/cam-001/pair")
+        pin = resp.get_json()["pin"]
+
+        with app.test_client() as camera_client:
+            camera_client.post(
+                "/api/v1/pair/exchange",
+                json={"pin": pin, "camera_id": "cam-001"},
+            )
+
+        app.streaming.start_camera.assert_not_called()
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_wrong_pin_rejected(self, mock_gen, app, client):
