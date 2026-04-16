@@ -48,6 +48,13 @@ def unpair_camera(camera_id):
     )
     if error:
         return jsonify({"error": error}), status
+
+    # Stop streaming pipeline when camera is unpaired
+    try:
+        current_app.streaming.stop_camera(camera_id)
+    except Exception:
+        pass
+
     return jsonify({"message": "Camera unpaired"}), 200
 
 
@@ -97,4 +104,14 @@ def exchange_certs():
     )
     if error:
         return jsonify({"error": error}), status
+
+    # Start streaming immediately if camera is set to continuous recording.
+    # Without this, streaming only starts on server restart — breaking fresh pairs.
+    try:
+        camera = current_app.store.get_camera(camera_id)
+        if camera and camera.recording_mode == "continuous":
+            current_app.streaming.start_camera(camera_id)
+    except Exception:
+        pass  # Non-fatal: streaming can be started from dashboard
+
     return jsonify(result), 200
