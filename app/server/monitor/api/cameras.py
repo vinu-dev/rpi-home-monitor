@@ -202,6 +202,24 @@ def delete_camera(camera_id):
     return jsonify({"message": "Camera removed"}), 200
 
 
+@cameras_bp.route("/scan", methods=["POST"])
+@admin_required
+@csrf_protect
+def scan_cameras():
+    """Trigger an mDNS scan and return current camera list.
+
+    Sends an immediate PTR query for _rtsp._tcp on the local network.
+    The background ServiceBrowser processes responses and calls report_camera()
+    for any new cameras, which adds them as pending entries.
+
+    Returns the current camera list (same as GET /cameras) so the dashboard
+    can update in a single round-trip.
+    """
+    current_app.discovery_service.trigger_scan()
+    cameras = current_app.camera_service.list_cameras()
+    return jsonify(cameras), 200
+
+
 @cameras_bp.route("/<camera_id>/status", methods=["GET"])
 @login_required
 def camera_status(camera_id):

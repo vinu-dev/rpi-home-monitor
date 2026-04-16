@@ -151,6 +151,11 @@ CAMERA_LIST_FIELDS = {
     "hflip",
     "vflip",
     "config_sync",
+    # ADR-0016: live health fields sent via heartbeat
+    "streaming",
+    "cpu_temp",
+    "memory_percent",
+    "uptime_seconds",
 }
 
 

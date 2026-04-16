@@ -305,6 +305,9 @@ def _startup(app):
     app.storage_manager.start()
     app.cert_service.start()
 
+    # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
+    app.discovery_service.start_mdns_browser()
+
     # Staleness checker — marks cameras offline if no heartbeat received (ADR-0016)
     _start_staleness_checker(app)
 

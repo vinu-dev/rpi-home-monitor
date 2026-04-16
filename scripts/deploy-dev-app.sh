@@ -184,6 +184,8 @@ deploy_server() {
         find /opt/monitor/monitor -type d -exec chmod 755 {} \;
         find /opt/monitor/monitor -type f -exec chmod 644 {} \;
         chmod 0644 /opt/monitor/setup.py /opt/monitor/requirements.txt
+        # Install/upgrade Python dependencies (e.g. zeroconf for mDNS browsing)
+        pip3 install -q -r /opt/monitor/requirements.txt
         # Pre-compile bytecode so first-request import is instant
         python3 -m compileall -q /opt/monitor/monitor
     "
