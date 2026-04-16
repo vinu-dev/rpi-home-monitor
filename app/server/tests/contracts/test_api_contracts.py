@@ -130,7 +130,8 @@ class TestAuthMeContract:
 # Camera contracts (/api/v1/cameras/*)
 # ===========================================================================
 
-CAMERA_LIST_FIELDS = {
+# Admin sees all fields (network + health metrics)
+CAMERA_LIST_FIELDS_ADMIN = {
     "id",
     "name",
     "location",
@@ -158,24 +159,51 @@ CAMERA_LIST_FIELDS = {
     "uptime_seconds",
 }
 
+# Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
+CAMERA_LIST_FIELDS_VIEWER = CAMERA_LIST_FIELDS_ADMIN - {
+    "ip",
+    "cpu_temp",
+    "memory_percent",
+    "uptime_seconds",
+}
+
+# Backwards-compat alias (most tests use admin login)
+CAMERA_LIST_FIELDS = CAMERA_LIST_FIELDS_ADMIN
+
 
 class TestCamerasListContract:
     """GET /api/v1/cameras — array of camera objects."""
 
-    def test_camera_object_fields(self, app, client):
+    def test_camera_object_fields_admin(self, app, client):
+        """Admin sees full camera detail including IP and health metrics."""
         _login(app, client)
         _add_camera(app)
         data = client.get("/api/v1/cameras").get_json()
         assert isinstance(data, list)
         assert len(data) >= 1
-        _assert_fields(data[0], CAMERA_LIST_FIELDS)
+        _assert_fields(data[0], CAMERA_LIST_FIELDS_ADMIN)
+
+    def test_camera_object_fields_viewer(self, app, client):
+        """Viewer sees limited fields — no IP or health metrics."""
+        _login(app, client, role="viewer")
+        _add_camera(app)
+        data = client.get("/api/v1/cameras").get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        cam = data[0]
+        # Viewer should NOT see admin-only fields
+        for field in ("ip", "cpu_temp", "memory_percent", "uptime_seconds"):
+            assert field not in cam, f"Admin field '{field}' leaked to viewer"
+        # Viewer should see all viewer-accessible fields
+        for field in CAMERA_LIST_FIELDS_VIEWER:
+            assert field in cam, f"Expected viewer field '{field}' missing"
 
     def test_excludes_sensitive_fields(self, app, client):
         _login(app, client)
         _add_camera(app)
         data = client.get("/api/v1/cameras").get_json()
         cam = data[0]
-        for field in ["rtsp_url", "cert_serial", "password"]:
+        for field in ["rtsp_url", "cert_serial", "password", "pairing_secret"]:
             assert field not in cam, f"Sensitive field '{field}' leaked"
 
 

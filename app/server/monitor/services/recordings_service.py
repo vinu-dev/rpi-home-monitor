@@ -124,7 +124,21 @@ class RecordingsService:
             return None, "Invalid filename", 400
 
         recorder = self._get_recorder()
-        clip_path = Path(recorder._recordings_dir) / camera_id / date / filename
+        try:
+            recordings_root = Path(recorder._recordings_dir).resolve()
+            clip_path = (recordings_root / camera_id / date / filename).resolve()
+        except (ValueError, OSError):
+            # ValueError: embedded null bytes or other invalid path characters.
+            # OSError: path resolution failure on some platforms.
+            return None, "Invalid path", 400
+
+        # Guard against path traversal: clip must be inside recordings_root.
+        # This catches inputs like camera_id="../../etc", date="../..", etc.
+        try:
+            clip_path.relative_to(recordings_root)
+        except ValueError:
+            return None, "Invalid path", 400
+
         if not clip_path.is_file():
             return None, "Clip not found", 404
 

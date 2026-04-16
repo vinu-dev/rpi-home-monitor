@@ -12,12 +12,20 @@ Design patterns:
 """
 
 import logging
+import re
 from datetime import UTC, datetime
 
 log = logging.getLogger("monitor.camera_service")
 
 VALID_RECORDING_MODES = {"continuous", "off"}
 VALID_RESOLUTIONS = {"720p", "1080p"}
+
+# Camera IDs must follow cam-<hexsuffix> format: cam- prefix + 1-32 lowercase hex chars.
+# This matches the hardware serial format generated on cameras and prevents:
+# - Directory traversal via ../
+# - Filesystem limit violations (>255 chars)
+# - Injection via shell-unsafe characters
+_CAMERA_ID_RE = re.compile(r"^cam-[a-z0-9]{1,48}$")
 
 # Stream parameters that should be pushed to the camera (ADR-0015)
 STREAM_PARAMS = {
@@ -59,6 +67,15 @@ class CameraService:
         if not camera_id:
             return None, "Camera ID is required", 400
 
+        # Validate format: cam-<lowercase-hex>, max 52 chars total.
+        # Prevents directory traversal, injection, and filesystem limit issues.
+        if not _CAMERA_ID_RE.match(camera_id):
+            return (
+                None,
+                "Invalid camera ID format. Must be 'cam-' followed by 1-48 lowercase alphanumeric characters.",
+                400,
+            )
+
         existing = self._store.get_camera(camera_id)
         if existing is not None:
             return None, "Camera already exists", 409
@@ -81,16 +98,23 @@ class CameraService:
             201,
         )
 
-    def list_cameras(self) -> list[dict]:
-        """List all cameras (confirmed + pending)."""
+    def list_cameras(self, admin_view: bool = True) -> list[dict]:
+        """List all cameras (confirmed + pending).
+
+        admin_view=True: return all fields including network/health details.
+        admin_view=False (viewer role): omit fields that could expose network
+            topology (ip) or enable occupancy tracking (cpu_temp, memory_percent,
+            uptime_seconds). Viewers need camera status to use the UI, but not
+            internal health metrics or the camera's LAN address.
+        """
         cameras = self._store.get_cameras()
-        return [
-            {
+        result = []
+        for c in cameras:
+            cam = {
                 "id": c.id,
                 "name": c.name,
                 "location": c.location,
                 "status": c.status,
-                "ip": c.ip,
                 "recording_mode": c.recording_mode,
                 "resolution": c.resolution,
                 "fps": c.fps,
@@ -107,12 +131,15 @@ class CameraService:
                 "vflip": c.vflip,
                 "config_sync": c.config_sync,
                 "streaming": c.streaming,
-                "cpu_temp": c.cpu_temp,
-                "memory_percent": c.memory_percent,
-                "uptime_seconds": c.uptime_seconds,
             }
-            for c in cameras
-        ]
+            if admin_view:
+                # Admin-only fields: network topology + health metrics
+                cam["ip"] = c.ip
+                cam["cpu_temp"] = c.cpu_temp
+                cam["memory_percent"] = c.memory_percent
+                cam["uptime_seconds"] = c.uptime_seconds
+            result.append(cam)
+        return result
 
     def get_camera_status(self, camera_id: str) -> tuple[dict | None, str]:
         """Get live status for a camera.

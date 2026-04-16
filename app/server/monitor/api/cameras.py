@@ -8,6 +8,7 @@ Endpoints:
   PUT    /cameras/<id>         - update name, location, recording mode (admin)
   DELETE /cameras/<id>         - remove camera and revoke cert (admin)
   GET    /cameras/<id>/status  - live status (online, fps, uptime)
+  POST   /cameras/scan         - trigger mDNS scan + return camera list (admin)
   POST   /cameras/config-notify - accept config push from camera (HMAC auth)
   POST   /cameras/heartbeat   - periodic liveness + health update from camera (HMAC auth)
 
@@ -16,14 +17,55 @@ Routes are thin — all orchestration is in CameraService.
 
 import hashlib
 import hmac
+import threading
 import time
 
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
 
-# Max age for HMAC timestamp (seconds)
-_HMAC_MAX_AGE = 300
+# ── HMAC auth for camera M2M requests ────────────────────────────────────────
+# 30-second window is tight enough to prevent meaningful replay while still
+# tolerating real-world clock skew between camera and server (ADR-0016).
+_HMAC_MAX_AGE = 30  # seconds (was 300 — reduced to shrink replay window)
+
+# Thread-safe lock for per-app nonce cache mutation.
+_seen_nonces_lock = threading.Lock()
+
+
+def _get_seen_nonces() -> dict:
+    """Return the per-app replay cache, creating it if needed.
+
+    Stored on the app object (not module-level) so each Flask test app
+    gets its own fresh cache — preventing test state bleed.
+    """
+    app_obj = current_app._get_current_object()
+    if not hasattr(app_obj, "_hmac_seen_nonces"):
+        app_obj._hmac_seen_nonces = {}
+    return app_obj._hmac_seen_nonces
+
+
+def _record_and_check_replay(camera_id: str, timestamp_str: str, sig: str) -> bool:
+    """Return True if this (timestamp, sig) pair has been seen (replay attempt).
+
+    Thread-safe. Automatically expires stale entries.
+    """
+    key = (timestamp_str, sig)
+    now = time.time()
+
+    with _seen_nonces_lock:
+        nonces = _get_seen_nonces()
+        camera_cache = nonces.setdefault(camera_id, {})
+        # Purge expired entries (TTL = _HMAC_MAX_AGE)
+        expired = [k for k, exp in camera_cache.items() if exp <= now]
+        for k in expired:
+            del camera_cache[k]
+
+        if key in camera_cache:
+            return True  # replay detected — reject
+        camera_cache[key] = now + _HMAC_MAX_AGE
+    return False
+
 
 cameras_bp = Blueprint("cameras", __name__)
 
@@ -65,14 +107,24 @@ def _verify_camera_hmac(request) -> tuple[str, str | None]:
     if not hmac.compare_digest(signature, expected):
         return "", "Invalid signature"
 
+    # Replay detection: reject the exact same signed request twice
+    if _record_and_check_replay(camera_id, timestamp_str, signature):
+        return "", "Duplicate request (replay detected)"
+
     return camera_id, None
 
 
 @cameras_bp.route("", methods=["GET"])
 @login_required
 def list_cameras():
-    """List all cameras (confirmed + pending)."""
-    cameras = current_app.camera_service.list_cameras()
+    """List all cameras (confirmed + pending).
+
+    Admins see all fields including internal health metrics and camera IP.
+    Viewers see only the fields needed to display and use the camera UI.
+    This prevents viewers from mapping network topology or tracking occupancy.
+    """
+    admin_view = session.get("role") == "admin"
+    cameras = current_app.camera_service.list_cameras(admin_view=admin_view)
     return jsonify(cameras), 200
 
 
@@ -141,6 +193,24 @@ def camera_heartbeat():
     return jsonify(response), 200
 
 
+@cameras_bp.route("/scan", methods=["POST"])
+@admin_required
+@csrf_protect
+def scan_cameras():
+    """Trigger an mDNS scan and return current camera list.
+
+    Sends an immediate PTR query for _rtsp._tcp on the local network.
+    The background ServiceBrowser processes responses and calls report_camera()
+    for any new cameras, which adds them as pending entries.
+
+    Returns the current camera list (same as GET /cameras) so the dashboard
+    can update in a single round-trip.
+    """
+    current_app.discovery_service.trigger_scan()
+    cameras = current_app.camera_service.list_cameras(admin_view=True)
+    return jsonify(cameras), 200
+
+
 @cameras_bp.route("/<camera_id>/confirm", methods=["POST"])
 @admin_required
 @csrf_protect
@@ -200,24 +270,6 @@ def delete_camera(camera_id):
     if error:
         return jsonify({"error": error}), status
     return jsonify({"message": "Camera removed"}), 200
-
-
-@cameras_bp.route("/scan", methods=["POST"])
-@admin_required
-@csrf_protect
-def scan_cameras():
-    """Trigger an mDNS scan and return current camera list.
-
-    Sends an immediate PTR query for _rtsp._tcp on the local network.
-    The background ServiceBrowser processes responses and calls report_camera()
-    for any new cameras, which adds them as pending entries.
-
-    Returns the current camera list (same as GET /cameras) so the dashboard
-    can update in a single round-trip.
-    """
-    current_app.discovery_service.trigger_scan()
-    cameras = current_app.camera_service.list_cameras()
-    return jsonify(cameras), 200
 
 
 @cameras_bp.route("/<camera_id>/status", methods=["GET"])
