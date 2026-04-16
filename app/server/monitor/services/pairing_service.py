@@ -155,6 +155,13 @@ class PairingService:
         camera.pairing_secret = pairing_secret
         if ip:
             camera.ip = ip
+        # Set RTSP URL so streaming/recording works immediately after pairing
+        if not camera.rtsp_url:
+            camera.rtsp_url = f"rtsp://127.0.0.1:8554/{camera.id}"
+        if not camera.paired_at:
+            from datetime import UTC, datetime
+
+            camera.paired_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._store.save_camera(camera)
 
         # Clean up pending state

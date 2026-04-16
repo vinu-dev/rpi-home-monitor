@@ -11,6 +11,7 @@ import socket
 import subprocess
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
@@ -91,6 +92,9 @@ def create_app(config=None):
     log.info("Monitor server starting")
 
     app = Flask(__name__)
+    # nginx sets X-Real-IP and X-Forwarded-For — trust one proxy hop
+    # so request.remote_addr returns the real client IP, not 127.0.0.1
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     config_dir = os.environ.get("MONITOR_CONFIG_DIR", "/data/config")
     explicit_config_keys = set(config.keys()) if config else set()
 
