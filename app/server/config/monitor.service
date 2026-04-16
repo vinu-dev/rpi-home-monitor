@@ -1,7 +1,12 @@
 [Unit]
 Description=Home Monitor Server
-After=network-online.target nginx.service mediamtx.service local-fs.target
-Wants=network-online.target mediamtx.service
+# network.target (not network-online.target): monitor binds to localhost:5000
+# and talks to local mediamtx — it does not need internet connectivity at boot.
+# network-online.target waits for NetworkManager-wait-online (~60s) and
+# systemd-networkd-wait-online (~90s on no-carrier eth0) — causing multi-minute
+# startup delays for no benefit.
+After=network.target nginx.service mediamtx.service local-fs.target
+Wants=mediamtx.service
 
 [Service]
 Type=simple

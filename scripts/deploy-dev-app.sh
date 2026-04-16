@@ -184,6 +184,49 @@ deploy_server() {
         find /opt/monitor/monitor -type d -exec chmod 755 {} \;
         find /opt/monitor/monitor -type f -exec chmod 644 {} \;
         chmod 0644 /opt/monitor/setup.py /opt/monitor/requirements.txt
+        # Pre-compile bytecode so first-request import is instant
+        python3 -m compileall -q /opt/monitor/monitor
+    "
+
+    log "Applying boot optimisation overrides"
+    ssh "${SSH_OPTS[@]}" "$host" "
+        # Full unit file override — /etc/systemd/system/ takes priority over /usr/lib/.
+        # Removes network-online.target: monitor only needs localhost:5000, not internet.
+        # systemd-networkd-wait-online times out ~90s on eth0 no-carrier (server is on
+        # WiFi); NetworkManager-wait-online adds another ~60s. Total: ~2min wasted.
+        cat > /etc/systemd/system/monitor.service << 'SVCEOF'
+[Unit]
+Description=Home Monitor Server
+After=network.target nginx.service mediamtx.service local-fs.target
+Wants=mediamtx.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/monitor
+ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/opt/monitor
+Environment=FLASK_APP=monitor
+Environment=MONITOR_DATA_DIR=/data
+Environment=MONITOR_RECORDINGS_DIR=/data/recordings
+Environment=MONITOR_LIVE_DIR=/data/live
+Environment=MONITOR_CONFIG_DIR=/data/config
+Environment=MONITOR_CERTS_DIR=/data/certs
+Environment=MONITOR_LOG_DIR=/data/logs
+Environment=LOG_LEVEL=INFO
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+        # mediamtx: same — only listens on local RTSP port, no internet needed
+        sed 's|After=network-online.target|After=network.target|;s|Wants=network-online.target||' \
+            /usr/lib/systemd/system/mediamtx.service > /etc/systemd/system/mediamtx.service
+        # Mask systemd-networkd-wait-online: always times out on eth0 no-carrier
+        systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+        systemctl daemon-reload
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
@@ -230,6 +273,61 @@ deploy_camera() {
         find /opt/camera/camera_streamer -type d -exec chmod 755 {} \;
         find /opt/camera/camera_streamer -type f -exec chmod 644 {} \;
         chmod 0644 /opt/camera/setup.py /opt/camera/requirements.txt /opt/camera/camera.conf.default
+        # Pre-compile bytecode so first-request import is instant
+        python3 -m compileall -q /opt/camera/camera_streamer
+        chown -R camera:camera /opt/camera/camera_streamer/__pycache__ 2>/dev/null || true
+    "
+
+    log "Applying boot optimisation overrides"
+    ssh "${SSH_OPTS[@]}" "$host" "
+        # Full unit file override — removes network-online.target.
+        # In hotspot/AP mode nm-online waits full 60s timeout; camera-hotspot.service
+        # completes in ~6s (or skips instantly when setup-done), which is enough.
+        cat > /etc/systemd/system/camera-streamer.service << 'SVCEOF'
+[Unit]
+Description=Camera RTSP Streamer
+After=avahi-daemon.service local-fs.target NetworkManager.service camera-hotspot.service sys-subsystem-net-devices-wlan0.device
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=camera
+Group=camera
+WorkingDirectory=/opt/camera
+ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds/ACT/brightness /sys/class/leds/ACT/delay_on /sys/class/leds/ACT/delay_off 2>/dev/null || true'
+ExecStart=/usr/bin/python3 -m camera_streamer.main
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/opt/camera
+Environment=CAMERA_DATA_DIR=/data
+Environment=CAMERA_CONFIG_DIR=/data/config
+Environment=CAMERA_CERTS_DIR=/data/certs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data
+PrivateTmp=true
+SupplementaryGroups=video
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+        # Tailscale: skip if unconfigured — saves ~50MB RAM on Zero 2W
+        state_keys=0
+        if [ -f /data/tailscale/tailscaled.state ]; then
+            state_keys=\$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' /data/tailscale/tailscaled.state 2>/dev/null || echo 0)
+        fi
+        if [ \"\$state_keys\" = '0' ]; then
+            systemctl stop tailscaled 2>/dev/null || true
+            mkdir -p /etc/systemd/system/tailscaled.service.d
+            cat > /etc/systemd/system/tailscaled.service.d/50-require-config.conf << 'EOF'
+[Unit]
+ConditionPathExists=/data/tailscale/tailscaled.state
+ConditionFileNotEmpty=/data/tailscale/tailscaled.state
+EOF
+        fi
+        systemctl daemon-reload
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
