@@ -1,6 +1,11 @@
 [Unit]
 Description=Camera RTSP Streamer
-After=avahi-daemon.service local-fs.target NetworkManager.service sys-subsystem-net-devices-wlan0.device
+# camera-hotspot.service (oneshot) completes in ~6s and signals either:
+#   a) hotspot is up (setup mode), or
+#   b) condition was false (already set up) — exits immediately.
+# Either way camera-streamer can start. Avoids waiting for
+# network-online.target which adds ~60-120s in hotspot/AP mode.
+After=avahi-daemon.service local-fs.target NetworkManager.service camera-hotspot.service sys-subsystem-net-devices-wlan0.device
 Wants=NetworkManager.service
 
 [Service]
