@@ -107,6 +107,25 @@ class TestCheckOffline:
             camera = app.store.get_camera("cam-001")
             assert camera.status == "pending"
 
+    def test_clears_streaming_flag_when_marking_offline(self, app):
+        """ADR-0016: stale cameras must never show streaming=True."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            camera.streaming = True
+            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            camera.last_seen = old
+            app.store.save_camera(camera)
+
+            svc.check_offline()
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "offline"
+            assert camera.streaming is False
+
     def test_offline_logs_audit(self, app):
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)

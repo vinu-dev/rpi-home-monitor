@@ -117,7 +117,14 @@
                         'text-muted': cam.config_sync === 'unknown'
                     }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
                 </div>
-                <div class="camera-card__last-seen" x-text="cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : ''"></div>
+                <div class="camera-card__last-seen" x-show="cam.last_seen">
+                    <span :class="{'text-danger': _staleSeconds(cam) > 45, 'text-warning': _staleSeconds(cam) > 30 && _staleSeconds(cam) <= 45}"
+                          x-text="'Last seen: ' + _relativeTime(cam.last_seen)"></span>
+                </div>
+                <div class="camera-card__health" x-show="cam.status === 'online' && (cam.cpu_temp || cam.memory_percent)">
+                    <span class="text-small text-muted" x-text="cam.cpu_temp ? cam.cpu_temp.toFixed(1) + '\u00B0C' : ''"></span>
+                    <span class="text-small text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
+                </div>
             </div>
             <div class="camera-card__actions">
                 <span class="badge" :class="{
@@ -125,6 +132,10 @@
                     'badge--offline': cam.status === 'offline',
                     'badge--pending': cam.status === 'pending'
                 }" x-text="cam.status"></span>
+                <span x-show="cam.status === 'online'" class="badge" :class="{
+                    'badge--streaming': cam.streaming,
+                    'badge--not-streaming': !cam.streaming
+                }" x-text="cam.streaming ? '\u25CF streaming' : '\u25CB not streaming'"></span>
                 <template x-if="cam.status === 'pending'">
                     <div class="camera-card__btns">
                         <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
@@ -364,13 +375,27 @@ function dashboardPage() {
             }
         },
 
+        _staleSeconds(cam) {
+            if (!cam.last_seen) return 0;
+            return Math.round((Date.now() - new Date(cam.last_seen).getTime()) / 1000);
+        },
+
+        _relativeTime(iso) {
+            if (!iso) return '';
+            var secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+            if (secs < 5) return 'just now';
+            if (secs < 60) return secs + 's ago';
+            if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+            return Math.floor(secs / 3600) + 'h ago';
+        },
+
         init() {
             this.loadHealth();
             this.loadCameras();
             // Health: 10s (CPU/mem/disk change frequently, matches requirements SR-SRV-07)
-            // Cameras: 30s (status changes are infrequent)
+            // Cameras: 15s (heartbeats arrive every 15s — keep display fresh)
             this._healthInterval = setInterval(() => { this.loadHealth(); }, 10000);
-            this._cameraInterval = setInterval(() => { this.loadCameras(); }, 30000);
+            this._cameraInterval = setInterval(() => { this.loadCameras(); }, 15000);
         },
 
         destroy() {

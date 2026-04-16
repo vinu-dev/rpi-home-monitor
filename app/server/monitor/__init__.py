@@ -305,6 +305,9 @@ def _startup(app):
     app.storage_manager.start()
     app.cert_service.start()
 
+    # Staleness checker — marks cameras offline if no heartbeat received (ADR-0016)
+    _start_staleness_checker(app)
+
     # Resume pipelines for confirmed online cameras
     _resume_camera_pipelines(app)
 
@@ -364,6 +367,33 @@ def _auto_mount_usb(app, default_recordings_dir):
     except Exception as e:
         log.error("USB auto-mount failed: %s", e)
         return default_recordings_dir
+
+
+def _start_staleness_checker(app):
+    """Start background thread that marks cameras offline on missed heartbeats.
+
+    Runs DiscoveryService.check_offline() every STALENESS_CHECK_INTERVAL seconds.
+    Any camera that has not sent a heartbeat within OFFLINE_TIMEOUT (30s, defined
+    in discovery.py) is moved to status='offline' and streaming=False (ADR-0016).
+    """
+    import threading
+
+    STALENESS_CHECK_INTERVAL = 10  # seconds
+
+    def _run():
+        import time
+
+        while True:
+            try:
+                with app.app_context():
+                    app.discovery_service.check_offline()
+            except Exception as exc:
+                log.warning("Staleness checker error: %s", exc)
+            time.sleep(STALENESS_CHECK_INTERVAL)
+
+    t = threading.Thread(target=_run, name="staleness-checker", daemon=True)
+    t.start()
+    log.info("Staleness checker started (check every %ds)", STALENESS_CHECK_INTERVAL)
 
 
 def _resume_camera_pipelines(app):

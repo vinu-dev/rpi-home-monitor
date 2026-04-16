@@ -97,6 +97,8 @@ class DiscoveryService:
 
             if elapsed > OFFLINE_TIMEOUT:
                 camera.status = "offline"
+                # Clear streaming flag — we cannot trust stale state (ADR-0016)
+                camera.streaming = False
                 self._store.save_camera(camera)
                 if self._audit:
                     self._audit.log_event(

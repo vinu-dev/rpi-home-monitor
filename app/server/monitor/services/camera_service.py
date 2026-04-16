@@ -106,6 +106,10 @@ class CameraService:
                 "hflip": c.hflip,
                 "vflip": c.vflip,
                 "config_sync": c.config_sync,
+                "streaming": c.streaming,
+                "cpu_temp": c.cpu_temp,
+                "memory_percent": c.memory_percent,
+                "uptime_seconds": c.uptime_seconds,
             }
             for c in cameras
         ]
@@ -239,6 +243,85 @@ class CameraService:
         )
 
         return "", 200
+
+    def accept_heartbeat(self, camera_id: str, data: dict) -> tuple[dict, str, int]:
+        """Accept a heartbeat from a camera and update its live status.
+
+        Updates last_seen, status, streaming flag, and health metrics.
+        If the camera's config_sync is 'pending', returns the stored
+        stream config so the camera can re-apply it.
+
+        Returns (response_dict, error_string, http_status_code).
+        """
+        camera = self._store.get_camera(camera_id)
+        if not camera:
+            return {}, "Camera not found", 404
+
+        was_offline = camera.status == "offline"
+        camera.status = "online"
+        camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Update live health fields
+        camera.streaming = bool(data.get("streaming", False))
+        if "cpu_temp" in data:
+            try:
+                camera.cpu_temp = float(data["cpu_temp"])
+            except (TypeError, ValueError):
+                pass
+        if "memory_percent" in data:
+            try:
+                camera.memory_percent = int(data["memory_percent"])
+            except (TypeError, ValueError):
+                pass
+        if "uptime_seconds" in data:
+            try:
+                camera.uptime_seconds = int(data["uptime_seconds"])
+            except (TypeError, ValueError):
+                pass
+
+        # Capture sync state before touching stream params.
+        # If config_sync is "pending" the server has unsent changes — keep them
+        # and tell the camera via pending_config instead of overwriting with its
+        # potentially-stale values.
+        had_pending = camera.config_sync == "pending"
+
+        if (
+            "stream_config" in data
+            and isinstance(data["stream_config"], dict)
+            and not had_pending
+        ):
+            sc = data["stream_config"]
+            for key in sc:
+                if key in STREAM_PARAMS:
+                    setattr(camera, key, sc[key])
+            camera.config_sync = "synced"
+
+        self._store.save_camera(camera)
+
+        if was_offline:
+            self._log_audit(
+                "CAMERA_ONLINE",
+                "camera",
+                "",
+                f"camera {camera_id} reconnected via heartbeat",
+            )
+
+        # If we have a pending config push, include it in the response
+        response: dict = {"ok": True}
+        if had_pending:
+            response["pending_config"] = {
+                "width": camera.width,
+                "height": camera.height,
+                "fps": camera.fps,
+                "bitrate": camera.bitrate,
+                "h264_profile": camera.h264_profile,
+                "keyframe_interval": camera.keyframe_interval,
+                "rotation": camera.rotation,
+                "hflip": camera.hflip,
+                "vflip": camera.vflip,
+            }
+
+        return response, "", 200
 
     def accept_camera_config(
         self, camera_id: str, stream_config: dict

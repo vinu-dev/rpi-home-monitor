@@ -920,3 +920,177 @@ class TestConfigNotifyContract:
         assert resp.status_code == 200
         data = resp.get_json()
         assert "message" in data
+
+
+def _signed_camera_request(client, url, body_dict, camera_id="cam-001", secret="ab" * 32):
+    """Helper: build HMAC-signed POST to a camera machine-to-machine endpoint."""
+    import hashlib
+    import hmac
+    import json
+    import time
+
+    body = json.dumps(body_dict).encode()
+    timestamp = str(int(time.time()))
+    body_hash = hashlib.sha256(body).hexdigest()
+    message = f"{camera_id}:{timestamp}:{body_hash}"
+    sig = hmac.new(bytes.fromhex(secret), message.encode(), hashlib.sha256).hexdigest()
+
+    return client.post(
+        url,
+        data=body,
+        content_type="application/json",
+        headers={
+            "X-Camera-ID": camera_id,
+            "X-Timestamp": timestamp,
+            "X-Signature": sig,
+        },
+    )
+
+
+class TestHeartbeatContract:
+    """Contract tests for POST /api/v1/cameras/heartbeat (ADR-0016)."""
+
+    HEARTBEAT_URL = "/api/v1/cameras/heartbeat"
+    SECRET = "ab" * 32
+
+    def _payload(self, **overrides):
+        data = {
+            "streaming": True,
+            "cpu_temp": 48.5,
+            "memory_percent": 42,
+            "uptime_seconds": 3600,
+            "stream_config": {
+                "width": 1920, "height": 1080, "fps": 25,
+                "bitrate": 4000000, "h264_profile": "high",
+                "keyframe_interval": 30, "rotation": 0,
+                "hflip": False, "vflip": False,
+            },
+        }
+        data.update(overrides)
+        return data
+
+    def test_missing_headers_returns_401(self, app, client):
+        resp = client.post(self.HEARTBEAT_URL, json=self._payload())
+        assert resp.status_code == 401
+
+    def test_unknown_camera_returns_401(self, app, client):
+        import time
+        resp = client.post(
+            self.HEARTBEAT_URL,
+            json=self._payload(),
+            headers={
+                "X-Camera-ID": "cam-unknown",
+                "X-Timestamp": str(int(time.time())),
+                "X-Signature": "bad",
+            },
+        )
+        assert resp.status_code == 401
+
+    def test_invalid_signature_returns_401(self, app, client):
+        import time
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        resp = client.post(
+            self.HEARTBEAT_URL,
+            json=self._payload(),
+            headers={
+                "X-Camera-ID": "cam-001",
+                "X-Timestamp": str(int(time.time())),
+                "X-Signature": "invalid",
+            },
+        )
+        assert resp.status_code == 401
+
+    def test_valid_heartbeat_returns_200_ok(self, app, client):
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        resp = _signed_camera_request(
+            client, self.HEARTBEAT_URL, self._payload(), secret=self.SECRET
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("ok") is True
+
+    def test_heartbeat_updates_camera_status_to_online(self, app, client):
+        _add_camera(app, "cam-001", status="offline")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        _signed_camera_request(
+            client, self.HEARTBEAT_URL, self._payload(), secret=self.SECRET
+        )
+
+        updated = app.store.get_camera("cam-001")
+        assert updated.status == "online"
+        assert updated.streaming is True
+
+    def test_heartbeat_updates_health_metrics(self, app, client):
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        _signed_camera_request(
+            client, self.HEARTBEAT_URL,
+            self._payload(cpu_temp=60.0, memory_percent=75, uptime_seconds=900),
+            secret=self.SECRET,
+        )
+
+        updated = app.store.get_camera("cam-001")
+        assert updated.cpu_temp == 60.0
+        assert updated.memory_percent == 75
+        assert updated.uptime_seconds == 900
+
+    def test_heartbeat_returns_pending_config_when_needed(self, app, client):
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        cam.config_sync = "pending"
+        cam.fps = 30
+        app.store.save_camera(cam)
+
+        resp = _signed_camera_request(
+            client, self.HEARTBEAT_URL, self._payload(), secret=self.SECRET
+        )
+        data = resp.get_json()
+        assert "pending_config" in data
+        assert data["pending_config"]["fps"] == 30
+
+    def test_expired_timestamp_returns_401(self, app, client):
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        body_dict = self._payload()
+        body = json.dumps(body_dict).encode()
+        old_ts = str(int(time.time()) - 400)  # 400s ago — beyond 300s window
+        body_hash = hashlib.sha256(body).hexdigest()
+        message = f"cam-001:{old_ts}:{body_hash}"
+        sig = hmac.new(
+            bytes.fromhex(self.SECRET), message.encode(), hashlib.sha256
+        ).hexdigest()
+
+        resp = client.post(
+            self.HEARTBEAT_URL,
+            data=body,
+            content_type="application/json",
+            headers={
+                "X-Camera-ID": "cam-001",
+                "X-Timestamp": old_ts,
+                "X-Signature": sig,
+            },
+        )
+        assert resp.status_code == 401
