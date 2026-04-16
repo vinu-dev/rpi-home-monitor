@@ -298,6 +298,8 @@ ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds
 ExecStart=/usr/bin/python3 -m camera_streamer.main
 Restart=always
 RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
 Environment=PYTHONPATH=/opt/camera
 Environment=CAMERA_DATA_DIR=/data
 Environment=CAMERA_CONFIG_DIR=/data/config

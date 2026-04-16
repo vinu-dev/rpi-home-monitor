@@ -397,12 +397,38 @@ def _start_staleness_checker(app):
 
 
 def _resume_camera_pipelines(app):
-    """Start streaming pipelines for cameras that were online before restart."""
+    """Start streaming pipelines for cameras that were recently online.
+
+    Skips cameras whose last_seen is stale (> OFFLINE_TIMEOUT seconds ago).
+    Those cameras will be marked offline by the staleness checker and their
+    pipeline will restart automatically once they reconnect via heartbeat.
+    This prevents an ffmpeg crash-retry loop at boot when cameras haven't
+    come up yet.
+    """
+    from datetime import UTC, datetime
+
+    OFFLINE_TIMEOUT = 30  # seconds — matches discovery.py
+
     try:
         cameras = app.store.get_cameras()
+        now = datetime.now(UTC)
         for cam in cameras:
-            if cam.status == "online" and cam.recording_mode == "continuous":
-                app.streaming.start_camera(cam.id)
+            if cam.status != "online" or cam.recording_mode != "continuous":
+                continue
+            if cam.last_seen:
+                try:
+                    last = datetime.fromisoformat(cam.last_seen.replace("Z", "+00:00"))
+                    elapsed = (now - last).total_seconds()
+                    if elapsed > OFFLINE_TIMEOUT:
+                        log.info(
+                            "Skipping pipeline start for %s (last seen %ds ago, stale)",
+                            cam.id,
+                            int(elapsed),
+                        )
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            app.streaming.start_camera(cam.id)
     except Exception:
         pass  # Don't crash on startup if cameras.json has issues
 
