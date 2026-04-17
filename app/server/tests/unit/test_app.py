@@ -76,15 +76,19 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 14 blueprints (12 API + views + setup).
+        """We expect exactly 15 blueprints (13 API + views + setup).
 
-        Count bumped to 14 when ADR-0017 added the on-demand coordinator
-        blueprint (`on_demand`) for MediaMTX `runOnDemand` hooks.
+        Count history:
+          14 after ADR-0017 added `on_demand`.
+          15 after ADR-0018 Slice 3 added the `audit` read-only API.
         """
-        assert len(app.blueprints) == 14
+        assert len(app.blueprints) == 15
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints
 
     def test_webrtc_blueprint_registered(self, app):
         assert "webrtc" in app.blueprints
+
+    def test_audit_blueprint_registered(self, app):
+        assert "audit" in app.blueprints
