@@ -285,6 +285,7 @@ class RecordingsService:
             "filename": newest_path.name,
             "date": date_str,
             "start_time": start_time,
+            "duration_seconds": 180,
             "size_bytes": size,
             "thumbnail": f"{newest_path.stem}.thumb.jpg",
         }
