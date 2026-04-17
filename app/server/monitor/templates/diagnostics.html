@@ -1,17 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Diagnostics - Home Monitor{% endblock %}
+{% block title %}System - Home Monitor{% endblock %}
 
 {% block content %}
 <div x-data="diagnosticsPage()" x-init="init()">
 
-<div class="diagnostics-header">
-    <a href="/dashboard" class="text-small text-muted">&larr; Dashboard</a>
-    <h1 class="page-title" style="margin-top:4px;">System Diagnostics</h1>
-    <div class="text-small text-muted">
-        Raw metrics and host telemetry. The dashboard shows derived state
-        (green / amber / red); this page shows the numbers behind that judgement.
-    </div>
+<h1 class="page-title">System</h1>
+<div class="text-small text-muted" style="margin-bottom: var(--space-4);">
+    Recorder host telemetry, storage, and environment. The dashboard
+    shows derived state (green / amber / red); this page shows the
+    numbers behind that judgement.
 </div>
 
 <!-- ==================== Recorder host ==================== -->

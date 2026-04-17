@@ -6,16 +6,6 @@
 <div x-data="settingsPage()" x-init="init()">
 <h1 class="page-title">Settings</h1>
 
-<!--
-  ADR-0018 moved raw system metrics to /diagnostics. Surface the entry
-  here so operators can still reach them from Settings (where they used
-  to live) without cluttering the dashboard.
--->
-<div class="text-small text-muted" style="margin-bottom: var(--space-4);">
-    Looking for CPU / temp / memory / disk numbers?
-    <a href="/diagnostics">Open System diagnostics &rarr;</a>
-</div>
-
 <!-- Settings Tab Bar -->
 <div class="settings-tabs" x-show="isAdmin">
     <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
