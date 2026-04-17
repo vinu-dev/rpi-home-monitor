@@ -24,7 +24,7 @@
   Tier 2 — Four summary tiles (ADR-0018)
   Cameras · Last activity · Storage · Recorder host.
   Each tile shows derived state (badge + one value + one caption), never
-  raw metrics. Raw metrics live on /diagnostics.
+  raw metrics. Raw metrics live in Settings → System / Storage.
 -->
 <div class="tile-grid">
 
@@ -46,7 +46,7 @@
     </a>
 
     <!-- Storage -->
-    <a class="tile" href="/diagnostics#storage" :class="tileStateClass('storage')">
+    <a class="tile" href="/settings#storage" :class="tileStateClass('storage')">
         <div class="tile__label">Storage</div>
         <div class="tile__value">
             <span x-text="storagePercentLabel"></span>
@@ -55,7 +55,7 @@
     </a>
 
     <!-- Recorder host -->
-    <a class="tile" href="/diagnostics#recorder" :class="tileStateClass('recorder')">
+    <a class="tile" href="/settings#system" :class="tileStateClass('recorder')">
         <div class="tile__label">Recorder host</div>
         <div class="tile__value" x-text="recorderStateLabel"></div>
         <div class="tile__caption" x-text="health.uptime || '\u2014'"></div>
@@ -432,8 +432,9 @@ function dashboardPage() {
         },
 
         onStatusClick(_ev) {
-            // Strip always navigates to its deep_link (green → /diagnostics,
-            // amber/red → the page that lets the user act). Nothing to cancel.
+            // Strip always navigates to its deep_link (amber/red → the
+            // page that lets the user act; green → "/" which is a no-op
+            // while already on the dashboard). Nothing to cancel.
         },
 
         // --- Loaders ---

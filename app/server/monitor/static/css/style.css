@@ -1409,47 +1409,9 @@ select.form-input {
     display: block;
 }
 
-/* ====================================================================
-   Diagnostics page (ADR-0018 — raw metrics surface)
-   The dashboard stays glance-only; /diagnostics is where the actual
-   numbers live. Styling is intentionally plain — this page is for the
-   operator, not a marketing surface.
-   ================================================================== */
-.diagnostics-header {
-    margin-bottom: var(--space-4);
-}
-.diag-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.9rem;
-}
-.diag-row:last-child {
-    border-bottom: none;
-}
-.diag-row__label {
-    color: var(--color-text-muted);
-    flex: 0 0 auto;
-}
-.diag-row__value {
-    color: var(--color-text);
-    text-align: right;
-    word-break: break-all;
-    font-variant-numeric: tabular-nums;
-}
-.diag-json {
-    background: var(--color-bg-alt, #111);
-    color: var(--color-text);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    overflow-x: auto;
-    white-space: pre;
-    max-height: 420px;
-    overflow-y: auto;
-}
+/* Threshold-aware colouring for info-row values (used on Settings →
+   System for temp / CPU / memory; ADR-0018 thresholds: 70 % green,
+   85 % amber, 90 %+ red; temp 72 / 80 °C). */
+.info-row__value--ok   { color: var(--color-success); }
+.info-row__value--warn { color: var(--color-warning); }
+.info-row__value--bad  { color: var(--color-danger); }

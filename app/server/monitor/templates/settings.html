@@ -52,18 +52,63 @@
         </div>
     </div>
 
-    <!-- System Info -->
-    <div class="settings-section">
+    <!-- System Info (identity + environment) -->
+    <div class="settings-section" id="system">
         <div class="settings-section__title">System Info</div>
         <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Hostname</span>
+                <span class="info-row__value" x-text="sysInfo.hostname || '--'"></span>
+            </div>
             <div class="info-row">
                 <span class="info-row__label">Firmware Version</span>
                 <span class="info-row__value" x-text="sysInfo.firmware_version || '--'"></span>
             </div>
             <div class="info-row">
+                <span class="info-row__label">OS</span>
+                <span class="info-row__value" x-text="sysInfo.os || '--'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
                 <span class="info-row__label">Uptime</span>
                 <span class="info-row__value" x-text="sysInfo.uptime || '--'"></span>
             </div>
+        </div>
+    </div>
+
+    <!-- Host Health (live metrics behind the dashboard's derived state) -->
+    <div class="settings-section">
+        <div class="settings-section__title">Host Health</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">CPU Temperature</span>
+                <span class="info-row__value" :class="sysInfo.temp_class" x-text="sysInfo.temp || '--'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">CPU Usage</span>
+                <span class="info-row__value" :class="sysInfo.cpu_class" x-text="sysInfo.cpu || '--'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Memory</span>
+                <span class="info-row__value" :class="sysInfo.mem_class" x-text="sysInfo.memory || '--'"></span>
+            </div>
+        </div>
+        <div class="text-small text-muted" style="margin-top: var(--space-2);">
+            Thresholds: temp amber &ge; 72&nbsp;&deg;C &middot; red &ge; 80&nbsp;&deg;C
+            &middot; CPU / memory amber &ge; 85&nbsp;%.
+        </div>
+        <template x-if="sysInfo.warnings && sysInfo.warnings.length > 0">
+            <div class="warnings-list" style="margin-top: var(--space-3);">
+                <template x-for="w in sysInfo.warnings" :key="w">
+                    <div class="warning-item" x-text="w"></div>
+                </template>
+            </div>
+        </template>
+    </div>
+
+    <!-- Storage (disk usage + estimated retention) -->
+    <div class="settings-section">
+        <div class="settings-section__title">Storage</div>
+        <div class="card">
             <div class="info-row">
                 <span class="info-row__label">Disk Total</span>
                 <span class="info-row__value" x-text="sysInfo.disk_total || '--'"></span>
@@ -72,9 +117,13 @@
                 <span class="info-row__label">Disk Used</span>
                 <span class="info-row__value" x-text="sysInfo.disk_used || '--'"></span>
             </div>
-            <div class="info-row" style="border-bottom:none;">
+            <div class="info-row">
                 <span class="info-row__label">Disk Free</span>
                 <span class="info-row__value" x-text="sysInfo.disk_free || '--'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Estimated Retention</span>
+                <span class="info-row__value" x-text="sysInfo.retention || '--'"></span>
             </div>
         </div>
     </div>
@@ -777,7 +826,12 @@ function settingsPage() {
 
         networkInterfaces: [],
         settings: { hostname: '', timezone: '', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
-        sysInfo: { firmware_version: '', uptime: '', disk_total: '', disk_used: '', disk_free: '' },
+        sysInfo: {
+            hostname: '', firmware_version: '', os: '', uptime: '',
+            disk_total: '', disk_used: '', disk_free: '', retention: '',
+            temp: '', temp_class: '', cpu: '', cpu_class: '',
+            memory: '', mem_class: '', warnings: [],
+        },
         users: [],
         newUser: { username: '', password: '', role: 'viewer' },
         pw: { newPassword: '', confirmPassword: '' },
@@ -966,11 +1020,32 @@ function settingsPage() {
             }
         },
 
-        /* --- System Info --- */
+        /* --- System Info ---------------------------------------------
+           Folds what used to live on a standalone /diagnostics page:
+           identity (hostname, OS, firmware, uptime), host health
+           (temp / CPU / memory with threshold-aware colouring), storage
+           (already shown) + estimated retention, and any warnings the
+           health API raised. No separate page — this IS the system
+           surface.
+        ----------------------------------------------------------------*/
+        _usageClass(p) {
+            if (p == null) return '';
+            if (p < 70) return 'info-row__value--ok';
+            if (p < 85) return 'info-row__value--warn';
+            return 'info-row__value--bad';
+        },
+        _tempClass(c) {
+            if (c == null) return '';
+            if (c < 72) return 'info-row__value--ok';
+            if (c < 80) return 'info-row__value--warn';
+            return 'info-row__value--bad';
+        },
         async loadSystemInfo() {
             try {
                 var info = await window.HM.api.get('/api/v1/system/info');
+                this.sysInfo.hostname = info.hostname || '--';
                 this.sysInfo.firmware_version = info.firmware_version || '--';
+                this.sysInfo.os = (info.os_name || '') + (info.os_version ? ' ' + info.os_version : '') || '--';
                 this.sysInfo.uptime = (info.uptime && info.uptime.display) || '--';
             } catch(e) {}
             try {
@@ -979,6 +1054,29 @@ function settingsPage() {
                     this.sysInfo.disk_total = (health.disk.total_gb || 0) + ' GB';
                     this.sysInfo.disk_used = (health.disk.used_gb || 0) + ' GB (' + (health.disk.percent || 0) + '%)';
                     this.sysInfo.disk_free = (health.disk.free_gb || 0) + ' GB';
+                }
+                if (health.cpu_temp_c != null) {
+                    this.sysInfo.temp = health.cpu_temp_c.toFixed(1) + ' °C';
+                    this.sysInfo.temp_class = this._tempClass(health.cpu_temp_c);
+                }
+                if (health.cpu_usage_percent != null) {
+                    this.sysInfo.cpu = health.cpu_usage_percent.toFixed(0) + ' %';
+                    this.sysInfo.cpu_class = this._usageClass(health.cpu_usage_percent);
+                }
+                if (health.memory) {
+                    this.sysInfo.memory = (health.memory.percent || 0).toFixed(0) + ' % (' +
+                        health.memory.used_mb + ' / ' + health.memory.total_mb + ' MB)';
+                    this.sysInfo.mem_class = this._usageClass(health.memory.percent);
+                }
+                this.sysInfo.warnings = health.warnings || [];
+            } catch(e) {}
+            try {
+                var sum = await window.HM.api.get('/api/v1/system/summary');
+                var storage = sum.details && sum.details.storage;
+                if (storage && storage.retention_days != null) {
+                    this.sysInfo.retention = '~' + storage.retention_days + ' days (7-day trailing)';
+                } else {
+                    this.sysInfo.retention = 'not enough data';
                 }
             } catch(e) {}
         },

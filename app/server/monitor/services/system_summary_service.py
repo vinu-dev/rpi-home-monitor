@@ -241,7 +241,7 @@ class SystemSummaryService:
             "free_gb": stats.get("free_gb", 0),
             "total_gb": stats.get("total_gb", 0),
         }
-        return state, detail, "/diagnostics#storage"
+        return state, detail, "/settings#storage"
 
     def _estimate_retention_days(self, stats: dict) -> float | None:
         """Retention = free_bytes / bytes_written_per_day (7-day trailing).
@@ -295,7 +295,7 @@ class SystemSummaryService:
             )
         except Exception as exc:
             log.warning("summary: get_health_summary failed: %s", exc)
-            return "green", {}, "/diagnostics#recorder"
+            return "green", {}, "/settings#system"
 
         cpu_temp = summary.get("cpu_temp_c", 0.0) or 0.0
         cpu_pct = summary.get("cpu_usage_percent", 0.0) or 0.0
@@ -316,7 +316,7 @@ class SystemSummaryService:
             "cpu_temp_c": round(cpu_temp, 1),
             "memory_percent": round(mem_pct, 1),
         }
-        return state, detail, "/diagnostics#recorder"
+        return state, detail, "/settings#system"
 
     # -- recent errors ------------------------------------------------------
 
@@ -380,7 +380,7 @@ class SystemSummaryService:
             return (
                 f"All systems normal — {online}/{total} cameras online, "
                 f"{disk_pct:.0f}% disk used"
-            ), "/diagnostics"
+            ), "/"
 
         # Priority of what to surface first: errors > red signals > amber.
         # Within the same severity, storage is most actionable.
@@ -414,7 +414,7 @@ class SystemSummaryService:
 
         # Fallback (should not happen): overall state isn't green but no
         # sub-signal claimed it. Keep something meaningful on screen.
-        return "System needs attention", "/diagnostics"
+        return "System needs attention", "/settings"
 
 
 def _camera_sentence(cam_detail: dict) -> str:
