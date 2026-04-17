@@ -122,7 +122,12 @@ Below the fold. Three sections:
 - **Camera roll-call** — one row per camera: name, status dot,
   last-seen timestamp, last-clip timestamp. No live preview, no
   per-camera CPU/temp on the dashboard — those live on the camera's
-  detail page.
+  detail page. The section header carries the existing pairing
+  affordances (Scan / Add camera / Pair PIN / Remove); these are
+  preserved verbatim from today's dashboard because first-run
+  onboarding ("I just unboxed a camera") lives here by user
+  expectation and by Frigate/UniFi precedent. Stream-settings modal
+  stays too.
 - **System log teaser** — last 5 warn-or-error entries from the audit
   log. "View all →" links to Settings > Audit.
 
@@ -227,10 +232,14 @@ free without sacrificing desktop density.
 
 ### Negative / costs
 
-- Requires a new aggregator endpoint (`/api/v1/system/health`) that
-  joins signals from the camera registry, the recordings filesystem,
-  the disk, and the audit log. Tested as one unit — any one signal
-  missing must degrade gracefully, never 500.
+- Requires a **new** aggregator endpoint — `/api/v1/system/summary` —
+  that joins signals from the camera registry, the recordings
+  filesystem, the disk, and the audit log. The existing
+  `/api/v1/system/health` (CPU/RAM/temp/disk/warnings) is kept
+  untouched as raw-metrics data and will back the future
+  `/diagnostics` page; `summary` is purely derived state (green /
+  amber / red + one sentence + deep-link target). Tested as one
+  unit — any one signal missing must degrade gracefully, never 500.
 - Retention-days estimate requires a 7-day trailing write-rate — for
   slice 1 we compute it from directory `stat()` at request time
   (acceptable up to ~hundreds of clips); it will need a cached
@@ -265,15 +274,19 @@ decorators, no DB migrations in any of them.
 
 ### Slice 1 — Status strip + four tiles (≈ 2 days)
 
-- `GET /api/v1/system/health` — aggregator: paired cameras + online
-  count, disk %, retention-days estimate, recorder CPU/temp snapshot,
-  last-error-in-1 h flag. Returns `{state: green|amber|red,
-  summary: "...", details: {...}}`.
+- `GET /api/v1/system/summary` — **new** aggregator: paired cameras
+  + online count, disk %, retention-days estimate, recorder
+  CPU/temp snapshot, last-error-in-1 h flag. Returns
+  `{state: green|amber|red, summary: "...", details: {...},
+  deep_link: "/..."}`. Pure derived state.
 - `GET /api/v1/recordings/latest` — latest clip across all cameras
   (extends the existing per-camera `latest_clip`).
-- Template rewrite of `dashboard.html`: status strip + four tiles,
-  no live players.
-- Contract tests for both endpoints; unit tests for the health
+- Template rewrite of `dashboard.html`: status strip + four tiles
+  above the fold. Existing pairing / add-camera / stream-settings
+  UI is **not removed** — it moves down into the Tier-3 camera
+  roll-call section in slice 3 (kept on a feature-flag / hidden
+  section in slice 1 so nothing breaks in between).
+- Contract tests for both endpoints; unit tests for the summary
   aggregator's state transitions at each threshold boundary.
 
 ### Slice 2 — Recent events + inline player (≈ 1 day)
