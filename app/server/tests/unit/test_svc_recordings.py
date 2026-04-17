@@ -209,7 +209,7 @@ class TestListCameraSources:
     def test_paired_online_and_offline(self, svc, store):
         store.get_cameras.return_value = [
             Camera(id="cam-a", name="Front", status="online"),
-            Camera(id="cam-b", name="Back",  status="offline"),
+            Camera(id="cam-b", name="Back", status="offline"),
         ]
         result, error, status = svc.list_camera_sources()
         assert status == 200 and error is None
@@ -239,6 +239,7 @@ class TestListCameraSources:
 
     def test_orphan_dir_without_mp4s_is_ignored(self, svc, store, storage_manager):
         from pathlib import Path
+
         store.get_cameras.return_value = []
         # Empty camera dir (no clips yet) — not an archive, skip.
         (Path(storage_manager.recordings_dir) / "cam-empty").mkdir()
@@ -247,6 +248,7 @@ class TestListCameraSources:
 
     def test_orphan_with_invalid_id_is_ignored(self, svc, store, storage_manager):
         from pathlib import Path
+
         store.get_cameras.return_value = []
         # Path-traversal-ish names must not be surfaced.
         bad = Path(storage_manager.recordings_dir) / "..weird"
@@ -314,15 +316,20 @@ class TestDeleteDate:
         _create_clip_file(storage_manager, "cam-001", "2026-04-09", "15-00-00")
         _create_clip_file(storage_manager, "cam-001", "2026-04-10", "09-00-00")
         result, error, status = svc.delete_date(
-            "cam-001", "2026-04-09",
-            requesting_user="admin", requesting_ip="127.0.0.1",
+            "cam-001",
+            "2026-04-09",
+            requesting_user="admin",
+            requesting_ip="127.0.0.1",
         )
         assert error is None and status == 200
         assert result["count"] == 2
         # The other date survives untouched.
         from pathlib import Path
+
         remaining = list(
-            (Path(storage_manager.recordings_dir) / "cam-001" / "2026-04-10").glob("*.mp4")
+            (Path(storage_manager.recordings_dir) / "cam-001" / "2026-04-10").glob(
+                "*.mp4"
+            )
         )
         assert len(remaining) == 1
         audit.log_event.assert_called_once()
@@ -346,11 +353,13 @@ class TestDeleteCameraRecordings:
         _create_clip_file(storage_manager, "cam-001", "2026-04-10", "09-00-00")
         result, error, status = svc.delete_camera_recordings(
             "cam-001",
-            requesting_user="admin", requesting_ip="127.0.0.1",
+            requesting_user="admin",
+            requesting_ip="127.0.0.1",
         )
         assert error is None and status == 200
         assert result["count"] == 2
         from pathlib import Path
+
         cam_root = Path(storage_manager.recordings_dir) / "cam-001"
         assert not cam_root.exists()
         audit.log_event.assert_called_once()

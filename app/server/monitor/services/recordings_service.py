@@ -75,10 +75,7 @@ class RecordingsService:
         if not cam_dir.is_dir():
             return False
         try:
-            return any(
-                d.is_dir() and any(d.glob("*.mp4"))
-                for d in cam_dir.iterdir()
-            )
+            return any(d.is_dir() and any(d.glob("*.mp4")) for d in cam_dir.iterdir())
         except OSError:
             return False
 
@@ -123,11 +120,13 @@ class RecordingsService:
             if cam.status == "pending":
                 continue
             status = "online" if cam.status == "online" else "offline"
-            result.append({
-                "id": cam.id,
-                "name": cam.name or cam.id,
-                "status": status,
-            })
+            result.append(
+                {
+                    "id": cam.id,
+                    "name": cam.name or cam.id,
+                    "status": status,
+                }
+            )
 
         root = self._recordings_root()
         if root.is_dir():
@@ -144,11 +143,13 @@ class RecordingsService:
                     continue
                 if not self._has_recordings_on_disk(child.name):
                     continue
-                result.append({
-                    "id": child.name,
-                    "name": child.name,
-                    "status": "removed",
-                })
+                result.append(
+                    {
+                        "id": child.name,
+                        "name": child.name,
+                        "status": "removed",
+                    }
+                )
         return result, None, 200
 
     def list_clips(self, camera_id: str, date: str = ""):
