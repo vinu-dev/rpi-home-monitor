@@ -63,11 +63,34 @@
 </div>
 
 <!--
-  Slice 2 will add: Recent events feed (inline-player chip list).
-  Slice 3 will turn the section below into a compact "camera roll-call".
-  For now the existing pairing + camera-card UI is preserved under the
-  "Cameras" heading so admins can still onboard hardware.
+  Tier 3 (slice 2) — Recent events feed
+  Reverse-chronological clip list across every camera. Clicking a row
+  opens inline playback using the existing /recordings/<cam>/<date>/<file>
+  stream; no navigation, so the dashboard stays the "situational glance"
+  surface ADR-0018 describes.
+  Slice 3 will turn the Cameras section below into a compact roll-call.
 -->
+<div class="section-header" x-show="recentEvents.length > 0">
+    Recent events
+    <a class="text-small" style="float:right;" href="/recordings">All recordings &rarr;</a>
+</div>
+<div class="events-feed" x-show="recentEvents.length > 0">
+    <template x-for="ev in recentEvents" :key="ev.camera_id + '/' + ev.date + '/' + ev.filename">
+        <div class="event-row" :class="{ 'event-row--active': playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename) }">
+            <button class="event-row__trigger" @click="playEvent(ev)">
+                <span class="event-row__time" x-text="_relativeTime(_clipIso(ev))"></span>
+                <span class="event-row__camera" x-text="ev.camera_name || ev.camera_id"></span>
+                <span class="event-row__duration" x-text="_durationLabel(ev.duration_seconds)"></span>
+                <span class="event-row__chevron" x-text="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename) ? '\u25BC' : '\u25B6'"></span>
+            </button>
+            <div class="event-row__player" x-show="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename)" x-transition>
+                <video x-ref="player"
+                       controls autoplay preload="none"
+                       :src="'/api/v1/recordings/' + encodeURIComponent(ev.camera_id) + '/' + encodeURIComponent(ev.date) + '/' + encodeURIComponent(ev.filename)"></video>
+            </div>
+        </div>
+    </template>
+</div>
 
 <!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
 <div id="cameras-section" class="section-header">
@@ -285,9 +308,11 @@
 <script>
 function dashboardPage() {
     return {
-        // --- ADR-0018 Tier-1 + Tier-2 state ---
+        // --- ADR-0018 Tier-1 + Tier-2 + Tier-3 state ---
         summary: { state: '', summary: '', deep_link: '/', details: null },
         latestClip: null,
+        recentEvents: [],
+        playingKey: '',
         health: { uptime: '' },
 
         // --- Existing camera-list state (Tier-3 roll-call stub) ---
@@ -432,6 +457,26 @@ function dashboardPage() {
             } catch(e) {
                 this.latestClip = null;
             }
+            // Tier-3 recent events feed (top 8).
+            try {
+                this.recentEvents = await window.HM.api.get('/api/v1/recordings/recent?limit=8');
+            } catch(e) {
+                this.recentEvents = [];
+            }
+        },
+
+        playEvent(ev) {
+            var key = ev.camera_id + '/' + ev.date + '/' + ev.filename;
+            // Toggle — click the same row again to collapse.
+            this.playingKey = (this.playingKey === key) ? '' : key;
+        },
+
+        _durationLabel(secs) {
+            if (!secs || secs <= 0) return '';
+            if (secs < 60) return secs + 's';
+            var m = Math.floor(secs / 60);
+            var s = secs % 60;
+            return m + 'm' + (s ? ' ' + s + 's' : '');
         },
 
         async loadCameras() {
