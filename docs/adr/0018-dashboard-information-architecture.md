@@ -1,6 +1,6 @@
 # ADR-0018: Dashboard Information Architecture
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-17
 **Deciders:** vinu-dev
 
