@@ -9,6 +9,61 @@ from unittest.mock import MagicMock, patch
 
 SUBPROCESS_PATCH = "monitor.services.provisioning_service.subprocess"
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _write_ca_cert(app, content="-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"):
+    """Write a fake CA cert to the app's CERTS_DIR."""
+    certs_dir = app.config["CERTS_DIR"]
+    os.makedirs(certs_dir, exist_ok=True)
+    ca_path = os.path.join(certs_dir, "ca.crt")
+    with open(ca_path, "w") as f:
+        f.write(content)
+    return ca_path
+
+
+class TestGetCaCert:
+    """Tests for GET /api/v1/setup/ca-cert (TOFU bootstrap endpoint).
+
+    This endpoint is intentionally unauthenticated — it serves the public CA
+    certificate so cameras can verify TLS before they have any credentials.
+    """
+
+    def test_returns_ca_cert_when_exists(self, app, client):
+        """Returns PEM content when ca.crt exists."""
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-cert")
+        assert response.status_code == 200
+        assert b"BEGIN CERTIFICATE" in response.data
+
+    def test_returns_404_when_no_ca_cert(self, client):
+        """Returns 404 when ca.crt has not been generated yet."""
+        response = client.get("/api/v1/setup/ca-cert")
+        assert response.status_code == 404
+        assert "error" in response.get_json()
+
+    def test_accessible_without_auth(self, app, client):
+        """No authentication required — cameras call this before pairing."""
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-cert")
+        # Must not redirect to login or return 401/403
+        assert response.status_code == 200
+
+    def test_content_type_is_pem(self, app, client):
+        """Content-Type indicates PEM/certificate format."""
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-cert")
+        assert "application/x-pem-file" in response.content_type
+
+    def test_accessible_even_after_setup_complete(self, app, client):
+        """CA cert endpoint stays accessible post-setup (cameras re-pair)."""
+        stamp = os.path.join(app.config["DATA_DIR"], ".setup-done")
+        with open(stamp, "w") as f:
+            f.write("done")
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-cert")
+        # Must NOT be blocked by _require_setup_incomplete (not decorated)
+        assert response.status_code == 200
+
 
 class TestSetupStatus:
     """Tests for GET /api/v1/setup/status."""

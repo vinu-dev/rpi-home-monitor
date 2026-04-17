@@ -86,6 +86,46 @@ class TestHLSPlaylist:
         assert b"#EXTM3U" in response.data
 
 
+class TestHLSSegment:
+    """Test GET /api/v1/live/<cam-id>/<filename> — auth + path traversal."""
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/live/cam-001/seg001.ts").status_code == 401
+
+    def test_rejects_invalid_extension(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        response = client.get("/api/v1/live/cam-001/stream.avi")
+        assert response.status_code == 400
+
+    def test_serves_ts_segment(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        live_dir = os.path.join(app.config["LIVE_DIR"], "cam-001")
+        os.makedirs(live_dir, exist_ok=True)
+        seg = os.path.join(live_dir, "seg001.ts")
+        with open(seg, "wb") as f:
+            f.write(b"\x00" * 64)
+        response = client.get("/api/v1/live/cam-001/seg001.ts")
+        assert response.status_code == 200
+        assert response.content_type == "video/mp2t"
+
+    def test_path_traversal_rejected(self, app, client):
+        """Path traversal attempt outside live_dir returns 400."""
+        _login(app, client)
+        _add_camera(app)
+        # ../../../etc/passwd style traversal
+        response = client.get("/api/v1/live/cam-001/../../../etc/passwd")
+        # nginx would normalise this, but test the Flask layer directly
+        assert response.status_code in (400, 404)
+
+    def test_missing_segment_returns_404(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        response = client.get("/api/v1/live/cam-001/nonexistent.ts")
+        assert response.status_code == 404
+
+
 class TestSnapshot:
     """Test GET /api/v1/live/<cam-id>/snapshot."""
 

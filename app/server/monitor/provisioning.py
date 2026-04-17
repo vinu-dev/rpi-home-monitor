@@ -15,6 +15,7 @@ Security notes:
 import functools
 import logging
 import time
+from pathlib import Path
 
 from flask import (
     Blueprint,
@@ -22,6 +23,7 @@ from flask import (
     jsonify,
     render_template,
     request,
+    send_file,
 )
 
 log = logging.getLogger("monitor.provisioning")
@@ -137,6 +139,29 @@ def setup_complete():
     if err:
         return jsonify({"error": err}), status
     return jsonify(result), status
+
+
+@provisioning_bp.route("/ca-cert", methods=["GET"])
+def get_ca_cert():
+    """Serve the server CA certificate for camera trust-on-first-use (TOFU) verification.
+
+    No authentication required — the CA cert is public information.
+    Cameras fetch this before PIN exchange so they can verify the server's
+    TLS certificate, preventing passive MITM during the pairing bootstrap
+    (ADR-0009, TOFU pattern — RFC 8555 ACME §10.2).
+
+    Available on both HTTP and HTTPS so cameras can reach it before
+    they have a verified cert to use.
+    """
+    certs_dir = current_app.config.get("CERTS_DIR", "/data/certs")
+    ca_cert_path = Path(certs_dir) / "ca.crt"
+    if not ca_cert_path.is_file():
+        return jsonify({"error": "CA certificate not available"}), 404
+    return send_file(
+        str(ca_cert_path),
+        mimetype="application/x-pem-file",
+        as_attachment=False,
+    )
 
 
 @provisioning_bp.route("/wizard", methods=["GET"])

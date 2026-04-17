@@ -54,10 +54,11 @@ def hls_segment(camera_id, filename):
     live_dir = Path(current_app.config["LIVE_DIR"])
     file_path = live_dir / camera_id / filename
 
-    # Prevent path traversal
+    # Prevent path traversal. Catch OSError too: on some platforms
+    # Path.resolve() raises OSError for paths with null bytes or bad chars.
     try:
         file_path.resolve().relative_to(live_dir.resolve())
-    except ValueError:
+    except (ValueError, OSError):
         return jsonify({"error": "Invalid path"}), 400
 
     if not file_path.is_file():
