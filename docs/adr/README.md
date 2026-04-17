@@ -31,6 +31,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0015 | [Server → camera control channel](0015-server-camera-control-channel.md)                        | Accepted   |
 | 0016 | [Camera health heartbeat protocol](0016-camera-health-heartbeat-protocol.md)                    | Accepted   |
 | 0017 | [On-demand, viewer-driven streaming + recording modes](0017-on-demand-viewer-driven-streaming.md) | Proposed |
+| 0018 | [Dashboard information architecture](0018-dashboard-information-architecture.md)                 | Accepted   |
 
 ## Writing a new ADR
 

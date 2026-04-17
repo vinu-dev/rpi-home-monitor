@@ -272,6 +272,19 @@ free without sacrificing desktop density.
 Three independently-shippable slices, each behind the existing auth
 decorators, no DB migrations in any of them.
 
+### Status (2026-04-17)
+
+- **Slice 1 — shipped** (PR #68, commit `3665c41`). Status strip +
+  four tiles live on `/`.
+- **Slice 2 — shipped** (PR #69, commit `38b641b`). Recent events
+  feed with inline player. Fallback in `resolve_clip_path` +
+  `delete_clip` covers both dated and flat recorder layouts.
+- **Slice 3 — shipped** (commit `7742204`, branch
+  `feat/system-nav`). Audit log teaser on the dashboard, backed by
+  new `GET /api/v1/audit/events` endpoint (admin-gated). Camera
+  roll-call restyle is parked — the existing card grid is already
+  scannable and users asked for the log teaser first.
+
 ### Slice 1 — Status strip + four tiles (≈ 2 days)
 
 - `GET /api/v1/system/summary` — **new** aggregator: paired cameras
@@ -301,8 +314,11 @@ decorators, no DB migrations in any of them.
 
 - Camera roll-call reuses `/api/v1/cameras` + per-camera
   `last_seen` (already present).
-- Log teaser reuses `/api/v1/audit?level=warn&limit=5`.
-- No new endpoints.
+- Log teaser calls `/api/v1/audit/events?limit=5` (new read-only
+  endpoint added in this slice — the service already existed; only
+  the HTTP surface was missing).
+- Admin-gated: viewers get 403 and the teaser hides itself
+  silently rather than showing an empty section.
 
 ### Out-of-scope for this ADR's rollout
 

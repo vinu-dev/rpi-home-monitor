@@ -965,3 +965,61 @@ paths:
                     type: string
                   staged_path:
                     type: string
+  /api/v1/audit/events:
+    get:
+      tags: [audit]
+      summary: Recent audit events (admin only)
+      description: >
+        Returns the most recent security-relevant audit events, newest
+        first. Used by the dashboard log teaser (ADR-0018 Slice 3) and
+        the Settings > Security audit view. Admin role required —
+        viewers receive 403.
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: event_type
+          required: false
+          schema:
+            type: string
+            description: Exact event-name filter (e.g. LOGIN_FAILED)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Events listed (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, count]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [timestamp, event]
+                      properties:
+                        timestamp:
+                          type: string
+                          format: date-time
+                        event:
+                          type: string
+                        user:
+                          type: string
+                        ip:
+                          type: string
+                        detail:
+                          type: string
+                  count:
+                    type: integer
+        "401":
+          description: Not authenticated
+        "403":
+          description: Admin role required
