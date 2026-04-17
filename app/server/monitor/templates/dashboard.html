@@ -6,44 +6,71 @@
 <div x-data="dashboardPage()" x-init="init()">
 <h1 class="page-title">Dashboard</h1>
 
-<!-- System Health -->
-<div class="section-header">System Health</div>
-<div class="grid grid--health" id="health-grid">
-    <div class="card health-card">
-        <div class="health-card__value" :class="tempColor(health.temp)" x-text="health.temp !== null ? health.temp.toFixed(1) + '\u00B0C' : '--'"></div>
-        <div class="health-card__label">CPU Temp</div>
-    </div>
-    <div class="card health-card">
-        <div class="health-card__value" :class="usageColor(health.cpu)" x-text="health.cpu !== null ? health.cpu.toFixed(0) + '%' : '--'"></div>
-        <div class="health-card__label">CPU Usage</div>
-    </div>
-    <div class="card health-card">
-        <div class="health-card__value" :class="usageColor(health.mem)" x-text="health.mem !== null ? health.mem.toFixed(0) + '%' : '--'"></div>
-        <div class="health-card__label">Memory</div>
-        <div class="health-card__detail" x-text="health.memDetail"></div>
-    </div>
-    <div class="card health-card">
-        <div class="health-card__value" :class="usageColor(health.disk)" x-text="health.disk !== null ? health.disk.toFixed(0) + '%' : '--'"></div>
-        <div class="health-card__label">Disk</div>
-        <div class="health-card__detail" x-text="health.diskDetail"></div>
-    </div>
+<!--
+  Tier 1 — Status strip (ADR-0018)
+  One banner. State colour + one sentence. A deep link to wherever the
+  user needs to go to act on the condition. Green is quiet.
+-->
+<a class="status-strip" :class="summaryStateClass"
+   :href="summary.deep_link || '#'"
+   :aria-label="'System status: ' + (summary.state || 'unknown')"
+   @click="onStatusClick($event)">
+    <span class="status-strip__dot"></span>
+    <span class="status-strip__text" x-text="summary.summary || 'Loading system status...'"></span>
+    <span class="status-strip__arrow" x-show="summary.state && summary.state !== 'green'">&rarr;</span>
+</a>
+
+<!--
+  Tier 2 — Four summary tiles (ADR-0018)
+  Cameras · Last activity · Storage · Recorder host.
+  Each tile shows derived state (badge + one value + one caption), never
+  raw metrics. Raw metrics live on /diagnostics.
+-->
+<div class="tile-grid">
+
+    <!-- Cameras -->
+    <a class="tile" href="#cameras-section" :class="tileStateClass('cameras')">
+        <div class="tile__label">Cameras</div>
+        <div class="tile__value">
+            <span x-text="(summary.details && summary.details.cameras) ? summary.details.cameras.online : '\u2014'"></span>
+            <span class="tile__value-sub"> / <span x-text="(summary.details && summary.details.cameras) ? summary.details.cameras.total : '\u2014'"></span></span>
+        </div>
+        <div class="tile__caption" x-text="camerasCaption"></div>
+    </a>
+
+    <!-- Last activity -->
+    <a class="tile" :href="latestClip ? ('/recordings?camera=' + encodeURIComponent(latestClip.camera_id)) : '/recordings'">
+        <div class="tile__label">Last activity</div>
+        <div class="tile__value" x-text="latestRelativeTime"></div>
+        <div class="tile__caption" x-text="latestCaption"></div>
+    </a>
+
+    <!-- Storage -->
+    <a class="tile" href="/settings#storage" :class="tileStateClass('storage')">
+        <div class="tile__label">Storage</div>
+        <div class="tile__value">
+            <span x-text="storagePercentLabel"></span>
+        </div>
+        <div class="tile__caption" x-text="storageCaption"></div>
+    </a>
+
+    <!-- Recorder host -->
+    <a class="tile" href="/settings#system" :class="tileStateClass('recorder')">
+        <div class="tile__label">Recorder host</div>
+        <div class="tile__value" x-text="recorderStateLabel"></div>
+        <div class="tile__caption" x-text="health.uptime || '\u2014'"></div>
+    </a>
 </div>
 
-<!-- Warnings -->
-<div class="warnings-list">
-    <template x-for="w in health.warnings" :key="w">
-        <div class="warning-item" x-text="w"></div>
-    </template>
-</div>
+<!--
+  Slice 2 will add: Recent events feed (inline-player chip list).
+  Slice 3 will turn the section below into a compact "camera roll-call".
+  For now the existing pairing + camera-card UI is preserved under the
+  "Cameras" heading so admins can still onboard hardware.
+-->
 
-<!-- Uptime -->
-<div class="card mt-16" style="text-align:center;">
-    <span class="text-muted text-small">Uptime: </span>
-    <span class="text-small" x-text="health.uptime || '--'"></span>
-</div>
-
-<!-- Cameras -->
-<div class="section-header">
+<!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
+<div id="cameras-section" class="section-header">
     Cameras
     <span style="float:right;margin-top:-4px;display:flex;gap:8px;">
         <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
@@ -258,7 +285,12 @@
 <script>
 function dashboardPage() {
     return {
-        health: { temp: null, cpu: null, mem: null, memDetail: '', disk: null, diskDetail: '', warnings: [], uptime: '' },
+        // --- ADR-0018 Tier-1 + Tier-2 state ---
+        summary: { state: '', summary: '', deep_link: '/', details: null },
+        latestClip: null,
+        health: { uptime: '' },
+
+        // --- Existing camera-list state (Tier-3 roll-call stub) ---
         cameras: [],
         showAddForm: false,
         newCam: { id: '', name: '', location: '' },
@@ -270,41 +302,136 @@ function dashboardPage() {
         savingStream: false,
         streamSaveMsg: '',
         streamSaveOk: false,
-        _healthInterval: null,
+
+        _summaryInterval: null,
         _cameraInterval: null,
 
         // Derived lists — split pending (discovered) from paired (online/offline)
         get discoveredCameras() { return this.cameras.filter(c => c.status === 'pending'); },
         get pairedCameras() { return this.cameras.filter(c => c.status !== 'pending'); },
 
-        tempColor(c) {
-            if (c === null) return '';
-            if (c < 60) return 'health-card__value--green';
-            if (c < 75) return 'health-card__value--yellow';
-            return 'health-card__value--red';
-        },
-        usageColor(p) {
-            if (p === null) return '';
-            if (p < 70) return 'health-card__value--green';
-            if (p < 85) return 'health-card__value--yellow';
-            return 'health-card__value--red';
+        // --- Tier-1 status strip ---
+        get summaryStateClass() {
+            var s = this.summary.state || 'green';
+            return 'status-strip--' + s;
         },
 
-        async loadHealth() {
+        // Route a single signal's colour onto the right tile. Keeps the
+        // tile-level cue consistent with the top-strip rollup.
+        tileStateClass(which) {
+            var d = this.summary.details;
+            if (!d) return '';
+            if (which === 'cameras') {
+                return this._camerasTileState(d.cameras);
+            }
+            if (which === 'storage') {
+                return this._storageTileState(d.storage);
+            }
+            if (which === 'recorder') {
+                return this._recorderTileState(d.recorder);
+            }
+            return '';
+        },
+
+        _camerasTileState(c) {
+            if (!c || !c.total) return '';
+            var offline = c.total - c.online;
+            if (offline <= 0) return 'tile--green';
+            // Without per-camera last_seen durations we can't distinguish
+            // amber/red here — fall back to amber and let the top strip
+            // escalate via its own check.
+            if (this.summary.state === 'red') return 'tile--red';
+            return 'tile--amber';
+        },
+
+        _storageTileState(s) {
+            if (!s) return '';
+            if (s.percent >= 90) return 'tile--red';
+            if (s.percent >= 70) return 'tile--amber';
+            return 'tile--green';
+        },
+
+        _recorderTileState(r) {
+            if (!r) return '';
+            // Mirror the server thresholds (ADR-0018 locked values).
+            if (r.cpu_temp_c >= 80) return 'tile--red';
+            if (r.cpu_temp_c >= 72 || r.cpu_percent >= 85 || r.memory_percent >= 85) return 'tile--amber';
+            return 'tile--green';
+        },
+
+        // --- Tile captions ---
+        get camerasCaption() {
+            var d = this.summary.details;
+            if (!d || !d.cameras) return '\u2014';
+            var off = d.cameras.offline_names || [];
+            if (off.length === 0) return 'All online';
+            if (off.length === 1) return off[0] + ' offline';
+            return off.length + ' offline';
+        },
+
+        get latestRelativeTime() {
+            if (!this.latestClip) return '\u2014';
+            // Prefer start_time + date if present.
+            var iso = this._clipIso(this.latestClip);
+            return iso ? this._relativeTime(iso) : '\u2014';
+        },
+
+        get latestCaption() {
+            if (!this.latestClip) return 'No recordings yet';
+            return this.latestClip.camera_name || this.latestClip.camera_id || '';
+        },
+
+        get storagePercentLabel() {
+            var s = this.summary.details && this.summary.details.storage;
+            if (!s || s.percent === undefined || s.percent === null) return '\u2014';
+            return s.percent.toFixed(0) + '%';
+        },
+
+        get storageCaption() {
+            var s = this.summary.details && this.summary.details.storage;
+            if (!s) return '';
+            if (s.retention_days !== null && s.retention_days !== undefined) {
+                return '~' + s.retention_days + ' days retention';
+            }
+            if (s.free_gb !== undefined) {
+                return s.free_gb + ' GB free';
+            }
+            return '';
+        },
+
+        get recorderStateLabel() {
+            var state = this._recorderTileState(this.summary.details && this.summary.details.recorder);
+            if (state === 'tile--red') return 'Overheat';
+            if (state === 'tile--amber') return 'Under load';
+            return 'Nominal';
+        },
+
+        onStatusClick(ev) {
+            // A green strip links to "/"; don't scroll when already there.
+            if ((this.summary.state || 'green') === 'green') {
+                ev.preventDefault();
+            }
+        },
+
+        // --- Loaders ---
+
+        async loadSummary() {
             try {
-                var data = await window.HM.api.get('/api/v1/system/health');
-                this.health.temp = data.cpu_temp_c || 0;
-                this.health.cpu = data.cpu_usage_percent || 0;
-                this.health.mem = (data.memory && data.memory.percent) || 0;
-                this.health.memDetail = data.memory ? (data.memory.used_mb + ' / ' + data.memory.total_mb + ' MB') : '';
-                this.health.disk = (data.disk && data.disk.percent) || 0;
-                this.health.diskDetail = data.disk ? (data.disk.used_gb + ' / ' + data.disk.total_gb + ' GB') : '';
-                this.health.warnings = data.warnings || [];
-            } catch(e) {}
+                this.summary = await window.HM.api.get('/api/v1/system/summary');
+            } catch(e) {
+                // Leave last-good summary visible; never crash the dashboard.
+            }
+            // Uptime — still useful on the recorder tile.
             try {
                 var info = await window.HM.api.get('/api/v1/system/info');
-                this.health.uptime = (info.uptime && info.uptime.display) || '--';
+                this.health.uptime = (info.uptime && info.uptime.display) || '';
             } catch(e) {}
+            // Last clip across all cameras (Tier-2 "Last activity" tile).
+            try {
+                this.latestClip = await window.HM.api.get('/api/v1/recordings/latest');
+            } catch(e) {
+                this.latestClip = null;
+            }
         },
 
         async loadCameras() {
@@ -316,10 +443,8 @@ function dashboardPage() {
         async scanCameras() {
             this.scanning = true;
             try {
-                // POST to /cameras/scan — triggers mDNS PTR query and returns current list
                 this.cameras = await window.HM.api.post('/api/v1/cameras/scan', {});
             } catch(e) {
-                // Fallback: just reload existing list
                 await this.loadCameras();
             } finally {
                 setTimeout(() => { this.scanning = false; }, 1000);
@@ -420,6 +545,8 @@ function dashboardPage() {
             }
         },
 
+        // --- helpers ---
+
         _staleSeconds(cam) {
             if (!cam.last_seen) return 0;
             return Math.round((Date.now() - new Date(cam.last_seen).getTime()) / 1000);
@@ -431,20 +558,33 @@ function dashboardPage() {
             if (secs < 5) return 'just now';
             if (secs < 60) return secs + 's ago';
             if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
-            return Math.floor(secs / 3600) + 'h ago';
+            if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+            return Math.floor(secs / 86400) + 'd ago';
+        },
+
+        _clipIso(clip) {
+            // RecorderService clips expose date (YYYY-MM-DD) and start_time
+            // (HH:MM:SS). Combine into an ISO string for relative-time calc.
+            if (!clip) return '';
+            if (clip.started_at) return clip.started_at;
+            if (clip.date && clip.start_time) {
+                return clip.date + 'T' + clip.start_time;
+            }
+            return '';
         },
 
         init() {
-            this.loadHealth();
+            this.loadSummary();
             this.loadCameras();
-            // Health: 10s (CPU/mem/disk change frequently, matches requirements SR-SRV-07)
-            // Cameras: 15s (heartbeats arrive every 15s — keep display fresh)
-            this._healthInterval = setInterval(() => { this.loadHealth(); }, 10000);
+            // Summary: 10s (matches the existing health cadence; ADR-0018
+            // expects the strip to reflect the last heartbeat window).
+            // Cameras: 15s (heartbeat cadence).
+            this._summaryInterval = setInterval(() => { this.loadSummary(); }, 10000);
             this._cameraInterval = setInterval(() => { this.loadCameras(); }, 15000);
         },
 
         destroy() {
-            if (this._healthInterval) clearInterval(this._healthInterval);
+            if (this._summaryInterval) clearInterval(this._summaryInterval);
             if (this._cameraInterval) clearInterval(this._cameraInterval);
         }
     };

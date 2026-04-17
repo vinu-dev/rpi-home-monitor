@@ -8,7 +8,7 @@ muscle-memory reasons, so regressions here are silent trust breakers.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -26,7 +26,6 @@ from monitor.services.system_summary_service import (
     SystemSummaryService,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -38,7 +37,7 @@ def _cam(**kwargs):
         "id": "cam-1",
         "name": "Cam 1",
         "status": "online",
-        "last_seen": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "last_seen": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -89,8 +88,10 @@ def _build(**overrides):
 def _iso_ago(seconds: float) -> str:
     """Return an ISO-8601 timestamp `seconds` ago."""
     return (
-        datetime.now(timezone.utc) - timedelta(seconds=seconds)
-    ).isoformat().replace("+00:00", "Z")
+        (datetime.now(UTC) - timedelta(seconds=seconds))
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +111,9 @@ class TestGreenBaseline:
         assert out["details"]["recent_errors"] == 0
 
     def test_pending_cameras_excluded_from_totals(self):
-        svc = _build(cameras=[_cam(status="online"), _cam(id="cam-2", status="pending")])
+        svc = _build(
+            cameras=[_cam(status="online"), _cam(id="cam-2", status="pending")]
+        )
         out = svc.compute_summary()
         assert out["details"]["cameras"]["total"] == 1
 
@@ -190,8 +193,7 @@ class TestCameraStateTransitions:
 
     def test_single_offline_summary_names_camera(self):
         cam = _cam(
-            id="cam-front", name="Front Door",
-            status="offline", last_seen=_iso_ago(120)
+            id="cam-front", name="Front Door", status="offline", last_seen=_iso_ago(120)
         )
         svc = _build(cameras=[cam])
         assert "Front Door" in svc.compute_summary()["summary"]
@@ -306,7 +308,9 @@ class TestGracefulDegradation:
             store=store,
             storage_manager=MagicMock(
                 get_storage_stats=lambda: {
-                    "percent": 10, "free_gb": 10, "total_gb": 100,
+                    "percent": 10,
+                    "free_gb": 10,
+                    "total_gb": 100,
                     "recordings_dir": "",
                 }
             ),
@@ -325,15 +329,22 @@ class TestGracefulDegradation:
         assert out["details"]["cameras"]["total"] == 0
 
     def test_all_services_failing_does_not_raise(self):
-        store = MagicMock(); store.get_cameras.side_effect = RuntimeError()
-        storage = MagicMock(); storage.get_storage_stats.side_effect = RuntimeError()
-        audit = MagicMock(); audit.get_events.side_effect = RuntimeError()
+        store = MagicMock()
+        store.get_cameras.side_effect = RuntimeError()
+        storage = MagicMock()
+        storage.get_storage_stats.side_effect = RuntimeError()
+        audit = MagicMock()
+        audit.get_events.side_effect = RuntimeError()
         rec_svc = MagicMock(default_recordings_dir="/tmp")
-        health = MagicMock(); health.get_health_summary.side_effect = RuntimeError()
+        health = MagicMock()
+        health.get_health_summary.side_effect = RuntimeError()
 
         svc = SystemSummaryService(
-            store=store, storage_manager=storage, audit=audit,
-            recordings_service=rec_svc, health_module=health,
+            store=store,
+            storage_manager=storage,
+            audit=audit,
+            recordings_service=rec_svc,
+            health_module=health,
         )
         out = svc.compute_summary()
         # Must not crash; best-effort green with zeros.
@@ -351,7 +362,8 @@ class TestPriority:
         svc = _build(
             stats={
                 "percent": DISK_AMBER_PERCENT + 1,
-                "free_gb": 5, "total_gb": 100,
+                "free_gb": 5,
+                "total_gb": 100,
                 "recordings_dir": "",
             },
             events=[{"timestamp": _iso_ago(30), "event": "OTA_FAILED", "detail": ""}],
@@ -363,7 +375,8 @@ class TestPriority:
             cameras=[_cam(status="offline", last_seen=_iso_ago(120))],
             stats={
                 "percent": DISK_RED_PERCENT + 1,
-                "free_gb": 1, "total_gb": 100,
+                "free_gb": 1,
+                "total_gb": 100,
                 "recordings_dir": "",
             },
         )

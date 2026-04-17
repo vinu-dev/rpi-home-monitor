@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 log = logging.getLogger("monitor.system_summary")
 
@@ -30,17 +30,17 @@ log = logging.getLogger("monitor.system_summary")
 DISK_AMBER_PERCENT = 70
 DISK_RED_PERCENT = 90
 
-CPU_AMBER_PERCENT = 85          # recorder host CPU, sustained
-CPU_TEMP_AMBER_C = 72           # recorder host SoC temperature
+CPU_AMBER_PERCENT = 85  # recorder host CPU, sustained
+CPU_TEMP_AMBER_C = 72  # recorder host SoC temperature
 CPU_TEMP_RED_C = 80
 MEMORY_AMBER_PERCENT = 85
 
-CAMERA_OFFLINE_AMBER_SECONDS = 60          # < 1 h: amber
-CAMERA_OFFLINE_RED_SECONDS = 60 * 60       # >= 1 h: red
+CAMERA_OFFLINE_AMBER_SECONDS = 60  # < 1 h: amber
+CAMERA_OFFLINE_RED_SECONDS = 60 * 60  # >= 1 h: red
 
-ERROR_WINDOW_SECONDS = 60 * 60             # "errors in last hour"
+ERROR_WINDOW_SECONDS = 60 * 60  # "errors in last hour"
 
-RETENTION_SAMPLE_DAYS = 7                  # trailing window for write-rate
+RETENTION_SAMPLE_DAYS = 7  # trailing window for write-rate
 
 # Audit events treated as error-level for the status strip. Kept narrow so a
 # noisy login-failed storm (expected during a password-spray) doesn't flip
@@ -190,7 +190,7 @@ class SystemSummaryService:
         online = [c for c in paired if getattr(c, "status", "") == "online"]
         offline = [c for c in paired if getattr(c, "status", "") == "offline"]
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         worst = "green"
         for cam in offline:
             last_seen = _parse_ts(getattr(cam, "last_seen", None))
@@ -328,9 +328,7 @@ class SystemSummaryService:
             log.warning("summary: audit.get_events failed: %s", exc)
             return "green", 0, "/settings#audit"
 
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            seconds=ERROR_WINDOW_SECONDS
-        )
+        cutoff = datetime.now(UTC) - timedelta(seconds=ERROR_WINDOW_SECONDS)
         errors = 0
         warnings = 0
         for ev in events:
@@ -387,18 +385,25 @@ class SystemSummaryService:
         # Priority of what to surface first: errors > red signals > amber.
         # Within the same severity, storage is most actionable.
         order = [
-            (err_state, err_count > 0,
-             f"{err_count} recent system event{'s' if err_count != 1 else ''} — review log",
-             err_link),
-            (disk_state, True,
-             f"Recorder disk {disk_detail.get('percent', 0):.0f}% full",
-             disk_link),
-            (cam_state, cam_detail.get("offline_names"),
-             _camera_sentence(cam_detail),
-             cam_link),
-            (host_state, True,
-             "Recorder under load — check host metrics",
-             host_link),
+            (
+                err_state,
+                err_count > 0,
+                f"{err_count} recent system event{'s' if err_count != 1 else ''} — review log",
+                err_link,
+            ),
+            (
+                disk_state,
+                True,
+                f"Recorder disk {disk_detail.get('percent', 0):.0f}% full",
+                disk_link,
+            ),
+            (
+                cam_state,
+                cam_detail.get("offline_names"),
+                _camera_sentence(cam_detail),
+                cam_link,
+            ),
+            (host_state, True, "Recorder under load — check host metrics", host_link),
         ]
 
         # Red first, then amber.
