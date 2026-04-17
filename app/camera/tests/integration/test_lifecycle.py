@@ -325,14 +325,21 @@ class TestRunning:
         mock_led,
         tmp_path,
     ):
-        """ADR-0017: default desired state 'stopped' blocks boot-time stream start."""
+        """Explicit 'stopped' override in the state file blocks boot-time stream.
+
+        ADR-0017 originally defaulted this to 'stopped' (on-demand gate) but
+        the 24ac5c6 revert restored 'running' as the default so Live view is
+        instant. The persisted file still works as an explicit override —
+        that's what this test now asserts.
+        """
         config = _make_config()
         platform = _make_platform()
 
         lc = CameraLifecycle(config, platform, lambda: True)
         lc._capture = MagicMock()
-        # No file written — helper defaults to "stopped"
-        lc._stream_state_path = str(tmp_path / "missing_stream_state")
+        state_file = tmp_path / "stream_state"
+        state_file.write_text("stopped")
+        lc._stream_state_path = str(state_file)
 
         lc._do_running()
 
