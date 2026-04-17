@@ -467,7 +467,28 @@ function dashboardPage() {
         playEvent(ev) {
             var key = ev.camera_id + '/' + ev.date + '/' + ev.filename;
             // Toggle — click the same row again to collapse.
-            this.playingKey = (this.playingKey === key) ? '' : key;
+            if (this.playingKey === key) {
+                this.playingKey = '';
+                return;
+            }
+            this.playingKey = key;
+            // The <video> element lives inside an x-for row that was
+            // display:none until this click flipped x-show. Browsers do
+            // not reliably honour the `autoplay` attribute when an
+            // element becomes visible after page load, and our video is
+            // unmuted (surveillance footage needs audio). Call .play()
+            // explicitly inside the click gesture so the browser's
+            // autoplay policy treats this as user-initiated playback.
+            this.$nextTick(() => {
+                var active = document.querySelector('.event-row--active video');
+                if (active) {
+                    try { active.load(); } catch (_) { /* noop */ }
+                    var p = active.play();
+                    if (p && typeof p.catch === 'function') {
+                        p.catch(() => { /* user can press the ▶ control */ });
+                    }
+                }
+            });
         },
 
         _durationLabel(secs) {
