@@ -474,6 +474,7 @@ def _resume_camera_pipelines(app):
 
 def _register_blueprints(app):
     """Register all Flask blueprints."""
+    from monitor.api.audit import audit_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.on_demand import on_demand_bp
@@ -502,6 +503,7 @@ def _register_blueprints(app):
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
+    app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
     # ADR-0017: localhost-only on-demand coordinator for MediaMTX hooks.
     # Mounted outside /api/v1 so the CSRF layer on /api/* can stay strict.
     app.register_blueprint(on_demand_bp, url_prefix="/internal/on-demand")

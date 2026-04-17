@@ -92,6 +92,27 @@
     </template>
 </div>
 
+<!--
+  Tier-3 (Slice 3) — Audit log teaser
+  Five most recent security-relevant events so operators notice a
+  login storm / camera dropout / OTA failure without visiting a
+  separate log page. Admin-gated — viewers simply don't see it.
+  Full log view lives in Settings › Security (future slice).
+-->
+<div class="section-header" x-show="auditAdmin && auditEvents.length > 0">
+    Recent activity
+    <a class="text-small" style="float:right;" href="/settings#security">Full log &rarr;</a>
+</div>
+<div class="log-teaser" x-show="auditAdmin && auditEvents.length > 0">
+    <template x-for="evt in auditEvents" :key="evt.timestamp + '/' + evt.event">
+        <div class="log-teaser__row" :class="_auditEventClass(evt.event)">
+            <span class="log-teaser__time" x-text="_relativeTime(evt.timestamp)"></span>
+            <span class="log-teaser__event" x-text="_auditEventLabel(evt.event)"></span>
+            <span class="log-teaser__detail" x-text="evt.detail || (evt.user ? 'user ' + evt.user : '')"></span>
+        </div>
+    </template>
+</div>
+
 <!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
 <div id="cameras-section" class="section-header">
     Cameras
@@ -314,6 +335,8 @@ function dashboardPage() {
         recentEvents: [],
         playingKey: '',
         health: { uptime: '' },
+        auditEvents: [],      // Slice 3 log teaser
+        auditAdmin: true,     // becomes false if /audit 403s (viewer role)
 
         // --- Existing camera-list state (Tier-3 roll-call stub) ---
         cameras: [],
@@ -462,6 +485,48 @@ function dashboardPage() {
             } catch(e) {
                 this.recentEvents = [];
             }
+            // Slice 3 log teaser — last 5 audit events (admin only).
+            // Viewers get a 403 here which we silently suppress so the
+            // dashboard still renders cleanly.
+            try {
+                var resp = await window.HM.api.get('/api/v1/audit/events?limit=5');
+                this.auditEvents = (resp && resp.events) || [];
+                this.auditAdmin = true;
+            } catch(e) {
+                this.auditEvents = [];
+                this.auditAdmin = false;
+            }
+        },
+
+        // Compact, human-friendly label for a raw audit event code.
+        _auditEventLabel(code) {
+            if (!code) return '';
+            var map = {
+                LOGIN_OK: 'Signed in',
+                LOGIN_FAILED: 'Login failed',
+                LOGOUT: 'Signed out',
+                USER_CREATED: 'User created',
+                USER_DELETED: 'User deleted',
+                PASSWORD_CHANGED: 'Password changed',
+                CAMERA_PAIRED: 'Camera paired',
+                CAMERA_REMOVED: 'Camera removed',
+                CAMERA_OFFLINE: 'Camera went offline',
+                CAMERA_ONLINE: 'Camera came online',
+                CLIP_DELETED: 'Clip deleted',
+                CLIPS_DELETED: 'Clips deleted',
+                OTA_STARTED: 'OTA started',
+                OTA_COMPLETED: 'OTA completed',
+                OTA_FAILED: 'OTA failed',
+                FACTORY_RESET: 'Factory reset',
+            };
+            return map[code] || code.toLowerCase().replace(/_/g, ' ');
+        },
+
+        _auditEventClass(code) {
+            if (!code) return '';
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET') return 'log-teaser__row--bad';
+            if (code === 'LOGIN_FAILED' || code === 'CAMERA_OFFLINE') return 'log-teaser__row--warn';
+            return '';
         },
 
         playEvent(ev) {
