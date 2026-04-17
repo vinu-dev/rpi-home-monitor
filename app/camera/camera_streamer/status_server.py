@@ -443,17 +443,28 @@ def _make_status_handler(
             """Check if the request is from the paired server.
 
             Accepts the request if:
-            - The client IP matches config.server_ip (set during pairing), OR
+            - The client IP matches config.server_ip (set during pairing,
+              either as an IP literal or as a hostname resolved to one), OR
             - The client voluntarily presented a valid TLS peer certificate.
 
             The SSL context uses CERT_NONE so browsers don't get a client-cert
             challenge (which breaks Chrome/Edge). Server IP check is the primary
             auth path; peer-cert is a fallback for future full mTLS enforcement.
             """
-            # Primary: IP-based auth — server IP is set during pairing
             server_ip = getattr(config, "server_ip", "") or ""
-            if server_ip and self.client_address[0] == server_ip:
-                return True
+            if server_ip:
+                client_ip = self.client_address[0]
+                if client_ip == server_ip:
+                    return True
+                # server_ip may be a hostname (e.g. "rpi-divinu.local").
+                # Resolve it so a fresh DNS/mDNS lookup matches the raw
+                # TCP client IP we see here.
+                try:
+                    resolved = socket.gethostbyname(server_ip)
+                except (socket.gaierror, socket.herror):
+                    resolved = ""
+                if resolved and client_ip == resolved:
+                    return True
             # Fallback: TLS peer cert (only when client voluntarily sends one)
             try:
                 peer_cert = self.request.getpeercert()
