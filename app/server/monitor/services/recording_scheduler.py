@@ -186,20 +186,25 @@ class RecordingScheduler:
                 self._needed.add(cam_id)
 
             # Ask the camera to stream if we haven't already.
-            if (
-                camera.desired_stream_state != "running"
-                and camera.ip
-                and self._control is not None
-            ):
+            stream_ready = camera.desired_stream_state == "running"
+            if not stream_ready and camera.ip and self._control is not None:
                 _, err = self._control.start_stream(camera.ip)
                 if err:
                     log.warning("Scheduler: start_stream(%s) failed: %s", cam_id, err)
                 else:
                     camera.desired_stream_state = "running"
                     self._store.save_camera(camera)
+                    stream_ready = True
 
-            # Start the recorder if not already running.
-            if not is_recording and self._streaming is not None:
+            # Start the recorder only once the camera stream is actually
+            # running — otherwise ffmpeg would spin in a dead-restart loop
+            # against a source that has no publisher.
+            if (
+                stream_ready
+                and getattr(camera, "streaming", False)
+                and not is_recording
+                and self._streaming is not None
+            ):
                 rtsp_url = f"rtsp://127.0.0.1:8554/{cam_id}"
                 self._streaming.start_recorder(cam_id, rtsp_url)
         else:

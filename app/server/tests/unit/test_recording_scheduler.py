@@ -12,7 +12,7 @@ from monitor.services.recording_scheduler import (
 )
 
 
-def _cam(mode="off", schedule=None, ip="192.0.2.5", desired="stopped"):
+def _cam(mode="off", schedule=None, ip="192.0.2.5", desired="stopped", streaming=True):
     return Camera(
         id="cam-x",
         name="X",
@@ -21,6 +21,7 @@ def _cam(mode="off", schedule=None, ip="192.0.2.5", desired="stopped"):
         recording_mode=mode,
         recording_schedule=schedule or [],
         desired_stream_state=desired,
+        streaming=streaming,
     )
 
 
@@ -155,6 +156,30 @@ class TestReconcileSideEffects:
         streaming.is_recording.return_value = True
         sched.tick()
         streaming.stop_recorder.assert_called_once()
+
+    def test_recorder_not_started_until_camera_confirms_streaming(self, store):
+        """Scheduler requests stream but defers recorder until heartbeat confirms."""
+        cam = _cam("continuous", desired="stopped", streaming=False)
+        store.save_camera(cam)
+
+        streaming = MagicMock()
+        streaming.is_recording.return_value = False
+        control = MagicMock()
+        control.start_stream.return_value = ({"state": "running"}, "")
+
+        sched = RecordingScheduler(store, streaming, control)
+        sched.tick()
+
+        # Stream requested, but no recorder yet — camera hasn't confirmed.
+        control.start_stream.assert_called_once()
+        streaming.start_recorder.assert_not_called()
+
+        # Next tick after heartbeat reports streaming=True → recorder starts.
+        cam2 = store.get_camera("cam-x")
+        cam2.streaming = True
+        store.save_camera(cam2)
+        sched.tick()
+        streaming.start_recorder.assert_called_once()
 
     def test_no_control_call_when_already_running(self, store):
         cam = _cam("continuous", desired="running")
