@@ -13,12 +13,21 @@ the store or audit logger directly.
 import logging
 import re
 import shutil
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 from monitor.services.recorder_service import RecorderService
 
 log = logging.getLogger("monitor.recordings-service")
+
+# Clips whose mtime is this fresh are assumed to be the ffmpeg segment
+# currently being written. Their mp4 has no `moov` atom yet so the
+# browser can't play them — hiding them from the dashboard feed avoids
+# the "click → 0:00, blank player" bug. The loop recorder rotates every
+# ~180s, so a 10s window is plenty of slack without hiding anything
+# that's actually finalised.
+_ACTIVE_WRITE_SECONDS = 10.0
 
 # Camera IDs are derived from hardware serials (hex/alnum). Restrict here so
 # they cannot encode path traversal when used in filesystem paths.
@@ -244,6 +253,10 @@ class RecordingsService:
         if not root.is_dir():
             return None, "No recordings found", 404
 
+        # Same active-write guard as recent_across_cameras: ignore the
+        # clip ffmpeg is still writing, otherwise the "Last activity"
+        # tile deep-links to an unplayable 0:00 file.
+        now = time.time()
         newest_mtime = -1.0
         newest_path: Path | None = None
         newest_cam = ""
@@ -257,6 +270,8 @@ class RecordingsService:
                     try:
                         mtime = mp4.stat().st_mtime
                     except OSError:
+                        continue
+                    if (now - mtime) < _ACTIVE_WRITE_SECONDS:
                         continue
                     if mtime > newest_mtime:
                         newest_mtime = mtime
@@ -315,6 +330,10 @@ class RecordingsService:
             return [], None, 200
 
         # Walk once, collect (mtime, cam_id, Path) tuples, then sort + take top N.
+        # Skip files whose mtime is still advancing (ffmpeg is writing the
+        # current segment) — their `moov` atom hasn't been flushed, so the
+        # browser shows a blank 0:00 player when clicked.
+        now = time.time()
         entries: list[tuple[float, str, Path]] = []
         try:
             for cam_dir in root.iterdir():
@@ -322,9 +341,12 @@ class RecordingsService:
                     continue
                 for mp4 in cam_dir.rglob("*.mp4"):
                     try:
-                        entries.append((mp4.stat().st_mtime, cam_dir.name, mp4))
+                        mtime = mp4.stat().st_mtime
                     except OSError:
                         continue
+                    if (now - mtime) < _ACTIVE_WRITE_SECONDS:
+                        continue
+                    entries.append((mtime, cam_dir.name, mp4))
         except OSError:
             return [], None, 200
 

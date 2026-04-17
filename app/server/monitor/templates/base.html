@@ -38,7 +38,7 @@
             </svg>
             <span>Dashboard</span>
         </a>
-        <a href="/live" class="bottom-nav__item" data-page="live">
+        <a href="/live" class="bottom-nav__item" data-page="live" id="nav-live">
             <svg class="bottom-nav__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="23 7 16 12 23 17 23 7"/>
                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
@@ -79,6 +79,44 @@
     {% endif %}
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+    // ADR-0017 tradeoff: cameras stream on-demand, so a cold click on
+    // "Live" waits ~5 s for the sensor + encoder to warm up. Warm the
+    // pipeline when the operator's cursor enters the Live nav item —
+    // by the time they actually click, MediaMTX is already pulling
+    // frames. Best-effort, fire-and-forget, once per page-load.
+    (function() {
+        var link = document.getElementById('nav-live');
+        if (!link) return;
+        // Don't pre-warm when we're already on /live (page is driving the
+        // stream itself), and don't pre-warm more than once per visit.
+        if (link.classList.contains('bottom-nav__item--active')) return;
+        var warmed = false;
+        function warm() {
+            if (warmed) return;
+            warmed = true;
+            fetch('/api/v1/cameras', { credentials: 'same-origin' })
+                .then(function(r) { return r.ok ? r.json() : []; })
+                .then(function(cams) {
+                    var online = (cams || []).filter(function(c) { return c.status === 'online'; });
+                    if (online.length === 0) return;
+                    // HEAD on the HLS playlist is enough to trigger
+                    // MediaMTX runOnDemand; we don't care about the
+                    // body, just the side effect.
+                    var cam = online[0].id;
+                    fetch('/live/' + encodeURIComponent(cam) + '/stream.m3u8',
+                        { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' })
+                        .catch(function() { /* best-effort */ });
+                })
+                .catch(function() { /* best-effort */ });
+        }
+        // Desktop: hover. Mobile: the first touchstart before click.
+        link.addEventListener('mouseenter', warm, { once: true, passive: true });
+        link.addEventListener('touchstart', warm, { once: true, passive: true });
+        // Also kick on focus for keyboard navigation.
+        link.addEventListener('focus', warm, { once: true });
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

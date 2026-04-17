@@ -400,21 +400,23 @@ class TestRecentAcrossCamerasLayouts:
     """
 
     def test_parses_flat_and_dated_layouts(self, svc, storage_manager):
+        import os
+        import time
         from pathlib import Path
 
         root = Path(storage_manager.recordings_dir)
         cam_dir = root / "cam-001"
         cam_dir.mkdir()
-        # Flat clip (newest).
+        # Flat clip (newest, but finalised — backdate past the active-write guard).
         flat = cam_dir / "20260417_101530.mp4"
         flat.write_bytes(b"x" * 10)
+        flat_mtime = time.time() - 300
+        os.utime(flat, (flat_mtime, flat_mtime))
         # Dated clip (older).
         dated_dir = cam_dir / "2026-04-10"
         dated_dir.mkdir()
         dated = dated_dir / "09-00-00.mp4"
         dated.write_bytes(b"x" * 10)
-        import os
-        import time
 
         old = time.time() - 3600
         os.utime(dated, (old, old))
@@ -432,16 +434,49 @@ class TestRecentAcrossCamerasLayouts:
         assert result[1]["start_time"] == "09:00:00"
 
     def test_skips_unrecognised_stems(self, svc, storage_manager):
+        import os
+        import time
         from pathlib import Path
 
         root = Path(storage_manager.recordings_dir)
         cam_dir = root / "cam-001"
         cam_dir.mkdir()
-        (cam_dir / "weird-name.mp4").write_bytes(b"x")
+        p = cam_dir / "weird-name.mp4"
+        p.write_bytes(b"x")
+        # Ensure mtime isn't within the active-write window so the skip
+        # reason under test is the stem regex, not the freshness guard.
+        old = time.time() - 300
+        os.utime(p, (old, old))
 
         result, error, status = svc.recent_across_cameras(limit=10)
         assert error is None and status == 200
         assert result == []
+
+    def test_in_progress_clip_hidden_from_feed(self, svc, storage_manager):
+        """A clip ffmpeg is still writing has no moov atom yet — hiding it
+        avoids the '0:00 blank player' bug when the operator clicks it on
+        the dashboard."""
+        import os
+        import time
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        cam_dir = root / "cam-001"
+        cam_dir.mkdir()
+        # Active clip: mtime = now (still being written).
+        active = cam_dir / "20260418_120000.mp4"
+        active.write_bytes(b"x")
+        # Finalised clip: mtime well outside the active-write window.
+        done = cam_dir / "20260418_115700.mp4"
+        done.write_bytes(b"x")
+        old = time.time() - 300
+        os.utime(done, (old, old))
+
+        result, error, status = svc.recent_across_cameras(limit=10)
+        assert error is None and status == 200
+        names = [r["filename"] for r in result]
+        assert "20260418_120000.mp4" not in names
+        assert "20260418_115700.mp4" in names
 
 
 class TestResolveClipPathFlatFallback:
