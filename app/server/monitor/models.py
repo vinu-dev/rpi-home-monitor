@@ -11,7 +11,7 @@ Files:
   /data/config/settings.json - system settings
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -24,7 +24,12 @@ class Camera:
     status: str = "pending"  # pending | online | offline
     ip: str = ""
     rtsp_url: str = ""
-    recording_mode: str = "continuous"  # continuous | off | motion (Phase 2)
+    # ADR-0017: recording mode + schedule (off default — on-demand streaming)
+    recording_mode: str = "off"  # off | continuous | schedule | motion
+    recording_schedule: list[dict] = field(default_factory=list)
+    recording_motion_enabled: bool = False  # reserved for future motion ADR
+    # Server's mirror of what it last asked the camera to do (ADR-0017)
+    desired_stream_state: str = "stopped"  # running | stopped
     resolution: str = "1080p"  # 720p | 1080p
     fps: int = 25
     paired_at: str | None = None
@@ -85,6 +90,11 @@ class Settings:
     tailscale_accept_routes: bool = False  # --accept-routes flag
     tailscale_ssh: bool = False  # --ssh flag for Tailscale SSH
     tailscale_auth_key: str = ""  # pre-auth key for headless setup
+    # Loop-recording watermarks (ADR-0017). LoopRecorder deletes oldest
+    # recording segments when free space drops below low_watermark %
+    # and stops deleting once free space reaches low + hysteresis.
+    loop_low_watermark_percent: int = 10
+    loop_hysteresis_percent: int = 5
 
 
 @dataclass

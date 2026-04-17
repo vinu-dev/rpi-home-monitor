@@ -157,6 +157,10 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "cpu_temp",
     "memory_percent",
     "uptime_seconds",
+    # ADR-0017: recording-mode + on-demand streaming fields
+    "recording_schedule",
+    "recording_motion_enabled",
+    "desired_stream_state",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
@@ -1137,3 +1141,89 @@ class TestHeartbeatContract:
             },
         )
         assert resp.status_code == 401
+
+
+# ===========================================================================
+# ADR-0017: recording-mode fields + on-demand endpoints
+# ===========================================================================
+
+
+class TestCameraUpdateRecordingModeContract:
+    """PUT /api/v1/cameras/<id> accepts new recording_* fields."""
+
+    def test_put_accepts_schedule_mode(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [
+                    {"days": ["mon", "tue"], "start": "09:00", "end": "17:00"}
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        cam = app.store.get_camera("cam-001")
+        assert cam.recording_mode == "schedule"
+        assert cam.recording_schedule[0]["start"] == "09:00"
+
+    def test_put_rejects_invalid_mode(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "nope"})
+        assert resp.status_code == 400
+
+    def test_put_rejects_bad_schedule_day(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [
+                    {"days": ["funday"], "start": "09:00", "end": "17:00"}
+                ],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_put_rejects_bad_time_format(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [{"days": ["mon"], "start": "9am", "end": "5pm"}],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_put_motion_accepted_as_forward_compat(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "motion"})
+        assert resp.status_code == 200
+
+
+class TestOnDemandEndpointContract:
+    """Internal-only coordinator shape (marked x-internal in OpenAPI)."""
+
+    def test_start_shape(self, app, client):
+        from unittest.mock import MagicMock
+
+        _add_camera(app)
+        app.camera_control_client = MagicMock()
+        app.camera_control_client.start_stream.return_value = ({"state": "running"}, "")
+
+        resp = client.post("/internal/on-demand/cam-001/start")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_has_fields(data, {"ok"})
+
+    def test_non_localhost_forbidden(self, app, client):
+        _add_camera(app)
+        client.environ_base["REMOTE_ADDR"] = "10.0.0.5"
+        resp = client.post("/internal/on-demand/cam-001/start")
+        assert resp.status_code == 403

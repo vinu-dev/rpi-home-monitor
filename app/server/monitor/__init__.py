@@ -20,9 +20,11 @@ from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
+from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
+from monitor.services.recording_scheduler import RecordingScheduler
 from monitor.services.recordings_service import RecordingsService
 from monitor.services.settings_service import SettingsService
 from monitor.services.storage_manager import StorageManager
@@ -266,6 +268,25 @@ def _init_services(app):
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
+    # ADR-0017: on-demand streaming + recording-mode services
+    from monitor.api.on_demand import OnDemandCoordinator
+
+    app.on_demand_coordinator = OnDemandCoordinator(
+        store=app.store,
+        control_client=app.camera_control_client,
+        scheduler_ref=lambda: getattr(app, "recording_scheduler", None),
+    )
+    app.recording_scheduler = RecordingScheduler(
+        store=app.store,
+        streaming=app.streaming,
+        control_client=app.camera_control_client,
+        coordinator=app.on_demand_coordinator,
+    )
+    app.loop_recorder = LoopRecorder(
+        base_dir=app.config["RECORDINGS_DIR"],
+        audit=app.audit,
+    )
+
 
 def _restore_hostname(data_dir: str):
     """Restore hostname from /data on every boot.
@@ -304,6 +325,8 @@ def _startup(app):
     app.streaming.start()
     app.storage_manager.start()
     app.cert_service.start()
+    app.recording_scheduler.start()
+    app.loop_recorder.start()
 
     # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
     app.discovery_service.start_mdns_browser()
@@ -440,6 +463,7 @@ def _register_blueprints(app):
     """Register all Flask blueprints."""
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
+    from monitor.api.on_demand import on_demand_bp
     from monitor.api.ota import ota_bp
     from monitor.api.pairing import pairing_bp
     from monitor.api.recordings import recordings_bp
@@ -465,3 +489,6 @@ def _register_blueprints(app):
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
+    # ADR-0017: localhost-only on-demand coordinator for MediaMTX hooks.
+    # Mounted outside /api/v1 so the CSRF layer on /api/* can stay strict.
+    app.register_blueprint(on_demand_bp, url_prefix="/internal/on-demand")

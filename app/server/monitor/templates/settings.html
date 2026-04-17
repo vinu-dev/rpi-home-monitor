@@ -12,6 +12,7 @@
     <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
     <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="tab = 'tailscale'">Tailscale</button>
     <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
+    <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
     <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
 </div>
 
@@ -470,9 +471,130 @@
     </div>
 </div>
 
-<!-- ���══════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════════════
+     RECORDING TAB (admin only) — ADR-0017
+     Per-camera recording mode + schedule editor.
+     ═══════════════════════════════════════════════════════════ -->
+<div x-show="isAdmin && tab === 'recording'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Recording Modes</div>
+        <div class="card">
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Server Timezone</span>
+                <span class="info-row__value" x-text="recording.timezone || settings.timezone || '--'"></span>
+            </div>
+            <div class="text-small text-muted" style="margin-top:6px;">
+                Schedule windows are evaluated in the server's system timezone.
+                Per-camera timezone is not supported (ADR-0017).
+            </div>
+        </div>
+
+        <template x-if="recording.cameras.length === 0">
+            <div class="card mt-16 text-muted">No cameras paired yet.</div>
+        </template>
+
+        <template x-for="cam in recording.cameras" :key="cam.id">
+            <div class="card mt-16" :data-rec-cam-id="cam.id">
+                <div class="flex-between" style="margin-bottom:8px;">
+                    <span style="font-weight:600;" x-text="cam.name || cam.id"></span>
+                    <span class="text-small text-muted" x-text="cam.location || ''"></span>
+                </div>
+
+                <!-- Mode radios -->
+                <fieldset class="form-group" style="border:none; padding:0; margin:0;">
+                    <legend class="info-row__label" style="margin-bottom:6px;">Recording mode</legend>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" :name="'rec-mode-' + cam.id" value="off"
+                               x-model="cam.recording_mode">
+                        <span>Off</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" :name="'rec-mode-' + cam.id" value="continuous"
+                               x-model="cam.recording_mode">
+                        <span>Continuous</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" :name="'rec-mode-' + cam.id" value="schedule"
+                               x-model="cam.recording_mode">
+                        <span>Schedule</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:not-allowed; opacity:0.6;">
+                        <input type="radio" :name="'rec-mode-' + cam.id" value="motion" disabled>
+                        <span>Motion <span class="text-small text-muted">(coming soon)</span></span>
+                    </label>
+                </fieldset>
+
+                <!-- Schedule editor -->
+                <div x-show="cam.recording_mode === 'schedule'" style="margin-top:12px;">
+                    <div class="info-row__label" style="margin-bottom:6px;">Windows</div>
+                    <template x-for="(day, dayIdx) in recording.DAY_ORDER" :key="day">
+                        <div class="rec-day-row" style="display:flex; flex-direction:column; gap:4px; padding:6px 0; border-bottom:1px solid var(--border);">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <label style="display:flex; align-items:center; gap:4px; min-width:70px; cursor:pointer;">
+                                    <input type="checkbox"
+                                           :checked="recordingDayEnabled(cam, day)"
+                                           @change="toggleRecordingDay(cam, day, $event.target.checked)">
+                                    <span x-text="day.toUpperCase()"></span>
+                                </label>
+                                <button type="button" class="btn btn--secondary btn--small"
+                                        @click="addRecordingWindow(cam, day)"
+                                        :aria-label="'Add window for ' + day">+ Window</button>
+                            </div>
+                            <template x-for="(win, winIdx) in recordingWindowsForDay(cam, day)" :key="day + '-' + winIdx">
+                                <div style="display:flex; align-items:center; gap:8px; padding-left:78px;">
+                                    <input type="time" class="form-input" style="max-width:110px;"
+                                           :value="win.start"
+                                           @change="updateRecordingWindow(cam, day, winIdx, 'start', $event.target.value)"
+                                           :aria-label="'Start time for window ' + (winIdx + 1) + ' on ' + day">
+                                    <span class="text-muted">to</span>
+                                    <input type="time" class="form-input" style="max-width:110px;"
+                                           :value="win.end"
+                                           @change="updateRecordingWindow(cam, day, winIdx, 'end', $event.target.value)"
+                                           :aria-label="'End time for window ' + (winIdx + 1) + ' on ' + day">
+                                    <button type="button" class="btn btn--danger btn--small btn--icon"
+                                            @click="removeRecordingWindow(cam, day, winIdx)"
+                                            :aria-label="'Remove window'">&#x2715;</button>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- 24x7 grid preview -->
+                    <div class="info-row__label" style="margin-top:12px;">Preview (24 &times; 7)</div>
+                    <div class="rec-grid" style="display:grid; grid-template-columns:40px repeat(24, 1fr); gap:1px; margin-top:4px; font-size:0.65em;">
+                        <div></div>
+                        <template x-for="h in 24" :key="'h-' + h">
+                            <div class="text-muted text-center" x-text="(h - 1).toString().padStart(2,'0')"></div>
+                        </template>
+                        <template x-for="day in recording.DAY_ORDER" :key="'grid-' + day">
+                            <template x-for="h in 25" :key="day + '-' + h">
+                                <template x-if="h === 1">
+                                    <div class="text-muted" x-text="day"></div>
+                                </template>
+                                <template x-if="h > 1">
+                                    <div :title="day + ' ' + (h - 2).toString().padStart(2,'0') + ':00'"
+                                         :style="'height:14px;background:' + (recordingGridActive(cam, day, h - 2) ? 'var(--color-success, #4ade80)' : 'var(--bg-card, #1f2937)') + ';border:1px solid var(--border, #374151);'"></div>
+                                </template>
+                            </template>
+                        </template>
+                    </div>
+                </div>
+
+                <div style="margin-top:12px; display:flex; gap:8px;">
+                    <button class="btn btn--primary btn--small" @click="saveRecording(cam)" :disabled="cam._saving">
+                        <span x-text="cam._saving ? 'Saving...' : 'Save'"></span>
+                    </button>
+                    <span x-show="cam._savedAt" class="text-small text-muted" style="align-self:center;"
+                          x-text="'Saved ' + cam._savedAt"></span>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
      STORAGE TAB (admin only)
-     ═══════════════════════════��═══════════════════════════════ -->
+     ═══════════════════════════════════════════════════════════ -->
 <div x-show="isAdmin && tab === 'storage'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">Recording Storage</div>
@@ -554,6 +676,53 @@
         <div x-show="storage.isUsb" style="margin-top:12px;">
             <button class="btn btn--secondary btn--small" @click="ejectUsb()">Eject USB &amp; Use Internal Storage</button>
         </div>
+
+        <!-- ADR-0017: loop recording + segment range -->
+        <div class="settings-section" style="margin-top:var(--space-3);">
+            <div class="settings-section__title">Loop Recording</div>
+            <div class="card">
+                <div class="info-row">
+                    <span class="info-row__label">Mount Path</span>
+                    <span class="info-row__value" x-text="storage.mountPath || '/data/recordings'"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Total / Used / Free</span>
+                    <span class="info-row__value" x-text="storage.spaceDetail || '--'"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Oldest Segment</span>
+                    <span class="info-row__value" x-text="storage.oldestSegment || '--'"></span>
+                </div>
+                <div class="info-row" style="border-bottom:none;">
+                    <span class="info-row__label">Newest Segment</span>
+                    <span class="info-row__value" x-text="storage.newestSegment || '--'"></span>
+                </div>
+
+                <form @submit.prevent="saveLoopSettings()" style="margin-top:12px;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="loop-low-watermark">Low watermark (% free)</label>
+                            <input type="number" id="loop-low-watermark" class="form-input"
+                                   min="1" max="50" step="1"
+                                   x-model.number="storage.lowWatermark"
+                                   aria-describedby="loop-low-watermark-hint">
+                            <span id="loop-low-watermark-hint" class="form-hint">Start deleting when free space drops below this.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="loop-hysteresis">Hysteresis (%)</label>
+                            <input type="number" id="loop-hysteresis" class="form-input"
+                                   min="1" max="30" step="1"
+                                   x-model.number="storage.hysteresis"
+                                   aria-describedby="loop-hysteresis-hint">
+                            <span id="loop-hysteresis-hint" class="form-hint">Stop deleting once free space reaches low + hysteresis.</span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn--primary btn--small" :disabled="storage.loopSaving">
+                        <span x-text="storage.loopSaving ? 'Saving...' : 'Save'"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -617,7 +786,9 @@ function settingsPage() {
 
         tailscale: { installed: false, running: false, state: 'unavailable', hostname: '', ip: '', peers: [], authUrl: '', loading: false, daemon_enabled: false, authenticated: false, config: { enabled: false, auto_connect: false, accept_routes: false, ssh: false, has_auth_key: false }, authKey: '', pollTimer: null },
 
-        storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false },
+        storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false, mountPath: '', spaceDetail: '', oldestSegment: '', newestSegment: '', lowWatermark: 10, hysteresis: 5, loopSaving: false },
+
+        recording: { cameras: [], timezone: '', DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'] },
 
         resetConfirm: false,
         resetKeepRecordings: false,
@@ -639,6 +810,126 @@ function settingsPage() {
                 this.scanUsb();
                 this.loadNetworkInterfaces();
                 this.loadTailscale();
+                this.loadRecordingCameras();
+            }
+        },
+
+        /* --- Recording (ADR-0017) --- */
+        async loadRecordingCameras() {
+            try {
+                var list = await window.HM.api.get('/api/v1/cameras');
+                this.recording.cameras = (list || []).map(c => ({
+                    id: c.id,
+                    name: c.name || c.id,
+                    location: c.location || '',
+                    recording_mode: c.recording_mode || 'off',
+                    recording_schedule: Array.isArray(c.recording_schedule) ? JSON.parse(JSON.stringify(c.recording_schedule)) : [],
+                    _saving: false,
+                    _savedAt: '',
+                }));
+            } catch(e) {}
+            try {
+                var s = await window.HM.api.get('/api/v1/settings');
+                this.recording.timezone = s.timezone || '';
+            } catch(e) {}
+        },
+
+        recordingWindowsForDay(cam, day) {
+            if (!Array.isArray(cam.recording_schedule)) return [];
+            return cam.recording_schedule
+                .map((w, idx) => ({ w: w, idx: idx }))
+                .filter(x => Array.isArray(x.w.days) && x.w.days.indexOf(day) !== -1)
+                .map(x => ({ start: x.w.start, end: x.w.end, _idx: x.idx }));
+        },
+
+        recordingDayEnabled(cam, day) {
+            return this.recordingWindowsForDay(cam, day).length > 0;
+        },
+
+        addRecordingWindow(cam, day) {
+            if (!Array.isArray(cam.recording_schedule)) cam.recording_schedule = [];
+            cam.recording_schedule.push({ days: [day], start: '09:00', end: '17:00' });
+        },
+
+        toggleRecordingDay(cam, day, enabled) {
+            if (enabled) {
+                if (!this.recordingDayEnabled(cam, day)) {
+                    this.addRecordingWindow(cam, day);
+                }
+            } else {
+                cam.recording_schedule = (cam.recording_schedule || [])
+                    .filter(w => !(Array.isArray(w.days) && w.days.length === 1 && w.days[0] === day));
+            }
+        },
+
+        updateRecordingWindow(cam, day, visibleIdx, field, value) {
+            var windows = this.recordingWindowsForDay(cam, day);
+            var target = windows[visibleIdx];
+            if (!target) return;
+            var real = cam.recording_schedule[target._idx];
+            if (!real) return;
+            // Enforce HH:MM
+            if (!/^\d{2}:\d{2}$/.test(value)) return;
+            real[field] = value;
+        },
+
+        removeRecordingWindow(cam, day, visibleIdx) {
+            var windows = this.recordingWindowsForDay(cam, day);
+            var target = windows[visibleIdx];
+            if (!target) return;
+            cam.recording_schedule.splice(target._idx, 1);
+        },
+
+        recordingGridActive(cam, day, hour) {
+            if (cam.recording_mode !== 'schedule') {
+                return cam.recording_mode === 'continuous';
+            }
+            var windows = (cam.recording_schedule || []).filter(w =>
+                Array.isArray(w.days) && w.days.indexOf(day) !== -1);
+            for (var i = 0; i < windows.length; i++) {
+                var w = windows[i];
+                if (!/^\d{2}:\d{2}$/.test(w.start) || !/^\d{2}:\d{2}$/.test(w.end)) continue;
+                var sh = parseInt(w.start.slice(0,2), 10);
+                var eh = parseInt(w.end.slice(0,2), 10);
+                // For grid preview, treat overnight windows as two halves.
+                if (eh > sh) {
+                    if (hour >= sh && hour < eh) return true;
+                } else if (eh < sh) {
+                    if (hour >= sh || hour < eh) return true;
+                }
+            }
+            return false;
+        },
+
+        async saveRecording(cam) {
+            cam._saving = true;
+            try {
+                var payload = {
+                    recording_mode: cam.recording_mode,
+                    recording_schedule: cam.recording_schedule || [],
+                };
+                await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(cam.id), payload);
+                cam._savedAt = new Date().toLocaleTimeString();
+                window.HM.toast('Recording settings saved for ' + (cam.name || cam.id), 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save recording settings', 'error');
+            } finally {
+                cam._saving = false;
+            }
+        },
+
+        async saveLoopSettings() {
+            this.storage.loopSaving = true;
+            try {
+                await window.HM.api.put('/api/v1/settings', {
+                    loop_low_watermark_percent: this.storage.lowWatermark,
+                    loop_hysteresis_percent: this.storage.hysteresis,
+                });
+                window.HM.toast('Loop recording settings saved', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save loop settings', 'error');
+            } finally {
+                this.storage.loopSaving = false;
             }
         },
 
@@ -890,6 +1181,23 @@ function settingsPage() {
                 this.storage.space = (data.total_gb || 0) + ' GB / ' + (data.free_gb || 0) + ' GB free';
                 this.storage.clips = (data.clip_count || 0) + ' clips across ' + (data.camera_count || 0) + ' cameras';
                 this.storage.isUsb = data.is_usb;
+                // ADR-0017 fields — tolerate older servers that don't send them.
+                this.storage.mountPath = data.mount_path || data.recordings_path || '';
+                var used = (data.used_gb !== undefined) ? data.used_gb : ((data.total_gb || 0) - (data.free_gb || 0));
+                this.storage.spaceDetail = (data.total_gb || 0) + ' GB total / '
+                    + used + ' GB used / '
+                    + (data.free_gb || 0) + ' GB free';
+                this.storage.oldestSegment = data.oldest_segment || data.oldest_clip || '';
+                this.storage.newestSegment = data.newest_segment || data.newest_clip || '';
+            } catch(e) {}
+            try {
+                var s = await window.HM.api.get('/api/v1/settings');
+                if (typeof s.loop_low_watermark_percent === 'number') {
+                    this.storage.lowWatermark = s.loop_low_watermark_percent;
+                }
+                if (typeof s.loop_hysteresis_percent === 'number') {
+                    this.storage.hysteresis = s.loop_hysteresis_percent;
+                }
             } catch(e) {}
         },
 

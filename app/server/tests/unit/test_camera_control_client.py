@@ -46,6 +46,70 @@ class TestCameraControlClientUnit:
         result, err = client.restart_stream("192.168.99.99")
         assert result is None
 
+    def test_start_stream_unreachable(self, client):
+        """ADR-0017: stream/start returns error on unreachable camera."""
+        result, err = client.start_stream("192.168.99.99")
+        assert result is None
+        assert err
+
+    def test_stop_stream_unreachable(self, client):
+        result, err = client.stop_stream("192.168.99.99")
+        assert result is None
+        assert err
+
+    def test_get_stream_state_unreachable(self, client):
+        result, err = client.get_stream_state("192.168.99.99")
+        assert result is None
+        assert err
+
+
+class TestStreamControlEndpoints:
+    """ADR-0017: start/stop/state use the correct camera paths."""
+
+    def test_start_stream_uses_correct_path(self, client):
+        from unittest.mock import patch
+
+        with patch.object(
+            client, "_request", return_value=({"state": "running"}, "")
+        ) as m:
+            result, err = client.start_stream("10.0.0.1")
+        assert err == ""
+        assert result == {"state": "running"}
+        m.assert_called_once_with(
+            "POST", "10.0.0.1", "/api/v1/control/stream/start", {}
+        )
+
+    def test_stop_stream_uses_correct_path(self, client):
+        from unittest.mock import patch
+
+        with patch.object(
+            client, "_request", return_value=({"state": "stopped"}, "")
+        ) as m:
+            result, err = client.stop_stream("10.0.0.1")
+        assert err == ""
+        assert result == {"state": "stopped"}
+        m.assert_called_once_with("POST", "10.0.0.1", "/api/v1/control/stream/stop", {})
+
+    def test_get_stream_state_uses_correct_path(self, client):
+        from unittest.mock import patch
+
+        with patch.object(
+            client, "_request", return_value=({"state": "running"}, "")
+        ) as m:
+            result, err = client.get_stream_state("10.0.0.1")
+        assert err == ""
+        assert result == {"state": "running"}
+        m.assert_called_once_with("GET", "10.0.0.1", "/api/v1/control/stream/state")
+
+    def test_start_stream_idempotent_already_running(self, client):
+        """Camera reports already running → we surface success."""
+        from unittest.mock import patch
+
+        with patch.object(client, "_request", return_value=({"state": "running"}, "")):
+            result, err = client.start_stream("10.0.0.1")
+        assert err == ""
+        assert result["state"] == "running"
+
 
 class TestCameraServiceWithControl:
     """Test CameraService integration with control client."""

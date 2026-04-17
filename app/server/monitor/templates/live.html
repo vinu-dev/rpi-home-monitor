@@ -81,7 +81,9 @@
     var cameras = [];
     var currentTransport = '';  // 'webrtc' or 'hls'
 
-    // WHEP timeout — if WebRTC doesn't connect in 5s, fall back to HLS
+    // WHEP timeout — if WebRTC doesn't connect in 5s, fall back to HLS.
+    // On-demand streaming (ADR-0017) adds ~3-5 s camera warm-up on the first
+    // viewer open; the overlay text below communicates that.
     var WHEP_TIMEOUT_MS = 5000;
 
     function showOverlay(msg) {
@@ -180,7 +182,10 @@
         if (cam.status !== 'online') { showOverlay('Camera offline'); return; }
 
         statusEl.textContent = 'Connecting (WebRTC)...';
-        showOverlay('Connecting...');
+        // ADR-0017: cameras are idle by default; MediaMTX `runOnDemand` hook
+        // asks the camera to start streaming on first reader — this can take
+        // up to ~5 s for the sensor + encoder to warm up. Tell the user.
+        showOverlay('Starting stream... (camera warming up)');
 
         // Try WebRTC first, fall back to HLS on failure
         startWebRTC(cameraId).catch(function(err) {

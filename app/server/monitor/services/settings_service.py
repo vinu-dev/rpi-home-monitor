@@ -29,6 +29,9 @@ UPDATABLE_FIELDS = {
     "tailscale_accept_routes",
     "tailscale_ssh",
     "tailscale_auth_key",
+    # ADR-0017: loop recording watermarks
+    "loop_low_watermark_percent",
+    "loop_hysteresis_percent",
 }
 
 
@@ -55,6 +58,8 @@ class SettingsService:
             "tailscale_accept_routes": settings.tailscale_accept_routes,
             "tailscale_ssh": settings.tailscale_ssh,
             "tailscale_has_auth_key": bool(settings.tailscale_auth_key),
+            "loop_low_watermark_percent": settings.loop_low_watermark_percent,
+            "loop_hysteresis_percent": settings.loop_hysteresis_percent,
         }
 
     def update_settings(
@@ -116,6 +121,18 @@ class SettingsService:
             if storage_manager:
                 storage_manager.set_threshold_percent(
                     settings.storage_threshold_percent
+                )
+
+        # ADR-0017: push loop-recording watermarks to the running LoopRecorder
+        if (
+            "loop_low_watermark_percent" in updated_fields
+            or "loop_hysteresis_percent" in updated_fields
+        ):
+            loop_recorder = getattr(current_app, "loop_recorder", None)
+            if loop_recorder and hasattr(loop_recorder, "set_watermarks"):
+                loop_recorder.set_watermarks(
+                    low=settings.loop_low_watermark_percent,
+                    hysteresis=settings.loop_hysteresis_percent,
                 )
 
     def get_wifi_status(self) -> dict:
@@ -286,6 +303,43 @@ class SettingsService:
                 errors.append("tailscale_auth_key must be a string")
             elif len(val) > 256:
                 errors.append("tailscale_auth_key must be at most 256 characters")
+
+        # ADR-0017: loop-recording watermarks. Low must be in [1, 50];
+        # hysteresis in [1, 50]; low + hysteresis must stay < 100 so the
+        # deletion target is reachable.
+        low = data.get("loop_low_watermark_percent")
+        hys = data.get("loop_hysteresis_percent")
+        if "loop_low_watermark_percent" in data and (
+            not isinstance(low, int) or low < 1 or low > 50
+        ):
+            errors.append(
+                "loop_low_watermark_percent must be an integer between 1 and 50"
+            )
+        if "loop_hysteresis_percent" in data and (
+            not isinstance(hys, int) or hys < 1 or hys > 50
+        ):
+            errors.append("loop_hysteresis_percent must be an integer between 1 and 50")
+        # Cross-field: if either is being updated, ensure the pair sums < 100
+        if "loop_low_watermark_percent" in data or "loop_hysteresis_percent" in data:
+            settings = self._store.get_settings()
+            new_low = (
+                low
+                if "loop_low_watermark_percent" in data
+                else (settings.loop_low_watermark_percent)
+            )
+            new_hys = (
+                hys
+                if "loop_hysteresis_percent" in data
+                else (settings.loop_hysteresis_percent)
+            )
+            if (
+                isinstance(new_low, int)
+                and isinstance(new_hys, int)
+                and new_low + new_hys >= 100
+            ):
+                errors.append(
+                    "loop_low_watermark_percent + loop_hysteresis_percent must be < 100"
+                )
 
         return errors
 
