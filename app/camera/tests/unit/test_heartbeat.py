@@ -301,3 +301,131 @@ class TestHeartbeatSender:
             sender.start()
             assert sender._thread is first_thread
             sender.stop()
+
+
+class TestHeartbeatUnpairDetection:
+    """Server-side unpair detection — 401 Unknown camera threshold logic."""
+
+    def _http_error(self, code, body_text):
+        """Build a urllib HTTPError with a readable body."""
+        import io
+        import urllib.error
+
+        return urllib.error.HTTPError(
+            url="https://srv/",
+            code=code,
+            msg="err",
+            hdrs=None,
+            fp=io.BytesIO(body_text.encode()),
+        )
+
+    def test_401_unknown_camera_counts_increment(self, tmp_path):
+        cfg = _make_config()
+        cfg.certs_dir = str(tmp_path)
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        err = self._http_error(401, '{"error": "Unknown camera"}')
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err
+            ),
+        ):
+            sender.send_once()
+        assert sender._consecutive_unknown_camera == 1
+
+    def test_successful_heartbeat_resets_counter(self, tmp_path):
+        cfg = _make_config()
+        cfg.certs_dir = str(tmp_path)
+        sender = HeartbeatSender(cfg, _make_pairing())
+        sender._consecutive_unknown_camera = 3
+
+        resp = MagicMock()
+        resp.read.return_value = b"{}"
+        resp.status = 200
+        resp.__enter__ = lambda self: self
+        resp.__exit__ = lambda self, *a: False
+
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen", return_value=resp
+            ),
+        ):
+            sender.send_once()
+        assert sender._consecutive_unknown_camera == 0
+
+    def test_other_401_does_not_trigger_unpair(self, tmp_path):
+        """A 401 without 'Unknown camera' (e.g. replay, bad signature) must not unpair us."""
+        cfg = _make_config()
+        cfg.certs_dir = str(tmp_path)
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        err = self._http_error(401, '{"error": "Invalid signature"}')
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err
+            ),
+        ):
+            sender.send_once()
+        assert sender._consecutive_unknown_camera == 0
+
+    def test_network_error_does_not_count_as_unpair(self, tmp_path):
+        import urllib.error
+
+        cfg = _make_config()
+        cfg.certs_dir = str(tmp_path)
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen",
+                side_effect=urllib.error.URLError("unreachable"),
+            ),
+        ):
+            sender.send_once()
+        assert sender._consecutive_unknown_camera == 0
+
+    def test_threshold_triggers_wipe_and_restart(self, tmp_path):
+        """After UNPAIR_401_THRESHOLD consecutive Unknown-camera responses we wipe
+        local certs and ask systemd to restart us."""
+        from camera_streamer.heartbeat import UNPAIR_401_THRESHOLD
+
+        cfg = _make_config()
+        cfg.certs_dir = str(tmp_path)
+        # Seed the certs we expect to be removed
+        (tmp_path / "client.crt").write_text("CERT")
+        (tmp_path / "client.key").write_text("KEY")
+        (tmp_path / "pairing_secret").write_text("SECRET")
+
+        sender = HeartbeatSender(cfg, _make_pairing())
+        popen_calls = []
+
+        class _FakePopen:
+            def __init__(self, cmd, **kw):
+                popen_calls.append(cmd)
+
+        # Build a fresh HTTPError for every call — the body BytesIO is
+        # exhausted after a single read().
+        def _fresh_err(*_a, **_kw):
+            raise self._http_error(401, '{"error": "Unknown camera"}')
+
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen",
+                side_effect=_fresh_err,
+            ),
+            patch("subprocess.Popen", _FakePopen),
+        ):
+            for _ in range(UNPAIR_401_THRESHOLD):
+                sender.send_once()
+
+        # Certs gone, systemctl invoked, stop flag set
+        assert not (tmp_path / "client.crt").exists()
+        assert not (tmp_path / "client.key").exists()
+        assert not (tmp_path / "pairing_secret").exists()
+        assert any("systemctl" in cmd[0] for cmd in popen_calls)
+        assert sender._stop_event.is_set()

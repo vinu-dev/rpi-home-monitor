@@ -260,8 +260,10 @@ class CameraLifecycle:
 
     def _do_running(self):
         """Start all runtime services and enter main loop."""
-        # mDNS advertisement
-        self._discovery = DiscoveryService(self._config)
+        # mDNS advertisement — pass pairing manager so TXT paired= reflects
+        # real state (not just "has server IP"). Server-side discovery can
+        # then prefer cameras advertising paired=false as pending candidates.
+        self._discovery = DiscoveryService(self._config, pairing_manager=self._pairing)
         self._discovery.start()
 
         # RTSP streaming

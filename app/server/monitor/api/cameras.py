@@ -166,6 +166,45 @@ def config_notify():
     return jsonify({"message": "Config accepted"}), 200
 
 
+def _report_unknown_heartbeat(request) -> None:
+    """Surface a heartbeat from an unknown camera as a pending discovery.
+
+    When the server has deleted a camera but the camera still has stale
+    certs and is sending heartbeats, the HMAC check fails with "Unknown
+    camera" (no pairing_secret on record). Without this hook, the server
+    dashboard stays empty until the camera reboots and hits /pair/register.
+    Routing the camera_id header through discovery.report_camera() closes
+    that gap — the operator sees "Discovered — waiting to pair" as soon as
+    the first post-unpair heartbeat arrives.
+
+    Best-effort: invalid camera_id format or missing discovery service is
+    silently ignored. Never raises — this is a side-channel, not the
+    heartbeat's primary response path.
+    """
+    try:
+        import re
+
+        camera_id = request.headers.get("X-Camera-ID", "")
+        if not camera_id or not re.match(r"^cam-[a-z0-9]{1,48}$", camera_id):
+            return
+        discovery = getattr(current_app, "discovery_service", None)
+        if discovery is None:
+            return
+        # paired=None: camera still *thinks* it's paired (it's sending a
+        # heartbeat). We create a pending row so the admin can re-pair, but
+        # we don't flip any existing pending back to online — the next mDNS
+        # advert (which reflects real paired state) will settle the value.
+        discovery.report_camera(
+            camera_id=camera_id,
+            ip=request.remote_addr or "",
+            firmware_version="",
+            paired=None,
+        )
+    except Exception:
+        # Discovery side-effects must not break the 401 response path.
+        pass
+
+
 @cameras_bp.route("/heartbeat", methods=["POST"])
 def camera_heartbeat():
     """Accept periodic heartbeat from a camera.
@@ -175,10 +214,19 @@ def camera_heartbeat():
 
     Auth: HMAC-SHA256 signature using pairing_secret (ADR-0016).
     No session/CSRF — this is machine-to-machine.
+
+    Unknown-camera heartbeats also feed discovery: when an admin has deleted
+    the camera from the dashboard, the camera keeps sending heartbeats until
+    it detects the repeated 401 and resets. Meanwhile we record the (signed)
+    request as a new pending camera so the operator sees it immediately
+    under "Discovered — waiting to pair" instead of waiting for the camera
+    to reboot and hit /pair/register.
     """
     camera_id, err = _verify_camera_hmac(request)
     if err:
         status_code = 401 if err != "Invalid timestamp" else 400
+        if err == "Unknown camera":
+            _report_unknown_heartbeat(request)
         return jsonify({"error": err}), status_code
 
     data = request.get_json(silent=True)

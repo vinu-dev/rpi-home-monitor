@@ -14,7 +14,71 @@ class TestDiscoveryService:
         assert svc.is_advertising is False
 
     def test_start_launches_avahi_publish(self, camera_config):
-        """start() should launch avahi-publish-service."""
+        """start() should launch avahi-publish-service, paired flag reflects PairingManager."""
+        pairing = MagicMock()
+        pairing.is_paired = True
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
+            proc = MagicMock()
+            proc.poll.return_value = None
+            mock_popen.side_effect = [proc, proc]
+
+            svc = DiscoveryService(camera_config, pairing_manager=pairing)
+            svc.start()
+            assert svc.is_advertising is True
+
+            service_args = mock_popen.call_args_list[0][0][0]
+            host_args = mock_popen.call_args_list[1][0][0]
+            assert service_args[0] == "avahi-publish-service"
+            assert SERVICE_TYPE in service_args
+            assert str(SERVICE_PORT) in service_args
+            assert "id=cam-test001" in service_args
+            # paired flag now tracks PairingManager.is_paired, not config
+            assert "paired=true" in service_args
+            assert host_args[:4] == [
+                "avahi-publish-address",
+                "-R",
+                "-f",
+                "cam-test.local",
+            ]
+            assert host_args[4] == "192.168.1.50"
+
+            svc.stop()
+
+    def test_start_unpaired(self, unconfigured_config):
+        """Camera without a PairingManager (or with is_paired=False) advertises paired=false."""
+        pairing = MagicMock()
+        pairing.is_paired = False
+        with (
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
+            proc = MagicMock()
+            proc.poll.return_value = None
+            mock_popen.side_effect = [proc, proc]
+
+            svc = DiscoveryService(unconfigured_config, pairing_manager=pairing)
+            svc.start()
+            args = mock_popen.call_args_list[0][0][0]
+            assert "paired=false" in args
+            svc.stop()
+
+    def test_start_no_pairing_manager_defaults_unpaired(self, camera_config):
+        """Backwards-compat: no pairing_manager arg -> advertises paired=false."""
         with (
             patch("subprocess.Popen") as mock_popen,
             patch(
@@ -30,43 +94,6 @@ class TestDiscoveryService:
             mock_popen.side_effect = [proc, proc]
 
             svc = DiscoveryService(camera_config)
-            svc.start()
-            assert svc.is_advertising is True
-
-            service_args = mock_popen.call_args_list[0][0][0]
-            host_args = mock_popen.call_args_list[1][0][0]
-            assert service_args[0] == "avahi-publish-service"
-            assert SERVICE_TYPE in service_args
-            assert str(SERVICE_PORT) in service_args
-            assert "id=cam-test001" in service_args
-            assert "paired=true" in service_args  # configured = paired
-            assert host_args[:4] == [
-                "avahi-publish-address",
-                "-R",
-                "-f",
-                "cam-test.local",
-            ]
-            assert host_args[4] == "192.168.1.50"
-
-            svc.stop()
-
-    def test_start_unpaired(self, unconfigured_config):
-        """Unpaired camera should advertise paired=false."""
-        with (
-            patch("subprocess.Popen") as mock_popen,
-            patch(
-                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
-            ),
-            patch(
-                "camera_streamer.discovery.wifi.get_ip_address",
-                return_value="192.168.1.50",
-            ),
-        ):
-            proc = MagicMock()
-            proc.poll.return_value = None
-            mock_popen.side_effect = [proc, proc]
-
-            svc = DiscoveryService(unconfigured_config)
             svc.start()
             args = mock_popen.call_args_list[0][0][0]
             assert "paired=false" in args

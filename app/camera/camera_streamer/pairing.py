@@ -226,3 +226,24 @@ class PairingManager:
                 return f.read().strip()
         except OSError:
             return ""
+
+    def reset_local_state(self):
+        """Wipe local pairing state so the camera becomes unpaired.
+
+        Deletes ``client.crt``, ``client.key`` and ``pairing_secret``. The CA
+        cert is kept intact — it is still a valid TOFU anchor for the next
+        exchange with the same server. After this call ``is_paired`` is False.
+
+        Used when:
+          - the Re-pair UI starts a new exchange (stale certs must not be
+            left behind if the exchange fails)
+          - the heartbeat sender detects the server has unpaired this camera
+        """
+        for name in ("client.crt", "client.key", "pairing_secret"):
+            path = os.path.join(self._certs_dir, name)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                    log.info("Removed %s during pairing reset", path)
+            except OSError as exc:
+                log.warning("Failed to remove %s: %s", path, exc)

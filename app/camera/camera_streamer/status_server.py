@@ -834,6 +834,13 @@ def _make_status_handler(
                     self._serve_pair_page(error="PIN and server URL are required")
                 return
 
+            # Re-pair flow: if this camera is already paired (stale certs from
+            # a previous server that has since forgotten us), wipe local state
+            # first. Otherwise a failed exchange would leave the GUI reading
+            # "Paired" because is_paired just checks the cert file's presence.
+            if pairing_manager.is_paired:
+                pairing_manager.reset_local_state()
+
             ok, err = pairing_manager.exchange(pin, server_url)
             if "application/json" in content_type:
                 if ok:
