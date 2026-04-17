@@ -559,6 +559,49 @@ class TestSystemInfoContract:
         )
 
 
+class TestSystemSummaryContract:
+    """GET /api/v1/system/summary (ADR-0018 dashboard status strip)."""
+
+    def test_top_level_shape(self, app, client):
+        _login(app, client)
+        resp = client.get("/api/v1/system/summary")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_fields(data, {"state", "summary", "details", "deep_link"})
+        assert data["state"] in {"green", "amber", "red"}
+        assert isinstance(data["summary"], str) and data["summary"]
+        assert isinstance(data["deep_link"], str) and data["deep_link"].startswith("/")
+
+    def test_details_shape(self, app, client):
+        _login(app, client)
+        resp = client.get("/api/v1/system/summary")
+        data = resp.get_json()
+        _assert_fields(
+            data["details"],
+            {"cameras", "storage", "recorder", "recent_errors"},
+            msg="summary.details",
+        )
+        _assert_has_fields(
+            data["details"]["cameras"],
+            {"online", "total", "offline_names"},
+            msg="summary.details.cameras",
+        )
+        _assert_has_fields(
+            data["details"]["storage"],
+            {"percent", "retention_days", "free_gb", "total_gb"},
+            msg="summary.details.storage",
+        )
+        _assert_has_fields(
+            data["details"]["recorder"],
+            {"cpu_percent", "cpu_temp_c", "memory_percent"},
+            msg="summary.details.recorder",
+        )
+
+    def test_requires_login(self, client):
+        resp = client.get("/api/v1/system/summary")
+        assert resp.status_code == 401
+
+
 # ===========================================================================
 # Recordings contracts (/api/v1/recordings/*)
 # ===========================================================================
@@ -635,6 +678,58 @@ class TestRecordingsLatestContract:
         resp = client.get("/api/v1/recordings/cam-001/latest")
         data = resp.get_json()
         _assert_fields(data, {"error"})
+
+
+class TestRecordingsLatestAcrossContract:
+    """GET /api/v1/recordings/latest — cross-camera newest clip (ADR-0018)."""
+
+    def test_success_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app, cam_id="cam-a")
+        _add_camera(app, cam_id="cam-b")
+        rec_dir = app.config["RECORDINGS_DIR"]
+        for cam, t in (("cam-a", "10-00-00"), ("cam-b", "14-30-00")):
+            clip_dir = os.path.join(rec_dir, cam, "2026-04-11")
+            os.makedirs(clip_dir, exist_ok=True)
+            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+                f.write(b"\x00" * 1024)
+
+        resp = client.get("/api/v1/recordings/latest")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_has_fields(data, CLIP_FIELDS | {"camera_name"})
+
+    def test_no_clips_error(self, app, client):
+        _login(app, client)
+        resp = client.get("/api/v1/recordings/latest")
+        assert resp.status_code == 404
+        _assert_fields(resp.get_json(), {"error"})
+
+
+class TestRecordingsRecentContract:
+    """GET /api/v1/recordings/recent?limit=N — recent events feed (ADR-0018)."""
+
+    def test_returns_list_with_camera_name(self, app, client):
+        _login(app, client)
+        _add_camera(app, cam_id="cam-a")
+        rec_dir = app.config["RECORDINGS_DIR"]
+        clip_dir = os.path.join(rec_dir, "cam-a", "2026-04-11")
+        os.makedirs(clip_dir, exist_ok=True)
+        for t in ("10-00-00", "14-30-00", "18-00-00"):
+            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+                f.write(b"\x00" * 512)
+
+        resp = client.get("/api/v1/recordings/recent?limit=5")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list) and data
+        _assert_has_fields(data[0], CLIP_FIELDS | {"camera_name"})
+
+    def test_empty_returns_empty_list(self, app, client):
+        _login(app, client)
+        resp = client.get("/api/v1/recordings/recent")
+        assert resp.status_code == 200
+        assert resp.get_json() == []
 
 
 class TestRecordingsDeleteContract:

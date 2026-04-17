@@ -60,6 +60,11 @@ class RecordingsService:
             recordings_dir = self._default_recordings_dir
         return RecorderService(recordings_dir, self._live_dir)
 
+    @property
+    def default_recordings_dir(self) -> str:
+        """Public accessor used by the system-summary aggregator."""
+        return self._default_recordings_dir
+
     def _recordings_root(self) -> Path:
         """Absolute path to the recordings root (one subdir per camera)."""
         return Path(self._get_recorder()._recordings_dir)
@@ -196,6 +201,124 @@ class RecordingsService:
             return None, "No recordings found", 404
 
         return asdict(clip), None, 200
+
+    def latest_across_cameras(self):
+        """Return the newest clip across every camera (or orphaned archive).
+
+        ADR-0018 Tier-2 dashboard tile. Returns the same shape as
+        :meth:`latest_clip` plus a ``camera_name`` field (looked up from
+        the Store; orphans fall back to the camera_id).
+
+        Returns:
+            (dict, None, 200)  — newest clip, including ``camera_name``.
+            (None, msg, 404)   — no clips anywhere.
+        """
+        root = self._recordings_root()
+        if not root.is_dir():
+            return None, "No recordings found", 404
+
+        newest_mtime = -1.0
+        newest_path: Path | None = None
+        newest_cam = ""
+        try:
+            for cam_dir in root.iterdir():
+                if not cam_dir.is_dir():
+                    continue
+                if not self._valid_camera_id(cam_dir.name):
+                    continue
+                for mp4 in cam_dir.rglob("*.mp4"):
+                    try:
+                        mtime = mp4.stat().st_mtime
+                    except OSError:
+                        continue
+                    if mtime > newest_mtime:
+                        newest_mtime = mtime
+                        newest_path = mp4
+                        newest_cam = cam_dir.name
+        except OSError:
+            return None, "No recordings found", 404
+
+        if newest_path is None:
+            return None, "No recordings found", 404
+
+        recorder = self._get_recorder()
+        clip = recorder.get_latest_clip(newest_cam)
+        if clip is None:
+            return None, "No recordings found", 404
+        data = asdict(clip)
+        data["camera_name"] = self._camera_display_name(newest_cam)
+        return data, None, 200
+
+    def recent_across_cameras(self, limit: int = 10):
+        """List the most recent N clips across every camera.
+
+        Used by ADR-0018 Tier-3 "Recent events" feed. Returns clips
+        reverse-chronologically, each row carrying ``camera_name`` for
+        display.
+
+        Args:
+            limit: Maximum rows to return (1..50). Clamped to range.
+
+        Returns:
+            (list[dict], None, 200)  — zero or more rows.
+        """
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(limit, 50))
+
+        root = self._recordings_root()
+        if not root.is_dir():
+            return [], None, 200
+
+        # Walk once, collect (mtime, cam_id, Path) tuples, then sort + take top N.
+        entries: list[tuple[float, str, Path]] = []
+        try:
+            for cam_dir in root.iterdir():
+                if not cam_dir.is_dir() or not self._valid_camera_id(cam_dir.name):
+                    continue
+                for mp4 in cam_dir.rglob("*.mp4"):
+                    try:
+                        entries.append((mp4.stat().st_mtime, cam_dir.name, mp4))
+                    except OSError:
+                        continue
+        except OSError:
+            return [], None, 200
+
+        entries.sort(reverse=True, key=lambda t: t[0])
+        out: list[dict] = []
+        for _mtime, cam_id, mp4 in entries[:limit]:
+            # Filename is HH-MM-SS.mp4, parent dir name is YYYY-MM-DD.
+            stem = mp4.stem
+            try:
+                size = mp4.stat().st_size
+            except OSError:
+                size = 0
+            thumb_name = f"{stem}.thumb.jpg"
+            out.append(
+                {
+                    "camera_id": cam_id,
+                    "camera_name": self._camera_display_name(cam_id),
+                    "filename": mp4.name,
+                    "date": mp4.parent.name,
+                    "start_time": stem.replace("-", ":"),
+                    "duration_seconds": 180,
+                    "size_bytes": size,
+                    "thumbnail": thumb_name,
+                }
+            )
+        return out, None, 200
+
+    def _camera_display_name(self, camera_id: str) -> str:
+        """Resolve a human-readable camera name; falls back to the id."""
+        try:
+            cam = self._store.get_camera(camera_id)
+        except Exception:
+            cam = None
+        if cam is None:
+            return camera_id
+        return getattr(cam, "name", "") or camera_id
 
     def resolve_clip_path(self, camera_id: str, date: str, filename: str):
         """Resolve the full path to a clip file.

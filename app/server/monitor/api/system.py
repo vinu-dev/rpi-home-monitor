@@ -39,10 +39,27 @@ def _read_os_release():
 @system_bp.route("/health", methods=["GET"])
 @login_required
 def health():
-    """Return system health metrics."""
+    """Return raw system health metrics.
+
+    Raw CPU/RAM/temp/disk numbers. The dashboard does **not** render these
+    directly (ADR-0018 rule: raw metrics belong on /diagnostics, derived
+    state belongs on the dashboard). The future /diagnostics page will
+    surface them; for now the dashboard uses /system/summary instead.
+    """
     data_dir = current_app.config.get("DATA_DIR", "/data")
     summary = get_health_summary(data_dir)
     return jsonify(summary), 200
+
+
+@system_bp.route("/summary", methods=["GET"])
+@login_required
+def summary():
+    """Return the ADR-0018 Tier-1 dashboard status-strip payload.
+
+    Derived state only — ``{state, summary, details, deep_link}``.
+    """
+    result = current_app.system_summary_service.compute_summary()
+    return jsonify(result), 200
 
 
 @system_bp.route("/info", methods=["GET"])

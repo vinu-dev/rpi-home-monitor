@@ -30,6 +30,7 @@ from monitor.services.settings_service import SettingsService
 from monitor.services.storage_manager import StorageManager
 from monitor.services.storage_service import StorageService
 from monitor.services.streaming_service import StreamingService
+from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
 from monitor.services.user_service import UserService
 from monitor.store import Store
@@ -285,6 +286,18 @@ def _init_services(app):
     app.loop_recorder = LoopRecorder(
         base_dir=app.config["RECORDINGS_DIR"],
         audit=app.audit,
+    )
+
+    # ADR-0018: dashboard status-strip aggregator. Pure-read, no threads, no I/O
+    # in the constructor — each HTTP GET recomputes from live signals.
+    from monitor.services import health as _health_module
+
+    app.system_summary_service = SystemSummaryService(
+        store=app.store,
+        storage_manager=app.storage_manager,
+        audit=app.audit,
+        recordings_service=app.recordings_service,
+        health_module=_health_module,
     )
 
 

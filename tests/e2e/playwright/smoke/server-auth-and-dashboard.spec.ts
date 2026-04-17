@@ -8,6 +8,12 @@ test("server setup and dashboard flows are reachable", async ({ page, baseURL })
 
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await expect(page.getByText("System Health")).toBeVisible();
-  await expect(page.getByText("Cameras")).toBeVisible();
+  // ADR-0018: the health grid was replaced by a status strip + four
+  // summary tiles. "Recorder host" is the Tier-2 tile that subsumes the
+  // old "System Health" section.
+  await expect(page.getByText("Recorder host")).toBeVisible();
+  // The word "Cameras" now appears in the status strip, the Tier-2 tile
+  // and the roll-call section header — pin this assertion to the unique
+  // section header id so it doesn't trip strict-mode multi-match.
+  await expect(page.locator("#cameras-section")).toBeVisible();
 });

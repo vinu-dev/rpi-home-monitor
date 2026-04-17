@@ -1213,3 +1213,198 @@ select.form-input {
     justify-content: space-between;
     align-items: center;
 }
+
+/* ============================================================
+   Dashboard IA (ADR-0018) — Tier-1 status strip + Tier-2 tiles
+   ============================================================
+   Derived state, not raw metrics. Colour tokens on the strip and
+   tiles come from --color-success/warning/danger so the dashboard
+   reads at a glance. Thresholds live server-side — see
+   system_summary_service.py. */
+
+.status-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--text-base);
+    margin-bottom: var(--space-4);
+    transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.status-strip:hover { text-decoration: none; }
+
+.status-strip__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-text-dim);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.04);
+}
+
+.status-strip__text {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+.status-strip__arrow {
+    font-size: var(--text-lg);
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.status-strip--green {
+    border-color: rgba(46,204,113,0.35);
+    background: linear-gradient(90deg, rgba(46,204,113,0.08), var(--color-surface));
+}
+.status-strip--green .status-strip__dot { background: var(--color-success); box-shadow: 0 0 0 3px rgba(46,204,113,0.2); }
+
+.status-strip--amber {
+    border-color: rgba(243,156,18,0.45);
+    background: linear-gradient(90deg, rgba(243,156,18,0.12), var(--color-surface));
+}
+.status-strip--amber .status-strip__dot { background: var(--color-warning); box-shadow: 0 0 0 3px rgba(243,156,18,0.25); }
+
+.status-strip--red {
+    border-color: rgba(231,76,60,0.55);
+    background: linear-gradient(90deg, rgba(231,76,60,0.15), var(--color-surface));
+}
+.status-strip--red .status-strip__dot {
+    background: var(--color-danger);
+    box-shadow: 0 0 0 3px rgba(231,76,60,0.3);
+    animation: pulse-red 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(231,76,60,0.3); }
+    50%      { box-shadow: 0 0 0 6px rgba(231,76,60,0.15); }
+}
+
+/* Tier-2 summary tiles (4-up) */
+.tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+}
+
+.tile {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    color: var(--color-text);
+    transition: transform var(--transition-fast), border-color var(--transition-base);
+}
+.tile:hover {
+    text-decoration: none;
+    transform: translateY(-1px);
+    border-color: var(--color-accent);
+}
+
+.tile__label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-1);
+}
+
+.tile__value {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    line-height: 1.1;
+    margin-bottom: 2px;
+}
+
+.tile__value-sub {
+    font-size: var(--text-lg);
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+.tile__caption {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tile--green  { border-left-color: var(--color-success); }
+.tile--amber  { border-left-color: var(--color-warning); }
+.tile--red    { border-left-color: var(--color-danger); }
+.tile--amber .tile__value { color: var(--color-warning); }
+.tile--red   .tile__value { color: var(--color-danger); }
+
+/* Recent events feed — compact list, inline expand-to-play */
+.events-feed {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-bottom: var(--space-5);
+}
+
+.event-row {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    transition: border-color var(--transition-fast);
+}
+.event-row--active { border-color: var(--color-accent); }
+
+.event-row__trigger {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 90px 1fr auto auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    border: none;
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+.event-row__trigger:hover { background: rgba(255,255,255,0.03); }
+
+.event-row__time {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.event-row__camera {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.event-row__duration {
+    color: var(--color-text-dim);
+    font-variant-numeric: tabular-nums;
+}
+.event-row__chevron {
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+}
+
+.event-row__player {
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    background: #000;
+}
+.event-row__player video {
+    width: 100%;
+    max-height: 420px;
+    border-radius: var(--radius-sm);
+    background: #000;
+    display: block;
+}

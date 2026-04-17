@@ -30,6 +30,38 @@ def _svc():
     return current_app.recordings_service
 
 
+@recordings_bp.route("/latest", methods=["GET"])
+@login_required
+def latest_across_cameras():
+    """Return the newest clip across every camera (ADR-0018 Tier-2).
+
+    Distinct from ``/recordings/<camera_id>/latest`` — this variant has no
+    camera path segment and scans all paired cameras + orphan archives.
+    """
+    result, error, status = _svc().latest_across_cameras()
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
+
+
+@recordings_bp.route("/recent", methods=["GET"])
+@login_required
+def recent_across_cameras():
+    """Return the most recent N clips across every camera (ADR-0018 Tier-3).
+
+    Query params:
+      ``limit`` — rows to return (1..50, default 10).
+    """
+    try:
+        limit = int(request.args.get("limit", 10))
+    except ValueError:
+        limit = 10
+    result, error, status = _svc().recent_across_cameras(limit=limit)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
+
+
 @recordings_bp.route("/cameras", methods=["GET"])
 @login_required
 def list_camera_sources():
