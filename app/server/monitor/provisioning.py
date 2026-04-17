@@ -35,8 +35,8 @@ provisioning_bp = Blueprint("provisioning", __name__)
 # State is stored per Flask app instance (on the app object) so each test app
 # gets its own fresh counters — prevents test state bleed.
 # Separate from the login rate limiter in auth.py.
-_SETUP_RATE_WINDOW = 60   # seconds
-_SETUP_RATE_MAX = 5       # max attempts per window per IP
+_SETUP_RATE_WINDOW = 60  # seconds
+_SETUP_RATE_MAX = 5  # max attempts per window per IP
 
 
 def _get_setup_attempts() -> dict:
@@ -70,6 +70,7 @@ def _require_setup_incomplete(f):
     Prevents LAN attackers from calling /setup/admin or /setup/wifi/save
     on a device that is already provisioned.
     """
+
     @functools.wraps(f)
     def decorated(*args, **kwargs):
         if current_app.provisioning_service.is_setup_complete():
@@ -78,6 +79,7 @@ def _require_setup_incomplete(f):
         if _setup_rate_limited(ip):
             return jsonify({"error": "Too many requests, please wait"}), 429
         return f(*args, **kwargs)
+
     return decorated
 
 

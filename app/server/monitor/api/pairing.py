@@ -28,14 +28,16 @@ pairing_bp = Blueprint("pairing", __name__)
 # ── /pair/register rate limiter ───────────────────────────────────────────────
 # Prevents a LAN attacker from flooding the dashboard with fake pending cameras.
 _register_attempts: dict[str, list[float]] = {}
-_REGISTER_RATE_WINDOW = 300   # seconds (5 minutes)
-_REGISTER_RATE_MAX = 10       # max registrations per window per IP
+_REGISTER_RATE_WINDOW = 300  # seconds (5 minutes)
+_REGISTER_RATE_MAX = 10  # max registrations per window per IP
 
 
 def _register_rate_limited(ip: str) -> bool:
     """Return True if the IP has exceeded the registration rate limit."""
     now = time.time()
-    attempts = [t for t in _register_attempts.get(ip, []) if now - t < _REGISTER_RATE_WINDOW]
+    attempts = [
+        t for t in _register_attempts.get(ip, []) if now - t < _REGISTER_RATE_WINDOW
+    ]
     _register_attempts[ip] = attempts
     if len(attempts) >= _REGISTER_RATE_MAX:
         return True
@@ -128,6 +130,7 @@ def register_camera():
 
     # Validate camera ID format before persisting it
     import re
+
     if not re.match(r"^cam-[a-z0-9]{1,48}$", camera_id):
         return jsonify({"error": "Invalid camera_id format"}), 400
 

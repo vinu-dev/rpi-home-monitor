@@ -955,7 +955,9 @@ class TestConfigNotifyContract:
         assert "message" in data
 
 
-def _signed_camera_request(client, url, body_dict, camera_id="cam-001", secret="ab" * 32):
+def _signed_camera_request(
+    client, url, body_dict, camera_id="cam-001", secret="ab" * 32
+):
     """Helper: build HMAC-signed POST to a camera machine-to-machine endpoint."""
     import hashlib
     import hmac
@@ -993,10 +995,15 @@ class TestHeartbeatContract:
             "memory_percent": 42,
             "uptime_seconds": 3600,
             "stream_config": {
-                "width": 1920, "height": 1080, "fps": 25,
-                "bitrate": 4000000, "h264_profile": "high",
-                "keyframe_interval": 30, "rotation": 0,
-                "hflip": False, "vflip": False,
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "rotation": 0,
+                "hflip": False,
+                "vflip": False,
             },
         }
         data.update(overrides)
@@ -1008,6 +1015,7 @@ class TestHeartbeatContract:
 
     def test_unknown_camera_returns_401(self, app, client):
         import time
+
         resp = client.post(
             self.HEARTBEAT_URL,
             json=self._payload(),
@@ -1021,6 +1029,7 @@ class TestHeartbeatContract:
 
     def test_invalid_signature_returns_401(self, app, client):
         import time
+
         _add_camera(app, "cam-001")
         cam = app.store.get_camera("cam-001")
         cam.pairing_secret = self.SECRET
@@ -1071,7 +1080,8 @@ class TestHeartbeatContract:
         app.store.save_camera(cam)
 
         _signed_camera_request(
-            client, self.HEARTBEAT_URL,
+            client,
+            self.HEARTBEAT_URL,
             self._payload(cpu_temp=60.0, memory_percent=75, uptime_seconds=900),
             secret=self.SECRET,
         )

@@ -145,7 +145,7 @@ class PairingManager:
         base = server_url.rstrip("/")
         # Derive HTTP URL — try over HTTP so no TLS chicken-and-egg problem
         if base.startswith("https://"):
-            http_base = "http://" + base[len("https://"):]
+            http_base = "http://" + base[len("https://") :]
         else:
             http_base = base
 

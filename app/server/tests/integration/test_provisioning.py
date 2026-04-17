@@ -11,7 +11,10 @@ SUBPROCESS_PATCH = "monitor.services.provisioning_service.subprocess"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _write_ca_cert(app, content="-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"):
+
+def _write_ca_cert(
+    app, content="-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
+):
     """Write a fake CA cert to the app's CERTS_DIR."""
     certs_dir = app.config["CERTS_DIR"]
     os.makedirs(certs_dir, exist_ok=True)

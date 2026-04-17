@@ -2,8 +2,6 @@
 
 import hashlib
 import hmac
-import json
-import threading
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.heartbeat import (
@@ -13,7 +11,6 @@ from camera_streamer.heartbeat import (
     _get_memory_percent,
     _get_uptime_seconds,
 )
-
 
 # ---- Signature tests ----
 

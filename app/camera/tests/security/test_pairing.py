@@ -189,7 +189,6 @@ class TestTOFU:
 
     def test_fetch_server_ca_cert_returns_pem_on_success(self, pairing_mgr):
         """_fetch_server_ca_cert returns PEM when server returns a certificate."""
-        import io
         from unittest.mock import MagicMock
 
         pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
@@ -198,13 +197,15 @@ class TestTOFU:
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("camera_streamer.pairing.urllib.request.urlopen", return_value=mock_resp):
+        with patch(
+            "camera_streamer.pairing.urllib.request.urlopen", return_value=mock_resp
+        ):
             result = pairing_mgr._fetch_server_ca_cert("https://192.168.1.100")
         assert "BEGIN CERTIFICATE" in result
 
     def test_fetch_server_ca_cert_uses_http(self, pairing_mgr):
         """CA cert fetch uses HTTP (not HTTPS) to avoid chicken-and-egg problem."""
-        from unittest.mock import MagicMock, call
+        from unittest.mock import MagicMock
 
         pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
         mock_resp = MagicMock()
@@ -212,7 +213,9 @@ class TestTOFU:
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("camera_streamer.pairing.urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        with patch(
+            "camera_streamer.pairing.urllib.request.urlopen", return_value=mock_resp
+        ) as mock_open:
             pairing_mgr._fetch_server_ca_cert("https://192.168.1.100")
             req = mock_open.call_args[0][0]
             assert req.full_url.startswith("http://"), "CA cert fetch must use HTTP"
@@ -221,6 +224,7 @@ class TestTOFU:
     def test_fetch_server_ca_cert_returns_empty_on_network_error(self, pairing_mgr):
         """Returns empty string if server is unreachable."""
         import urllib.error
+
         with patch(
             "camera_streamer.pairing.urllib.request.urlopen",
             side_effect=urllib.error.URLError("refused"),
@@ -231,6 +235,7 @@ class TestTOFU:
     def test_build_tls_context_uses_existing_ca_cert(self, pairing_mgr, data_dir):
         """Uses existing ca.crt on disk without fetching from server."""
         import ssl
+
         ca_path = data_dir / "certs" / "ca.crt"
         # Write a real self-signed cert for ssl to load
         ca_path.parent.mkdir(parents=True, exist_ok=True)
@@ -248,13 +253,16 @@ class TestTOFU:
 
     def test_build_tls_context_attempts_tofu_when_no_ca(self, pairing_mgr):
         """Fetches CA cert via TOFU when none is on disk."""
-        with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value="") as mock_fetch:
+        with patch.object(
+            pairing_mgr, "_fetch_server_ca_cert", return_value=""
+        ) as mock_fetch:
             pairing_mgr._build_tls_context("https://192.168.1.100")
             mock_fetch.assert_called_once_with("https://192.168.1.100")
 
     def test_build_tls_context_falls_back_to_unverified(self, pairing_mgr):
         """Falls back to CERT_NONE when TOFU fetch returns empty."""
         import ssl
+
         with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=""):
             ctx = pairing_mgr._build_tls_context("https://192.168.1.100")
         assert ctx.verify_mode == ssl.CERT_NONE
@@ -263,8 +271,10 @@ class TestTOFU:
     def test_exchange_uses_tofu_context(self, mock_urlopen, pairing_mgr):
         """exchange() calls _build_tls_context to get the TLS context."""
         response_data = {
-            "client_cert": "C", "client_key": "K",
-            "ca_cert": "CA", "pairing_secret": "s",
+            "client_cert": "C",
+            "client_key": "K",
+            "ca_cert": "CA",
+            "pairing_secret": "s",
         }
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(response_data).encode()
@@ -274,6 +284,7 @@ class TestTOFU:
 
         with patch.object(pairing_mgr, "_build_tls_context") as mock_ctx:
             import ssl
+
             fake_ctx = ssl.create_default_context()
             fake_ctx.check_hostname = False
             fake_ctx.verify_mode = ssl.CERT_NONE

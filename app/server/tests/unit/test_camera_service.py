@@ -643,9 +643,10 @@ class TestAcceptHeartbeat:
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
-        svc.accept_heartbeat("cam-001", self._basic_payload(
-            cpu_temp=55.2, memory_percent=60, uptime_seconds=7200
-        ))
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(cpu_temp=55.2, memory_percent=60, uptime_seconds=7200),
+        )
         assert cam.cpu_temp == 55.2
         assert cam.memory_percent == 60
         assert cam.uptime_seconds == 7200
@@ -722,8 +723,12 @@ class TestAcceptHeartbeat:
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
-        payload = {"streaming": False, "cpu_temp": 40.0,
-                   "memory_percent": 30, "uptime_seconds": 100}
+        payload = {
+            "streaming": False,
+            "cpu_temp": 40.0,
+            "memory_percent": 30,
+            "uptime_seconds": 100,
+        }
         _, error, code = svc.accept_heartbeat("cam-001", payload)
         assert code == 200
         assert not error

@@ -222,12 +222,12 @@ class DiscoveryService:
             # zeroconf's public send API: build a PTR question and multicast it
             from zeroconf import DNSOutgoing, DNSQuestion
 
-            # _TYPE_PTR = 12, _CLASS_IN = 1 per RFC 1035 / RFC 6762
-            _TYPE_PTR = 12
-            _CLASS_IN = 1
+            # type_ptr = 12, class_in = 1 per RFC 1035 / RFC 6762
+            type_ptr = 12
+            class_in = 1
 
             out = DNSOutgoing(0)  # flags=0 → standard query
-            out.add_question(DNSQuestion(_MDNS_SERVICE_TYPE, _TYPE_PTR, _CLASS_IN))
+            out.add_question(DNSQuestion(_MDNS_SERVICE_TYPE, type_ptr, class_in))
             self._zeroconf.send(out)
             log.debug("Sent manual mDNS PTR query for %s", _MDNS_SERVICE_TYPE)
         except Exception as exc:

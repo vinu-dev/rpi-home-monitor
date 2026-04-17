@@ -381,7 +381,7 @@ def _start_staleness_checker(app):
     """
     import threading
 
-    STALENESS_CHECK_INTERVAL = 10  # seconds
+    staleness_check_interval = 10  # seconds
 
     def _run():
         import time
@@ -392,11 +392,11 @@ def _start_staleness_checker(app):
                     app.discovery_service.check_offline()
             except Exception as exc:
                 log.warning("Staleness checker error: %s", exc)
-            time.sleep(STALENESS_CHECK_INTERVAL)
+            time.sleep(staleness_check_interval)
 
     t = threading.Thread(target=_run, name="staleness-checker", daemon=True)
     t.start()
-    log.info("Staleness checker started (check every %ds)", STALENESS_CHECK_INTERVAL)
+    log.info("Staleness checker started (check every %ds)", staleness_check_interval)
 
 
 def _resume_camera_pipelines(app):
@@ -410,7 +410,7 @@ def _resume_camera_pipelines(app):
     """
     from datetime import UTC, datetime
 
-    OFFLINE_TIMEOUT = 30  # seconds — matches discovery.py
+    offline_timeout = 30  # seconds — matches discovery.py
 
     try:
         cameras = app.store.get_cameras()
@@ -422,7 +422,7 @@ def _resume_camera_pipelines(app):
                 try:
                     last = datetime.fromisoformat(cam.last_seen.replace("Z", "+00:00"))
                     elapsed = (now - last).total_seconds()
-                    if elapsed > OFFLINE_TIMEOUT:
+                    if elapsed > offline_timeout:
                         log.info(
                             "Skipping pipeline start for %s (last seen %ds ago, stale)",
                             cam.id,

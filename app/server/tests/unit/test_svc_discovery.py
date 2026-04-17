@@ -168,14 +168,15 @@ class TestMdnsBrowser:
         """Graceful degradation when zeroconf is not installed."""
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
-            with patch.dict("sys.modules", {"zeroconf": None}):
-                import importlib
-                with patch("builtins.__import__", side_effect=ImportError("no module")):
-                    # Should not raise
-                    try:
-                        svc.start_mdns_browser()
-                    except Exception:
-                        pass  # ImportError handled internally
+            with (
+                patch.dict("sys.modules", {"zeroconf": None}),
+                patch("builtins.__import__", side_effect=ImportError("no module")),
+            ):
+                # Should not raise
+                try:
+                    svc.start_mdns_browser()
+                except Exception:
+                    pass  # ImportError handled internally
             # zeroconf stays None on ImportError
             # (tested via _zeroconf attribute)
 
@@ -192,6 +193,7 @@ class TestMdnsBrowser:
 
             # Call again — should return early without touching _zeroconf
             import sys
+
             mock_mod = MagicMock()
             original = sys.modules.get("zeroconf")
             sys.modules["zeroconf"] = mock_mod
@@ -250,7 +252,11 @@ class TestMdnsBrowser:
             mock_zc = MagicMock()
             mock_zc.get_service_info.return_value = mock_info
 
-            svc._handle_mdns_service(mock_zc, "_rtsp._tcp.local.", "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.")
+            svc._handle_mdns_service(
+                mock_zc,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+            )
 
             camera = app.store.get_camera("cam-abc123")
             assert camera is not None
@@ -258,7 +264,7 @@ class TestMdnsBrowser:
             assert camera.ip == "192.168.1.200"
             assert camera.firmware_version == "1.2.0"
 
-    def test_handle_mdns_service_ignores_non_homeMonitor(self, app):
+    def test_handle_mdns_service_ignores_non_home_monitor(self, app):
         """_handle_mdns_service() ignores services without 'cam-' id prefix."""
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
@@ -270,7 +276,9 @@ class TestMdnsBrowser:
             mock_zc = MagicMock()
             mock_zc.get_service_info.return_value = mock_info
 
-            svc._handle_mdns_service(mock_zc, "_rtsp._tcp.local.", "SomeOtherDevice._rtsp._tcp.local.")
+            svc._handle_mdns_service(
+                mock_zc, "_rtsp._tcp.local.", "SomeOtherDevice._rtsp._tcp.local."
+            )
 
             # No camera should have been saved
             assert app.store.get_camera("other-device") is None
@@ -288,7 +296,11 @@ class TestMdnsBrowser:
             mock_zc = MagicMock()
             mock_zc.get_service_info.return_value = mock_info
 
-            svc._handle_mdns_service(mock_zc, "_rtsp._tcp.local.", "HomeMonitor Camera (cam-noip)._rtsp._tcp.local.")
+            svc._handle_mdns_service(
+                mock_zc,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-noip)._rtsp._tcp.local.",
+            )
 
             assert app.store.get_camera("cam-noip") is None
 
@@ -299,7 +311,9 @@ class TestMdnsBrowser:
             mock_zc = MagicMock()
             mock_zc.get_service_info.return_value = None
             # Must not raise
-            svc._handle_mdns_service(mock_zc, "_rtsp._tcp.local.", "whatever._rtsp._tcp.local.")
+            svc._handle_mdns_service(
+                mock_zc, "_rtsp._tcp.local.", "whatever._rtsp._tcp.local."
+            )
 
     def test_start_mdns_browser_with_zeroconf(self, app):
         """start_mdns_browser() creates Zeroconf + ServiceBrowser when library is present."""
@@ -311,6 +325,7 @@ class TestMdnsBrowser:
 
             # Patch zeroconf in sys.modules so the lazy import picks up our mocks
             import sys
+
             mock_zeroconf_mod = MagicMock()
             mock_zeroconf_mod.Zeroconf = MagicMock(return_value=mock_zc)
             mock_zeroconf_mod.ServiceBrowser = MagicMock(return_value=mock_browser)
@@ -338,19 +353,25 @@ class TestScanEndpoint:
     def _login(self, app, client, role="admin"):
         from monitor.auth import hash_password
         from monitor.models import User
-        app.store.save_user(User(
-            id="user-scan-admin",
-            username="scanadmin",
-            password_hash=hash_password("pass"),
-            role=role,
-        ))
-        resp = client.post("/api/v1/auth/login", json={"username": "scanadmin", "password": "pass"})
+
+        app.store.save_user(
+            User(
+                id="user-scan-admin",
+                username="scanadmin",
+                password_hash=hash_password("pass"),
+                role=role,
+            )
+        )
+        resp = client.post(
+            "/api/v1/auth/login", json={"username": "scanadmin", "password": "pass"}
+        )
         client.environ_base["HTTP_X_CSRF_TOKEN"] = resp.get_json()["csrf_token"]
 
     def test_scan_returns_camera_list(self, app, client):
         """POST /cameras/scan returns current camera list."""
         with app.app_context():
             from monitor.models import Camera
+
             cam = Camera(
                 id="cam-scan01",
                 ip="192.168.1.99",
