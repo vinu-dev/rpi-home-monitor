@@ -12,5 +12,8 @@ test("server setup and dashboard flows are reachable", async ({ page, baseURL })
   // summary tiles. "Recorder host" is the Tier-2 tile that subsumes the
   // old "System Health" section.
   await expect(page.getByText("Recorder host")).toBeVisible();
-  await expect(page.getByText("Cameras")).toBeVisible();
+  // The word "Cameras" now appears in the status strip, the Tier-2 tile
+  // and the roll-call section header — pin this assertion to the unique
+  // section header id so it doesn't trip strict-mode multi-match.
+  await expect(page.locator("#cameras-section")).toBeVisible();
 });
