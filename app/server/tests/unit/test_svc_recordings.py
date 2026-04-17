@@ -203,6 +203,166 @@ class TestDeleteClip:
         assert status == 200
 
 
+class TestListCameraSources:
+    """Test the /recordings/cameras aggregator (paired + orphans)."""
+
+    def test_paired_online_and_offline(self, svc, store):
+        store.get_cameras.return_value = [
+            Camera(id="cam-a", name="Front", status="online"),
+            Camera(id="cam-b", name="Back",  status="offline"),
+        ]
+        result, error, status = svc.list_camera_sources()
+        assert status == 200 and error is None
+        ids = [c["id"] for c in result]
+        assert ids == ["cam-a", "cam-b"]
+        assert [c["status"] for c in result] == ["online", "offline"]
+
+    def test_pending_cameras_are_excluded(self, svc, store):
+        store.get_cameras.return_value = [
+            Camera(id="cam-a", name="Front", status="online"),
+            Camera(id="cam-p", name="NewOne", status="pending"),
+        ]
+        result, _, _ = svc.list_camera_sources()
+        assert [c["id"] for c in result] == ["cam-a"]
+
+    def test_orphan_cameras_appear_as_removed(self, svc, store, storage_manager):
+        # Paired list is empty, but a cam dir with a clip exists on disk.
+        store.get_cameras.return_value = []
+        _create_clip_file(storage_manager, "cam-orphan", "2026-04-09", "14-00-00")
+        result, _, _ = svc.list_camera_sources()
+        assert len(result) == 1
+        assert result[0] == {
+            "id": "cam-orphan",
+            "name": "cam-orphan",
+            "status": "removed",
+        }
+
+    def test_orphan_dir_without_mp4s_is_ignored(self, svc, store, storage_manager):
+        from pathlib import Path
+        store.get_cameras.return_value = []
+        # Empty camera dir (no clips yet) — not an archive, skip.
+        (Path(storage_manager.recordings_dir) / "cam-empty").mkdir()
+        result, _, _ = svc.list_camera_sources()
+        assert result == []
+
+    def test_orphan_with_invalid_id_is_ignored(self, svc, store, storage_manager):
+        from pathlib import Path
+        store.get_cameras.return_value = []
+        # Path-traversal-ish names must not be surfaced.
+        bad = Path(storage_manager.recordings_dir) / "..weird"
+        bad.mkdir()
+        (bad / "2026-04-09").mkdir()
+        (bad / "2026-04-09" / "14.mp4").write_bytes(b"x")
+        result, _, _ = svc.list_camera_sources()
+        assert result == []
+
+    def test_paired_camera_does_not_double_as_orphan(self, svc, store, storage_manager):
+        store.get_cameras.return_value = [
+            Camera(id="cam-a", name="Front", status="online"),
+        ]
+        _create_clip_file(storage_manager, "cam-a", "2026-04-09", "14-00-00")
+        result, _, _ = svc.list_camera_sources()
+        assert [c["id"] for c in result] == ["cam-a"]
+        assert result[0]["status"] == "online"
+
+
+class TestOrphanBrowsing:
+    """Orphan cameras (store returns None, files exist) must stay browseable."""
+
+    def test_list_clips_works_for_orphan(self, svc, store, storage_manager):
+        store.get_camera.return_value = None  # Camera record deleted
+        _create_clip_file(storage_manager, "cam-orphan", "2026-04-09", "14-00-00")
+        result, error, status = svc.list_clips("cam-orphan", "2026-04-09")
+        assert error is None and status == 200
+        assert len(result) == 1
+
+    def test_list_dates_works_for_orphan(self, svc, store, storage_manager):
+        store.get_camera.return_value = None
+        _create_clip_file(storage_manager, "cam-orphan", "2026-04-09", "14-00-00")
+        result, error, status = svc.list_dates("cam-orphan")
+        assert status == 200
+        assert result["dates"] == ["2026-04-09"]
+
+    def test_unknown_cam_still_404s(self, svc, store):
+        store.get_camera.return_value = None  # and no files on disk
+        _, error, status = svc.list_clips("nope", "2026-04-09")
+        assert status == 404 and error == "Camera not found"
+
+
+class TestDeleteDate:
+    """Bulk delete all clips for one camera on one date."""
+
+    def test_invalid_camera_id(self, svc):
+        _, error, status = svc.delete_date("../etc", "2026-04-09")
+        assert status == 400 and error == "Invalid camera id"
+
+    def test_invalid_date(self, svc):
+        _, error, status = svc.delete_date("cam-001", "not-a-date")
+        assert status == 400 and error == "Invalid date"
+
+    def test_camera_not_found(self, svc, store):
+        store.get_camera.return_value = None
+        _, error, status = svc.delete_date("cam-001", "2026-04-09")
+        assert status == 404
+
+    def test_no_recordings_on_date(self, svc):
+        _, error, status = svc.delete_date("cam-001", "2026-04-09")
+        assert status == 404
+
+    def test_deletes_all_clips_on_date(self, svc, storage_manager, audit):
+        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "14-00-00")
+        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "15-00-00")
+        _create_clip_file(storage_manager, "cam-001", "2026-04-10", "09-00-00")
+        result, error, status = svc.delete_date(
+            "cam-001", "2026-04-09",
+            requesting_user="admin", requesting_ip="127.0.0.1",
+        )
+        assert error is None and status == 200
+        assert result["count"] == 2
+        # The other date survives untouched.
+        from pathlib import Path
+        remaining = list(
+            (Path(storage_manager.recordings_dir) / "cam-001" / "2026-04-10").glob("*.mp4")
+        )
+        assert len(remaining) == 1
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "CLIPS_DELETED"
+
+
+class TestDeleteCameraRecordings:
+    """Bulk delete all clips for a camera across every date."""
+
+    def test_invalid_camera_id(self, svc):
+        _, error, status = svc.delete_camera_recordings("../escape")
+        assert status == 400
+
+    def test_camera_not_found(self, svc, store):
+        store.get_camera.return_value = None
+        _, error, status = svc.delete_camera_recordings("nope")
+        assert status == 404
+
+    def test_deletes_entire_tree(self, svc, storage_manager, audit):
+        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "14-00-00")
+        _create_clip_file(storage_manager, "cam-001", "2026-04-10", "09-00-00")
+        result, error, status = svc.delete_camera_recordings(
+            "cam-001",
+            requesting_user="admin", requesting_ip="127.0.0.1",
+        )
+        assert error is None and status == 200
+        assert result["count"] == 2
+        from pathlib import Path
+        cam_root = Path(storage_manager.recordings_dir) / "cam-001"
+        assert not cam_root.exists()
+        audit.log_event.assert_called_once()
+
+    def test_orphan_cameras_are_deletable(self, svc, store, storage_manager):
+        store.get_camera.return_value = None
+        _create_clip_file(storage_manager, "cam-orphan", "2026-04-09", "14-00-00")
+        result, error, status = svc.delete_camera_recordings("cam-orphan")
+        assert error is None and status == 200
+        assert result["count"] == 1
+
+
 class TestFallbackRecordingsDir:
     """Test fallback when storage_manager is None."""
 

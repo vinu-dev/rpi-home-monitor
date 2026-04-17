@@ -660,6 +660,78 @@ class TestRecordingsDeleteContract:
         _assert_fields(data, {"error"})
 
 
+class TestRecordingsCamerasContract:
+    """GET /api/v1/recordings/cameras — paired + orphan archive list."""
+
+    def test_paired_camera_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.get("/api/v1/recordings/cameras")
+        data = resp.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        _assert_fields(data[0], {"id", "name", "status"})
+        assert data[0]["status"] in {"online", "offline", "removed"}
+
+    def test_orphan_surfaces_as_removed(self, app, client):
+        _login(app, client)
+        # No Camera record — just a clip on disk.
+        rec_dir = app.config["RECORDINGS_DIR"]
+        clip_dir = os.path.join(rec_dir, "cam-orphan", "2026-04-11")
+        os.makedirs(clip_dir, exist_ok=True)
+        with open(os.path.join(clip_dir, "14-30-00.mp4"), "wb") as f:
+            f.write(b"\x00" * 64)
+
+        data = client.get("/api/v1/recordings/cameras").get_json()
+        entry = next((c for c in data if c["id"] == "cam-orphan"), None)
+        assert entry is not None
+        assert entry["status"] == "removed"
+
+
+class TestRecordingsBulkDeleteContract:
+    """DELETE bulk endpoints — by date and by camera."""
+
+    def _seed(self, app, cam="cam-001", date="2026-04-11"):
+        rec_dir = app.config["RECORDINGS_DIR"]
+        clip_dir = os.path.join(rec_dir, cam, date)
+        os.makedirs(clip_dir, exist_ok=True)
+        for t in ("14-30-00", "15-00-00"):
+            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+                f.write(b"\x00" * 128)
+
+    def test_delete_date_success_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        self._seed(app)
+        resp = client.delete("/api/v1/recordings/cam-001/2026-04-11")
+        data = resp.get_json()
+        _assert_fields(data, {"message", "count"})
+        assert data["count"] == 2
+
+    def test_delete_date_bad_date(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.delete("/api/v1/recordings/cam-001/not-a-date")
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+    def test_delete_camera_success_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        self._seed(app, date="2026-04-11")
+        self._seed(app, date="2026-04-12")
+        resp = client.delete("/api/v1/recordings/cam-001")
+        data = resp.get_json()
+        _assert_fields(data, {"message", "count"})
+        assert data["count"] == 4
+
+    def test_delete_camera_not_found(self, app, client):
+        _login(app, client)
+        resp = client.delete("/api/v1/recordings/nope")
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
 # ===========================================================================
 # Storage contracts (/api/v1/storage/*)
 # ===========================================================================
