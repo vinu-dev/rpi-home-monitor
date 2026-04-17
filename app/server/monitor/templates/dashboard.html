@@ -46,7 +46,7 @@
     </a>
 
     <!-- Storage -->
-    <a class="tile" href="/settings#storage" :class="tileStateClass('storage')">
+    <a class="tile" href="/diagnostics#storage" :class="tileStateClass('storage')">
         <div class="tile__label">Storage</div>
         <div class="tile__value">
             <span x-text="storagePercentLabel"></span>
@@ -55,7 +55,7 @@
     </a>
 
     <!-- Recorder host -->
-    <a class="tile" href="/settings#system" :class="tileStateClass('recorder')">
+    <a class="tile" href="/diagnostics#recorder" :class="tileStateClass('recorder')">
         <div class="tile__label">Recorder host</div>
         <div class="tile__value" x-text="recorderStateLabel"></div>
         <div class="tile__caption" x-text="health.uptime || '\u2014'"></div>
@@ -431,11 +431,9 @@ function dashboardPage() {
             return 'Nominal';
         },
 
-        onStatusClick(ev) {
-            // A green strip links to "/"; don't scroll when already there.
-            if ((this.summary.state || 'green') === 'green') {
-                ev.preventDefault();
-            }
+        onStatusClick(_ev) {
+            // Strip always navigates to its deep_link (green → /diagnostics,
+            // amber/red → the page that lets the user act). Nothing to cancel.
         },
 
         // --- Loaders ---

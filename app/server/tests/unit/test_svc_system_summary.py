@@ -105,7 +105,10 @@ class TestGreenBaseline:
         out = svc.compute_summary()
         assert out["state"] == "green"
         assert "All systems normal" in out["summary"]
-        assert out["deep_link"] == "/"
+        # ADR-0018: green strip points at /diagnostics so operators can
+        # still reach raw metrics in one click, without demoting the
+        # dashboard to a metrics screen.
+        assert out["deep_link"] == "/diagnostics"
         assert out["details"]["cameras"]["online"] == 1
         assert out["details"]["cameras"]["total"] == 1
         assert out["details"]["recent_errors"] == 0
@@ -159,7 +162,7 @@ class TestStorageStateTransitions:
         )
         out = svc.compute_summary()
         assert out["state"] == "red"
-        assert out["deep_link"].startswith("/settings")
+        assert out["deep_link"] == "/diagnostics#storage"
 
 
 # ---------------------------------------------------------------------------

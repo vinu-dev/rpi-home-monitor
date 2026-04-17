@@ -91,6 +91,21 @@ def recordings():
     return render_template("recordings.html")
 
 
+@views_bp.route("/diagnostics")
+def diagnostics():
+    """System diagnostics — raw metrics behind the dashboard's derived state.
+
+    ADR-0018 moved CPU/temp/mem/disk numbers off the dashboard to keep
+    that surface glance-only. This page is their new home — linked
+    from the status strip and the Storage / Recorder tiles.
+    """
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    if not _is_authenticated():
+        return redirect(url_for("views.login"))
+    return render_template("diagnostics.html")
+
+
 @views_bp.route("/settings")
 def settings():
     """System settings and user management."""

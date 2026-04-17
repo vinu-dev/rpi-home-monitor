@@ -19,9 +19,11 @@
             <input type="date" id="rec-date-input" class="form-input">
         </div>
     </div>
-    <div id="rec-available-dates" class="text-small text-muted mt-8" style="display:none;">
-        Available dates: <span id="rec-dates-list"></span>
-    </div>
+    <!--
+      "Available dates" hint was removed — the native date picker already
+      covers the range, and it wouldn't scale past a handful of days.
+      The server defaults to the newest date with clips on load.
+    -->
 </div>
 
 <!-- Two-pane layout: sticky player on the left, scrolling clip list on the right.
@@ -118,8 +120,6 @@
     var placeholderEl = document.getElementById('rec-placeholder');
     var playingLabel = document.getElementById('rec-playing-label');
     var btnClose = document.getElementById('btn-close-player');
-    var datesWrap = document.getElementById('rec-available-dates');
-    var datesList = document.getElementById('rec-dates-list');
     var countEl = document.getElementById('rec-count');
     var archiveBanner = document.getElementById('rec-archive-banner');
     var selectionBar = document.getElementById('rec-selection-bar');
@@ -236,9 +236,6 @@
             .then(function(data) {
                 availableDates = data.dates || [];
                 if (availableDates.length > 0) {
-                    datesWrap.style.display = '';
-                    datesList.textContent = availableDates.slice(-10).join(', ');
-
                     var params = new URLSearchParams(window.location.search);
                     var dateParam = params.get('date');
                     if (dateParam && availableDates.indexOf(dateParam) >= 0) {
@@ -248,13 +245,11 @@
                     }
                     loadClips(cameraId, dateInput.value);
                 } else {
-                    datesWrap.style.display = 'none';
                     dateInput.value = '';
                     showEmpty();
                 }
             })
             .catch(function() {
-                datesWrap.style.display = 'none';
                 showEmpty();
             });
     }
@@ -287,7 +282,18 @@
 
         countEl.textContent = clips.length + (clips.length === 1 ? ' clip' : ' clips');
 
-        clips.forEach(function(clip) {
+        // Latest first — users almost always want the most recent clip on
+        // top when scrubbing a day's recordings. The API returns clips
+        // sorted ascending by start_time, so reverse here.
+        var ordered = clips.slice().sort(function(a, b) {
+            var ax = (a.start_time || '') + '/' + (a.filename || '');
+            var bx = (b.start_time || '') + '/' + (b.filename || '');
+            if (ax < bx) return 1;
+            if (ax > bx) return -1;
+            return 0;
+        });
+
+        ordered.forEach(function(clip) {
             clipList.appendChild(buildClipCard(clip));
         });
 
@@ -518,7 +524,6 @@
                 // removed camera disappears from the Archive section.
                 loadCameras();
                 availableDates = [];
-                datesWrap.style.display = 'none';
                 dateInput.value = '';
                 showEmpty();
                 dangerZone.style.display = 'none';
@@ -550,7 +555,6 @@
             updateUrl();
         } else {
             availableDates = [];
-            datesWrap.style.display = 'none';
             dateInput.value = '';
             showEmpty();
         }

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnostics - Home Monitor{% endblock %}
+
+{% block content %}
+<div x-data="diagnosticsPage()" x-init="init()">
+
+<div class="diagnostics-header">
+    <a href="/dashboard" class="text-small text-muted">&larr; Dashboard</a>
+    <h1 class="page-title" style="margin-top:4px;">System Diagnostics</h1>
+    <div class="text-small text-muted">
+        Raw metrics and host telemetry. The dashboard shows derived state
+        (green / amber / red); this page shows the numbers behind that judgement.
+    </div>
+</div>
+
+<!-- ==================== Recorder host ==================== -->
+<div id="recorder" class="section-header">Recorder host</div>
+<div class="grid grid--health">
+    <div class="card health-card">
+        <div class="health-card__value" :class="tempColor(health.temp)" x-text="health.temp !== null ? health.temp.toFixed(1) + '\u00B0C' : '--'"></div>
+        <div class="health-card__label">CPU Temp</div>
+        <div class="health-card__detail">amber &ge; 72 &deg;C &middot; red &ge; 80 &deg;C</div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" :class="usageColor(health.cpu)" x-text="health.cpu !== null ? health.cpu.toFixed(0) + '%' : '--'"></div>
+        <div class="health-card__label">CPU Usage</div>
+        <div class="health-card__detail">amber &ge; 85 %</div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" :class="usageColor(health.mem)" x-text="health.mem !== null ? health.mem.toFixed(0) + '%' : '--'"></div>
+        <div class="health-card__label">Memory</div>
+        <div class="health-card__detail" x-text="health.memDetail"></div>
+    </div>
+    <div class="card health-card">
+        <div class="health-card__value" :class="usageColor(health.disk)" x-text="health.disk !== null ? health.disk.toFixed(0) + '%' : '--'"></div>
+        <div class="health-card__label">Disk</div>
+        <div class="health-card__detail" x-text="health.diskDetail"></div>
+    </div>
+</div>
+
+<!-- Warnings (mirror of what the health API flagged) -->
+<div class="warnings-list" x-show="health.warnings.length > 0">
+    <template x-for="w in health.warnings" :key="w">
+        <div class="warning-item" x-text="w"></div>
+    </template>
+</div>
+
+<!-- ==================== Storage ==================== -->
+<div id="storage" class="section-header">Storage</div>
+<div class="card">
+    <div class="diag-row">
+        <span class="diag-row__label">Recordings directory</span>
+        <span class="diag-row__value" x-text="storage.recordings_dir || '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Total</span>
+        <span class="diag-row__value" x-text="storage.total_gb !== undefined ? storage.total_gb + ' GB' : '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Used</span>
+        <span class="diag-row__value" x-text="storage.used_gb !== undefined ? storage.used_gb + ' GB (' + storage.percent + '%)' : '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Free</span>
+        <span class="diag-row__value" x-text="storage.free_gb !== undefined ? storage.free_gb + ' GB' : '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Estimated retention</span>
+        <span class="diag-row__value" x-text="summary.details && summary.details.storage && summary.details.storage.retention_days !== null ? '~' + summary.details.storage.retention_days + ' days (7-day trailing)' : 'not enough data'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Thresholds (ADR-0018)</span>
+        <span class="diag-row__value">amber &ge; 70 % &middot; red &ge; 90 %</span>
+    </div>
+</div>
+
+<!-- ==================== Host info ==================== -->
+<div id="host" class="section-header">Host</div>
+<div class="card">
+    <div class="diag-row">
+        <span class="diag-row__label">Hostname</span>
+        <span class="diag-row__value" x-text="info.hostname || '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Firmware</span>
+        <span class="diag-row__value" x-text="info.firmware_version || '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">OS</span>
+        <span class="diag-row__value" x-text="(info.os_name || '\u2014') + (info.os_version ? ' ' + info.os_version : '')"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Uptime</span>
+        <span class="diag-row__value" x-text="(info.uptime && info.uptime.display) || '\u2014'"></span>
+    </div>
+    <div class="diag-row">
+        <span class="diag-row__label">Last refresh</span>
+        <span class="diag-row__value" x-text="lastRefresh || '\u2014'"></span>
+    </div>
+</div>
+
+<!-- ==================== Raw JSON for advanced users ==================== -->
+<div class="section-header">
+    Raw JSON
+    <button class="btn btn--secondary btn--small" @click="showRaw = !showRaw" style="float:right;margin-top:-4px;">
+        <span x-text="showRaw ? 'Hide' : 'Show'"></span>
+    </button>
+</div>
+<template x-if="showRaw">
+    <div class="card">
+        <div class="diag-row__label" style="margin-bottom:4px;">/system/summary</div>
+        <pre class="diag-json" x-text="JSON.stringify(summary, null, 2)"></pre>
+        <div class="diag-row__label" style="margin-top:12px;margin-bottom:4px;">/system/health</div>
+        <pre class="diag-json" x-text="JSON.stringify(raw, null, 2)"></pre>
+    </div>
+</template>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function diagnosticsPage() {
+    return {
+        health: { temp: null, cpu: null, mem: null, memDetail: '', disk: null, diskDetail: '', warnings: [] },
+        storage: {},
+        info: {},
+        summary: { details: null },
+        raw: {},
+        lastRefresh: '',
+        showRaw: false,
+        _interval: null,
+
+        tempColor(c) {
+            if (c === null) return '';
+            if (c < 72) return 'health-card__value--green';
+            if (c < 80) return 'health-card__value--yellow';
+            return 'health-card__value--red';
+        },
+        usageColor(p) {
+            if (p === null) return '';
+            if (p < 70) return 'health-card__value--green';
+            if (p < 85) return 'health-card__value--yellow';
+            return 'health-card__value--red';
+        },
+
+        async loadAll() {
+            try {
+                this.raw = await window.HM.api.get('/api/v1/system/health');
+                this.health.temp = this.raw.cpu_temp_c;
+                this.health.cpu = this.raw.cpu_usage_percent;
+                this.health.mem = (this.raw.memory && this.raw.memory.percent) || 0;
+                this.health.memDetail = this.raw.memory ? (this.raw.memory.used_mb + ' / ' + this.raw.memory.total_mb + ' MB') : '';
+                this.health.disk = (this.raw.disk && this.raw.disk.percent) || 0;
+                this.health.diskDetail = this.raw.disk ? (this.raw.disk.used_gb + ' / ' + this.raw.disk.total_gb + ' GB') : '';
+                this.health.warnings = this.raw.warnings || [];
+                this.storage = this.raw.disk || {};
+                if (this.raw.disk && this.raw.disk.recordings_dir === undefined) {
+                    // /system/health response exposes disk but not the dir;
+                    // storage.recordings_dir is filled in from the summary below.
+                }
+            } catch(e) {}
+            try {
+                this.info = await window.HM.api.get('/api/v1/system/info');
+            } catch(e) {}
+            try {
+                this.summary = await window.HM.api.get('/api/v1/system/summary');
+                // Merge storage metadata (retention_days, recordings_dir) from summary.
+                if (this.summary.details && this.summary.details.storage) {
+                    this.storage = Object.assign({}, this.storage, this.summary.details.storage);
+                }
+            } catch(e) {}
+            this.lastRefresh = new Date().toLocaleTimeString();
+        },
+
+        init() {
+            this.loadAll();
+            this._interval = setInterval(() => { this.loadAll(); }, 10000);
+        },
+        destroy() {
+            if (this._interval) clearInterval(this._interval);
+        }
+    };
+}
+</script>
+{% endblock %}

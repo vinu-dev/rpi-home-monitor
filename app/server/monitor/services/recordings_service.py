@@ -26,6 +26,33 @@ _CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Recording date directories are always YYYY-MM-DD.
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# The dashboard has seen two on-disk layouts during its history:
+#   dated subdir: <cam>/YYYY-MM-DD/HH-MM-SS.mp4       (legacy recorder)
+#   flat:         <cam>/YYYYMMDD_HHMMSS.mp4           (loop recorder)
+# Both are still present on deployed hardware, so readers must cope with
+# either. Writers only ever produce the flat layout today.
+_FLAT_STEM_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$")
+_DATED_STEM_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{2})$")
+
+
+def _parse_clip_date_time(mp4: Path) -> tuple[str, str]:
+    """Extract (YYYY-MM-DD, HH:MM:SS) from a clip path.
+
+    Returns ("", "") if the path does not match either known layout —
+    callers should skip such entries rather than emit NaN to the UI.
+    """
+    stem = mp4.stem
+    m = _FLAT_STEM_RE.match(stem)
+    if m:
+        y, mo, d, hh, mm, ss = m.groups()
+        return f"{y}-{mo}-{d}", f"{hh}:{mm}:{ss}"
+    parent = mp4.parent.name
+    if _DATE_RE.match(parent):
+        m = _DATED_STEM_RE.match(stem)
+        if m:
+            return parent, stem.replace("-", ":")
+    return "", ""
+
 
 class RecordingsService:
     """Business logic for recording queries and management.
@@ -241,12 +268,27 @@ class RecordingsService:
         if newest_path is None:
             return None, "No recordings found", 404
 
-        recorder = self._get_recorder()
-        clip = recorder.get_latest_clip(newest_cam)
-        if clip is None:
+        # Build the response from the walk we already did — the recorder's
+        # get_latest_clip() only knows the dated-subdir layout, so falling
+        # back to it would miss flat-layout clips written by the loop
+        # recorder. We already have the newest path; parse it directly.
+        date_str, start_time = _parse_clip_date_time(newest_path)
+        if not date_str:
             return None, "No recordings found", 404
-        data = asdict(clip)
-        data["camera_name"] = self._camera_display_name(newest_cam)
+        try:
+            size = newest_path.stat().st_size
+        except OSError:
+            size = 0
+        data = {
+            "camera_id": newest_cam,
+            "camera_name": self._camera_display_name(newest_cam),
+            "filename": newest_path.name,
+            "date": date_str,
+            "start_time": start_time,
+            "duration_seconds": 180,
+            "size_bytes": size,
+            "thumbnail": f"{newest_path.stem}.thumb.jpg",
+        }
         return data, None, 200
 
     def recent_across_cameras(self, limit: int = 10):
@@ -289,20 +331,22 @@ class RecordingsService:
         entries.sort(reverse=True, key=lambda t: t[0])
         out: list[dict] = []
         for _mtime, cam_id, mp4 in entries[:limit]:
-            # Filename is HH-MM-SS.mp4, parent dir name is YYYY-MM-DD.
-            stem = mp4.stem
             try:
                 size = mp4.stat().st_size
             except OSError:
                 size = 0
-            thumb_name = f"{stem}.thumb.jpg"
+            date_str, start_time = _parse_clip_date_time(mp4)
+            if not date_str:
+                # Unrecognised on-disk naming — skip rather than return NaN.
+                continue
+            thumb_name = f"{mp4.stem}.thumb.jpg"
             out.append(
                 {
                     "camera_id": cam_id,
                     "camera_name": self._camera_display_name(cam_id),
                     "filename": mp4.name,
-                    "date": mp4.parent.name,
-                    "start_time": stem.replace("-", ":"),
+                    "date": date_str,
+                    "start_time": start_time,
                     "duration_seconds": 180,
                     "size_bytes": size,
                     "thumbnail": thumb_name,
@@ -347,6 +391,18 @@ class RecordingsService:
             return None, "Invalid path", 400
 
         if not clip_path.is_file():
+            # Flat-layout fallback: loop recorder writes clips directly under
+            # <recordings_root>/<camera_id>/ with YYYYMMDD_HHMMSS.mp4 stems.
+            # The UI still addresses them with the dated URL shape
+            # /<cam>/<YYYY-MM-DD>/<filename>, so check the flat location here
+            # before giving up.
+            try:
+                flat_path = (recordings_root / camera_id / filename).resolve()
+                flat_path.relative_to(recordings_root)
+            except (ValueError, OSError):
+                return None, "Clip not found", 404
+            if flat_path.is_file():
+                return flat_path, None, 200
             return None, "Clip not found", 404
 
         return clip_path, None, 200
