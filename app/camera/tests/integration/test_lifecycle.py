@@ -258,7 +258,13 @@ class TestRunning:
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_starts_all_services(
-        self, MockDiscovery, MockStream, MockStatus, MockHealth, mock_led
+        self,
+        MockDiscovery,
+        MockStream,
+        MockStatus,
+        MockHealth,
+        mock_led,
+        tmp_path,
     ):
         config = _make_config()
         platform = _make_platform()
@@ -272,6 +278,11 @@ class TestRunning:
 
         lc = CameraLifecycle(config, platform, shutdown)
         lc._capture = MagicMock()
+        # ADR-0017: stream no longer auto-starts; desired state must be
+        # "running" for the lifecycle to spawn the pipeline on boot.
+        state_file = tmp_path / "stream_state"
+        state_file.write_text("running")
+        lc._stream_state_path = str(state_file)
 
         result = lc._do_running()
 
@@ -295,6 +306,40 @@ class TestRunning:
 
         lc = CameraLifecycle(config, platform, lambda: True)
         lc._capture = MagicMock()
+
+        lc._do_running()
+
+        MockStream.return_value.start.assert_not_called()
+
+    @patch("camera_streamer.lifecycle.led")
+    @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.StreamManager")
+    @patch("camera_streamer.lifecycle.DiscoveryService")
+    def test_skips_streaming_when_desired_state_stopped(
+        self,
+        MockDiscovery,
+        MockStream,
+        MockStatus,
+        MockHealth,
+        mock_led,
+        tmp_path,
+    ):
+        """Explicit 'stopped' override in the state file blocks boot-time stream.
+
+        ADR-0017 originally defaulted this to 'stopped' (on-demand gate) but
+        the 24ac5c6 revert restored 'running' as the default so Live view is
+        instant. The persisted file still works as an explicit override —
+        that's what this test now asserts.
+        """
+        config = _make_config()
+        platform = _make_platform()
+
+        lc = CameraLifecycle(config, platform, lambda: True)
+        lc._capture = MagicMock()
+        state_file = tmp_path / "stream_state"
+        state_file.write_text("stopped")
+        lc._stream_state_path = str(state_file)
 
         lc._do_running()
 

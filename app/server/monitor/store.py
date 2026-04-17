@@ -12,10 +12,21 @@ corruption if the process is killed mid-write.
 
 import json
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from pathlib import Path
 
 from monitor.models import Camera, Settings, User
+
+
+def _filter_known(cls, raw: dict) -> dict:
+    """Drop keys not present in a dataclass — migration-tolerant loading.
+
+    Older JSON rows may be missing new fields (filled by dataclass defaults)
+    or carry deprecated fields (ignored). This keeps load stable across
+    schema evolution.
+    """
+    known = {f.name for f in fields(cls)}
+    return {k: v for k, v in raw.items() if k in known}
 
 
 class Store:
@@ -60,7 +71,9 @@ class Store:
         """Return all cameras."""
         with self._lock:
             raw = self._read_json("cameras.json")
-        return [Camera(**c) for c in raw] if isinstance(raw, list) else []
+        if not isinstance(raw, list):
+            return []
+        return [Camera(**_filter_known(Camera, c)) for c in raw if isinstance(c, dict)]
 
     def get_camera(self, camera_id: str) -> Camera | None:
         """Return a single camera by ID, or None."""
@@ -103,7 +116,9 @@ class Store:
         """Return all users."""
         with self._lock:
             raw = self._read_json("users.json")
-        return [User(**u) for u in raw] if isinstance(raw, list) else []
+        if not isinstance(raw, list):
+            return []
+        return [User(**_filter_known(User, u)) for u in raw if isinstance(u, dict)]
 
     def get_user(self, user_id: str) -> User | None:
         """Return a single user by ID, or None."""
@@ -153,7 +168,7 @@ class Store:
         with self._lock:
             raw = self._read_json("settings.json")
         if isinstance(raw, dict) and raw:
-            return Settings(**raw)
+            return Settings(**_filter_known(Settings, raw))
         return Settings()
 
     def save_settings(self, settings: Settings):

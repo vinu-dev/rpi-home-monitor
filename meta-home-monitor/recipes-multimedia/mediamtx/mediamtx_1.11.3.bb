@@ -14,6 +14,7 @@ SRC_URI = " \
     https://github.com/bluenviron/mediamtx/releases/download/v${PV}/mediamtx_v${PV}_linux_arm64v8.tar.gz;name=binary \
     file://mediamtx.yml \
     file://mediamtx.service \
+    file://mediamtx-on-demand.sh \
     "
 SRC_URI[binary.sha256sum] = "6ae3e3d78a770ed28ae26f8e8b474387e9d44ee88d419a245e48530062bdb629"
 
@@ -39,12 +40,17 @@ do_install() {
     # Install systemd service
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/mediamtx.service ${D}${systemd_system_unitdir}/mediamtx.service
+
+    # Install on-demand hook script (ADR-0017)
+    install -d ${D}/opt/monitor/bin
+    install -m 0755 ${WORKDIR}/mediamtx-on-demand.sh ${D}/opt/monitor/bin/mediamtx-on-demand.sh
 }
 
 FILES:${PN} = " \
     ${bindir}/mediamtx \
     ${sysconfdir}/mediamtx \
     ${systemd_system_unitdir}/mediamtx.service \
+    /opt/monitor/bin/mediamtx-on-demand.sh \
     "
 
 # Pre-built Go binary — insane-skip needed for stripped binary

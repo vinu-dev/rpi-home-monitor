@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RPi Home Monitor Camera API
-  version: "1.0"
+  version: "1.1"
 servers:
   - url: https://127.0.0.1:5444
 components:
@@ -110,6 +110,59 @@ components:
           type: string
         server_url:
           type: string
+    StreamStateResponse:
+      type: object
+      required: [state, running]
+      description: |
+        Response shape for the ADR-0017 on-demand control endpoints. `state`
+        is the persisted desired stream state (written atomically to
+        `/data/config/stream_state`); `running` reflects whether the
+        libcamera + ffmpeg pipeline is actually up right now.
+      properties:
+        state:
+          type: string
+          enum: [running, stopped]
+        running:
+          type: boolean
+    Heartbeat:
+      type: object
+      description: |
+        Periodic health payload pushed by the camera to the server
+        (ADR-0016). ADR-0017 extends it with `stream_state` and
+        `recording_state` so the server can detect drift between what it
+        asked the camera to do and what the camera thinks it is doing.
+      required: [camera_id]
+      properties:
+        camera_id:
+          type: string
+        streaming:
+          type: boolean
+          description: |
+            Legacy boolean — true iff the RTSP pipeline is active. Retained
+            for back-compat with older servers; new code should prefer
+            `stream_state`.
+        stream_state:
+          type: string
+          enum: [running, stopped]
+          description: |
+            Persisted desired stream state (ADR-0017). Supplements the
+            legacy `streaming` field; the server treats these as consistent
+            when `running` == `streaming`.
+        recording_state:
+          type: object
+          description: Mirror of what the server last asked the camera to record.
+          properties:
+            mode:
+              type: string
+              enum: [off, continuous, schedule, motion]
+            recording_now:
+              type: boolean
+        cpu_temp:
+          type: number
+        memory_percent:
+          type: integer
+        uptime_seconds:
+          type: integer
 paths:
   /login:
     post:
@@ -247,6 +300,70 @@ paths:
                 $ref: "#/components/schemas/MessageResponse"
         "400":
           description: Pairing failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/control/stream/start:
+    post:
+      tags: [control]
+      summary: Start the camera RTSP pipeline (ADR-0017).
+      description: |
+        mTLS-gated (HMAC-signed body, same scheme as ADR-0015 `config-notify`).
+        Idempotent: calling `start` on an already-running camera is a no-op
+        that returns the current state. The desired state is persisted to
+        `/data/config/stream_state` atomically so a reboot honours the last
+        explicit intent.
+      responses:
+        "200":
+          description: Stream is running (either just started or was already up).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamStateResponse"
+        "401":
+          description: HMAC signature missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/control/stream/stop:
+    post:
+      tags: [control]
+      summary: Stop the camera RTSP pipeline (ADR-0017).
+      description: |
+        mTLS-gated (HMAC-signed body). Idempotent. Persists `stopped` to
+        `/data/config/stream_state`.
+      responses:
+        "200":
+          description: Stream is stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamStateResponse"
+        "401":
+          description: HMAC signature missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/control/stream/state:
+    get:
+      tags: [control]
+      summary: Report the current camera stream state (ADR-0017).
+      description: |
+        mTLS-gated. Returns the persisted desired state plus the live
+        `running` flag from the stream pipeline. Used by the server on
+        reconnect to detect drift.
+      responses:
+        "200":
+          description: Stream state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamStateResponse"
+        "401":
+          description: HMAC signature missing or invalid.
           content:
             application/json:
               schema:

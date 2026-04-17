@@ -157,6 +157,10 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "cpu_temp",
     "memory_percent",
     "uptime_seconds",
+    # ADR-0017: recording-mode + on-demand streaming fields
+    "recording_schedule",
+    "recording_motion_enabled",
+    "desired_stream_state",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
@@ -656,6 +660,78 @@ class TestRecordingsDeleteContract:
         _assert_fields(data, {"error"})
 
 
+class TestRecordingsCamerasContract:
+    """GET /api/v1/recordings/cameras — paired + orphan archive list."""
+
+    def test_paired_camera_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.get("/api/v1/recordings/cameras")
+        data = resp.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        _assert_fields(data[0], {"id", "name", "status"})
+        assert data[0]["status"] in {"online", "offline", "removed"}
+
+    def test_orphan_surfaces_as_removed(self, app, client):
+        _login(app, client)
+        # No Camera record — just a clip on disk.
+        rec_dir = app.config["RECORDINGS_DIR"]
+        clip_dir = os.path.join(rec_dir, "cam-orphan", "2026-04-11")
+        os.makedirs(clip_dir, exist_ok=True)
+        with open(os.path.join(clip_dir, "14-30-00.mp4"), "wb") as f:
+            f.write(b"\x00" * 64)
+
+        data = client.get("/api/v1/recordings/cameras").get_json()
+        entry = next((c for c in data if c["id"] == "cam-orphan"), None)
+        assert entry is not None
+        assert entry["status"] == "removed"
+
+
+class TestRecordingsBulkDeleteContract:
+    """DELETE bulk endpoints — by date and by camera."""
+
+    def _seed(self, app, cam="cam-001", date="2026-04-11"):
+        rec_dir = app.config["RECORDINGS_DIR"]
+        clip_dir = os.path.join(rec_dir, cam, date)
+        os.makedirs(clip_dir, exist_ok=True)
+        for t in ("14-30-00", "15-00-00"):
+            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+                f.write(b"\x00" * 128)
+
+    def test_delete_date_success_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        self._seed(app)
+        resp = client.delete("/api/v1/recordings/cam-001/2026-04-11")
+        data = resp.get_json()
+        _assert_fields(data, {"message", "count"})
+        assert data["count"] == 2
+
+    def test_delete_date_bad_date(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.delete("/api/v1/recordings/cam-001/not-a-date")
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+    def test_delete_camera_success_fields(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        self._seed(app, date="2026-04-11")
+        self._seed(app, date="2026-04-12")
+        resp = client.delete("/api/v1/recordings/cam-001")
+        data = resp.get_json()
+        _assert_fields(data, {"message", "count"})
+        assert data["count"] == 4
+
+    def test_delete_camera_not_found(self, app, client):
+        _login(app, client)
+        resp = client.delete("/api/v1/recordings/nope")
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
 # ===========================================================================
 # Storage contracts (/api/v1/storage/*)
 # ===========================================================================
@@ -1137,3 +1213,89 @@ class TestHeartbeatContract:
             },
         )
         assert resp.status_code == 401
+
+
+# ===========================================================================
+# ADR-0017: recording-mode fields + on-demand endpoints
+# ===========================================================================
+
+
+class TestCameraUpdateRecordingModeContract:
+    """PUT /api/v1/cameras/<id> accepts new recording_* fields."""
+
+    def test_put_accepts_schedule_mode(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [
+                    {"days": ["mon", "tue"], "start": "09:00", "end": "17:00"}
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        cam = app.store.get_camera("cam-001")
+        assert cam.recording_mode == "schedule"
+        assert cam.recording_schedule[0]["start"] == "09:00"
+
+    def test_put_rejects_invalid_mode(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "nope"})
+        assert resp.status_code == 400
+
+    def test_put_rejects_bad_schedule_day(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [
+                    {"days": ["funday"], "start": "09:00", "end": "17:00"}
+                ],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_put_rejects_bad_time_format(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "recording_mode": "schedule",
+                "recording_schedule": [{"days": ["mon"], "start": "9am", "end": "5pm"}],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_put_motion_accepted_as_forward_compat(self, app, client):
+        _login(app, client)
+        _add_camera(app)
+        resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "motion"})
+        assert resp.status_code == 200
+
+
+class TestOnDemandEndpointContract:
+    """Internal-only coordinator shape (marked x-internal in OpenAPI)."""
+
+    def test_start_shape(self, app, client):
+        from unittest.mock import MagicMock
+
+        _add_camera(app)
+        app.camera_control_client = MagicMock()
+        app.camera_control_client.start_stream.return_value = ({"state": "running"}, "")
+
+        resp = client.post("/internal/on-demand/cam-001/start")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_has_fields(data, {"ok"})
+
+    def test_non_localhost_forbidden(self, app, client):
+        _add_camera(app)
+        client.environ_base["REMOTE_ADDR"] = "10.0.0.5"
+        resp = client.post("/internal/on-demand/cam-001/start")
+        assert resp.status_code == 403

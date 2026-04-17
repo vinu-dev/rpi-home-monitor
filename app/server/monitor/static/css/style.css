@@ -518,6 +518,78 @@ select.form-input {
 .camera-info__label { color: var(--color-text-muted); }
 .camera-info__value { color: var(--color-text); font-weight: 500; }
 
+/* --- Recordings Layout ---
+   Two-pane on desktop: sticky player on the left, independently scrolling
+   clip list on the right. Competitor inspiration: UniFi Protect & Frigate
+   both keep the player pinned while the timeline/list scrolls separately,
+   so pressing Play on an off-screen clip never jerks the viewer away. */
+.recordings-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+    align-items: start;
+}
+@media (min-width: 1024px) {
+    .recordings-layout {
+        grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+    }
+}
+
+.recordings-player-col {
+    min-width: 0;
+}
+@media (min-width: 1024px) {
+    .recordings-player-col {
+        position: sticky;
+        /* 60px top nav + breathing room; stays below the fixed navbar. */
+        top: calc(60px + var(--space-3));
+    }
+}
+
+.recordings-list-col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+@media (min-width: 1024px) {
+    .recordings-list-col {
+        /* Independent scroll: viewport minus top nav (60), bottom nav (70)
+           and a little gutter on each side. */
+        max-height: calc(100vh - 60px - 70px - var(--space-4) * 2);
+        overflow-y: auto;
+        padding-right: var(--space-1);
+    }
+    .recordings-list-col::-webkit-scrollbar { width: 8px; }
+    .recordings-list-col::-webkit-scrollbar-track { background: transparent; }
+    .recordings-list-col::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: var(--radius-sm);
+    }
+    .recordings-list-col::-webkit-scrollbar-thumb:hover {
+        background: var(--color-text-muted);
+    }
+}
+
+.recordings-list-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0 var(--space-1);
+}
+.recordings-list-header__title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.recordings-list-header__count {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+
 /* --- Recordings List --- */
 .clip-list {
     display: flex;
@@ -529,9 +601,23 @@ select.form-input {
     align-items: center;
     justify-content: space-between;
     padding: var(--space-3) var(--space-4);
+    cursor: pointer;
+    transition: border-color var(--transition-base), background var(--transition-base);
+}
+.clip-card:hover {
+    border-color: var(--color-text-muted);
+}
+.clip-card.is-playing {
+    border-color: var(--color-accent);
+    background: linear-gradient(
+        90deg,
+        rgba(233, 69, 96, 0.12) 0%,
+        var(--color-surface) 60%
+    );
 }
 .clip-card__info {
     flex: 1;
+    min-width: 0;
 }
 .clip-card__time {
     font-weight: 600;
@@ -546,20 +632,157 @@ select.form-input {
     display: flex;
     gap: var(--space-2);
     align-items: center;
+    flex-shrink: 0;
+}
+.clip-card__checkbox {
+    display: flex;
+    align-items: center;
+    margin-right: var(--space-2);
+    cursor: pointer;
+}
+.clip-card__checkbox input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
 }
 
-/* --- Inline Player (recordings) --- */
-.inline-player {
-    margin: 12px 0;
-    display: none;
+/* --- Archive banner (removed camera) --- */
+.archive-banner {
+    background: rgba(233, 69, 96, 0.08);
+    border: 1px solid rgba(233, 69, 96, 0.35);
+    color: var(--color-text);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    margin-bottom: var(--space-3);
 }
-.inline-player.visible {
+.archive-banner strong {
+    color: var(--color-accent);
+    margin-right: var(--space-1);
+}
+
+/* --- Selection bar —
+   Floats above the bottom nav only when the admin has selected one or
+   more clips. Default view never shows it, so the page doesn't nag
+   people toward deletion. */
+.selection-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(70px + var(--space-3)); /* clear the 70px bottom nav */
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    z-index: 50;
+    max-width: calc(100vw - var(--space-4) * 2);
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.selection-bar[hidden] { display: none; }
+.selection-bar__count {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    padding: 0 var(--space-2);
+    border-right: 1px solid var(--color-border);
+}
+
+/* --- "More options" — quiet opt-in toggle for bulk destructive
+   actions. Renders as a subtle muted link, not a button. */
+.more-options {
+    margin-top: var(--space-5);
+    padding-top: var(--space-3);
+    border-top: 1px dashed var(--color-border);
+}
+.more-options__toggle {
+    background: none;
+    border: none;
+    padding: var(--space-1) var(--space-2);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-base), background var(--transition-base);
+}
+.more-options__toggle:hover {
+    color: var(--color-text);
+    background: var(--color-surface-alt);
+}
+.more-options__toggle[aria-expanded="true"]::after { content: " ▲"; }
+.more-options__toggle[aria-expanded="false"]::after { content: " ▼"; }
+
+.danger-zone {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+.danger-zone__title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--space-2);
+}
+.danger-zone__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+/* --- Inline Player (recordings) ---
+   Always rendered; shows a placeholder until a clip is chosen. */
+.inline-player {
     display: block;
+    margin: 0;
 }
 .inline-player video {
     width: 100%;
+    aspect-ratio: 16 / 9;
     border-radius: var(--radius-md);
     background: #000;
+    display: block;
+}
+.inline-player__placeholder {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md);
+    background: #000;
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-4);
+    font-size: var(--text-sm);
+    border: 1px dashed var(--color-border);
+}
+.inline-player__placeholder.hidden { display: none; }
+.inline-player video.hidden { display: none; }
+.inline-player__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    min-height: 28px;
+}
+.inline-player__label {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 
 /* --- Settings --- */

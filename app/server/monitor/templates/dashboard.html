@@ -169,10 +169,16 @@
                     'badge--online': cam.status === 'online',
                     'badge--offline': cam.status === 'offline'
                 }" x-text="cam.status"></span>
+                <!-- ADR-0017: prefer `stream_state` from heartbeat; fall back
+                     to the legacy `streaming` boolean for older cameras. The
+                     pulsing dot indicates the camera is actively pushing RTSP
+                     to MediaMTX right now (either a viewer is open or the
+                     recording scheduler has asked it to stay up). -->
                 <span x-show="cam.status === 'online'" class="badge" :class="{
-                    'badge--streaming': cam.streaming,
-                    'badge--not-streaming': !cam.streaming
-                }" x-text="cam.streaming ? '\u25CF streaming' : '\u25CB not streaming'"></span>
+                    'badge--streaming': (cam.stream_state === 'running') || cam.streaming,
+                    'badge--not-streaming': !((cam.stream_state === 'running') || cam.streaming)
+                }" :aria-label="((cam.stream_state === 'running') || cam.streaming) ? 'live' : 'idle'"
+                   x-text="((cam.stream_state === 'running') || cam.streaming) ? '\u25CF live' : '\u25CB idle'"></span>
                 <div class="camera-card__btns">
                     <button class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
                     <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>

@@ -27,6 +27,7 @@ import urllib.request
 
 from camera_streamer import led
 from camera_streamer.capture import CaptureManager
+from camera_streamer.control import DEFAULT_STREAM_STATE_PATH, VALID_STREAM_STATES
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.health import HealthMonitor
 from camera_streamer.heartbeat import HeartbeatSender
@@ -38,6 +39,28 @@ from camera_streamer.stream import StreamManager
 from camera_streamer.wifi_setup import WifiSetupServer
 
 log = logging.getLogger("camera-streamer.lifecycle")
+
+
+def _read_desired_stream_state(path):
+    """Return the persisted desired stream state or ``running``.
+
+    Design: the camera streams to MediaMTX whenever it is paired so the
+    Live page opens with zero cold-start latency. The persisted state
+    file exists only as an explicit *override* — e.g. an operator or the
+    server asks the camera to go quiet. A missing file (fresh boot,
+    fresh pair) defaults to ``running``.
+
+    Isolated as a module-level helper so the boot-time decision can be
+    unit-tested without spinning up the full lifecycle.
+    """
+    try:
+        with open(path) as f:
+            value = f.read().strip()
+    except OSError:
+        return "running"
+    if value in VALID_STREAM_STATES:
+        return value
+    return "running"
 
 
 class State:
@@ -67,6 +90,10 @@ class CameraLifecycle:
         self._config = config
         self._platform = platform
         self._is_shutdown = shutdown_event
+        # Persisted desired stream state file (ADR-0017). Stored on the
+        # instance so tests can override and the heartbeat/control paths
+        # share a single source of truth.
+        self._stream_state_path = DEFAULT_STREAM_STATE_PATH
 
         self._state = State.INIT
 
@@ -266,15 +293,26 @@ class CameraLifecycle:
         self._discovery = DiscoveryService(self._config, pairing_manager=self._pairing)
         self._discovery.start()
 
-        # RTSP streaming
+        # RTSP streaming — on-demand per ADR-0017. The camera only starts
+        # streaming on boot if both (a) it is configured/paired AND (b) the
+        # persisted desired state is "running". A fresh camera defaults to
+        # "stopped" and waits for the server to explicitly ask for a stream.
         self._stream = StreamManager(
             self._config,
             camera_device=self._platform.camera_device,
         )
-        if self._config.is_configured:
+        desired = _read_desired_stream_state(self._stream_state_path)
+        if self._config.is_configured and desired == "running":
+            log.info("Desired stream state is 'running' — starting pipeline")
             self._stream.start()
-        else:
+        elif not self._config.is_configured:
             log.warning("Server not configured — streaming disabled")
+        else:
+            log.info(
+                "Desired stream state is '%s' — pipeline idle, awaiting "
+                "server start command",
+                desired,
+            )
 
         # Status HTTPS server (port 443)
         self._status_server = CameraStatusServer(
@@ -283,6 +321,7 @@ class CameraLifecycle:
             wifi_interface=self._platform.wifi_interface,
             thermal_path=self._platform.thermal_path,
             pairing_manager=self._pairing,
+            stream_state_path=self._stream_state_path,
         )
         self._status_server.start()
 
@@ -291,11 +330,15 @@ class CameraLifecycle:
         self._ota_agent.start()
 
         # Heartbeat sender — keeps server informed of liveness (ADR-0016)
+        # and reports the persisted desired stream state so the server can
+        # detect drift (ADR-0017 §3). The control handler is the single
+        # source of truth for desired state.
         self._heartbeat = HeartbeatSender(
             self._config,
             self._pairing,
             stream_manager=self._stream,
             thermal_path=self._platform.thermal_path,
+            control_handler=self._status_server.control_handler,
         )
         if self._config.is_configured and self._pairing.is_paired:
             self._heartbeat.start()

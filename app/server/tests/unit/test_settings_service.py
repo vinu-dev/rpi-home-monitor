@@ -21,6 +21,9 @@ def _make_settings(**overrides):
         "tailscale_accept_routes": False,
         "tailscale_ssh": False,
         "tailscale_auth_key": "",
+        # ADR-0017 loop-recording watermarks
+        "loop_low_watermark_percent": 10,
+        "loop_hysteresis_percent": 5,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -49,12 +52,16 @@ class TestGetSettings:
         assert result["hostname"] == "homemonitor"
         assert result["setup_completed"] is False
         assert result["firmware_version"] == "1.0.0"
+        # ADR-0017 loop-recording watermarks
+        assert result["loop_low_watermark_percent"] == 10
+        assert result["loop_hysteresis_percent"] == 5
 
     def test_returns_dict(self):
         svc, _ = _make_service()
         result = svc.get_settings()
         assert isinstance(result, dict)
-        assert len(result) == 12
+        # 12 original + 2 ADR-0017 loop-recording fields
+        assert len(result) == 14
 
     def test_reflects_custom_values(self):
         settings = _make_settings(timezone="US/Pacific", hostname="mybox")
@@ -611,6 +618,9 @@ class TestUpdatableFields:
             "tailscale_accept_routes",
             "tailscale_ssh",
             "tailscale_auth_key",
+            # ADR-0017 loop-recording watermarks
+            "loop_low_watermark_percent",
+            "loop_hysteresis_percent",
         }
         assert expected == UPDATABLE_FIELDS
 

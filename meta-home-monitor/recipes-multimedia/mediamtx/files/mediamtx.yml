@@ -65,6 +65,20 @@ pathDefaults:
 ###############################################
 # Paths
 ###############################################
-# Accept any stream path (cameras push to their own cam-ID path)
+# Accept any stream path (cameras push to their own cam-ID path).
+#
+# ADR-0017: on-demand viewer-driven streaming.
+# When a WebRTC viewer connects (first reader), runOnDemand fires the
+# mediamtx-on-demand.sh hook which calls the server's localhost-only
+# coordinator to ask the camera to start streaming. When the last reader
+# leaves plus `runOnDemandCloseAfter`, the stop hook fires.
+#
+# We also wire runOnReady / runOnNotReady as a belt-and-braces fallback
+# on MediaMTX builds where runOnDemand only triggers on the publisher
+# side. Both are idempotent on the server side, so duplicate calls are safe.
 paths:
   all_others:
+    runOnDemand: /opt/monitor/bin/mediamtx-on-demand.sh $MTX_PATH start
+    runOnDemandCloseAfter: 15s
+    runOnReady: /opt/monitor/bin/mediamtx-on-demand.sh $MTX_PATH start
+    runOnNotReady: /opt/monitor/bin/mediamtx-on-demand.sh $MTX_PATH stop

@@ -13,9 +13,13 @@ class TestCamera:
         assert cam.id == "cam-001"
         assert cam.name == ""
         assert cam.status == "pending"
-        assert cam.recording_mode == "continuous"
+        # ADR-0017: default recording mode is now "off" (on-demand streaming)
+        assert cam.recording_mode == "off"
         assert cam.resolution == "1080p"
         assert cam.fps == 25
+        assert cam.recording_schedule == []
+        assert cam.recording_motion_enabled is False
+        assert cam.desired_stream_state == "stopped"
 
     def test_create_camera_full(self, sample_camera):
         assert sample_camera.id == "cam-abc123"
@@ -84,7 +88,10 @@ class TestSettings:
         d = asdict(Settings())
         assert d["timezone"] == "Europe/Dublin"
         assert isinstance(d, dict)
-        assert len(d) == 14  # 9 base + 5 tailscale fields
+        # 9 base + 5 tailscale + 2 ADR-0017 loop-recording watermarks
+        assert len(d) == 16
+        assert d["loop_low_watermark_percent"] == 10
+        assert d["loop_hysteresis_percent"] == 5
 
 
 class TestClip:

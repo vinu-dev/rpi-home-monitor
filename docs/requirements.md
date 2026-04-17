@@ -479,6 +479,45 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - Gzip compression for HTML/CSS/JS
 - Rate limiting on `/api/v1/auth/login` (5 requests/minute per IP)
 
+#### SR-SRV-13: On-Demand Streaming (ADR-0017)
+
+- Cameras default to `desired_stream_state = stopped` on first pairing.
+- Idle Wi-Fi traffic from a camera to the server is limited to the ADR-0016
+  heartbeat (~600 bytes / 15 s) when no viewer is open and
+  `recording_mode = off` (or the current time is outside any schedule window).
+- Opening `/live/<camera_id>` triggers a server-side `runOnDemand` hook in
+  MediaMTX that starts the camera stream; first-frame latency SHALL be
+  ≤ 5 s on a camera that was idle.
+- Closing the last viewer triggers a `runOnDemandCloseAfter` (15 s grace)
+  which stops the camera stream unless the recording scheduler still needs
+  it for an active window.
+
+#### SR-SRV-14: Per-Camera Recording Mode + Schedule (ADR-0017)
+
+- Each camera has a `recording_mode` of `off`, `continuous`, `schedule`, or
+  `motion`. `motion` is accepted by the API but evaluated as `off` until the
+  motion ADR lands.
+- When `recording_mode = schedule`, the camera persists a
+  `recording_schedule`: a list of `{days, start, end}` windows with HH:MM
+  times and day codes `mon..sun`. Overnight windows (end ≤ start) span
+  midnight.
+- Schedule windows are evaluated in the server's system timezone. Per-camera
+  timezone is NOT supported; the settings UI surfaces the server timezone
+  read-only.
+- The server SHALL reconcile desired recording state once per minute and
+  SHALL start / stop both the recorder `ffmpeg -c copy` process and the
+  camera's RTSP pipeline accordingly.
+
+#### SR-SRV-15: Loop Recording (ADR-0017)
+
+- A background `LoopRecorder` monitors the recordings mount every 60 s.
+- When free space falls below the configurable low-watermark (default 10 %),
+  it SHALL delete oldest segment files until free space climbs above
+  `low_watermark + hysteresis` (default +5 %).
+- The currently-writing segment SHALL never be deleted.
+- Each deletion SHALL emit a `RECORDING_ROTATED` audit event.
+- Watermark + hysteresis are exposed in the Storage settings tab.
+
 #### SR-SRV-12: REST API
 
 All endpoints require authentication. Prefix: `/api/v1/`

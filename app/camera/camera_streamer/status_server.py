@@ -286,15 +286,28 @@ class CameraStatusServer:
         wifi_interface="wlan0",
         thermal_path=None,
         pairing_manager=None,
+        stream_state_path=None,
     ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
         self._pairing = pairing_manager
-        self._control = ControlHandler(config, stream_manager)
+        # Let ControlHandler pick the default path when caller didn't override
+        # so tests and production share the same default (ADR-0017).
+        if stream_state_path is None:
+            self._control = ControlHandler(config, stream_manager)
+        else:
+            self._control = ControlHandler(
+                config, stream_manager, stream_state_path=stream_state_path
+            )
         self._server = None
         self._thread = None
+
+    @property
+    def control_handler(self):
+        """Return the internal ControlHandler (for lifecycle wiring)."""
+        return self._control
 
     def start(self):
         """Start the status HTTPS server on port 443."""
@@ -430,17 +443,28 @@ def _make_status_handler(
             """Check if the request is from the paired server.
 
             Accepts the request if:
-            - The client IP matches config.server_ip (set during pairing), OR
+            - The client IP matches config.server_ip (set during pairing,
+              either as an IP literal or as a hostname resolved to one), OR
             - The client voluntarily presented a valid TLS peer certificate.
 
             The SSL context uses CERT_NONE so browsers don't get a client-cert
             challenge (which breaks Chrome/Edge). Server IP check is the primary
             auth path; peer-cert is a fallback for future full mTLS enforcement.
             """
-            # Primary: IP-based auth — server IP is set during pairing
             server_ip = getattr(config, "server_ip", "") or ""
-            if server_ip and self.client_address[0] == server_ip:
-                return True
+            if server_ip:
+                client_ip = self.client_address[0]
+                if client_ip == server_ip:
+                    return True
+                # server_ip may be a hostname (e.g. "rpi-divinu.local").
+                # Resolve it so a fresh DNS/mDNS lookup matches the raw
+                # TCP client IP we see here.
+                try:
+                    resolved = socket.gethostbyname(server_ip)
+                except (socket.gaierror, socket.herror):
+                    resolved = ""
+                if resolved and client_ip == resolved:
+                    return True
             # Fallback: TLS peer cert (only when client voluntarily sends one)
             try:
                 peer_cert = self.request.getpeercert()
@@ -520,6 +544,11 @@ def _make_status_handler(
                 if not self._require_mtls():
                     return
                 self._json_response(control_handler.get_status())
+                return
+            if self.path == "/api/v1/control/stream/state":
+                if not self._require_mtls():
+                    return
+                self._json_response(control_handler.get_stream_state())
                 return
 
             if self.path == "/login":
@@ -613,6 +642,26 @@ def _make_status_handler(
                     self._json_response({"restarted": ok, "status": "ok"})
                 else:
                     self._json_response({"error": "Stream manager not available"}, 503)
+                return
+
+            # Control API — on-demand stream start/stop (ADR-0017)
+            if self.path == "/api/v1/control/stream/start":
+                if not self._require_mtls():
+                    return
+                result, error, status = control_handler.set_stream_state("running")
+                if error:
+                    self._json_response({"error": error}, status)
+                else:
+                    self._json_response(result, status)
+                return
+            if self.path == "/api/v1/control/stream/stop":
+                if not self._require_mtls():
+                    return
+                result, error, status = control_handler.set_stream_state("stopped")
+                if error:
+                    self._json_response({"error": error}, status)
+                else:
+                    self._json_response(result, status)
                 return
 
             if self.path == "/login":

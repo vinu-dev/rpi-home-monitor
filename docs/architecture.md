@@ -859,6 +859,68 @@ Application code lives in `app/` and can be developed, tested, and deployed inde
 
 ## 8. Video Recording Design
 
+### 8.0 On-Demand Streaming (ADR-0017)
+
+Cameras are **idle by default** — a freshly paired camera does not push
+RTSP until something asks it to. Two things can ask:
+
+1. **A viewer** — opening `/live/<id>` triggers a WebRTC WHEP request to
+   MediaMTX. MediaMTX invokes its `runOnDemand` hook, which calls the
+   localhost-only coordinator blueprint
+   (`POST /internal/on-demand/<id>/start`), which in turn POSTs to the
+   camera's HMAC-gated `/api/v1/control/stream/start` endpoint. The
+   camera spawns its `libcamera-vid | ffmpeg` pipeline and starts
+   pushing RTSP. First-frame latency is bounded by sensor + encoder
+   warm-up (~3-5 s).
+2. **The RecordingScheduler** — a background thread on the server that
+   evaluates each camera's `recording_mode` + `recording_schedule` once
+   per minute. When a window opens, it calls the control client
+   directly and also starts the recorder `ffmpeg -c copy` process.
+
+When the last viewer closes, MediaMTX's `runOnDemandCloseAfter` (15 s
+grace) invokes `POST /internal/on-demand/<id>/stop`. The coordinator
+asks the scheduler whether it still needs the stream; if yes, the stop
+is suppressed — otherwise the camera is told to stop and its
+`desired_stream_state` is persisted to `stopped`.
+
+```
+Viewer ─WHEP─> MediaMTX ─runOnDemand─> coordinator (127.0.0.1)
+                                         │
+                                         ├─> camera /api/v1/control/stream/start (mTLS + HMAC)
+                                         │
+                                         └─> store.save_camera(desired_stream_state=running)
+
+RecordingScheduler ─ ─ ─ needs_stream(cam_id) ─ ─> coordinator
+```
+
+Idle bandwidth per camera drops from ~4 Mbps to ~600 bytes every 15 s
+(just the heartbeat, ADR-0016). Schedule evaluation lives entirely on
+the server — cameras never need to know wall time.
+
+### 8.0.1 Recording modes
+
+`Camera.recording_mode` (ADR-0017) takes one of four values; the
+scheduler interprets them as follows:
+
+| Mode        | Behaviour                                                     |
+|-------------|---------------------------------------------------------------|
+| `off`       | Scheduler never starts the recorder. Stream runs only while a viewer is active. |
+| `continuous`| Recorder runs whenever the camera is paired; stream stays up. |
+| `schedule`  | Recorder runs inside user-defined `{days, start, end}` windows. Overnight windows (`end < start`) are split into two halves. |
+| `motion`    | Accepted for forward-compat; treated as `off` until the motion-detection ADR lands. |
+
+`LoopRecorder` (60 s tick) scans the recording mount and deletes oldest
+segments when free space falls below the low-watermark (default 10 %)
+until it climbs above `low_watermark + hysteresis` (default +5 %). It
+never deletes the segment currently being written.
+
+Cross-refs: [ADR-0005](adr/0005-webrtc-primary-hls-fallback.md) (live
+transport), [ADR-0015](adr/0015-server-camera-control-channel.md)
+(mTLS + HMAC control channel),
+[ADR-0016](adr/0016-camera-health-heartbeat-protocol.md) (heartbeat
+payload, now carries `stream_state` + `recording_state`),
+[ADR-0017](adr/0017-on-demand-viewer-driven-streaming.md) (this flow).
+
 ### 8.1 Clip Segmentation
 
 ```

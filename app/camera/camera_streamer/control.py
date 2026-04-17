@@ -17,10 +17,19 @@ OV5647 sensor modes usable for H264 streaming (libcamera on RPi Zero 2W):
 Note: 2592x1944 (full 5MP) is a valid sensor mode but the Pi Zero 2W
 cannot encode it fast enough for real-time H264 streaming — ffmpeg
 fails to detect codec parameters. Excluded from allowed resolutions.
+
+Stream start/stop control (ADR-0017):
+The handler also owns the persisted desired stream state at
+``/data/config/stream_state`` (one line: ``running`` or ``stopped``).
+The server drives start/stop via HMAC-authenticated HTTP endpoints; the
+camera writes the file atomically so a power cut cannot lose intent or
+resurrect a stopped camera on reboot.
 """
 
 import json
 import logging
+import os
+import tempfile
 import time
 
 log = logging.getLogger("camera-streamer.control")
@@ -50,6 +59,10 @@ PARAM_SCHEMA = {
 # Rate limit: minimum seconds between config changes
 RATE_LIMIT_SECONDS = 5
 
+# Default location of the persisted desired stream state file (ADR-0017).
+DEFAULT_STREAM_STATE_PATH = "/data/config/stream_state"
+VALID_STREAM_STATES = ("running", "stopped")
+
 
 class ControlHandler:
     """Handles server control API requests.
@@ -60,13 +73,104 @@ class ControlHandler:
     Args:
         config: ConfigManager instance.
         stream_manager: StreamManager instance (or None in tests).
+        stream_state_path: Path to the persisted desired stream state file
+            (ADR-0017). Default ``/data/config/stream_state``.
     """
 
-    def __init__(self, config, stream_manager=None):
+    def __init__(
+        self,
+        config,
+        stream_manager=None,
+        stream_state_path=DEFAULT_STREAM_STATE_PATH,
+    ):
         self._config = config
         self._stream = stream_manager
         self._last_request_id = 0
         self._last_change_time = 0.0
+        self._stream_state_path = stream_state_path
+        # Load the persisted desired state so a boot-time lookup is cheap
+        # and the in-memory value is always authoritative for the server.
+        self._desired_stream_state = self._load_stream_state()
+
+    @property
+    def desired_stream_state(self):
+        """Persisted desired stream state (``running`` or ``stopped``)."""
+        return self._desired_stream_state
+
+    def _load_stream_state(self):
+        """Read the persisted desired state, defaulting to ``stopped``.
+
+        Missing file or any unexpected content collapses to ``stopped`` —
+        a freshly-paired or corrupted camera must not start streaming
+        without an explicit server request (ADR-0017 §1).
+        """
+        try:
+            with open(self._stream_state_path) as f:
+                value = f.read().strip()
+        except OSError:
+            return "stopped"
+        if value in VALID_STREAM_STATES:
+            return value
+        return "stopped"
+
+    def _write_stream_state(self, desired):
+        """Atomically persist the desired state.
+
+        Tempfile in the same directory + ``os.replace`` guarantees readers
+        never see a partial write even if power is lost mid-update.
+        """
+        parent = os.path.dirname(self._stream_state_path) or "."
+        os.makedirs(parent, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".stream_state.", dir=parent, text=True)
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(desired)
+            os.chmod(tmp_path, 0o644)
+            os.replace(tmp_path, self._stream_state_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    def get_stream_state(self):
+        """Return desired stream state and current live streaming flag."""
+        return {
+            "state": self._desired_stream_state,
+            "running": bool(self._stream and self._stream.is_streaming),
+        }
+
+    def set_stream_state(self, desired):
+        """Set the desired stream state and drive the pipeline accordingly.
+
+        Persists the value atomically before touching the stream pipeline
+        so a crash between write and start/stop leaves the on-disk intent
+        consistent with what the server asked for. Idempotent: repeated
+        ``start`` calls are safe — the underlying StreamManager reports
+        already-running and we do not respawn.
+        """
+        if desired not in VALID_STREAM_STATES:
+            return None, "desired must be 'running' or 'stopped'", 400
+
+        self._write_stream_state(desired)
+        self._desired_stream_state = desired
+
+        if self._stream is not None:
+            currently = bool(self._stream.is_streaming)
+            if desired == "running" and not currently:
+                self._stream.start()
+            elif desired == "stopped" and currently:
+                self._stream.stop()
+
+        return (
+            {
+                "state": desired,
+                "running": bool(self._stream and self._stream.is_streaming),
+            },
+            "",
+            200,
+        )
 
     def get_capabilities(self):
         """Return supported parameter ranges for this camera hardware."""
@@ -211,6 +315,7 @@ class ControlHandler:
             "config": self.get_config(),
             "camera_id": self._config.camera_id,
             "paired": self._config.has_client_cert,
+            "desired_stream_state": self._desired_stream_state,
         }
 
     def _validate_params(self, params):

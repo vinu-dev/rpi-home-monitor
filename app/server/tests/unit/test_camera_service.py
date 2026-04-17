@@ -36,6 +36,10 @@ def _make_camera(**overrides):
         "memory_percent": 0,
         "uptime_seconds": 0,
         "pairing_secret": "",
+        # ADR-0017 recording-mode + on-demand streaming fields
+        "recording_schedule": [],
+        "recording_motion_enabled": False,
+        "desired_stream_state": "stopped",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -320,7 +324,9 @@ class TestUpdate:
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
-        error, status = svc.update("cam-001", {"recording_mode": "motion"})
+        # ADR-0017: 'motion' is now an accepted (forward-compat) mode.
+        # An unknown string must still be rejected.
+        error, status = svc.update("cam-001", {"recording_mode": "bogus"})
         assert status == 400
         assert "recording_mode" in error
 
@@ -378,23 +384,26 @@ class TestUpdate:
         assert status == 400
         assert "name" in error
 
-    def test_starts_streaming_on_off_to_continuous_transition(self):
+    def test_mode_change_off_to_continuous_no_direct_streaming_call(self):
+        """ADR-0017: pipeline changes are driven by RecordingScheduler, not here."""
         cam = _make_camera(recording_mode="off")
         store = MagicMock()
         store.get_camera.return_value = cam
         streaming = MagicMock()
         svc = CameraService(store, streaming=streaming)
         svc.update("cam-001", {"recording_mode": "continuous"})
-        streaming.start_camera.assert_called_once_with("cam-001")
+        streaming.start_camera.assert_not_called()
+        streaming.stop_camera.assert_not_called()
 
-    def test_stops_streaming_on_continuous_to_off_transition(self):
+    def test_mode_change_continuous_to_off_no_direct_streaming_call(self):
         cam = _make_camera(recording_mode="continuous")
         store = MagicMock()
         store.get_camera.return_value = cam
         streaming = MagicMock()
         svc = CameraService(store, streaming=streaming)
         svc.update("cam-001", {"recording_mode": "off"})
-        streaming.stop_camera.assert_called_once_with("cam-001")
+        streaming.start_camera.assert_not_called()
+        streaming.stop_camera.assert_not_called()
 
     def test_no_streaming_change_when_mode_unchanged(self):
         cam = _make_camera(recording_mode="continuous")

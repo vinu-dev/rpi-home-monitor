@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RPi Home Monitor Server API
-  version: "1.0"
+  version: "1.1"
 servers:
   - url: https://127.0.0.1:5443
 components:
@@ -84,6 +84,52 @@ components:
           type: string
         recording_mode:
           type: string
+          enum: [off, continuous, schedule, motion]
+          description: |
+            Per-camera recording policy (ADR-0017).
+            `motion` is accepted for forward compatibility but treated as `off`
+            by the scheduler until the motion-detection ADR lands.
+        recording_schedule:
+          type: array
+          description: |
+            Active windows for `recording_mode = schedule`. Overnight windows
+            (end <= start) are treated as spanning midnight. Evaluated in the
+            server's system timezone.
+          items:
+            type: object
+            required: [days, start, end]
+            properties:
+              days:
+                type: array
+                minItems: 1
+                items:
+                  type: string
+                  enum: [mon, tue, wed, thu, fri, sat, sun]
+              start:
+                type: string
+                pattern: '^\d{2}:\d{2}$'
+                description: 24-hour HH:MM window start.
+              end:
+                type: string
+                pattern: '^\d{2}:\d{2}$'
+                description: 24-hour HH:MM window end.
+        recording_motion_enabled:
+          type: boolean
+          description: Reserved for future motion-triggered recording ADR.
+        desired_stream_state:
+          type: string
+          enum: [running, stopped]
+          description: |
+            Server's mirror of what it last asked the camera to do (ADR-0017).
+            A freshly paired camera defaults to `stopped`; the on-demand
+            coordinator and recording scheduler flip it to `running` when a
+            viewer or schedule window needs the stream.
+        stream_state:
+          type: string
+          enum: [running, stopped]
+          description: |
+            Latest `stream_state` reported by the camera heartbeat (ADR-0016
+            + ADR-0017). Supplements the legacy boolean `streaming` field.
         resolution:
           type: string
         fps:
@@ -93,6 +139,90 @@ components:
         last_seen:
           type: string
         firmware_version:
+          type: string
+    CameraUpdate:
+      type: object
+      description: |
+        Fields accepted by `PUT /api/v1/cameras/{camera_id}`. All fields are
+        optional; only the keys present are updated. Any unknown key rejected
+        with `400`. Mirrors server-side validation in `CameraService`.
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        location:
+          type: string
+        recording_mode:
+          type: string
+          enum: [off, continuous, schedule, motion]
+        recording_schedule:
+          type: array
+          items:
+            type: object
+            required: [days, start, end]
+            additionalProperties: false
+            properties:
+              days:
+                type: array
+                minItems: 1
+                items:
+                  type: string
+                  enum: [mon, tue, wed, thu, fri, sat, sun]
+              start:
+                type: string
+                pattern: '^\d{2}:\d{2}$'
+              end:
+                type: string
+                pattern: '^\d{2}:\d{2}$'
+        recording_motion_enabled:
+          type: boolean
+        resolution:
+          type: string
+        fps:
+          type: integer
+          minimum: 1
+          maximum: 30
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+        bitrate:
+          type: integer
+          minimum: 500000
+          maximum: 8000000
+        h264_profile:
+          type: string
+          enum: [baseline, main, high]
+        keyframe_interval:
+          type: integer
+          minimum: 1
+          maximum: 120
+        rotation:
+          type: integer
+          enum: [0, 180]
+        hflip:
+          type: boolean
+        vflip:
+          type: boolean
+    OnDemandAck:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        already_running:
+          type: boolean
+        started:
+          type: boolean
+        stopped:
+          type: boolean
+        kept_running:
+          type: boolean
+        reason:
           type: string
     CameraStatus:
       allOf:
@@ -404,6 +534,120 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Duplicate camera
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras/{camera_id}:
+    put:
+      tags: [cameras]
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CameraUpdate"
+      responses:
+        "200":
+          description: Camera updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Camera"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /internal/on-demand/{camera_id}/start:
+    post:
+      tags: [on-demand]
+      x-internal: true
+      summary: MediaMTX on-demand start hook (loopback only).
+      description: |
+        Invoked by MediaMTX via `runOnDemand` when the first reader arrives
+        on a camera path (ADR-0017). The blueprint is bound to 127.0.0.1 /
+        ::1 only — any non-loopback remote is rejected with `403` before the
+        handler runs. No session / CSRF. Idempotent: calling `start` on an
+        already-running camera is a no-op.
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Camera stream started (or already running).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnDemandAck"
+        "403":
+          description: Caller is not loopback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /internal/on-demand/{camera_id}/stop:
+    post:
+      tags: [on-demand]
+      x-internal: true
+      summary: MediaMTX on-demand stop hook (loopback only).
+      description: |
+        Invoked by MediaMTX via `runOnDemandCloseAfter` when the last reader
+        leaves (ADR-0017). The coordinator consults the recording scheduler
+        and only issues `stop_stream` to the camera if no other consumer
+        still needs the RTSP push. Bound to 127.0.0.1 / ::1 only.
+      parameters:
+        - in: path
+          name: camera_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Camera stream stopped (or kept running for the scheduler).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnDemandAck"
+        "403":
+          description: Caller is not loopback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found.
           content:
             application/json:
               schema:

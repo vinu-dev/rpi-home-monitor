@@ -97,6 +97,43 @@ class CameraControlClient:
         """
         return self._request("POST", camera_ip, "/api/v1/control/restart-stream")
 
+    def start_stream(self, camera_ip):
+        """POST /api/v1/control/stream/start on camera (ADR-0017).
+
+        Idempotent: returns success if camera reports already running.
+        Returns (result_dict, error_string).
+        """
+        result, err = self._request(
+            "POST", camera_ip, "/api/v1/control/stream/start", {}
+        )
+        if not err and isinstance(result, dict):
+            state = result.get("state")
+            if state == "running":
+                log.debug("Camera %s stream state=running (start)", camera_ip)
+        return result, err
+
+    def stop_stream(self, camera_ip):
+        """POST /api/v1/control/stream/stop on camera (ADR-0017).
+
+        Idempotent: returns success if camera reports already stopped.
+        Returns (result_dict, error_string).
+        """
+        result, err = self._request(
+            "POST", camera_ip, "/api/v1/control/stream/stop", {}
+        )
+        if not err and isinstance(result, dict):
+            state = result.get("state")
+            if state == "stopped":
+                log.debug("Camera %s stream state=stopped (stop)", camera_ip)
+        return result, err
+
+    def get_stream_state(self, camera_ip):
+        """GET /api/v1/control/stream/state from camera (ADR-0017).
+
+        Returns (state_dict, error_string). state_dict contains 'state'.
+        """
+        return self._request("GET", camera_ip, "/api/v1/control/stream/state")
+
     def _request(self, method, camera_ip, path, body=None):
         """Make an HTTPS request to the camera's control API.
 

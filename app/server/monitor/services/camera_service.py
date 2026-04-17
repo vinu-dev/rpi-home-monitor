@@ -17,8 +17,10 @@ from datetime import UTC, datetime
 
 log = logging.getLogger("monitor.camera_service")
 
-VALID_RECORDING_MODES = {"continuous", "off"}
+VALID_RECORDING_MODES = {"off", "continuous", "schedule", "motion"}
 VALID_RESOLUTIONS = {"720p", "1080p"}
+VALID_SCHEDULE_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+_TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 
 # Camera IDs must follow cam-<hexsuffix> format: cam- prefix + 1-32 lowercase hex chars.
 # This matches the hardware serial format generated on cameras and prevents:
@@ -39,6 +41,37 @@ STREAM_PARAMS = {
     "hflip",
     "vflip",
 }
+
+
+def _validate_schedule(schedule) -> str:
+    """Validate a recording_schedule payload. Returns error string or ''."""
+    if not isinstance(schedule, list):
+        return "recording_schedule must be a list"
+    for i, item in enumerate(schedule):
+        if not isinstance(item, dict):
+            return f"recording_schedule[{i}] must be an object"
+        if set(item.keys()) != {"days", "start", "end"}:
+            return (
+                f"recording_schedule[{i}] must have exactly keys 'days', 'start', 'end'"
+            )
+        days = item["days"]
+        if not isinstance(days, list) or not days:
+            return f"recording_schedule[{i}].days must be a non-empty list"
+        for d in days:
+            if d not in VALID_SCHEDULE_DAYS:
+                return f"recording_schedule[{i}].days has invalid day: {d!r}"
+        for key in ("start", "end"):
+            val = item[key]
+            if not isinstance(val, str) or not _TIME_RE.match(val):
+                return f"recording_schedule[{i}].{key} must match HH:MM"
+            hh, mm = val.split(":")
+            try:
+                h, m = int(hh), int(mm)
+            except ValueError:
+                return f"recording_schedule[{i}].{key} must be a valid 24h time"
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                return f"recording_schedule[{i}].{key} must be a valid 24h time"
+    return ""
 
 
 class CameraService:
@@ -137,6 +170,10 @@ class CameraService:
                 "vflip": c.vflip,
                 "config_sync": c.config_sync,
                 "streaming": streaming_now,
+                # ADR-0017 recording-mode fields
+                "recording_schedule": list(c.recording_schedule),
+                "recording_motion_enabled": c.recording_motion_enabled,
+                "desired_stream_state": c.desired_stream_state,
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -261,12 +298,9 @@ class CameraService:
 
         self._store.save_camera(camera)
 
-        # Handle recording mode transitions
-        if self._streaming and "recording_mode" in data:
-            if data["recording_mode"] == "continuous" and old_recording_mode == "off":
-                self._streaming.start_camera(camera_id)
-            elif data["recording_mode"] == "off" and old_recording_mode == "continuous":
-                self._streaming.stop_camera(camera_id)
+        # ADR-0017: recording-mode transitions are reconciled by
+        # RecordingScheduler on its next tick — no direct pipeline calls here.
+        _ = old_recording_mode  # retained for audit/logging compatibility
 
         self._log_audit(
             "CAMERA_UPDATED",
@@ -417,6 +451,8 @@ class CameraService:
             "name",
             "location",
             "recording_mode",
+            "recording_schedule",
+            "recording_motion_enabled",
             "resolution",
             "fps",
             "width",
@@ -489,6 +525,16 @@ class CameraService:
 
         if "vflip" in data and not isinstance(data["vflip"], bool):
             return "vflip must be a boolean"
+
+        if "recording_schedule" in data:
+            err = _validate_schedule(data["recording_schedule"])
+            if err:
+                return err
+
+        if "recording_motion_enabled" in data and not isinstance(
+            data["recording_motion_enabled"], bool
+        ):
+            return "recording_motion_enabled must be a boolean"
 
         return ""
 
