@@ -19,8 +19,14 @@
             <input type="date" id="rec-date-input" class="form-input">
         </div>
     </div>
-    <div id="rec-available-dates" class="text-small text-muted mt-8" style="display:none;">
-        Available dates: <span id="rec-dates-list"></span>
+    <!--
+      "Available dates" hint was removed — the native date picker already
+      exposes the full range, and the server falls back to the newest date
+      with clips on load. Keeping the hidden IDs so the existing JS can
+      still reference them (refactor deferred) without rendering any UI.
+    -->
+    <div id="rec-available-dates" hidden>
+        <span id="rec-dates-list"></span>
     </div>
 </div>
 
@@ -287,7 +293,18 @@
 
         countEl.textContent = clips.length + (clips.length === 1 ? ' clip' : ' clips');
 
-        clips.forEach(function(clip) {
+        // Latest first — users almost always want the most recent clip on
+        // top when scrubbing a day's recordings. The API returns clips
+        // sorted ascending by start_time, so reverse here.
+        var ordered = clips.slice().sort(function(a, b) {
+            var ax = (a.start_time || '') + '/' + (a.filename || '');
+            var bx = (b.start_time || '') + '/' + (b.filename || '');
+            if (ax < bx) return 1;
+            if (ax > bx) return -1;
+            return 0;
+        });
+
+        ordered.forEach(function(clip) {
             clipList.appendChild(buildClipCard(clip));
         });
 

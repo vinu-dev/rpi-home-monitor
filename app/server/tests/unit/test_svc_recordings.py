@@ -388,3 +388,76 @@ class TestFallbackRecordingsDir:
         result, error, status = svc.list_clips("cam-001", "2026-04-09")
         assert error is None
         assert result == []
+
+
+class TestRecentAcrossCamerasLayouts:
+    """Dashboard feed must handle both on-disk layouts.
+
+    The loop recorder writes flat ``<cam>/YYYYMMDD_HHMMSS.mp4`` clips
+    while older clips still sit in ``<cam>/YYYY-MM-DD/HH-MM-SS.mp4``.
+    Regression: before the fix we parsed flat stems with the dated
+    rule, producing ``date=<camera_id>`` and NaN timestamps on the UI.
+    """
+
+    def test_parses_flat_and_dated_layouts(self, svc, storage_manager):
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        cam_dir = root / "cam-001"
+        cam_dir.mkdir()
+        # Flat clip (newest).
+        flat = cam_dir / "20260417_101530.mp4"
+        flat.write_bytes(b"x" * 10)
+        # Dated clip (older).
+        dated_dir = cam_dir / "2026-04-10"
+        dated_dir.mkdir()
+        dated = dated_dir / "09-00-00.mp4"
+        dated.write_bytes(b"x" * 10)
+        import os
+        import time
+
+        old = time.time() - 3600
+        os.utime(dated, (old, old))
+
+        result, error, status = svc.recent_across_cameras(limit=10)
+        assert error is None and status == 200
+        assert len(result) == 2
+        # Newest first.
+        assert result[0]["filename"] == "20260417_101530.mp4"
+        assert result[0]["date"] == "2026-04-17"
+        assert result[0]["start_time"] == "10:15:30"
+        # Dated layout still handled.
+        assert result[1]["filename"] == "09-00-00.mp4"
+        assert result[1]["date"] == "2026-04-10"
+        assert result[1]["start_time"] == "09:00:00"
+
+    def test_skips_unrecognised_stems(self, svc, storage_manager):
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        cam_dir = root / "cam-001"
+        cam_dir.mkdir()
+        (cam_dir / "weird-name.mp4").write_bytes(b"x")
+
+        result, error, status = svc.recent_across_cameras(limit=10)
+        assert error is None and status == 200
+        assert result == []
+
+
+class TestResolveClipPathFlatFallback:
+    def test_flat_clip_resolves_via_dated_url(self, svc, storage_manager):
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        cam_dir = root / "cam-001"
+        cam_dir.mkdir()
+        flat = cam_dir / "20260417_101530.mp4"
+        flat.write_bytes(b"x" * 10)
+
+        # UI addresses the clip as /<cam>/<YYYY-MM-DD>/<filename>;
+        # the service must find the flat file underneath.
+        path, error, status = svc.resolve_clip_path(
+            "cam-001", "2026-04-17", "20260417_101530.mp4"
+        )
+        assert error is None and status == 200
+        assert path == flat.resolve()
