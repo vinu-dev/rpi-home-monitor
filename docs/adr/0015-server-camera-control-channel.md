@@ -405,3 +405,9 @@ the camera notifies the server using HMAC-SHA256 authentication:
 Camera is always source of truth. If both sides change simultaneously,
 the camera's rate limiter (5s cooldown) rejects the server push. The camera's
 local change succeeds and its notification overwrites the server's stored copy.
+
+## See also
+
+- [ADR-0017](0017-on-demand-viewer-driven-streaming.md) — extends this
+  control channel with `POST /api/v1/control/stream/{start,stop}` for
+  on-demand streaming.

@@ -236,3 +236,9 @@ liveness signal. It also does not carry streaming state or health metrics.
 | Server unit tests | `app/server/tests/unit/test_camera_service.py` |
 | Server contract tests | `app/server/tests/contracts/test_api_contracts.py` |
 | Staleness tests | `app/server/tests/unit/test_svc_discovery.py` |
+
+## See also
+
+- [ADR-0017](0017-on-demand-viewer-driven-streaming.md) — extends the
+  heartbeat payload with `stream_state` and `recording_state` fields so
+  the server can detect drift between desired and actual stream state.
