@@ -112,6 +112,22 @@ class TestDeleteClip:
         svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
         assert svc.delete_clip("cam-001", "2026-04-09", "nope.mp4") is False
 
+    def test_deletes_flat_layout_clip_via_dated_url(self, tmp_path):
+        # Loop recorder writes clips directly under <cam>/ with flat
+        # YYYYMMDD_HHMMSS.mp4 stems; the UI still hits the dated URL
+        # shape — fallback should find + unlink the flat file.
+        cam_dir = tmp_path / "cam-001"
+        cam_dir.mkdir(parents=True)
+        flat = cam_dir / "20260417_143000.mp4"
+        flat.write_bytes(b"x")
+        (cam_dir / "20260417_143000.thumb.jpg").write_bytes(b"t")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        assert svc.delete_clip("cam-001", "2026-04-17", "20260417_143000.mp4") is True
+        assert not flat.exists()
+        assert not (cam_dir / "20260417_143000.thumb.jpg").exists()
+        # Camera dir itself must survive.
+        assert cam_dir.is_dir()
+
 
 class TestGetDatesWithClips:
     """Test date listing."""
