@@ -205,6 +205,46 @@ def _report_unknown_heartbeat(request) -> None:
         pass
 
 
+@cameras_bp.route("/goodbye", methods=["POST"])
+def camera_goodbye():
+    """Accept a camera-initiated unpair ("forget this server") request.
+
+    Mirrors the dashboard's admin unpair flow but triggered from the camera's
+    own /pair page. Authenticated with an HMAC signature over the current
+    pairing_secret — which is about to be destroyed, so this is effectively
+    the camera's "last words" to the server. After this call:
+        * server revokes the cert, drops pairing_secret, sets status=pending
+        * server stops any streaming pipeline for this camera
+        * camera side separately wipes its local certs and restarts into
+          the PAIRING lifecycle state
+    No session/CSRF — machine-to-machine like heartbeat/config-notify.
+    """
+    camera_id, err = _verify_camera_hmac(request)
+    if err:
+        status_code = 401 if err != "Invalid timestamp" else 400
+        return jsonify({"error": err}), status_code
+
+    # Delegate to the same service the admin DELETE route uses so the two
+    # unpair paths are guaranteed identical on the server side.
+    error, status = current_app.pairing_service.unpair(
+        camera_id,
+        user="camera",
+        ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+
+    # Stop streaming pipelines so the dashboard stops showing live HLS for
+    # a camera that is about to forget us. Best-effort: never fail the goodbye
+    # just because the pipeline was already torn down.
+    try:
+        current_app.streaming.stop_camera(camera_id)
+    except Exception:
+        pass
+
+    return jsonify({"message": "Camera unpaired"}), 200
+
+
 @cameras_bp.route("/heartbeat", methods=["POST"])
 def camera_heartbeat():
     """Accept periodic heartbeat from a camera.

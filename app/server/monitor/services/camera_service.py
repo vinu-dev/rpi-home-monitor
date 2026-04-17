@@ -110,6 +110,12 @@ class CameraService:
         cameras = self._store.get_cameras()
         result = []
         for c in cameras:
+            # "streaming" = camera's RTSP ffmpeg is running (self-reported via
+            # heartbeat). This is the meaningful question: "is this camera
+            # broadcasting?" The server's HLS pipeline is on-demand (only active
+            # while Live view is open) so it is NOT the right signal here.
+            streaming_now = bool(c.streaming)
+
             cam = {
                 "id": c.id,
                 "name": c.name,
@@ -130,7 +136,7 @@ class CameraService:
                 "hflip": c.hflip,
                 "vflip": c.vflip,
                 "config_sync": c.config_sync,
-                "streaming": c.streaming,
+                "streaming": streaming_now,
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics

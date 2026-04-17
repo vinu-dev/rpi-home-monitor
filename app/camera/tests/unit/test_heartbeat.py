@@ -327,9 +327,7 @@ class TestHeartbeatUnpairDetection:
         err = self._http_error(401, '{"error": "Unknown camera"}')
         with (
             patch("camera_streamer.heartbeat.ssl.SSLContext"),
-            patch(
-                "camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err
-            ),
+            patch("camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err),
         ):
             sender.send_once()
         assert sender._consecutive_unknown_camera == 1
@@ -364,9 +362,7 @@ class TestHeartbeatUnpairDetection:
         err = self._http_error(401, '{"error": "Invalid signature"}')
         with (
             patch("camera_streamer.heartbeat.ssl.SSLContext"),
-            patch(
-                "camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err
-            ),
+            patch("camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err),
         ):
             sender.send_once()
         assert sender._consecutive_unknown_camera == 0
@@ -390,7 +386,7 @@ class TestHeartbeatUnpairDetection:
 
     def test_threshold_triggers_wipe_and_restart(self, tmp_path):
         """After UNPAIR_401_THRESHOLD consecutive Unknown-camera responses we wipe
-        local certs and ask systemd to restart us."""
+        local certs and send SIGTERM to self so systemd restarts us."""
         from camera_streamer.heartbeat import UNPAIR_401_THRESHOLD
 
         cfg = _make_config()
@@ -401,16 +397,15 @@ class TestHeartbeatUnpairDetection:
         (tmp_path / "pairing_secret").write_text("SECRET")
 
         sender = HeartbeatSender(cfg, _make_pairing())
-        popen_calls = []
-
-        class _FakePopen:
-            def __init__(self, cmd, **kw):
-                popen_calls.append(cmd)
+        kill_calls = []
 
         # Build a fresh HTTPError for every call — the body BytesIO is
         # exhausted after a single read().
         def _fresh_err(*_a, **_kw):
             raise self._http_error(401, '{"error": "Unknown camera"}')
+
+        def _fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
 
         with (
             patch("camera_streamer.heartbeat.ssl.SSLContext"),
@@ -418,14 +413,19 @@ class TestHeartbeatUnpairDetection:
                 "camera_streamer.heartbeat.urllib.request.urlopen",
                 side_effect=_fresh_err,
             ),
-            patch("subprocess.Popen", _FakePopen),
+            patch("camera_streamer.heartbeat.os.kill", _fake_kill),
         ):
             for _ in range(UNPAIR_401_THRESHOLD):
                 sender.send_once()
 
-        # Certs gone, systemctl invoked, stop flag set
+        # Certs gone, SIGTERM sent to self, stop flag set
+        import os
+        import signal
+
         assert not (tmp_path / "client.crt").exists()
         assert not (tmp_path / "client.key").exists()
         assert not (tmp_path / "pairing_secret").exists()
-        assert any("systemctl" in cmd[0] for cmd in popen_calls)
+        assert any(
+            pid == os.getpid() and sig == signal.SIGTERM for pid, sig in kill_calls
+        )
         assert sender._stop_event.is_set()

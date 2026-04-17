@@ -238,6 +238,7 @@ class PairingManager:
           - the Re-pair UI starts a new exchange (stale certs must not be
             left behind if the exchange fails)
           - the heartbeat sender detects the server has unpaired this camera
+          - the user manually clicks Unpair on the camera /pair page
         """
         for name in ("client.crt", "client.key", "pairing_secret"):
             path = os.path.join(self._certs_dir, name)
@@ -247,3 +248,79 @@ class PairingManager:
                     log.info("Removed %s during pairing reset", path)
             except OSError as exc:
                 log.warning("Failed to remove %s: %s", path, exc)
+
+    def send_goodbye(self, server_url, timeout=10):
+        """Send a signed goodbye to the server so it drops our cert + row.
+
+        Called by the camera-initiated unpair flow. The signature uses the
+        current ``pairing_secret`` — valid right now, gone a moment later.
+        Returns ``(ok, error_message)``. Network / HTTP failures are
+        non-fatal to the overall unpair: the camera will wipe local state
+        either way, and the server's OFFLINE_TIMEOUT + paired=false mDNS
+        path will reconcile within ~30s even if the goodbye is lost.
+        """
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        camera_id = self._config.camera_id
+        if not camera_id:
+            return False, "Camera ID not configured"
+
+        secret = self.get_pairing_secret()
+        if not secret:
+            return False, "Not paired — no secret to sign goodbye with"
+
+        base = (server_url or "").rstrip("/")
+        if not base:
+            return False, "Server URL not configured"
+
+        url = f"{base}/api/v1/cameras/goodbye"
+        timestamp = str(int(time.time()))
+        body = json.dumps({"camera_id": camera_id}).encode()
+        body_hash = hashlib.sha256(body).hexdigest()
+        message = f"{camera_id}:{timestamp}:{body_hash}"
+        try:
+            signature = hmac.new(
+                bytes.fromhex(secret), message.encode(), hashlib.sha256
+            ).hexdigest()
+        except ValueError:
+            return False, "Stored pairing secret is not valid hex"
+
+        # mTLS context — server only accepts our signed requests when they
+        # come over a TLS connection presenting our client cert.
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        if os.path.isfile(self.client_cert_path) and os.path.isfile(
+            self.client_key_path
+        ):
+            ctx.load_cert_chain(self.client_cert_path, self.client_key_path)
+
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-Camera-ID": camera_id,
+                "X-Timestamp": timestamp,
+                "X-Signature": signature,
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=timeout):
+                log.info("Goodbye acknowledged by server")
+                return True, ""
+        except urllib.error.HTTPError as exc:
+            body_text = ""
+            try:
+                body_text = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            log.warning("Goodbye rejected by server (HTTP %d): %s", exc.code, body_text)
+            return False, f"HTTP {exc.code}"
+        except (urllib.error.URLError, OSError) as exc:
+            log.warning("Goodbye request failed: %s", exc)
+            return False, str(exc)

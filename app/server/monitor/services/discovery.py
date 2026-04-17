@@ -27,6 +27,10 @@ from datetime import UTC, datetime
 log = logging.getLogger("monitor.discovery")
 
 OFFLINE_TIMEOUT = 30  # seconds — must match _resume_camera_pipelines in __init__.py
+# Per ADR-0016: 30s = 2x the 15s heartbeat interval, so a camera goes offline
+# after at most 2 missed heartbeats. This is deliberately tight: users want
+# fast offline detection on a LAN. Transient network blips that kill a single
+# heartbeat are tolerated; two in a row is a real problem worth surfacing.
 _MDNS_SERVICE_TYPE = "_rtsp._tcp.local."
 _CAMERA_ID_PREFIX = "cam-"
 

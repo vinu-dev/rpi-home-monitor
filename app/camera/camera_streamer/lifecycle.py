@@ -465,7 +465,14 @@ class CameraLifecycle:
 
     @staticmethod
     def _revert_to_setup():
-        """Remove setup stamp and restart service for setup wizard."""
+        """Remove setup stamp and exit so systemd respawns us into setup mode.
+
+        SIGTERM-to-self rather than ``systemctl restart camera-streamer``:
+        calling systemctl on our own unit from inside the unit is unreliable
+        (D-Bus deadlocks on some systemd versions, silent no-op on BusyBox
+        Yocto builds). Relying on ``Restart=always`` in the unit file is the
+        portable pattern — see heartbeat._handle_server_unpair for details.
+        """
         stamp = "/data/.setup-done"
         try:
             if os.path.isfile(stamp):
@@ -474,12 +481,10 @@ class CameraLifecycle:
         except OSError as e:
             log.error("Failed to remove setup stamp: %s", e)
 
-        log.info("Restarting camera-streamer service to enter setup mode...")
+        log.info("Exiting (SIGTERM) so systemd restarts us into setup mode...")
+        import signal as _signal
+
         try:
-            subprocess.run(
-                ["systemctl", "restart", "camera-streamer"],
-                capture_output=True,
-                timeout=10,
-            )
-        except Exception as e:
-            log.error("Failed to restart service: %s", e)
+            os.kill(os.getpid(), _signal.SIGTERM)
+        except OSError as e:
+            log.error("Failed to send SIGTERM to self: %s", e)

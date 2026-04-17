@@ -298,27 +298,23 @@ class HeartbeatSender:
             except OSError as exc:
                 log.warning("Failed to remove %s: %s", path, exc)
 
-        # Stop heartbeat so we don't loop; main process will notice and exit.
+        # Stop heartbeat loop — no more attempts from this thread.
         self._stop_event.set()
-        # Ask systemd to restart us cleanly. If this fails (e.g. running
-        # outside systemd in a test), fall back to SIGTERM on our PID so the
-        # service manager (or pytest) observes a clean exit.
+        # Signal the main process to exit so systemd restarts us cleanly.
+        # os.kill(pid, SIGTERM) is reliable regardless of how the service was
+        # launched (systemd, Docker, manual run). The main.py signal handler
+        # sets _shutdown=True, the lifecycle tears down gracefully, and systemd
+        # sees the exit and starts a fresh process in PAIRING state.
+        # (Calling "systemctl restart" from within the service is unreliable:
+        # on some systemd versions it blocks waiting for the unit to stop,
+        # creating a deadlock, and on BusyBox-based Yocto images the systemctl
+        # binary may silently do nothing.)
+        import signal as _signal
+
         try:
-            import subprocess
-
-            subprocess.Popen(
-                ["systemctl", "restart", "camera-streamer"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except (FileNotFoundError, OSError) as exc:
-            log.warning("systemctl restart failed (%s); sending SIGTERM", exc)
-            try:
-                import signal
-
-                os.kill(os.getpid(), signal.SIGTERM)
-            except OSError:
-                pass
+            os.kill(os.getpid(), _signal.SIGTERM)
+        except OSError as exc:
+            log.warning("Failed to send SIGTERM to self: %s", exc)
 
     def _apply_pending_config(self, pending: dict) -> None:
         """Apply a pending stream config pushed back by the server."""
