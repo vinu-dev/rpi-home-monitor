@@ -29,6 +29,7 @@ from camera_streamer import led
 from camera_streamer.capture import CaptureManager
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.health import HealthMonitor
+from camera_streamer.heartbeat import HeartbeatSender
 from camera_streamer.led import LedController
 from camera_streamer.ota_agent import OTAAgent
 from camera_streamer.pairing import PairingManager
@@ -75,6 +76,7 @@ class CameraLifecycle:
         self._stream = None
         self._status_server = None
         self._health = None
+        self._heartbeat = None
         self._setup_server = None
         self._ota_agent = None
         self._pairing = PairingManager(config)
@@ -112,6 +114,8 @@ class CameraLifecycle:
         self._state = State.SHUTDOWN
         log.info("State → shutdown")
 
+        if self._heartbeat:
+            self._heartbeat.stop()
         if self._health:
             self._health.stop()
         if self._ota_agent:
@@ -283,6 +287,16 @@ class CameraLifecycle:
         # OTA update agent (port 8080)
         self._ota_agent = OTAAgent(self._config)
         self._ota_agent.start()
+
+        # Heartbeat sender — keeps server informed of liveness (ADR-0016)
+        self._heartbeat = HeartbeatSender(
+            self._config,
+            self._pairing,
+            stream_manager=self._stream,
+            thermal_path=self._platform.thermal_path,
+        )
+        if self._config.is_configured and self._pairing.is_paired:
+            self._heartbeat.start()
 
         # Health monitoring
         self._health = HealthMonitor(

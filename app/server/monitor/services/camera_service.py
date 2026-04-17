@@ -12,12 +12,20 @@ Design patterns:
 """
 
 import logging
+import re
 from datetime import UTC, datetime
 
 log = logging.getLogger("monitor.camera_service")
 
 VALID_RECORDING_MODES = {"continuous", "off"}
 VALID_RESOLUTIONS = {"720p", "1080p"}
+
+# Camera IDs must follow cam-<hexsuffix> format: cam- prefix + 1-32 lowercase hex chars.
+# This matches the hardware serial format generated on cameras and prevents:
+# - Directory traversal via ../
+# - Filesystem limit violations (>255 chars)
+# - Injection via shell-unsafe characters
+_CAMERA_ID_RE = re.compile(r"^cam-[a-z0-9]{1,48}$")
 
 # Stream parameters that should be pushed to the camera (ADR-0015)
 STREAM_PARAMS = {
@@ -59,6 +67,15 @@ class CameraService:
         if not camera_id:
             return None, "Camera ID is required", 400
 
+        # Validate format: cam-<lowercase-hex>, max 52 chars total.
+        # Prevents directory traversal, injection, and filesystem limit issues.
+        if not _CAMERA_ID_RE.match(camera_id):
+            return (
+                None,
+                "Invalid camera ID format. Must be 'cam-' followed by 1-48 lowercase alphanumeric characters.",
+                400,
+            )
+
         existing = self._store.get_camera(camera_id)
         if existing is not None:
             return None, "Camera already exists", 409
@@ -81,16 +98,23 @@ class CameraService:
             201,
         )
 
-    def list_cameras(self) -> list[dict]:
-        """List all cameras (confirmed + pending)."""
+    def list_cameras(self, admin_view: bool = True) -> list[dict]:
+        """List all cameras (confirmed + pending).
+
+        admin_view=True: return all fields including network/health details.
+        admin_view=False (viewer role): omit fields that could expose network
+            topology (ip) or enable occupancy tracking (cpu_temp, memory_percent,
+            uptime_seconds). Viewers need camera status to use the UI, but not
+            internal health metrics or the camera's LAN address.
+        """
         cameras = self._store.get_cameras()
-        return [
-            {
+        result = []
+        for c in cameras:
+            cam = {
                 "id": c.id,
                 "name": c.name,
                 "location": c.location,
                 "status": c.status,
-                "ip": c.ip,
                 "recording_mode": c.recording_mode,
                 "resolution": c.resolution,
                 "fps": c.fps,
@@ -106,9 +130,16 @@ class CameraService:
                 "hflip": c.hflip,
                 "vflip": c.vflip,
                 "config_sync": c.config_sync,
+                "streaming": c.streaming,
             }
-            for c in cameras
-        ]
+            if admin_view:
+                # Admin-only fields: network topology + health metrics
+                cam["ip"] = c.ip
+                cam["cpu_temp"] = c.cpu_temp
+                cam["memory_percent"] = c.memory_percent
+                cam["uptime_seconds"] = c.uptime_seconds
+            result.append(cam)
+        return result
 
     def get_camera_status(self, camera_id: str) -> tuple[dict | None, str]:
         """Get live status for a camera.
@@ -239,6 +270,85 @@ class CameraService:
         )
 
         return "", 200
+
+    def accept_heartbeat(self, camera_id: str, data: dict) -> tuple[dict, str, int]:
+        """Accept a heartbeat from a camera and update its live status.
+
+        Updates last_seen, status, streaming flag, and health metrics.
+        If the camera's config_sync is 'pending', returns the stored
+        stream config so the camera can re-apply it.
+
+        Returns (response_dict, error_string, http_status_code).
+        """
+        camera = self._store.get_camera(camera_id)
+        if not camera:
+            return {}, "Camera not found", 404
+
+        was_offline = camera.status == "offline"
+        camera.status = "online"
+        camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Update live health fields
+        camera.streaming = bool(data.get("streaming", False))
+        if "cpu_temp" in data:
+            try:
+                camera.cpu_temp = float(data["cpu_temp"])
+            except (TypeError, ValueError):
+                pass
+        if "memory_percent" in data:
+            try:
+                camera.memory_percent = int(data["memory_percent"])
+            except (TypeError, ValueError):
+                pass
+        if "uptime_seconds" in data:
+            try:
+                camera.uptime_seconds = int(data["uptime_seconds"])
+            except (TypeError, ValueError):
+                pass
+
+        # Capture sync state before touching stream params.
+        # If config_sync is "pending" the server has unsent changes — keep them
+        # and tell the camera via pending_config instead of overwriting with its
+        # potentially-stale values.
+        had_pending = camera.config_sync == "pending"
+
+        if (
+            "stream_config" in data
+            and isinstance(data["stream_config"], dict)
+            and not had_pending
+        ):
+            sc = data["stream_config"]
+            for key in sc:
+                if key in STREAM_PARAMS:
+                    setattr(camera, key, sc[key])
+            camera.config_sync = "synced"
+
+        self._store.save_camera(camera)
+
+        if was_offline:
+            self._log_audit(
+                "CAMERA_ONLINE",
+                "camera",
+                "",
+                f"camera {camera_id} reconnected via heartbeat",
+            )
+
+        # If we have a pending config push, include it in the response
+        response: dict = {"ok": True}
+        if had_pending:
+            response["pending_config"] = {
+                "width": camera.width,
+                "height": camera.height,
+                "fps": camera.fps,
+                "bitrate": camera.bitrate,
+                "h264_profile": camera.h264_profile,
+                "keyframe_interval": camera.keyframe_interval,
+                "rotation": camera.rotation,
+                "hflip": camera.hflip,
+                "vflip": camera.vflip,
+            }
+
+        return response, "", 200
 
     def accept_camera_config(
         self, camera_id: str, stream_config: dict

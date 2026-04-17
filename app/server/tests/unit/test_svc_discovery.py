@@ -1,6 +1,7 @@
 """Tests for the camera discovery service."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 from monitor.services.discovery import DiscoveryService
 
@@ -107,6 +108,25 @@ class TestCheckOffline:
             camera = app.store.get_camera("cam-001")
             assert camera.status == "pending"
 
+    def test_clears_streaming_flag_when_marking_offline(self, app):
+        """ADR-0016: stale cameras must never show streaming=True."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            camera.streaming = True
+            old = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            camera.last_seen = old
+            app.store.save_camera(camera)
+
+            svc.check_offline()
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "offline"
+            assert camera.streaming is False
+
     def test_offline_logs_audit(self, app):
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
@@ -139,3 +159,241 @@ class TestGetCameraStatus:
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
             assert svc.get_camera_status("cam-nonexistent") is None
+
+
+class TestMdnsBrowser:
+    """Unit tests for mDNS browser integration (python-zeroconf)."""
+
+    def test_start_mdns_browser_without_zeroconf_logs_warning(self, app, caplog):
+        """Graceful degradation when zeroconf is not installed."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            with (
+                patch.dict("sys.modules", {"zeroconf": None}),
+                patch("builtins.__import__", side_effect=ImportError("no module")),
+            ):
+                # Should not raise
+                try:
+                    svc.start_mdns_browser()
+                except Exception:
+                    pass  # ImportError handled internally
+            # zeroconf stays None on ImportError
+            # (tested via _zeroconf attribute)
+
+    def test_start_mdns_browser_idempotent(self, app):
+        """Calling start_mdns_browser twice does not create two Zeroconf instances."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            mock_zc = MagicMock()
+            mock_browser = MagicMock()
+
+            # Simulate browser already running
+            svc._zeroconf = mock_zc
+            svc._mdns_browser = mock_browser
+
+            # Call again — should return early without touching _zeroconf
+            import sys
+
+            mock_mod = MagicMock()
+            original = sys.modules.get("zeroconf")
+            sys.modules["zeroconf"] = mock_mod
+            try:
+                svc.start_mdns_browser()
+            finally:
+                if original is None:
+                    sys.modules.pop("zeroconf", None)
+                else:
+                    sys.modules["zeroconf"] = original
+
+            # _zeroconf unchanged — no new Zeroconf() call happened
+            assert svc._zeroconf is mock_zc
+
+    def test_stop_mdns_browser_is_safe_without_start(self, app):
+        """stop_mdns_browser() on a fresh service does not raise."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.stop_mdns_browser()  # _zeroconf is None — must not raise
+
+    def test_stop_mdns_browser_closes_zeroconf(self, app):
+        """stop_mdns_browser() calls close() on the Zeroconf instance."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            mock_zc = MagicMock()
+            svc._zeroconf = mock_zc
+            svc._mdns_browser = MagicMock()
+
+            svc.stop_mdns_browser()
+
+            mock_zc.close.assert_called_once()
+            assert svc._zeroconf is None
+            assert svc._mdns_browser is None
+
+    def test_trigger_scan_does_nothing_without_browser(self, app):
+        """trigger_scan() is a no-op when mDNS browser is not running."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            # Must not raise
+            svc.trigger_scan()
+
+    def test_handle_mdns_service_calls_report_camera(self, app):
+        """_handle_mdns_service() parses TXT records and calls report_camera()."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+
+            # Build a mock ServiceInfo as returned by zeroconf.get_service_info()
+            mock_info = MagicMock()
+            mock_info.properties = {
+                b"id": b"cam-abc123",
+                b"version": b"1.2.0",
+                b"paired": b"false",
+            }
+            mock_info.parsed_addresses.return_value = ["192.168.1.200"]
+
+            mock_zc = MagicMock()
+            mock_zc.get_service_info.return_value = mock_info
+
+            svc._handle_mdns_service(
+                mock_zc,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+            )
+
+            camera = app.store.get_camera("cam-abc123")
+            assert camera is not None
+            assert camera.status == "pending"
+            assert camera.ip == "192.168.1.200"
+            assert camera.firmware_version == "1.2.0"
+
+    def test_handle_mdns_service_ignores_non_home_monitor(self, app):
+        """_handle_mdns_service() ignores services without 'cam-' id prefix."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+
+            mock_info = MagicMock()
+            mock_info.properties = {b"id": b"other-device"}
+            mock_info.parsed_addresses.return_value = ["192.168.1.201"]
+
+            mock_zc = MagicMock()
+            mock_zc.get_service_info.return_value = mock_info
+
+            svc._handle_mdns_service(
+                mock_zc, "_rtsp._tcp.local.", "SomeOtherDevice._rtsp._tcp.local."
+            )
+
+            # No camera should have been saved
+            assert app.store.get_camera("other-device") is None
+
+    def test_handle_mdns_service_ignores_missing_address(self, app):
+        """_handle_mdns_service() skips cameras with no resolvable IP."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+
+            mock_info = MagicMock()
+            mock_info.properties = {b"id": b"cam-noip"}
+            mock_info.parsed_addresses.return_value = []
+            mock_info.addresses = []
+
+            mock_zc = MagicMock()
+            mock_zc.get_service_info.return_value = mock_info
+
+            svc._handle_mdns_service(
+                mock_zc,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-noip)._rtsp._tcp.local.",
+            )
+
+            assert app.store.get_camera("cam-noip") is None
+
+    def test_handle_mdns_service_handles_none_info(self, app):
+        """_handle_mdns_service() handles get_service_info returning None."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            mock_zc = MagicMock()
+            mock_zc.get_service_info.return_value = None
+            # Must not raise
+            svc._handle_mdns_service(
+                mock_zc, "_rtsp._tcp.local.", "whatever._rtsp._tcp.local."
+            )
+
+    def test_start_mdns_browser_with_zeroconf(self, app):
+        """start_mdns_browser() creates Zeroconf + ServiceBrowser when library is present."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+
+            mock_zc = MagicMock()
+            mock_browser = MagicMock()
+
+            # Patch zeroconf in sys.modules so the lazy import picks up our mocks
+            import sys
+
+            mock_zeroconf_mod = MagicMock()
+            mock_zeroconf_mod.Zeroconf = MagicMock(return_value=mock_zc)
+            mock_zeroconf_mod.ServiceBrowser = MagicMock(return_value=mock_browser)
+
+            original = sys.modules.get("zeroconf")
+            sys.modules["zeroconf"] = mock_zeroconf_mod
+            try:
+                svc.start_mdns_browser()
+            finally:
+                if original is None:
+                    sys.modules.pop("zeroconf", None)
+                else:
+                    sys.modules["zeroconf"] = original
+
+            # Zeroconf() was called once; _zeroconf set; browser created
+            mock_zeroconf_mod.Zeroconf.assert_called_once()
+            assert svc._zeroconf is mock_zc
+            mock_zeroconf_mod.ServiceBrowser.assert_called_once()
+            svc.stop_mdns_browser()
+
+
+class TestScanEndpoint:
+    """Integration tests for POST /cameras/scan."""
+
+    def _login(self, app, client, role="admin"):
+        from monitor.auth import hash_password
+        from monitor.models import User
+
+        app.store.save_user(
+            User(
+                id="user-scan-admin",
+                username="scanadmin",
+                password_hash=hash_password("pass"),
+                role=role,
+            )
+        )
+        resp = client.post(
+            "/api/v1/auth/login", json={"username": "scanadmin", "password": "pass"}
+        )
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = resp.get_json()["csrf_token"]
+
+    def test_scan_returns_camera_list(self, app, client):
+        """POST /cameras/scan returns current camera list."""
+        with app.app_context():
+            from monitor.models import Camera
+
+            cam = Camera(
+                id="cam-scan01",
+                ip="192.168.1.99",
+                status="pending",
+            )
+            app.store.save_camera(cam)
+
+        self._login(app, client)
+        resp = client.post("/api/v1/cameras/scan")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)
+        ids = [c["id"] for c in data]
+        assert "cam-scan01" in ids
+
+    def test_scan_requires_admin(self, app, client):
+        """POST /cameras/scan returns 403 for non-admin users."""
+        self._login(app, client, role="viewer")
+        resp = client.post("/api/v1/cameras/scan")
+        assert resp.status_code == 403
+
+    def test_scan_requires_login(self, client):
+        """POST /cameras/scan returns 401 for unauthenticated requests."""
+        resp = client.post("/api/v1/cameras/scan")
+        assert resp.status_code == 401

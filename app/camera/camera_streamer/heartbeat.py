@@ -1,0 +1,255 @@
+"""
+Periodic heartbeat sender — keeps the server informed of camera liveness.
+
+Sends an HMAC-SHA256 signed POST to the server every HEARTBEAT_INTERVAL
+seconds. The server uses these to:
+  - Update last_seen and mark the camera online
+  - Detect stale cameras (no heartbeat → mark offline)
+  - Receive live health metrics (CPU temp, memory, streaming state)
+
+If the server responds with a pending_config payload, we apply it
+immediately. This closes the retry loop when the server could not push
+a config change to the camera while it was unreachable.
+
+Part of the bidirectional control/health protocol (ADR-0016).
+"""
+
+import hashlib
+import hmac
+import json
+import logging
+import os
+import ssl
+import threading
+import time
+import urllib.error
+import urllib.request
+
+from camera_streamer.control import ControlHandler, parse_control_request
+
+log = logging.getLogger("camera-streamer.heartbeat")
+
+HEARTBEAT_INTERVAL = 15  # seconds between heartbeats
+HEARTBEAT_TIMEOUT = 10  # seconds to wait for server response
+HEARTBEAT_JITTER = 3  # max random jitter in seconds to spread load
+
+
+def _build_signature(
+    secret_hex: str, camera_id: str, timestamp: str, body_bytes: bytes
+) -> str:
+    """Compute HMAC-SHA256(secret, camera_id:timestamp:sha256(body))."""
+    body_hash = hashlib.sha256(body_bytes).hexdigest()
+    message = f"{camera_id}:{timestamp}:{body_hash}"
+    return hmac.new(
+        bytes.fromhex(secret_hex),
+        message.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _ssl_context(certs_dir: str) -> ssl.SSLContext:
+    """Build SSL context with the camera's mTLS client certificate."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # server uses self-signed cert
+
+    cert = os.path.join(certs_dir, "client.crt")
+    key = os.path.join(certs_dir, "client.key")
+    if os.path.isfile(cert) and os.path.isfile(key):
+        ctx.load_cert_chain(cert, key)
+
+    return ctx
+
+
+def _get_uptime_seconds() -> int:
+    """Return system uptime in seconds from /proc/uptime."""
+    try:
+        with open("/proc/uptime") as f:
+            return int(float(f.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _get_memory_percent() -> int:
+    """Return approximate memory usage percentage from /proc/meminfo."""
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    info[parts[0].rstrip(":")] = int(parts[1])
+        total = info.get("MemTotal", 0)
+        available = info.get("MemAvailable", info.get("MemFree", 0))
+        if total > 0:
+            return int((total - available) / total * 100)
+    except (OSError, ValueError, KeyError):
+        pass
+    return 0
+
+
+def _get_cpu_temp(thermal_path: str | None) -> float:
+    """Return CPU temperature in °C."""
+    paths = []
+    if thermal_path:
+        paths.append(thermal_path)
+    paths.append("/sys/class/thermal/thermal_zone0/temp")
+    for path in paths:
+        try:
+            with open(path) as f:
+                return round(int(f.read().strip()) / 1000, 1)
+        except (OSError, ValueError):
+            continue
+    return 0.0
+
+
+class HeartbeatSender:
+    """Sends periodic heartbeats to the paired server.
+
+    Args:
+        config: ConfigManager instance.
+        pairing_manager: PairingManager instance.
+        stream_manager: StreamManager instance (may be None).
+        thermal_path: Optional path to CPU thermal zone file.
+    """
+
+    def __init__(self, config, pairing_manager, stream_manager=None, thermal_path=None):
+        self._config = config
+        self._pairing = pairing_manager
+        self._stream = stream_manager
+        self._thermal_path = thermal_path
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+
+    def start(self) -> None:
+        """Start the heartbeat background thread."""
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="heartbeat",
+            daemon=True,
+        )
+        self._thread.start()
+        log.info("Heartbeat sender started (interval=%ds)", HEARTBEAT_INTERVAL)
+
+    def stop(self) -> None:
+        """Stop the heartbeat thread (blocks until it exits)."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=HEARTBEAT_TIMEOUT + 2)
+            self._thread = None
+        log.info("Heartbeat sender stopped")
+
+    def send_once(self) -> dict | None:
+        """Send a single heartbeat immediately. Returns server response or None."""
+        return self._send()
+
+    # ---- Internal ----
+
+    def _run(self) -> None:
+        """Background thread: send heartbeat every HEARTBEAT_INTERVAL seconds."""
+        # Jitter the first heartbeat so cameras don't all fire at the same second
+        import random
+
+        time.sleep(random.uniform(0, HEARTBEAT_JITTER))
+
+        while not self._stop_event.is_set():
+            try:
+                response = self._send()
+                if response and response.get("pending_config"):
+                    self._apply_pending_config(response["pending_config"])
+            except Exception as exc:
+                log.warning("Heartbeat error: %s", exc)
+
+            self._stop_event.wait(timeout=HEARTBEAT_INTERVAL)
+
+    def _build_payload(self) -> dict:
+        """Assemble the heartbeat payload from live system state."""
+        streaming = bool(self._stream and self._stream.is_streaming)
+        config = self._config
+
+        return {
+            "camera_id": config.camera_id,
+            "timestamp": int(time.time()),
+            "streaming": streaming,
+            "cpu_temp": _get_cpu_temp(self._thermal_path),
+            "memory_percent": _get_memory_percent(),
+            "uptime_seconds": _get_uptime_seconds(),
+            "stream_config": {
+                "width": config.width,
+                "height": config.height,
+                "fps": config.fps,
+                "bitrate": config.bitrate,
+                "h264_profile": config.h264_profile,
+                "keyframe_interval": config.keyframe_interval,
+                "rotation": config.rotation,
+                "hflip": config.hflip,
+                "vflip": config.vflip,
+            },
+        }
+
+    def _send(self) -> dict | None:
+        """POST one heartbeat to the server. Returns parsed response or None."""
+        server_ip = self._config.server_ip
+        if not server_ip:
+            log.debug("No server IP configured — skipping heartbeat")
+            return None
+
+        secret = self._pairing.get_pairing_secret()
+        if not secret:
+            log.debug("Not paired — skipping heartbeat")
+            return None
+
+        camera_id = self._config.camera_id
+        payload = self._build_payload()
+        body = json.dumps(payload).encode()
+        timestamp = str(payload["timestamp"])
+        signature = _build_signature(secret, camera_id, timestamp, body)
+
+        url = f"https://{server_ip}/api/v1/cameras/heartbeat"
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-Camera-ID": camera_id,
+                "X-Timestamp": timestamp,
+                "X-Signature": signature,
+            },
+        )
+
+        try:
+            ctx = _ssl_context(self._config.certs_dir)
+            with urllib.request.urlopen(
+                req, context=ctx, timeout=HEARTBEAT_TIMEOUT
+            ) as resp:
+                resp_body = resp.read()
+                result = json.loads(resp_body) if resp_body else {}
+                log.debug("Heartbeat accepted by server (HTTP %d)", resp.status)
+                return result
+        except urllib.error.HTTPError as e:
+            log.warning("Heartbeat rejected by server: HTTP %d", e.code)
+        except (urllib.error.URLError, OSError) as e:
+            log.debug("Heartbeat failed (server %s): %s", server_ip, e)
+        return None
+
+    def _apply_pending_config(self, pending: dict) -> None:
+        """Apply a pending stream config pushed back by the server."""
+        log.info("Applying pending config from server heartbeat response: %s", pending)
+        try:
+            body = json.dumps(pending).encode()
+            params, _, err = parse_control_request(body)
+            if err:
+                log.warning("Invalid pending config from server: %s", err)
+                return
+            handler = ControlHandler(self._config, stream_manager=self._stream)
+            result, error, _ = handler.set_config(params, request_id=0, origin="server")
+            if error:
+                log.warning("Failed to apply pending config: %s", error)
+            else:
+                log.info("Pending config applied: %s", result)
+        except Exception as exc:
+            log.warning("Exception applying pending config: %s", exc)

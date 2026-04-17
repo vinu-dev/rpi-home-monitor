@@ -46,8 +46,8 @@
 <div class="section-header">
     Cameras
     <span style="float:right;margin-top:-4px;display:flex;gap:8px;">
-        <button class="btn btn--secondary btn--small" @click="refreshCameras()" :disabled="scanning">
-            <span x-show="!scanning">Refresh</span>
+        <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
+            <span x-show="!scanning">&#x1F50D; Scan</span>
             <span x-show="scanning">Scanning...</span>
         </button>
         <button class="btn btn--primary btn--small" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
@@ -100,10 +100,48 @@
     <template x-if="cameras.length === 0 && !showAddForm">
         <div class="empty-state">
             <div class="empty-state__title">No cameras found</div>
-            <div class="empty-state__text">Click "Add Camera" to register a camera, or wait for mDNS discovery.</div>
+            <div class="empty-state__text">Click "&#x1F50D; Scan" to search the local network, or "Add Camera" to register manually.</div>
         </div>
     </template>
-    <template x-for="cam in cameras" :key="cam.id">
+
+    <!-- Discovered cameras (pending pairing) -->
+    <template x-if="discoveredCameras.length > 0">
+        <div style="grid-column:1/-1;">
+            <div class="section-header" style="font-size:0.85em;padding:6px 0 4px;border-bottom:1px solid var(--border);">
+                Discovered &#x2014; waiting to pair
+                <span class="badge badge--pending" style="margin-left:8px;" x-text="discoveredCameras.length"></span>
+            </div>
+        </div>
+    </template>
+    <template x-for="cam in discoveredCameras" :key="cam.id">
+        <div class="card camera-card" :data-cam-id="cam.id">
+            <div class="camera-card__info">
+                <div class="camera-card__name" x-text="cam.name || cam.id"></div>
+                <div class="camera-card__location" x-text="cam.ip ? 'IP: ' + cam.ip : 'Detected via mDNS'"></div>
+                <div class="camera-card__last-seen" x-show="cam.last_seen">
+                    <span x-text="'Seen: ' + _relativeTime(cam.last_seen)"></span>
+                </div>
+                <div x-show="cam.firmware_version" class="text-small text-muted" x-text="'fw ' + cam.firmware_version"></div>
+            </div>
+            <div class="camera-card__actions">
+                <span class="badge badge--pending">discovered</span>
+                <div class="camera-card__btns">
+                    <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
+                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Paired cameras (online / offline) -->
+    <template x-if="pairedCameras.length > 0 && discoveredCameras.length > 0">
+        <div style="grid-column:1/-1;">
+            <div class="section-header" style="font-size:0.85em;padding:6px 0 4px;border-bottom:1px solid var(--border);">
+                Paired cameras
+            </div>
+        </div>
+    </template>
+    <template x-for="cam in pairedCameras" :key="cam.id">
         <div class="card camera-card" :data-cam-id="cam.id">
             <div class="camera-card__info" @click="cam.status === 'online' && (window.location.href = '/live?camera=' + encodeURIComponent(cam.id))" :style="cam.status === 'online' ? 'cursor:pointer' : ''">
                 <div class="camera-card__name" x-text="cam.name || cam.id"></div>
@@ -117,26 +155,28 @@
                         'text-muted': cam.config_sync === 'unknown'
                     }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
                 </div>
-                <div class="camera-card__last-seen" x-text="cam.last_seen ? 'Last seen: ' + new Date(cam.last_seen).toLocaleString() : ''"></div>
+                <div class="camera-card__last-seen" x-show="cam.last_seen">
+                    <span :class="{'text-danger': _staleSeconds(cam) > 45, 'text-warning': _staleSeconds(cam) > 30 && _staleSeconds(cam) <= 45}"
+                          x-text="'Last seen: ' + _relativeTime(cam.last_seen)"></span>
+                </div>
+                <div class="camera-card__health" x-show="cam.status === 'online' && (cam.cpu_temp || cam.memory_percent)">
+                    <span class="text-small text-muted" x-text="cam.cpu_temp ? cam.cpu_temp.toFixed(1) + '\u00B0C' : ''"></span>
+                    <span class="text-small text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
+                </div>
             </div>
             <div class="camera-card__actions">
                 <span class="badge" :class="{
                     'badge--online': cam.status === 'online',
-                    'badge--offline': cam.status === 'offline',
-                    'badge--pending': cam.status === 'pending'
+                    'badge--offline': cam.status === 'offline'
                 }" x-text="cam.status"></span>
-                <template x-if="cam.status === 'pending'">
-                    <div class="camera-card__btns">
-                        <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
-                        <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
-                    </div>
-                </template>
-                <template x-if="cam.status !== 'pending'">
-                    <div class="camera-card__btns">
-                        <button class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
-                        <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
-                    </div>
-                </template>
+                <span x-show="cam.status === 'online'" class="badge" :class="{
+                    'badge--streaming': cam.streaming,
+                    'badge--not-streaming': !cam.streaming
+                }" x-text="cam.streaming ? '\u25CF streaming' : '\u25CB not streaming'"></span>
+                <div class="camera-card__btns">
+                    <button class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
+                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                </div>
             </div>
         </div>
     </template>
@@ -227,6 +267,10 @@ function dashboardPage() {
         _healthInterval: null,
         _cameraInterval: null,
 
+        // Derived lists — split pending (discovered) from paired (online/offline)
+        get discoveredCameras() { return this.cameras.filter(c => c.status === 'pending'); },
+        get pairedCameras() { return this.cameras.filter(c => c.status !== 'pending'); },
+
         tempColor(c) {
             if (c === null) return '';
             if (c < 60) return 'health-card__value--green';
@@ -263,11 +307,17 @@ function dashboardPage() {
             } catch(e) {}
         },
 
-        async refreshCameras() {
+        async scanCameras() {
             this.scanning = true;
-            await this.loadCameras();
-            // Brief delay so user sees the scanning state
-            setTimeout(() => { this.scanning = false; }, 1500);
+            try {
+                // POST to /cameras/scan — triggers mDNS PTR query and returns current list
+                this.cameras = await window.HM.api.post('/api/v1/cameras/scan', {});
+            } catch(e) {
+                // Fallback: just reload existing list
+                await this.loadCameras();
+            } finally {
+                setTimeout(() => { this.scanning = false; }, 1000);
+            }
         },
 
         async addCamera() {
@@ -364,13 +414,27 @@ function dashboardPage() {
             }
         },
 
+        _staleSeconds(cam) {
+            if (!cam.last_seen) return 0;
+            return Math.round((Date.now() - new Date(cam.last_seen).getTime()) / 1000);
+        },
+
+        _relativeTime(iso) {
+            if (!iso) return '';
+            var secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+            if (secs < 5) return 'just now';
+            if (secs < 60) return secs + 's ago';
+            if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+            return Math.floor(secs / 3600) + 'h ago';
+        },
+
         init() {
             this.loadHealth();
             this.loadCameras();
             // Health: 10s (CPU/mem/disk change frequently, matches requirements SR-SRV-07)
-            // Cameras: 30s (status changes are infrequent)
+            // Cameras: 15s (heartbeats arrive every 15s — keep display fresh)
             this._healthInterval = setInterval(() => { this.loadHealth(); }, 10000);
-            this._cameraInterval = setInterval(() => { this.loadCameras(); }, 30000);
+            this._cameraInterval = setInterval(() => { this.loadCameras(); }, 15000);
         },
 
         destroy() {

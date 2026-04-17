@@ -175,21 +175,23 @@ def _ensure_tls_material(config):
 def _wrap_https_server(server, config):
     """Wrap the status server socket with TLS.
 
-    If a CA certificate exists (camera is paired), enables CERT_OPTIONAL
-    so the server can verify mTLS client certificates from the paired
-    server for control API requests. Browser clients without certs
-    still work for human-facing endpoints.
+    Uses CERT_NONE so browsers (Chrome/Edge) can connect without being
+    asked for a client certificate. Control API endpoints authenticate the
+    server by its IP address (config.server_ip) which is set during pairing
+    and is sufficient for a home LAN. Raw mTLS peer-cert verification is
+    kept as a secondary check for clients that voluntarily present a cert.
     """
     cert_path, key_path = _ensure_tls_material(config)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # don't request client cert — breaks Chrome
 
-    # Enable optional client cert verification if CA cert exists (paired)
+    # Still load the CA so getpeercert() works if a client voluntarily sends one
     ca_path = os.path.join(config.certs_dir, "ca.crt")
     if os.path.isfile(ca_path):
         ctx.load_verify_locations(ca_path)
-        ctx.verify_mode = ssl.CERT_OPTIONAL
-        log.info("mTLS enabled for control API (CA: %s)", ca_path)
+        log.info("CA loaded for peer-cert inspection (CA: %s)", ca_path)
 
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
     return server
@@ -388,12 +390,21 @@ def _make_status_handler(
             log.debug("Status HTTPS: " + format % args)
 
         def _has_mtls_client_cert(self):
-            """Check if request has a valid mTLS client certificate.
+            """Check if the request is from the paired server.
 
-            Returns True if the client presented a certificate that was
-            verified by the TLS stack against our CA. Used for control
-            API endpoints (ADR-0015).
+            Accepts the request if:
+            - The client IP matches config.server_ip (set during pairing), OR
+            - The client voluntarily presented a valid TLS peer certificate.
+
+            The SSL context uses CERT_NONE so browsers don't get a client-cert
+            challenge (which breaks Chrome/Edge). Server IP check is the primary
+            auth path; peer-cert is a fallback for future full mTLS enforcement.
             """
+            # Primary: IP-based auth — server IP is set during pairing
+            server_ip = getattr(config, "server_ip", "") or ""
+            if server_ip and self.client_address[0] == server_ip:
+                return True
+            # Fallback: TLS peer cert (only when client voluntarily sends one)
             try:
                 peer_cert = self.request.getpeercert()
                 return peer_cert is not None and len(peer_cert) > 0

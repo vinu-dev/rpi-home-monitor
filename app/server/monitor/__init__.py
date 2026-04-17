@@ -305,6 +305,12 @@ def _startup(app):
     app.storage_manager.start()
     app.cert_service.start()
 
+    # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
+    app.discovery_service.start_mdns_browser()
+
+    # Staleness checker — marks cameras offline if no heartbeat received (ADR-0016)
+    _start_staleness_checker(app)
+
     # Resume pipelines for confirmed online cameras
     _resume_camera_pipelines(app)
 
@@ -366,13 +372,66 @@ def _auto_mount_usb(app, default_recordings_dir):
         return default_recordings_dir
 
 
+def _start_staleness_checker(app):
+    """Start background thread that marks cameras offline on missed heartbeats.
+
+    Runs DiscoveryService.check_offline() every STALENESS_CHECK_INTERVAL seconds.
+    Any camera that has not sent a heartbeat within OFFLINE_TIMEOUT (30s, defined
+    in discovery.py) is moved to status='offline' and streaming=False (ADR-0016).
+    """
+    import threading
+
+    staleness_check_interval = 10  # seconds
+
+    def _run():
+        import time
+
+        while True:
+            try:
+                with app.app_context():
+                    app.discovery_service.check_offline()
+            except Exception as exc:
+                log.warning("Staleness checker error: %s", exc)
+            time.sleep(staleness_check_interval)
+
+    t = threading.Thread(target=_run, name="staleness-checker", daemon=True)
+    t.start()
+    log.info("Staleness checker started (check every %ds)", staleness_check_interval)
+
+
 def _resume_camera_pipelines(app):
-    """Start streaming pipelines for cameras that were online before restart."""
+    """Start streaming pipelines for cameras that were recently online.
+
+    Skips cameras whose last_seen is stale (> OFFLINE_TIMEOUT seconds ago).
+    Those cameras will be marked offline by the staleness checker and their
+    pipeline will restart automatically once they reconnect via heartbeat.
+    This prevents an ffmpeg crash-retry loop at boot when cameras haven't
+    come up yet.
+    """
+    from datetime import UTC, datetime
+
+    offline_timeout = 30  # seconds — matches discovery.py
+
     try:
         cameras = app.store.get_cameras()
+        now = datetime.now(UTC)
         for cam in cameras:
-            if cam.status == "online" and cam.recording_mode == "continuous":
-                app.streaming.start_camera(cam.id)
+            if cam.status != "online" or cam.recording_mode != "continuous":
+                continue
+            if cam.last_seen:
+                try:
+                    last = datetime.fromisoformat(cam.last_seen.replace("Z", "+00:00"))
+                    elapsed = (now - last).total_seconds()
+                    if elapsed > offline_timeout:
+                        log.info(
+                            "Skipping pipeline start for %s (last seen %ds ago, stale)",
+                            cam.id,
+                            int(elapsed),
+                        )
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            app.streaming.start_camera(cam.id)
     except Exception:
         pass  # Don't crash on startup if cameras.json has issues
 

@@ -30,6 +30,12 @@ def _make_camera(**overrides):
         "hflip": False,
         "vflip": False,
         "config_sync": "unknown",
+        # Heartbeat fields (ADR-0016)
+        "streaming": False,
+        "cpu_temp": 0.0,
+        "memory_percent": 0,
+        "uptime_seconds": 0,
+        "pairing_secret": "",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -565,3 +571,164 @@ class TestAcceptCameraConfig:
         audit.log_event.assert_called_once()
         call_args = audit.log_event.call_args
         assert call_args[0][0] == "CAMERA_CONFIG_RECEIVED"
+
+
+class TestAcceptHeartbeat:
+    """Tests for CameraService.accept_heartbeat() (ADR-0016)."""
+
+    def _basic_payload(self, **overrides):
+        data = {
+            "streaming": True,
+            "cpu_temp": 48.5,
+            "memory_percent": 42,
+            "uptime_seconds": 3600,
+            "stream_config": {
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "rotation": 0,
+                "hflip": False,
+                "vflip": False,
+            },
+        }
+        data.update(overrides)
+        return data
+
+    def test_returns_404_for_unknown_camera(self):
+        store = MagicMock()
+        store.get_camera.return_value = None
+        svc = CameraService(store)
+        _, error, code = svc.accept_heartbeat("cam-999", self._basic_payload())
+        assert code == 404
+        assert error
+
+    def test_marks_camera_online(self):
+        cam = _make_camera(status="offline")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert cam.status == "online"
+
+    def test_updates_last_seen(self):
+        cam = _make_camera(last_seen="2020-01-01T00:00:00Z")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert cam.last_seen != "2020-01-01T00:00:00Z"
+        assert "Z" in cam.last_seen
+
+    def test_updates_streaming_flag(self):
+        cam = _make_camera(streaming=False)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload(streaming=True))
+        assert cam.streaming is True
+
+    def test_updates_streaming_false(self):
+        cam = _make_camera(streaming=True)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload(streaming=False))
+        assert cam.streaming is False
+
+    def test_updates_health_metrics(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(cpu_temp=55.2, memory_percent=60, uptime_seconds=7200),
+        )
+        assert cam.cpu_temp == 55.2
+        assert cam.memory_percent == 60
+        assert cam.uptime_seconds == 7200
+
+    def test_accepts_stream_config_from_heartbeat(self):
+        cam = _make_camera(fps=25, config_sync="unknown")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload()
+        payload["stream_config"]["fps"] = 15
+        svc.accept_heartbeat("cam-001", payload)
+        assert cam.fps == 15
+        assert cam.config_sync == "synced"
+
+    def test_returns_pending_config_when_config_sync_pending(self):
+        cam = _make_camera(config_sync="pending", fps=30)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert code == 200
+        assert "pending_config" in response
+        assert response["pending_config"]["fps"] == 30
+
+    def test_no_pending_config_when_synced(self):
+        cam = _make_camera(config_sync="synced")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert code == 200
+        assert "pending_config" not in response
+
+    def test_logs_camera_online_audit_when_was_offline(self):
+        cam = _make_camera(status="offline")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_heartbeat("cam-001", self._basic_payload())
+        audit.log_event.assert_called_once()
+        event = audit.log_event.call_args[0][0]
+        assert event == "CAMERA_ONLINE"
+
+    def test_no_audit_when_already_online(self):
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_heartbeat("cam-001", self._basic_payload())
+        audit.log_event.assert_not_called()
+
+    def test_saves_camera_to_store(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload())
+        store.save_camera.assert_called_once_with(cam)
+
+    def test_ignores_invalid_cpu_temp(self):
+        cam = _make_camera(cpu_temp=0.0)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload(cpu_temp="bad"))
+        # Should not crash; cpu_temp stays unchanged
+        assert cam.cpu_temp == 0.0
+
+    def test_heartbeat_without_stream_config_is_ok(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = {
+            "streaming": False,
+            "cpu_temp": 40.0,
+            "memory_percent": 30,
+            "uptime_seconds": 100,
+        }
+        _, error, code = svc.accept_heartbeat("cam-001", payload)
+        assert code == 200
+        assert not error

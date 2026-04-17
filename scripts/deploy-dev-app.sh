@@ -168,6 +168,7 @@ deploy_server() {
     copy_tree "$REPO_ROOT/app/server/monitor" "$host" "$SERVER_STAGE" "monitor"
     copy_file "$REPO_ROOT/app/server/setup.py" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/requirements.txt" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -184,8 +185,15 @@ deploy_server() {
         find /opt/monitor/monitor -type d -exec chmod 755 {} \;
         find /opt/monitor/monitor -type f -exec chmod 644 {} \;
         chmod 0644 /opt/monitor/setup.py /opt/monitor/requirements.txt
+        # Install/upgrade Python dependencies (e.g. zeroconf for mDNS browsing)
+        pip3 install -q -r /opt/monitor/requirements.txt
         # Pre-compile bytecode so first-request import is instant
         python3 -m compileall -q /opt/monitor/monitor
+        # Deploy updated nginx config and reload (non-fatal if nginx is not running)
+        if [ -f '$SERVER_STAGE/nginx-monitor.conf' ]; then
+            cp '$SERVER_STAGE/nginx-monitor.conf' /etc/nginx/sites-enabled/monitor.conf
+            nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
+        fi
     "
 
     log "Applying boot optimisation overrides"
@@ -298,6 +306,8 @@ ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds
 ExecStart=/usr/bin/python3 -m camera_streamer.main
 Restart=always
 RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
 Environment=PYTHONPATH=/opt/camera
 Environment=CAMERA_DATA_DIR=/data
 Environment=CAMERA_CONFIG_DIR=/data/config

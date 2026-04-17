@@ -42,6 +42,11 @@ class Camera:
     hflip: bool = False
     vflip: bool = False
     config_sync: str = "unknown"  # synced | pending | error | unknown
+    # Live status fields — populated by heartbeat (ADR-0016)
+    streaming: bool = False  # is camera actively streaming RTSP?
+    cpu_temp: float = 0.0  # °C, from last heartbeat
+    memory_percent: int = 0  # 0-100, from last heartbeat
+    uptime_seconds: int = 0  # seconds since camera boot
 
 
 @dataclass
