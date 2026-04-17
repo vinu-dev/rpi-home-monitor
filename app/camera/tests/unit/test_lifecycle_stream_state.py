@@ -10,9 +10,10 @@ from camera_streamer.lifecycle import _read_desired_stream_state
 
 
 class TestReadDesiredStreamState:
-    def test_missing_file_defaults_to_stopped(self, tmp_path):
+    def test_missing_file_defaults_to_running(self, tmp_path):
+        """Fresh boot with no override file → stream for instant Live view."""
         path = tmp_path / "stream_state"
-        assert _read_desired_stream_state(str(path)) == "stopped"
+        assert _read_desired_stream_state(str(path)) == "running"
 
     def test_reads_running(self, tmp_path):
         path = tmp_path / "stream_state"
@@ -20,14 +21,16 @@ class TestReadDesiredStreamState:
         assert _read_desired_stream_state(str(path)) == "running"
 
     def test_reads_stopped(self, tmp_path):
+        """Explicit override to stop is honoured."""
         path = tmp_path / "stream_state"
         path.write_text("stopped")
         assert _read_desired_stream_state(str(path)) == "stopped"
 
-    def test_garbage_collapses_to_stopped(self, tmp_path):
+    def test_garbage_collapses_to_running(self, tmp_path):
+        """Unreadable content falls back to streaming (instant-live default)."""
         path = tmp_path / "stream_state"
         path.write_text("maybe")
-        assert _read_desired_stream_state(str(path)) == "stopped"
+        assert _read_desired_stream_state(str(path)) == "running"
 
     def test_trailing_whitespace_is_stripped(self, tmp_path):
         path = tmp_path / "stream_state"

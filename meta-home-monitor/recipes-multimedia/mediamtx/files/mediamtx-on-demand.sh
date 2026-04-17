@@ -29,12 +29,14 @@ case "${ACTION}" in
         ;;
 esac
 
-URL="http://127.0.0.1/internal/on-demand/${CAMERA_ID}/${ACTION}"
+URL="https://127.0.0.1/internal/on-demand/${CAMERA_ID}/${ACTION}"
 
 # -f: fail on HTTP >=400, -s: silent, -S: show errors, -m: 5s max.
+# -k: the server uses a self-signed cert; localhost-only traffic so the
+# trade-off is acceptable here.
 # We swallow curl's non-zero exit for transient cases so the MediaMTX
 # supervisor doesn't bounce the path on a flapping network.
-curl -fsS -m 5 -X POST -H 'Content-Type: application/json' --data '{}' "${URL}" || {
+curl -fskS -m 5 -X POST -H 'Content-Type: application/json' --data '{}' "${URL}" || {
     echo "mediamtx-on-demand: ${ACTION} request failed for ${CAMERA_ID}" >&2
     exit 0
 }

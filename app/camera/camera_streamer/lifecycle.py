@@ -42,21 +42,25 @@ log = logging.getLogger("camera-streamer.lifecycle")
 
 
 def _read_desired_stream_state(path):
-    """Return the persisted desired stream state or ``stopped``.
+    """Return the persisted desired stream state or ``running``.
+
+    Design: the camera streams to MediaMTX whenever it is paired so the
+    Live page opens with zero cold-start latency. The persisted state
+    file exists only as an explicit *override* — e.g. an operator or the
+    server asks the camera to go quiet. A missing file (fresh boot,
+    fresh pair) defaults to ``running``.
 
     Isolated as a module-level helper so the boot-time decision can be
-    unit-tested without spinning up the full lifecycle (ADR-0017 §1).
-    Missing file or garbage content collapses to ``stopped`` — we never
-    start streaming unless the server has explicitly asked for it.
+    unit-tested without spinning up the full lifecycle.
     """
     try:
         with open(path) as f:
             value = f.read().strip()
     except OSError:
-        return "stopped"
+        return "running"
     if value in VALID_STREAM_STATES:
         return value
-    return "stopped"
+    return "running"
 
 
 class State:
