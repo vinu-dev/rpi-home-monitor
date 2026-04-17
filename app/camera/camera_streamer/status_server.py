@@ -286,15 +286,28 @@ class CameraStatusServer:
         wifi_interface="wlan0",
         thermal_path=None,
         pairing_manager=None,
+        stream_state_path=None,
     ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
         self._pairing = pairing_manager
-        self._control = ControlHandler(config, stream_manager)
+        # Let ControlHandler pick the default path when caller didn't override
+        # so tests and production share the same default (ADR-0017).
+        if stream_state_path is None:
+            self._control = ControlHandler(config, stream_manager)
+        else:
+            self._control = ControlHandler(
+                config, stream_manager, stream_state_path=stream_state_path
+            )
         self._server = None
         self._thread = None
+
+    @property
+    def control_handler(self):
+        """Return the internal ControlHandler (for lifecycle wiring)."""
+        return self._control
 
     def start(self):
         """Start the status HTTPS server on port 443."""
@@ -521,6 +534,11 @@ def _make_status_handler(
                     return
                 self._json_response(control_handler.get_status())
                 return
+            if self.path == "/api/v1/control/stream/state":
+                if not self._require_mtls():
+                    return
+                self._json_response(control_handler.get_stream_state())
+                return
 
             if self.path == "/login":
                 self._serve_login_page()
@@ -613,6 +631,26 @@ def _make_status_handler(
                     self._json_response({"restarted": ok, "status": "ok"})
                 else:
                     self._json_response({"error": "Stream manager not available"}, 503)
+                return
+
+            # Control API — on-demand stream start/stop (ADR-0017)
+            if self.path == "/api/v1/control/stream/start":
+                if not self._require_mtls():
+                    return
+                result, error, status = control_handler.set_stream_state("running")
+                if error:
+                    self._json_response({"error": error}, status)
+                else:
+                    self._json_response(result, status)
+                return
+            if self.path == "/api/v1/control/stream/stop":
+                if not self._require_mtls():
+                    return
+                result, error, status = control_handler.set_stream_state("stopped")
+                if error:
+                    self._json_response({"error": error}, status)
+                else:
+                    self._json_response(result, status)
                 return
 
             if self.path == "/login":

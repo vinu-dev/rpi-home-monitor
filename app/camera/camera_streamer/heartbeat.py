@@ -124,11 +124,23 @@ class HeartbeatSender:
         thermal_path: Optional path to CPU thermal zone file.
     """
 
-    def __init__(self, config, pairing_manager, stream_manager=None, thermal_path=None):
+    def __init__(
+        self,
+        config,
+        pairing_manager,
+        stream_manager=None,
+        thermal_path=None,
+        control_handler=None,
+    ):
         self._config = config
         self._pairing = pairing_manager
         self._stream = stream_manager
         self._thermal_path = thermal_path
+        # Optional ControlHandler — when provided, the heartbeat reports the
+        # *persisted desired* state (ADR-0017), which is what the server
+        # compares against to detect drift. Tests that don't care about
+        # drift pass None and we fall back to the live streaming flag.
+        self._control = control_handler
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Track consecutive 401 Unknown-camera responses to detect server-side unpair
@@ -183,10 +195,19 @@ class HeartbeatSender:
         streaming = bool(self._stream and self._stream.is_streaming)
         config = self._config
 
+        # ADR-0017: report desired state when a control handler is wired
+        # (production path), falling back to the live streaming flag for
+        # tests that construct HeartbeatSender without a handler.
+        if self._control is not None:
+            stream_state = self._control.desired_stream_state
+        else:
+            stream_state = "running" if streaming else "stopped"
+
         return {
             "camera_id": config.camera_id,
             "timestamp": int(time.time()),
             "streaming": streaming,
+            "stream_state": stream_state,
             "cpu_temp": _get_cpu_temp(self._thermal_path),
             "memory_percent": _get_memory_percent(),
             "uptime_seconds": _get_uptime_seconds(),

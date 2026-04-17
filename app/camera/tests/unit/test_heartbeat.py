@@ -190,6 +190,42 @@ class TestHeartbeatSender:
         payload = sender._build_payload()
         assert payload["streaming"] is False
 
+    def test_stream_state_fallback_without_control_handler(self):
+        """Without a handler, stream_state mirrors the streaming flag."""
+        cfg = _make_config()
+        stream = MagicMock()
+        stream.is_streaming = True
+        sender = HeartbeatSender(cfg, _make_pairing(), stream_manager=stream)
+        payload = sender._build_payload()
+        assert payload["stream_state"] == "running"
+
+        stream.is_streaming = False
+        payload = sender._build_payload()
+        assert payload["stream_state"] == "stopped"
+
+    def test_stream_state_from_control_handler(self):
+        """ADR-0017: with a handler, stream_state is the persisted desired value.
+
+        The desired state can diverge from the live streaming flag (e.g. the
+        pipeline crashed while desired=running) — the server needs the
+        *desired* value to detect drift and take corrective action.
+        """
+        cfg = _make_config()
+        stream = MagicMock()
+        stream.is_streaming = False
+        handler = MagicMock()
+        handler.desired_stream_state = "running"
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            stream_manager=stream,
+            control_handler=handler,
+        )
+        payload = sender._build_payload()
+        assert payload["stream_state"] == "running"
+        # The legacy "streaming" field still reflects the live pipeline
+        assert payload["streaming"] is False
+
     def test_send_once_posts_with_hmac_headers(self):
         cfg = _make_config()
         sender = HeartbeatSender(cfg, _make_pairing())

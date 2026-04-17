@@ -319,3 +319,139 @@ class TestCrossFieldValidation:
             {"width": 640, "height": 480, "fps": 58}
         )
         assert status == 200
+
+
+# --- stream state control (ADR-0017) ---
+
+
+class FakeStreamManager:
+    """Minimal stream manager test double — tracks start/stop invocations."""
+
+    def __init__(self, is_streaming=False):
+        self.is_streaming = is_streaming
+        self.consecutive_failures = 0
+        self.start_calls = 0
+        self.stop_calls = 0
+
+    def start(self):
+        self.start_calls += 1
+        self.is_streaming = True
+
+    def stop(self):
+        self.stop_calls += 1
+        self.is_streaming = False
+
+    def restart(self):
+        return True
+
+
+class TestStreamStateControl:
+    def test_default_state_is_stopped_when_file_missing(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        h = ControlHandler(camera_config, None, stream_state_path=str(path))
+        assert h.desired_stream_state == "stopped"
+        assert h.get_stream_state() == {"state": "stopped", "running": False}
+
+    @pytest.mark.parametrize(
+        "contents,expected",
+        [
+            ("running", "running"),
+            ("stopped", "stopped"),
+            ("garbage", "stopped"),
+            ("", "stopped"),
+            ("  running\n", "running"),
+        ],
+    )
+    def test_reads_existing_state_file(
+        self, camera_config, tmp_path, contents, expected
+    ):
+        path = tmp_path / "stream_state"
+        path.write_text(contents)
+        h = ControlHandler(camera_config, None, stream_state_path=str(path))
+        assert h.desired_stream_state == expected
+
+    def test_set_running_writes_file_and_starts_stream(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        stream = FakeStreamManager(is_streaming=False)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        result, err, status = h.set_stream_state("running")
+
+        assert status == 200 and err == ""
+        assert result == {"state": "running", "running": True}
+        assert path.read_text() == "running"
+        assert stream.start_calls == 1
+        assert stream.stop_calls == 0
+        assert h.desired_stream_state == "running"
+
+    def test_set_stopped_writes_file_and_stops_stream(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        stream = FakeStreamManager(is_streaming=True)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        result, err, status = h.set_stream_state("stopped")
+
+        assert status == 200 and err == ""
+        assert result == {"state": "stopped", "running": False}
+        assert path.read_text() == "stopped"
+        assert stream.stop_calls == 1
+        assert stream.start_calls == 0
+
+    def test_idempotent_start_when_already_running(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        stream = FakeStreamManager(is_streaming=True)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        h.set_stream_state("running")
+        h.set_stream_state("running")
+
+        # Never called start — the stream already reported running on both
+        # calls — but both requests return 200 and persist the value.
+        assert stream.start_calls == 0
+        assert path.read_text() == "running"
+
+    def test_idempotent_stop_when_already_stopped(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        stream = FakeStreamManager(is_streaming=False)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        h.set_stream_state("stopped")
+        h.set_stream_state("stopped")
+
+        assert stream.stop_calls == 0
+
+    def test_invalid_state_returns_400(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        h = ControlHandler(camera_config, None, stream_state_path=str(path))
+
+        result, err, status = h.set_stream_state("paused")
+
+        assert status == 400
+        assert result is None
+        assert "running" in err and "stopped" in err
+        assert not path.exists()
+
+    def test_get_stream_state_shape(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        path.write_text("running")
+        stream = FakeStreamManager(is_streaming=True)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        state = h.get_stream_state()
+        assert set(state.keys()) == {"state", "running"}
+        assert state["state"] == "running"
+        assert state["running"] is True
+
+    def test_get_status_includes_desired_stream_state(self, camera_config, tmp_path):
+        path = tmp_path / "stream_state"
+        path.write_text("running")
+        stream = FakeStreamManager(is_streaming=True)
+        h = ControlHandler(camera_config, stream, stream_state_path=str(path))
+
+        assert h.get_status()["desired_stream_state"] == "running"
+
+    def test_creates_parent_dir(self, camera_config, tmp_path):
+        path = tmp_path / "nested" / "dir" / "stream_state"
+        h = ControlHandler(camera_config, None, stream_state_path=str(path))
+        h.set_stream_state("running")
+        assert path.read_text() == "running"
