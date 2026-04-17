@@ -347,7 +347,10 @@ h1{font-size:1.4em}
 label{display:block;margin-top:12px;font-weight:bold}
 input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;font-size:1em}
 button{margin-top:16px;padding:10px 24px;font-size:1em;cursor:pointer}
+button.danger{background:#c0392b;color:#fff;border:0;border-radius:4px}
+button.danger:hover{background:#a53125}
 .status{margin-bottom:16px;padding:8px;background:#f0f0f0;border-radius:4px}
+.unpair-note{color:#666;font-size:.9em;margin-top:8px}
 </style>
 </head>
 <body>
@@ -368,7 +371,41 @@ button{margin-top:16px;padding:10px 24px;font-size:1em;cursor:pointer}
 <button type="submit">Pair</button>
 </form>
 </div>
+<div style="display:{{UNPAIR_DISPLAY}}">
+<p>This camera is paired with <strong>{{SERVER_URL}}</strong>. Forget this server to re-pair with a different one or clear the link entirely.</p>
+<button id="unpair-btn" class="danger" type="button">Unpair / Forget server</button>
+<p id="unpair-msg" class="unpair-note"></p>
+</div>
 <p><a href="/">Back to status</a></p>
+<script>
+(function(){
+  var btn = document.getElementById('unpair-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    if (!confirm('Forget this server?\\n\\nThe camera will stop streaming until it is paired again.')) {
+      return;
+    }
+    btn.disabled = true;
+    var msg = document.getElementById('unpair-msg');
+    msg.textContent = 'Unpairing…';
+    fetch('/api/unpair', {method:'POST', headers:{'Content-Type':'application/json'}})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j}; }); })
+      .then(function(res){
+        if (res.ok) {
+          msg.textContent = 'Unpaired. Restarting camera service — page will reload shortly.';
+          setTimeout(function(){ window.location.reload(); }, 6000);
+        } else {
+          btn.disabled = false;
+          msg.textContent = 'Failed: ' + ((res.body && res.body.error) || 'unknown error');
+        }
+      })
+      .catch(function(err){
+        btn.disabled = false;
+        msg.textContent = 'Failed: ' + err;
+      });
+  });
+})();
+</script>
 </body>
 </html>
 """
@@ -607,6 +644,10 @@ def _make_status_handler(
                 if not self._require_auth():
                     return
                 self._handle_factory_reset()
+            elif self.path == "/api/unpair":
+                if not self._require_auth():
+                    return
+                self._handle_unpair()
             elif self.path == "/api/password":
                 if not self._require_auth():
                     return
@@ -789,6 +830,7 @@ def _make_status_handler(
                 .replace("{{SUCCESS}}", _html_escape(success))
                 .replace("{{SUCCESS_DISPLAY}}", "block" if success else "none")
                 .replace("{{FORM_DISPLAY}}", "none" if is_paired else "block")
+                .replace("{{UNPAIR_DISPLAY}}", "block" if is_paired else "none")
                 .replace("{{SERVER_URL}}", _html_escape(server_url))
                 .replace("{{SERVER_INFO_DISPLAY}}", "block" if has_server else "none")
                 .replace("{{SERVER_INPUT_DISPLAY}}", "none" if has_server else "block")
@@ -834,19 +876,48 @@ def _make_status_handler(
                     self._serve_pair_page(error="PIN and server URL are required")
                 return
 
+            # Re-pair flow: if this camera is already paired (stale certs from
+            # a previous server that has since forgotten us), wipe local state
+            # first. Otherwise a failed exchange would leave the GUI reading
+            # "Paired" because is_paired just checks the cert file's presence.
+            if pairing_manager.is_paired:
+                pairing_manager.reset_local_state()
+
             ok, err = pairing_manager.exchange(pin, server_url)
             if "application/json" in content_type:
                 if ok:
-                    self._json_response({"message": "Pairing successful"})
+                    self._json_response({"message": "Pairing successful — restarting"})
                 else:
                     self._json_response({"error": err}, 400)
             else:
                 if ok:
                     self._serve_pair_page(
-                        success="Pairing successful! Camera is now paired."
+                        success="Pairing successful! Camera is restarting…"
                     )
                 else:
                     self._serve_pair_page(error=err)
+
+            if ok:
+                # Restart the service so the lifecycle enters RUNNING state
+                # cleanly with the new client cert and starts the heartbeat
+                # sender. Without a restart, a camera that was auto-wiped
+                # (heartbeat 401 path) would have a dead heartbeat thread and
+                # would never send heartbeats even though certs are now valid.
+                def _restart_after_pair():
+                    import time as _t
+
+                    _t.sleep(0.5)
+                    import os as _os
+                    import signal as _sig
+
+                    try:
+                        _os.kill(_os.getpid(), _sig.SIGTERM)
+                    except OSError:
+                        pass
+
+                import threading as _t2
+
+                _t2.Thread(target=_restart_after_pair, daemon=True).start()
 
         def _handle_factory_reset(self):
             """Wipe camera config, certs, and restart in setup mode.
@@ -858,5 +929,70 @@ def _make_status_handler(
             reset_svc = FactoryResetService(config, data_dir)
             msg, status = reset_svc.execute_reset()
             self._json_response({"message": msg}, status)
+
+        def _handle_unpair(self):
+            """Camera-initiated unpair ("forget this server").
+
+            Steps — kept deliberately simple, modelled on Bluetooth's
+            "Forget device" UX:
+              1. Best-effort signed goodbye to the server so the dashboard
+                 updates immediately (pairing_service.unpair on that side).
+              2. Wipe local client.crt / client.key / pairing_secret. From
+                 this moment is_paired returns False.
+              3. Send the JSON response to the browser before we pull the
+                 rug — if we restart first the response never lands and the
+                 user sees a spinner forever.
+              4. SIGTERM ourselves on a background thread so the HTTP
+                 response flushes first. systemd's Restart=always respawns
+                 camera-streamer; the lifecycle re-enters PAIRING and the
+                 /pair page shows the PIN form again in a few seconds.
+                 (Calling "systemctl restart" on our own unit from inside
+                 the unit is unreliable — see heartbeat._handle_server_unpair
+                 for the full rationale.)
+
+            If goodbye fails (server offline), we still wipe locally and
+            restart — the server will reconcile via mDNS paired=false or
+            the 30s OFFLINE_TIMEOUT. This matches Bluetooth: either side
+            can forget independently.
+            """
+            if pairing_manager is None or not pairing_manager.is_paired:
+                self._json_response({"error": "Camera is not currently paired"}, 400)
+                return
+
+            server_url = config.server_https_url or ""
+            goodbye_ok, goodbye_err = False, ""
+            try:
+                goodbye_ok, goodbye_err = pairing_manager.send_goodbye(server_url)
+            except Exception as exc:  # never let goodbye block the unpair
+                log.warning("send_goodbye raised: %s", exc)
+
+            # Local wipe is authoritative — we are unpaired from this moment.
+            pairing_manager.reset_local_state()
+
+            self._json_response(
+                {
+                    "message": "Camera unpaired",
+                    "goodbye_acknowledged": goodbye_ok,
+                    "goodbye_error": "" if goodbye_ok else goodbye_err,
+                }
+            )
+
+            # Schedule SIGTERM on a background thread so the HTTP response
+            # is flushed to the client before the process exits.
+            def _restart():
+                import time as _t
+
+                _t.sleep(0.5)
+                import os as _os
+                import signal as _sig
+
+                try:
+                    _os.kill(_os.getpid(), _sig.SIGTERM)
+                except OSError:
+                    pass
+
+            import threading as _threading
+
+            _threading.Thread(target=_restart, daemon=True).start()
 
     return StatusHandler

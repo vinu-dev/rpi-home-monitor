@@ -469,21 +469,30 @@ class TestResolveServer:
 class TestRevertToSetup:
     """Test setup revert mechanism."""
 
-    @patch("camera_streamer.lifecycle.subprocess")
     @patch("camera_streamer.lifecycle.os")
-    def test_removes_stamp_and_restarts(self, mock_os, mock_subprocess):
+    def test_removes_stamp_and_signals_self(self, mock_os):
+        """Reverting to setup wipes the stamp and SIGTERMs self.
+
+        We deliberately do NOT shell out to systemctl (D-Bus deadlock on
+        some systemd versions, silent no-op on BusyBox Yocto). systemd's
+        Restart=always respawns us into SETUP on the next run.
+        """
+        import signal as _signal
+
         mock_os.path.isfile.return_value = True
+        mock_os.getpid.return_value = 4242
 
         CameraLifecycle._revert_to_setup()
 
         mock_os.remove.assert_called_once_with("/data/.setup-done")
-        mock_subprocess.run.assert_called_once()
+        mock_os.kill.assert_called_once_with(4242, _signal.SIGTERM)
 
-    @patch("camera_streamer.lifecycle.subprocess")
     @patch("camera_streamer.lifecycle.os")
-    def test_handles_missing_stamp(self, mock_os, mock_subprocess):
+    def test_handles_missing_stamp(self, mock_os):
         mock_os.path.isfile.return_value = False
 
         CameraLifecycle._revert_to_setup()
 
         mock_os.remove.assert_not_called()
+        # Still sends SIGTERM — entering setup requires a clean respawn
+        mock_os.kill.assert_called_once()

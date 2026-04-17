@@ -410,7 +410,7 @@ def _resume_camera_pipelines(app):
     """
     from datetime import UTC, datetime
 
-    offline_timeout = 30  # seconds — matches discovery.py
+    offline_timeout = 30  # seconds — matches discovery.py OFFLINE_TIMEOUT
 
     try:
         cameras = app.store.get_cameras()

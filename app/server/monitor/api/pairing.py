@@ -134,10 +134,15 @@ def register_camera():
     if not re.match(r"^cam-[a-z0-9]{1,48}$", camera_id):
         return jsonify({"error": "Invalid camera_id format"}), 400
 
+    # A camera that calls /pair/register is by definition asking to pair,
+    # so treat it as explicitly unpaired. This guarantees that if the server
+    # already has a stale "online" row for this camera_id it gets reset to
+    # "pending" and the admin sees it in the Discovered section.
     current_app.discovery_service.report_camera(
         camera_id=camera_id,
         ip=ip,
         firmware_version=data.get("firmware_version", ""),
+        paired=False,
     )
     return jsonify({"status": "registered"}), 200
 

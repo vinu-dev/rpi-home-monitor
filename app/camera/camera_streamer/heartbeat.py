@@ -33,6 +33,17 @@ HEARTBEAT_INTERVAL = 15  # seconds between heartbeats
 HEARTBEAT_TIMEOUT = 10  # seconds to wait for server response
 HEARTBEAT_JITTER = 3  # max random jitter in seconds to spread load
 
+# Unpair detection (ADR-0016 sync protocol)
+# When the server deletes a camera we never hear about it directly: the next
+# heartbeat just comes back with HTTP 401 "Unknown camera". To converge the
+# two sides back to a consistent state we treat N consecutive 401s from a
+# reachable server as "the server has forgotten me" and reset to unpaired.
+# A threshold (rather than acting on the first 401) avoids flapping during
+# transient DB issues or a simultaneous server restart. 5 heartbeats at
+# 15s each is ~75s, comfortably above the OFFLINE_TIMEOUT (30s) used on
+# the server side.
+UNPAIR_401_THRESHOLD = 5
+
 
 def _build_signature(
     secret_hex: str, camera_id: str, timestamp: str, body_bytes: bytes
@@ -120,6 +131,8 @@ class HeartbeatSender:
         self._thermal_path = thermal_path
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        # Track consecutive 401 Unknown-camera responses to detect server-side unpair
+        self._consecutive_unknown_camera = 0
 
     def start(self) -> None:
         """Start the heartbeat background thread."""
@@ -229,12 +242,79 @@ class HeartbeatSender:
                 resp_body = resp.read()
                 result = json.loads(resp_body) if resp_body else {}
                 log.debug("Heartbeat accepted by server (HTTP %d)", resp.status)
+                # Server accepted us — reset the unpair-detection counter
+                self._consecutive_unknown_camera = 0
                 return result
         except urllib.error.HTTPError as e:
-            log.warning("Heartbeat rejected by server: HTTP %d", e.code)
+            # 401 + "Unknown camera" means the server no longer has this camera
+            # in its database (admin deleted it). After UNPAIR_401_THRESHOLD
+            # consecutive such responses we assume the server really did unpair
+            # us and reset local state so the camera goes back into PAIRING.
+            body_text = ""
+            try:
+                body_text = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            if e.code == 401 and "Unknown camera" in body_text:
+                self._consecutive_unknown_camera += 1
+                log.warning(
+                    "Heartbeat rejected by server: HTTP 401 Unknown camera "
+                    "(%d/%d) — server has forgotten this camera",
+                    self._consecutive_unknown_camera,
+                    UNPAIR_401_THRESHOLD,
+                )
+                if self._consecutive_unknown_camera >= UNPAIR_401_THRESHOLD:
+                    self._handle_server_unpair()
+            else:
+                log.warning("Heartbeat rejected by server: HTTP %d", e.code)
         except (urllib.error.URLError, OSError) as e:
+            # Network errors don't count as "server unpaired me" — the server
+            # might just be offline or the network might be flaky.
             log.debug("Heartbeat failed (server %s): %s", server_ip, e)
         return None
+
+    def _handle_server_unpair(self) -> None:
+        """Wipe local pairing state and exit so systemd restarts us into PAIRING.
+
+        Called when the server has repeatedly rejected heartbeats with
+        ``401 Unknown camera``. We delete client.crt/key and pairing_secret
+        so ``PairingManager.is_paired`` flips to False, then signal the
+        process to exit. systemd restarts camera-streamer and
+        ``CameraLifecycle._do_pairing`` runs again — the camera registers
+        itself as pending on the server and opens the /pair page.
+        """
+        log.error(
+            "Server has unpaired this camera (%d consecutive 401s). "
+            "Wiping local pairing state and restarting to re-enter pairing mode.",
+            self._consecutive_unknown_camera,
+        )
+        certs_dir = self._config.certs_dir
+        for name in ("client.crt", "client.key", "pairing_secret"):
+            path = os.path.join(certs_dir, name)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                    log.info("Removed %s", path)
+            except OSError as exc:
+                log.warning("Failed to remove %s: %s", path, exc)
+
+        # Stop heartbeat loop — no more attempts from this thread.
+        self._stop_event.set()
+        # Signal the main process to exit so systemd restarts us cleanly.
+        # os.kill(pid, SIGTERM) is reliable regardless of how the service was
+        # launched (systemd, Docker, manual run). The main.py signal handler
+        # sets _shutdown=True, the lifecycle tears down gracefully, and systemd
+        # sees the exit and starts a fresh process in PAIRING state.
+        # (Calling "systemctl restart" from within the service is unreliable:
+        # on some systemd versions it blocks waiting for the unit to stop,
+        # creating a deadlock, and on BusyBox-based Yocto images the systemctl
+        # binary may silently do nothing.)
+        import signal as _signal
+
+        try:
+            os.kill(os.getpid(), _signal.SIGTERM)
+        except OSError as exc:
+            log.warning("Failed to send SIGTERM to self: %s", exc)
 
     def _apply_pending_config(self, pending: dict) -> None:
         """Apply a pending stream config pushed back by the server."""

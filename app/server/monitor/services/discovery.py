@@ -27,6 +27,10 @@ from datetime import UTC, datetime
 log = logging.getLogger("monitor.discovery")
 
 OFFLINE_TIMEOUT = 30  # seconds — must match _resume_camera_pipelines in __init__.py
+# Per ADR-0016: 30s = 2x the 15s heartbeat interval, so a camera goes offline
+# after at most 2 missed heartbeats. This is deliberately tight: users want
+# fast offline detection on a LAN. Transient network blips that kill a single
+# heartbeat are tolerated; two in a row is a real problem worth surfacing.
 _MDNS_SERVICE_TYPE = "_rtsp._tcp.local."
 _CAMERA_ID_PREFIX = "cam-"
 
@@ -56,11 +60,24 @@ class DiscoveryService:
     # Core status tracking
     # -------------------------------------------------------------------------
 
-    def report_camera(self, camera_id, ip, firmware_version=""):
+    def report_camera(self, camera_id, ip, firmware_version="", paired=None):
         """Report a camera as seen (from mDNS, self-registration, or heartbeat).
 
         Creates a pending camera if unknown, or updates last_seen and status
         for known cameras. This is the single funnel for all discovery paths.
+
+        Args:
+            camera_id: cam-<hex> identifier.
+            ip: source IP address (last-known).
+            firmware_version: optional version string from TXT record.
+            paired: three-valued flag from the camera's mDNS ``paired`` TXT.
+                ``True`` → camera claims it has valid certs; ``False`` →
+                camera advertises it is unpaired; ``None`` → no TXT info
+                (heartbeat or legacy /pair/register).
+                When the camera says ``paired=false`` we force the server
+                record back to "pending", even if the row currently says
+                "online" — this closes the sync loop after the camera has
+                been reset.
         """
         from monitor.models import Camera
 
@@ -90,11 +107,25 @@ class DiscoveryService:
                 camera.last_seen = now
                 if firmware_version:
                     camera.firmware_version = firmware_version
-                # Don't override "pending" status — it requires explicit pairing
-                if camera.status not in ("pending",):
+                if paired is False and camera.status != "pending":
+                    # Camera explicitly told us it is not paired — override
+                    # any stale "online" status so the UI stops showing it
+                    # as a working camera. Clear streaming flag too.
+                    camera.status = "pending"
+                    camera.streaming = False
+                    if self._audit:
+                        self._audit.log_event(
+                            "CAMERA_UNPAIRED_DETECTED",
+                            detail=(
+                                f"camera {camera_id} advertises paired=false — "
+                                "reset to pending"
+                            ),
+                        )
+                elif camera.status not in ("pending",):
+                    # Don't override "pending" status — it requires explicit pairing
                     camera.status = "online"
                 self._store.save_camera(camera)
-                if was_offline and self._audit:
+                if was_offline and camera.status == "online" and self._audit:
                     self._audit.log_event(
                         "CAMERA_ONLINE",
                         detail=f"camera {camera_id} back online at {ip}",
@@ -297,16 +328,24 @@ class DiscoveryService:
                 return
 
             firmware_version = props.get("version", "")
-            paired_str = props.get("paired", "false")
+            paired_str = props.get("paired", "")
+            # Tri-state: explicit true/false from the camera, or None if the
+            # TXT record didn't include the key (legacy cameras).
+            if paired_str.lower() == "true":
+                paired_flag: bool | None = True
+            elif paired_str.lower() == "false":
+                paired_flag = False
+            else:
+                paired_flag = None
 
             log.info(
                 "mDNS: camera %s at %s (paired=%s firmware=%s)",
                 camera_id,
                 ip,
-                paired_str,
+                paired_str or "?",
                 firmware_version or "?",
             )
-            self.report_camera(camera_id, ip, firmware_version)
+            self.report_camera(camera_id, ip, firmware_version, paired=paired_flag)
 
         except Exception as exc:
             log.warning("mDNS handler error for '%s': %s", name, exc)

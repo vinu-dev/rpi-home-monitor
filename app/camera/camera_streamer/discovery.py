@@ -29,8 +29,9 @@ VERSION = "1.0.0"
 class DiscoveryService:
     """Advertise camera via mDNS/Avahi for server auto-discovery."""
 
-    def __init__(self, config):
+    def __init__(self, config, pairing_manager=None):
         self._config = config
+        self._pairing = pairing_manager
         self._process = None
         self._host_process = None
         self._running = False
@@ -46,7 +47,11 @@ class DiscoveryService:
 
         self._running = True
         camera_id = self._config.camera_id
-        paired = "true" if self._config.is_configured else "false"
+        # "paired" reflects true pairing state (client cert on disk), not
+        # just "server IP configured". Fixes the sync bug where a camera
+        # that was unpaired by the server kept advertising paired=true.
+        is_paired = bool(self._pairing and self._pairing.is_paired)
+        paired = "true" if is_paired else "false"
         resolution = f"{self._config.width}x{self._config.height}"
 
         # avahi-publish-service runs in foreground — keeps advertising

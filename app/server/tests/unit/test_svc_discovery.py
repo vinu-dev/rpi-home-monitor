@@ -59,6 +59,39 @@ class TestReportCamera:
             camera = app.store.get_camera("cam-001")
             assert camera.status == "pending"
 
+    def test_paired_false_resets_online_to_pending(self, app):
+        """When the camera's mDNS TXT says paired=false, an existing 'online'
+        row must be reset to 'pending' so the admin can re-pair it. This is the
+        server half of the unpair-sync protocol."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            camera.streaming = True
+            app.store.save_camera(camera)
+
+            svc.report_camera("cam-001", "192.168.1.50", paired=False)
+
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "pending"
+            assert camera.streaming is False
+
+    def test_paired_none_preserves_online(self, app):
+        """paired=None (heartbeat, /pair/register, legacy) must not disturb an
+        existing online camera — only explicit paired=false does that."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            app.store.save_camera(camera)
+
+            svc.report_camera("cam-001", "192.168.1.50", paired=None)
+
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "online"
+
     def test_firmware_version_updated(self, app):
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
