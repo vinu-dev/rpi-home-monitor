@@ -8,6 +8,7 @@ Layer 4 of the testing pyramid (see docs/development-guide.md Section 3.8).
 """
 
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
@@ -611,6 +612,10 @@ CLIP_FIELDS = {
     "filename",
     "date",
     "start_time",
+    # UTC ISO-8601; browser converts to local for display. Missing the
+    # "Z" here used to cause `N h ago` labels to lag by the local
+    # offset (+1 h on BST, +5:30 h in IST, etc).
+    "started_at",
     "duration_seconds",
     "size_bytes",
     "thumbnail",
@@ -688,11 +693,16 @@ class TestRecordingsLatestAcrossContract:
         _add_camera(app, cam_id="cam-a")
         _add_camera(app, cam_id="cam-b")
         rec_dir = app.config["RECORDINGS_DIR"]
+        # Backdate past the in-progress-clip guard
+        # (_ACTIVE_WRITE_SECONDS=10 in recordings_service).
+        old = time.time() - 60
         for cam, t in (("cam-a", "10-00-00"), ("cam-b", "14-30-00")):
             clip_dir = os.path.join(rec_dir, cam, "2026-04-11")
             os.makedirs(clip_dir, exist_ok=True)
-            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+            clip_path = os.path.join(clip_dir, f"{t}.mp4")
+            with open(clip_path, "wb") as f:
                 f.write(b"\x00" * 1024)
+            os.utime(clip_path, (old, old))
 
         resp = client.get("/api/v1/recordings/latest")
         assert resp.status_code == 200
@@ -715,9 +725,12 @@ class TestRecordingsRecentContract:
         rec_dir = app.config["RECORDINGS_DIR"]
         clip_dir = os.path.join(rec_dir, "cam-a", "2026-04-11")
         os.makedirs(clip_dir, exist_ok=True)
+        old = time.time() - 60
         for t in ("10-00-00", "14-30-00", "18-00-00"):
-            with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
+            clip_path = os.path.join(clip_dir, f"{t}.mp4")
+            with open(clip_path, "wb") as f:
                 f.write(b"\x00" * 512)
+            os.utime(clip_path, (old, old))
 
         resp = client.get("/api/v1/recordings/recent?limit=5")
         assert resp.status_code == 200

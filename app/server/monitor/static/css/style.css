@@ -1409,47 +1409,51 @@ select.form-input {
     display: block;
 }
 
-/* ====================================================================
-   Diagnostics page (ADR-0018 — raw metrics surface)
-   The dashboard stays glance-only; /diagnostics is where the actual
-   numbers live. Styling is intentionally plain — this page is for the
-   operator, not a marketing surface.
-   ================================================================== */
-.diagnostics-header {
-    margin-bottom: var(--space-4);
-}
-.diag-row {
+/* Threshold-aware colouring for info-row values (used on Settings →
+   System for temp / CPU / memory; ADR-0018 thresholds: 70 % green,
+   85 % amber, 90 %+ red; temp 72 / 80 °C). */
+.info-row__value--ok   { color: var(--color-success); }
+.info-row__value--warn { color: var(--color-warning); }
+.info-row__value--bad  { color: var(--color-danger); }
+
+/* ADR-0018 Slice 3 — compact "recent activity" log teaser.
+   Five rows of audit events under the Recent events feed. Keep the
+   type scale identical so the dashboard reads as one continuous
+   chronological column, not two disconnected widgets. */
+.log-teaser {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.9rem;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-card);
+    margin-bottom: var(--space-3);
 }
-.diag-row:last-child {
-    border-bottom: none;
+.log-teaser__row {
+    display: grid;
+    grid-template-columns: 7.5em 10em 1fr;
+    gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: 0.9em;
+    color: var(--text-secondary);
 }
-.diag-row__label {
-    color: var(--color-text-muted);
-    flex: 0 0 auto;
+.log-teaser__row:first-child { border-top: 0; }
+.log-teaser__time   { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.log-teaser__event  { color: var(--text-primary); font-weight: 500; }
+.log-teaser__detail {
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.diag-row__value {
-    color: var(--color-text);
-    text-align: right;
-    word-break: break-all;
-    font-variant-numeric: tabular-nums;
-}
-.diag-json {
-    background: var(--color-bg-alt, #111);
-    color: var(--color-text);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    overflow-x: auto;
-    white-space: pre;
-    max-height: 420px;
-    overflow-y: auto;
+.log-teaser__row--warn .log-teaser__event { color: var(--color-warning); }
+.log-teaser__row--bad  .log-teaser__event { color: var(--color-danger); }
+
+@media (max-width: 540px) {
+    .log-teaser__row {
+        grid-template-columns: 5.5em 1fr;
+    }
+    .log-teaser__detail { display: none; }
 }

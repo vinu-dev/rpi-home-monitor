@@ -233,6 +233,13 @@ def _init_services(app):
 
     # Settings service — system config + WiFi management
     app.settings_service = SettingsService(store=app.store, audit=app.audit)
+    # Re-apply persisted timezone/NTP after every startup so an OTA
+    # rootfs swap (which reverts /etc/timezone + /etc/systemd/timesyncd.conf
+    # to factory defaults) is transparent to the user (ADR-0019).
+    try:
+        app.settings_service.reapply_persisted_time_settings()
+    except Exception as _e:  # pragma: no cover — best-effort
+        app.logger.warning("reapply_persisted_time_settings failed: %s", _e)
 
     # Provisioning service — first-boot setup wizard
     app.provisioning_service = ProvisioningService(
@@ -474,6 +481,7 @@ def _resume_camera_pipelines(app):
 
 def _register_blueprints(app):
     """Register all Flask blueprints."""
+    from monitor.api.audit import audit_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.on_demand import on_demand_bp
@@ -502,6 +510,7 @@ def _register_blueprints(app):
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
+    app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
     # ADR-0017: localhost-only on-demand coordinator for MediaMTX hooks.
     # Mounted outside /api/v1 so the CSRF layer on /api/* can stay strict.
     app.register_blueprint(on_demand_bp, url_prefix="/internal/on-demand")

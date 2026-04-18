@@ -21,6 +21,7 @@ SRC_URI = " \
     file://config/camera.conf.default \
     file://config/ensure-camera-overlay.sh \
     file://config/ensure-camera-overlay.service \
+    file://config/timesyncd-camera.conf \
     file://setup.py \
     "
 
@@ -73,6 +74,10 @@ do_install() {
     # Captive portal DNS redirect (NM shared-mode dnsmasq config)
     install -d ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d
     install -m 0644 ${WORKDIR}/config/captive-portal-dnsmasq.conf ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf
+
+    # Camera NTP drop-in — prefer LAN server as time source (ADR-0019)
+    install -d ${D}${sysconfdir}/systemd/timesyncd.conf.d
+    install -m 0644 ${WORKDIR}/config/timesyncd-camera.conf ${D}${sysconfdir}/systemd/timesyncd.conf.d/10-home-camera.conf
 }
 
 FILES:${PN} = " \
@@ -82,4 +87,5 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/ensure-camera-overlay.service \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
+    ${sysconfdir}/systemd/timesyncd.conf.d/10-home-camera.conf \
     "

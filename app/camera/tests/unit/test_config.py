@@ -103,6 +103,68 @@ class TestConfigManager:
         assert mgr.server_ip == "default.ip"
         assert mgr.fps == 15
 
+    def test_ensure_config_refuses_when_data_not_mounted(
+        self, data_dir, tmp_path, monkeypatch, caplog
+    ):
+        """Regression (ADR-0008): if /data is not a separate mount,
+        ConfigManager must NOT write defaults. A silent /data mount
+        failure used to factory-reset the camera into setup/AP mode
+        on next boot — see incident on 2026-04-18."""
+        import logging
+
+        default_path = tmp_path / "camera.conf.default"
+        default_path.write_text("SERVER_IP=default.ip\nFPS=15\n")
+
+        # Turn OFF the test escape hatch so the real guard runs.
+        monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+
+        mgr = ConfigManager(data_dir=str(data_dir))
+        mgr._default_path = str(default_path)
+
+        with caplog.at_level(logging.ERROR):
+            mgr.load()
+
+        # No file written (guard triggered).
+        assert not (data_dir / "config" / "camera.conf").exists()
+        # Error logged so operators / serial console see it.
+        assert any(
+            "not a separate mounted filesystem" in rec.message for rec in caplog.records
+        )
+        # Values stayed at defaults (empty SERVER_IP → not configured).
+        assert mgr.server_ip == ""
+        assert mgr.is_configured is False
+
+    def test_ensure_config_respects_existing_file_even_when_unmounted(
+        self, data_dir, monkeypatch
+    ):
+        """If a config already exists on /data, never touch it — the
+        guard only prevents writing fresh defaults."""
+        existing = data_dir / "config" / "camera.conf"
+        existing.write_text("SERVER_IP=paired.example\nCAMERA_ID=cam-xyz\n")
+        monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+
+        mgr = ConfigManager(data_dir=str(data_dir))
+        mgr.load()
+
+        # File untouched and values honoured.
+        assert existing.read_text().startswith("SERVER_IP=paired.example")
+        assert mgr.server_ip == "paired.example"
+        assert mgr.camera_id == "cam-xyz"
+
+    def test_is_data_persisted_skip_env(self, data_dir, monkeypatch):
+        """CAMERA_SKIP_MOUNT_CHECK=1 forces the guard to pass — used by
+        tests and by single-partition dev boards."""
+        monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "1")
+        mgr = ConfigManager(data_dir=str(data_dir))
+        assert mgr._is_data_persisted() is True
+
+    def test_is_data_persisted_detects_same_device(self, data_dir, monkeypatch):
+        """Without the env flag, tmp_path (same device as /) must
+        report as NOT persisted."""
+        monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+        mgr = ConfigManager(data_dir=str(data_dir))
+        assert mgr._is_data_persisted() is False
+
 
 class TestMTLSConfig:
     """Test mTLS-related config properties."""

@@ -20,7 +20,16 @@ echo "Checking /data mount..."
 if mountpoint -q /data; then
     echo "/data is mounted"
 else
-    echo "WARNING: /data is NOT mounted — dirs will be on rootfs"
+    # Hard fail: proceeding would create the directory structure on
+    # the rootfs overlay (/data as a plain directory), which then
+    # hides the real data partition when it belatedly mounts, and
+    # downstream services (camera-streamer, monitor) see empty
+    # state → factory-reset behaviour. See ADR-0008.
+    # systemd will treat this as failed and block services that
+    # declare `Requires=first-boot-setup.service`.
+    echo "ERROR: /data is NOT mounted — refusing to seed directories on rootfs overlay." >&2
+    echo "       Fix fstab / partition layout and reboot." >&2
+    exit 1
 fi
 
 # --- Expand data partition to fill SD card ---

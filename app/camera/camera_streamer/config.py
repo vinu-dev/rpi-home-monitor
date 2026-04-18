@@ -237,8 +237,28 @@ class ConfigManager:
         self.save()
 
     def _ensure_config_exists(self):
-        """Copy default config to /data if no config exists yet."""
+        """Copy default config to /data if no config exists yet.
+
+        Safety guard: refuse to write defaults unless ``self._data_dir``
+        is a real mountpoint distinct from ``/``. Otherwise a /data
+        mount failure during boot would silently factory-reset the
+        camera — the previous paired config on the real /data partition
+        would be hidden by a rootfs-backed overlay, ``_ensure_config``
+        would see no file, and defaults would be written to the
+        overlay. The camera would then enter setup mode / AP mode and
+        drop off the LAN. See ADR-0008 for the OTA persistence contract.
+        """
         if os.path.isfile(self._config_path):
+            return
+        if not self._is_data_persisted():
+            log.error(
+                "Refusing to initialise %s: %s is not a separate mounted "
+                "filesystem (stub overlay on rootfs). This indicates a "
+                "boot-time /data mount failure; writing defaults here "
+                "would factory-reset the camera on next boot.",
+                self._config_path,
+                self._data_dir,
+            )
             return
         if os.path.isfile(self._default_path):
             os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
@@ -247,6 +267,22 @@ class ConfigManager:
             with open(self._config_path, "w") as dst:
                 dst.write(content)
             log.info("Default config copied to %s", self._config_path)
+
+    def _is_data_persisted(self):
+        """Return True iff ``self._data_dir`` is on a different device than /.
+
+        Used to detect when /data failed to mount and is silently
+        falling through to the rootfs directory. Tests may override
+        this by subclassing; production relies on st_dev comparison.
+        """
+        # The env-var override exists so tests and local dev can opt
+        # out when using a plain directory as /data.
+        if os.environ.get("CAMERA_SKIP_MOUNT_CHECK") == "1":
+            return True
+        try:
+            return os.stat(self._data_dir).st_dev != os.stat("/").st_dev
+        except OSError:
+            return False
 
     def _parse_config(self, path):
         """Parse KEY=VALUE config file (shell-style, ignoring comments)."""

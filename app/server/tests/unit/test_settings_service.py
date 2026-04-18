@@ -10,6 +10,7 @@ def _make_settings(**overrides):
     """Create a fake settings object with sensible defaults."""
     defaults = {
         "timezone": "Europe/Dublin",
+        "ntp_mode": "auto",
         "storage_threshold_percent": 90,
         "clip_duration_seconds": 180,
         "session_timeout_minutes": 30,
@@ -60,8 +61,8 @@ class TestGetSettings:
         svc, _ = _make_service()
         result = svc.get_settings()
         assert isinstance(result, dict)
-        # 12 original + 2 ADR-0017 loop-recording fields
-        assert len(result) == 14
+        # 12 original + 2 ADR-0017 loop-recording + 1 ADR-0019 ntp_mode
+        assert len(result) == 15
 
     def test_reflects_custom_values(self):
         settings = _make_settings(timezone="US/Pacific", hostname="mybox")
@@ -609,6 +610,7 @@ class TestUpdatableFields:
     def test_expected_fields(self):
         expected = {
             "timezone",
+            "ntp_mode",
             "storage_threshold_percent",
             "clip_duration_seconds",
             "session_timeout_minutes",
@@ -629,3 +631,89 @@ class TestUpdatableFields:
 
     def test_firmware_version_not_updatable(self):
         assert "firmware_version" not in UPDATABLE_FIELDS
+
+
+# ---- ADR-0019 time helpers ----
+
+
+class TestTimeHelpers:
+    """Time + NTP helpers (timezone apply, NTP toggle, manual time, re-apply)."""
+
+    def test_timezone_change_invokes_timedatectl(self):
+        svc, store = _make_service()
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            msg, status = svc.update_settings({"timezone": "America/New_York"})
+        assert status == 200
+        calls = [c.args[0] for c in run.call_args_list]
+        assert ["timedatectl", "set-timezone", "America/New_York"] in calls
+
+    def test_ntp_mode_auto_enables_ntp(self):
+        svc, _ = _make_service()
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            svc.update_settings({"ntp_mode": "auto"})
+        calls = [c.args[0] for c in run.call_args_list]
+        assert ["timedatectl", "set-ntp", "true"] in calls
+
+    def test_ntp_mode_manual_disables_ntp(self):
+        svc, _ = _make_service()
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            svc.update_settings({"ntp_mode": "manual"})
+        calls = [c.args[0] for c in run.call_args_list]
+        assert ["timedatectl", "set-ntp", "false"] in calls
+
+    def test_ntp_mode_invalid_rejected(self):
+        svc, _ = _make_service()
+        msg, status = svc.update_settings({"ntp_mode": "sometimes"})
+        assert status == 400
+        assert "ntp_mode" in msg
+
+    def test_set_manual_time_requires_manual_mode(self):
+        svc, _ = _make_service(_make_settings(ntp_mode="auto"))
+        msg, status = svc.set_manual_time("2026-04-18T10:00:00")
+        assert status == 409
+        assert "manual" in msg.lower()
+
+    def test_set_manual_time_invokes_timedatectl(self):
+        svc, _ = _make_service(_make_settings(ntp_mode="manual"))
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            msg, status = svc.set_manual_time("2026-04-18T10:30:00")
+        assert status == 200
+        # timedatectl set-time "2026-04-18 10:30:00"
+        assert any(
+            c.args[0][:2] == ["timedatectl", "set-time"] for c in run.call_args_list
+        )
+
+    def test_set_manual_time_rejects_non_iso(self):
+        svc, _ = _make_service(_make_settings(ntp_mode="manual"))
+        msg, status = svc.set_manual_time("not-a-time")
+        assert status == 400
+
+    def test_reapply_persisted_time_settings(self):
+        svc, _ = _make_service(_make_settings(timezone="Asia/Tokyo", ntp_mode="manual"))
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            svc.reapply_persisted_time_settings()
+        calls = [c.args[0] for c in run.call_args_list]
+        assert ["timedatectl", "set-timezone", "Asia/Tokyo"] in calls
+        assert ["timedatectl", "set-ntp", "false"] in calls
+
+    def test_get_time_status_parses_timedatectl(self):
+        svc, _ = _make_service()
+        fake = (
+            "Timezone=Europe/Dublin\n"
+            "NTP=yes\n"
+            "NTPSynchronized=yes\n"
+            "TimeUSec=Sat 2026-04-18 10:00:00 IST\n"
+            "RTCTimeUSec=Sat 2026-04-18 09:00:00 UTC\n"
+        )
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout=fake, stderr="")
+            info = svc.get_time_status()
+        assert info["timezone"] == "Europe/Dublin"
+        assert info["ntp_active"] is True
+        assert info["ntp_synchronized"] is True
+        assert "2026-04-18" in info["system_time"]

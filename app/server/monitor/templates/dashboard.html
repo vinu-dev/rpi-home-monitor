@@ -24,7 +24,7 @@
   Tier 2 — Four summary tiles (ADR-0018)
   Cameras · Last activity · Storage · Recorder host.
   Each tile shows derived state (badge + one value + one caption), never
-  raw metrics. Raw metrics live on /diagnostics.
+  raw metrics. Raw metrics live in Settings → System / Storage.
 -->
 <div class="tile-grid">
 
@@ -46,7 +46,7 @@
     </a>
 
     <!-- Storage -->
-    <a class="tile" href="/diagnostics#storage" :class="tileStateClass('storage')">
+    <a class="tile" href="/settings#storage" :class="tileStateClass('storage')">
         <div class="tile__label">Storage</div>
         <div class="tile__value">
             <span x-text="storagePercentLabel"></span>
@@ -55,7 +55,7 @@
     </a>
 
     <!-- Recorder host -->
-    <a class="tile" href="/diagnostics#recorder" :class="tileStateClass('recorder')">
+    <a class="tile" href="/settings#system" :class="tileStateClass('recorder')">
         <div class="tile__label">Recorder host</div>
         <div class="tile__value" x-text="recorderStateLabel"></div>
         <div class="tile__caption" x-text="health.uptime || '\u2014'"></div>
@@ -88,6 +88,27 @@
                        controls autoplay preload="none"
                        :src="'/api/v1/recordings/' + encodeURIComponent(ev.camera_id) + '/' + encodeURIComponent(ev.date) + '/' + encodeURIComponent(ev.filename)"></video>
             </div>
+        </div>
+    </template>
+</div>
+
+<!--
+  Tier-3 (Slice 3) — Audit log teaser
+  Five most recent security-relevant events so operators notice a
+  login storm / camera dropout / OTA failure without visiting a
+  separate log page. Admin-gated — viewers simply don't see it.
+  Full log view lives in Settings › Security (future slice).
+-->
+<div class="section-header" x-show="auditAdmin && auditEvents.length > 0">
+    Recent activity
+    <a class="text-small" style="float:right;" href="/settings#security">Full log &rarr;</a>
+</div>
+<div class="log-teaser" x-show="auditAdmin && auditEvents.length > 0">
+    <template x-for="evt in auditEvents" :key="evt.timestamp + '/' + evt.event">
+        <div class="log-teaser__row" :class="_auditEventClass(evt.event)">
+            <span class="log-teaser__time" x-text="_relativeTime(evt.timestamp)"></span>
+            <span class="log-teaser__event" x-text="_auditEventLabel(evt.event)"></span>
+            <span class="log-teaser__detail" x-text="evt.detail || (evt.user ? 'user ' + evt.user : '')"></span>
         </div>
     </template>
 </div>
@@ -314,6 +335,8 @@ function dashboardPage() {
         recentEvents: [],
         playingKey: '',
         health: { uptime: '' },
+        auditEvents: [],      // Slice 3 log teaser
+        auditAdmin: true,     // becomes false if /audit 403s (viewer role)
 
         // --- Existing camera-list state (Tier-3 roll-call stub) ---
         cameras: [],
@@ -432,8 +455,9 @@ function dashboardPage() {
         },
 
         onStatusClick(_ev) {
-            // Strip always navigates to its deep_link (green → /diagnostics,
-            // amber/red → the page that lets the user act). Nothing to cancel.
+            // Strip always navigates to its deep_link (amber/red → the
+            // page that lets the user act; green → "/" which is a no-op
+            // while already on the dashboard). Nothing to cancel.
         },
 
         // --- Loaders ---
@@ -461,12 +485,75 @@ function dashboardPage() {
             } catch(e) {
                 this.recentEvents = [];
             }
+            // Slice 3 log teaser — last 5 audit events (admin only).
+            // Viewers get a 403 here which we silently suppress so the
+            // dashboard still renders cleanly.
+            try {
+                var resp = await window.HM.api.get('/api/v1/audit/events?limit=5');
+                this.auditEvents = (resp && resp.events) || [];
+                this.auditAdmin = true;
+            } catch(e) {
+                this.auditEvents = [];
+                this.auditAdmin = false;
+            }
+        },
+
+        // Compact, human-friendly label for a raw audit event code.
+        _auditEventLabel(code) {
+            if (!code) return '';
+            var map = {
+                LOGIN_OK: 'Signed in',
+                LOGIN_FAILED: 'Login failed',
+                LOGOUT: 'Signed out',
+                USER_CREATED: 'User created',
+                USER_DELETED: 'User deleted',
+                PASSWORD_CHANGED: 'Password changed',
+                CAMERA_PAIRED: 'Camera paired',
+                CAMERA_REMOVED: 'Camera removed',
+                CAMERA_OFFLINE: 'Camera went offline',
+                CAMERA_ONLINE: 'Camera came online',
+                CLIP_DELETED: 'Clip deleted',
+                CLIPS_DELETED: 'Clips deleted',
+                OTA_STARTED: 'OTA started',
+                OTA_COMPLETED: 'OTA completed',
+                OTA_FAILED: 'OTA failed',
+                FACTORY_RESET: 'Factory reset',
+            };
+            return map[code] || code.toLowerCase().replace(/_/g, ' ');
+        },
+
+        _auditEventClass(code) {
+            if (!code) return '';
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET') return 'log-teaser__row--bad';
+            if (code === 'LOGIN_FAILED' || code === 'CAMERA_OFFLINE') return 'log-teaser__row--warn';
+            return '';
         },
 
         playEvent(ev) {
             var key = ev.camera_id + '/' + ev.date + '/' + ev.filename;
             // Toggle — click the same row again to collapse.
-            this.playingKey = (this.playingKey === key) ? '' : key;
+            if (this.playingKey === key) {
+                this.playingKey = '';
+                return;
+            }
+            this.playingKey = key;
+            // The <video> element lives inside an x-for row that was
+            // display:none until this click flipped x-show. Browsers do
+            // not reliably honour the `autoplay` attribute when an
+            // element becomes visible after page load, and our video is
+            // unmuted (surveillance footage needs audio). Call .play()
+            // explicitly inside the click gesture so the browser's
+            // autoplay policy treats this as user-initiated playback.
+            this.$nextTick(() => {
+                var active = document.querySelector('.event-row--active video');
+                if (active) {
+                    try { active.load(); } catch (_) { /* noop */ }
+                    var p = active.play();
+                    if (p && typeof p.catch === 'function') {
+                        p.catch(() => { /* user can press the ▶ control */ });
+                    }
+                }
+            });
         },
 
         _durationLabel(secs) {

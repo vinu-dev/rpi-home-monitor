@@ -154,6 +154,27 @@ FILES="$FILES\npost-update.sh\nrootfs.ext4.gz"
 
 printf "%b\n" "$FILES" | cpio -o -H crc > "$OUTPUT" 2>/dev/null
 
+# --- Post-build sanity gate: fstab must carry /data + /boot ---
+# Regression guard for the 2026-04-17 OTA-brick incident where
+# do_image_ext4 produced a rootfs without /data in fstab.
+# Mandatory — a missing/unreadable gate script is itself a failure,
+# otherwise a bad checkout could silently re-introduce the regression.
+VERIFY="$SCRIPT_DIR/verify-swu-fstab.sh"
+if [ ! -f "$VERIFY" ]; then
+    echo "ABORT: $VERIFY missing. Cannot verify bundle fstab."
+    rm -f "$OUTPUT"
+    exit 1
+fi
+chmod +x "$VERIFY" 2>/dev/null || true
+echo ""
+echo ">>> Verifying fstab inside bundle ..."
+if ! "$VERIFY" "$OUTPUT"; then
+    echo ""
+    echo "ABORT: bundle failed fstab verification. Removing $OUTPUT."
+    rm -f "$OUTPUT"
+    exit 1
+fi
+
 # --- Summary ---
 SWU_SIZE=$(ls -lh "$OUTPUT" | awk '{print $5}')
 echo ""

@@ -76,9 +76,23 @@ class RecorderService:
         return None
 
     def delete_clip(self, camera_id: str, clip_date: str, filename: str) -> bool:
-        """Delete a clip and its thumbnail. Returns True if deleted."""
-        path = self._recordings_dir / camera_id / clip_date / filename
-        if not path.is_file():
+        """Delete a clip and its thumbnail. Returns True if deleted.
+
+        Handles both on-disk layouts:
+          dated:  <recordings_dir>/<cam>/YYYY-MM-DD/HH-MM-SS.mp4
+          flat:   <recordings_dir>/<cam>/YYYYMMDD_HHMMSS.mp4  (loop recorder)
+
+        The UI always builds the dated URL shape, so we probe the dated
+        path first and fall back to the flat path underneath the camera
+        directory.
+        """
+        dated_path = self._recordings_dir / camera_id / clip_date / filename
+        flat_path = self._recordings_dir / camera_id / filename
+        if dated_path.is_file():
+            path = dated_path
+        elif flat_path.is_file():
+            path = flat_path
+        else:
             return False
 
         path.unlink()
@@ -88,10 +102,12 @@ class RecorderService:
         if thumb.exists():
             thumb.unlink()
 
-        # Remove empty date directory
-        date_dir = path.parent
-        if date_dir.is_dir() and not any(date_dir.iterdir()):
-            date_dir.rmdir()
+        # Remove empty date directory (dated layout only — the camera
+        # directory itself is shared by flat clips and should survive).
+        cam_dir = self._recordings_dir / camera_id
+        parent = path.parent
+        if parent != cam_dir and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
 
         return True
 

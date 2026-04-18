@@ -75,6 +75,11 @@ class Settings:
     """System-wide settings. Persisted to /data/config/settings.json."""
 
     timezone: str = "Europe/Dublin"
+    # Time sync (ADR-0019). ntp_mode=auto → systemd-timesyncd/timedatectl
+    # pulls from configured NTP servers. ntp_mode=manual → NTP disabled,
+    # clock stays where the user set it via /settings/time. Persisted on
+    # /data so OTA rootfs swaps preserve the user's choice.
+    ntp_mode: str = "auto"  # auto | manual
     storage_threshold_percent: int = 90
     clip_duration_seconds: int = 180
     session_timeout_minutes: int = 30
@@ -104,7 +109,16 @@ class Clip:
     camera_id: str
     filename: str  # HH-MM-SS.mp4
     date: str  # YYYY-MM-DD
-    start_time: str  # HH:MM:SS
+    start_time: str  # HH:MM:SS  (UTC, matches filename timestamp)
     duration_seconds: int = 180
     size_bytes: int = 0
     thumbnail: str = ""  # HH-MM-SS.thumb.jpg
+
+    @property
+    def started_at(self) -> str:
+        """UTC ISO-8601 of clip start. Filenames are written in UTC
+        on the camera; attach a ``Z`` so the browser doesn't read them
+        as local time and show every clip as ``<offset>h ago``."""
+        if self.date and self.start_time:
+            return f"{self.date}T{self.start_time}Z"
+        return ""

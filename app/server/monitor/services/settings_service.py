@@ -20,6 +20,7 @@ log = logging.getLogger("monitor.services.settings_service")
 
 UPDATABLE_FIELDS = {
     "timezone",
+    "ntp_mode",
     "storage_threshold_percent",
     "clip_duration_seconds",
     "session_timeout_minutes",
@@ -47,6 +48,7 @@ class SettingsService:
         settings = self._store.get_settings()
         return {
             "timezone": settings.timezone,
+            "ntp_mode": settings.ntp_mode,
             "storage_threshold_percent": settings.storage_threshold_percent,
             "clip_duration_seconds": settings.clip_duration_seconds,
             "session_timeout_minutes": settings.session_timeout_minutes,
@@ -102,6 +104,12 @@ class SettingsService:
 
     def _apply_runtime_changes(self, settings, updated_fields: set[str]):
         """Apply settings that affect the running process immediately."""
+        if "timezone" in updated_fields:
+            self._apply_timezone(settings.timezone)
+
+        if "ntp_mode" in updated_fields:
+            self._apply_ntp_mode(settings.ntp_mode)
+
         if "session_timeout_minutes" in updated_fields:
             current_app.config["SESSION_TIMEOUT_MINUTES"] = (
                 settings.session_timeout_minutes
@@ -134,6 +142,136 @@ class SettingsService:
                     low=settings.loop_low_watermark_percent,
                     hysteresis=settings.loop_hysteresis_percent,
                 )
+
+    # ------------------------------------------------------------------
+    # Time / NTP helpers (ADR-0019)
+    # ------------------------------------------------------------------
+    def _apply_timezone(self, tz: str) -> None:
+        """Apply a timezone via timedatectl. Best-effort; logs on failure."""
+        try:
+            subprocess.run(
+                ["timedatectl", "set-timezone", tz],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("Failed to apply timezone %r: %s", tz, e)
+
+    def _apply_ntp_mode(self, mode: str) -> None:
+        """Enable/disable automatic NTP sync."""
+        flag = "true" if mode == "auto" else "false"
+        try:
+            subprocess.run(
+                ["timedatectl", "set-ntp", flag],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("Failed to set NTP mode %r: %s", mode, e)
+
+    def get_time_status(self) -> dict:
+        """Return current system time + NTP state (via timedatectl)."""
+        settings = self._store.get_settings()
+        info = {
+            "timezone": settings.timezone,
+            "ntp_mode": settings.ntp_mode,
+            "ntp_active": False,
+            "ntp_synchronized": False,
+            "system_time": "",
+            "rtc_time": "",
+        }
+        try:
+            result = subprocess.run(
+                [
+                    "timedatectl",
+                    "show",
+                    "-p",
+                    "Timezone",
+                    "-p",
+                    "NTP",
+                    "-p",
+                    "NTPSynchronized",
+                    "-p",
+                    "TimeUSec",
+                    "-p",
+                    "RTCTimeUSec",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            for line in result.stdout.splitlines():
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                if k == "Timezone":
+                    info["timezone"] = v or info["timezone"]
+                elif k == "NTP":
+                    info["ntp_active"] = v == "yes"
+                elif k == "NTPSynchronized":
+                    info["ntp_synchronized"] = v == "yes"
+                elif k == "TimeUSec":
+                    info["system_time"] = v
+                elif k == "RTCTimeUSec":
+                    info["rtc_time"] = v
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("Failed to read time status: %s", e)
+        return info
+
+    def set_manual_time(
+        self, iso_time: str, requesting_user: str = "", requesting_ip: str = ""
+    ) -> tuple[str, int]:
+        """Set system clock to `iso_time` (only allowed when ntp_mode=manual).
+
+        Returns (message, status_code).
+        """
+        settings = self._store.get_settings()
+        if settings.ntp_mode != "manual":
+            return "Manual time can only be set when ntp_mode=manual", 409
+
+        if not isinstance(iso_time, str) or "T" not in iso_time:
+            return "time must be an ISO-8601 string (YYYY-MM-DDTHH:MM:SS)", 400
+
+        # timedatectl accepts "YYYY-MM-DD HH:MM:SS"
+        stamp = iso_time.replace("T", " ").rstrip("Z").split(".", 1)[0]
+
+        try:
+            result = subprocess.run(
+                ["timedatectl", "set-time", stamp],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "timedatectl failed").strip()
+                return err, 500
+        except (OSError, subprocess.SubprocessError) as e:
+            return str(e), 500
+
+        self._log_audit(
+            "TIME_SET_MANUAL",
+            requesting_user,
+            requesting_ip,
+            f"system time set to {stamp}",
+        )
+        return "System time updated", 200
+
+    def reapply_persisted_time_settings(self) -> None:
+        """Re-apply timezone + NTP mode from persisted settings.
+
+        Called on server startup so an OTA rootfs swap (which resets
+        /etc/timezone + /etc/systemd/timesyncd.conf to factory defaults)
+        is transparent to the user.
+        """
+        settings = self._store.get_settings()
+        self._apply_timezone(settings.timezone)
+        self._apply_ntp_mode(settings.ntp_mode)
 
     def get_wifi_status(self) -> dict:
         """Return current WiFi SSID and available networks."""
@@ -287,6 +425,11 @@ class SettingsService:
                 errors.append(
                     "timezone must be a valid timezone string (e.g., Europe/Dublin)"
                 )
+
+        if "ntp_mode" in data:
+            val = data["ntp_mode"]
+            if val not in ("auto", "manual"):
+                errors.append("ntp_mode must be 'auto' or 'manual'")
 
         for field in (
             "tailscale_enabled",
