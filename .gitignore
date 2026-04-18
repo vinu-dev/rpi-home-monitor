@@ -1,3 +1,7 @@
+# Claude Code runtime state (scheduler lockfile, ephemeral worktrees).
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
 # Yocto upstream layers (cloned by setup script)
 poky/
 meta-raspberrypi/

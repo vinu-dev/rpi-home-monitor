@@ -150,11 +150,21 @@ def install_server_image():
     if not os.path.isdir(staging):
         return jsonify({"error": "No staged update found"}), 404
 
-    bundles = [f for f in os.listdir(staging) if f.endswith(".swu")]
-    if not bundles:
+    # Pick the NEWEST .swu by mtime. A stale bundle from a previous
+    # session (e.g. after an aborted install) would silently overwrite
+    # the freshly uploaded one if we used the alphabetically first
+    # entry, because sorted-by-filename happens to tie-break on
+    # version strings whose lexicographic order doesn't match the
+    # upload order.
+    candidates = [
+        (os.path.getmtime(os.path.join(staging, f)), f)
+        for f in os.listdir(staging)
+        if f.endswith(".swu")
+    ]
+    if not candidates:
         return jsonify({"error": "No staged update found"}), 404
-
-    bundle_path = os.path.join(staging, bundles[0])
+    candidates.sort(reverse=True)
+    bundle_path = os.path.join(staging, candidates[0][1])
     ok, err = ota.install_bundle(bundle_path, user=user, ip=ip)
     if not ok:
         return jsonify({"error": err}), 500

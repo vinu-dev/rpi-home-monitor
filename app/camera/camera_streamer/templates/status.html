@@ -361,6 +361,37 @@ body {
         </div>
     </div>
 
+    <!-- System Updates -->
+    <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('ota-section')">System Updates</button>
+    <div id="ota-section" class="section-body">
+        <div class="card" style="margin-top:var(--space-2)">
+            <div class="card__title">System Updates</div>
+            <div class="info-row">
+                <span class="info-row__label">State</span>
+                <span class="info-row__value" id="ota-state">idle</span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Progress</span>
+                <span class="info-row__value" id="ota-progress">--</span>
+            </div>
+            <div class="info-row" id="ota-error-row" style="display:none">
+                <span class="info-row__label">Error</span>
+                <span class="info-row__value status-err" id="ota-error">--</span>
+            </div>
+            <p style="font-size:0.8rem;color:var(--color-text-muted);margin:var(--space-3) 0">
+                Upload a signed .swu bundle to install an update directly on this
+                camera. The camera will apply the update to the standby slot and
+                reboot when you confirm.
+            </p>
+            <div class="form-group">
+                <input type="file" id="ota-file" class="form-input" accept=".swu">
+            </div>
+            <button class="btn btn--primary btn--full" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; Install</button>
+            <button class="btn btn--danger btn--full" id="btn-ota-reboot" style="display:none;margin-top:var(--space-2)" onclick="rebootCamera()">Reboot to apply</button>
+            <div id="ota-result"></div>
+        </div>
+    </div>
+
     <!-- Factory Reset -->
     <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('reset-section')">Factory Reset</button>
     <div id="reset-section" class="section-body">
@@ -747,6 +778,87 @@ function esc(s) {
     d.textContent = s;
     return d.innerHTML.replace(/'/g, "\\'");
 }
+
+// --- System Updates (OTA) ---
+var _otaTimer = null;
+
+function renderOtaStatus(s) {
+    var state = (s && s.state) || 'idle';
+    var progress = (s && typeof s.progress === 'number') ? s.progress : 0;
+    var error = (s && s.error) || '';
+    $('ota-state').textContent = state;
+    $('ota-progress').textContent = state === 'idle' ? '--' : (progress + '%');
+    if (error) {
+        $('ota-error').textContent = error;
+        $('ota-error-row').style.display = 'flex';
+    } else {
+        $('ota-error-row').style.display = 'none';
+    }
+    $('btn-ota-reboot').style.display = (state === 'installed') ? 'inline-flex' : 'none';
+    $('btn-ota-upload').disabled = (state === 'downloading' || state === 'verifying' || state === 'installing');
+}
+
+function pollOtaStatus() {
+    fetch('/api/ota/status').then(function(r) { return r.json(); }).then(function(s) {
+        renderOtaStatus(s);
+        if (s.state === 'downloading' || s.state === 'verifying' || s.state === 'installing') {
+            _otaTimer = setTimeout(pollOtaStatus, 2000);
+        }
+    }).catch(function() {});
+}
+
+function uploadOta() {
+    var file = $('ota-file').files[0];
+    if (!file) { $('ota-result').innerHTML = '<div class="msg msg--err">Choose a .swu file first</div>'; return; }
+    if (!/\.swu$/i.test(file.name)) { $('ota-result').innerHTML = '<div class="msg msg--err">File must be a .swu bundle</div>'; return; }
+
+    $('btn-ota-upload').disabled = true;
+    $('ota-result').innerHTML = '<div class="msg msg--warn">Uploading — do not close this page…</div>';
+    renderOtaStatus({state: 'downloading', progress: 0, error: ''});
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/ota/upload');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-OTA-Filename', file.name);
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            var pct = Math.round((e.loaded / e.total) * 40);
+            renderOtaStatus({state: 'downloading', progress: pct, error: ''});
+        }
+    };
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            $('ota-result').innerHTML = '<div class="msg msg--warn">Upload complete — installing…</div>';
+            pollOtaStatus();
+        } else {
+            var msg = 'Upload failed (' + xhr.status + ')';
+            try { var e = JSON.parse(xhr.responseText); if (e.error) msg = e.error; } catch (_) {}
+            $('ota-result').innerHTML = '<div class="msg msg--err">' + esc(msg) + '</div>';
+            $('btn-ota-upload').disabled = false;
+        }
+    };
+    xhr.onerror = function() {
+        $('ota-result').innerHTML = '<div class="msg msg--err">Network error during upload</div>';
+        $('btn-ota-upload').disabled = false;
+    };
+    xhr.send(file);
+}
+
+function rebootCamera() {
+    if (!confirm('Reboot the camera now to apply the update?')) return;
+    $('btn-ota-reboot').disabled = true;
+    fetch('/api/ota/reboot', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function() {
+            $('ota-result').innerHTML = '<div class="msg msg--warn">Rebooting — reconnect in about a minute.</div>';
+        })
+        .catch(function() {
+            $('ota-result').innerHTML = '<div class="msg msg--err">Reboot request failed — try SSH/power cycle.</div>';
+            $('btn-ota-reboot').disabled = false;
+        });
+}
+
+pollOtaStatus();
 
 loadStatus();
 setInterval(loadStatus, 10000);

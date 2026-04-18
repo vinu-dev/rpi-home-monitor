@@ -1,0 +1,24 @@
+[Unit]
+Description=Camera OTA Installer (root-privileged swupdate wrapper)
+# Must run after /data is mounted (bundle lives under /var/lib which
+# may be bind-mounted from /data in future) and after local-fs so
+# /dev is populated for fw_setenv + partition access.
+After=local-fs.target
+ConditionPathExists=/var/lib/camera-ota/trigger
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/camera-ota-installer
+# swupdate itself is the install — this service finishes when it
+# does, and the path unit re-arms for the next trigger.
+TimeoutStartSec=900
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Installed via the .path unit, not directly wanted by a target.
+# WantedBy=camera-ota-installer.path keeps systemd happy even though
+# path-triggered services are activated imperatively.
+WantedBy=multi-user.target

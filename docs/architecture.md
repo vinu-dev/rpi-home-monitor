@@ -607,41 +607,85 @@ Server browses:
 
 ### 6.3 OTA Update Flow
 
-> **Status: Partially implemented.** The target OTA architecture is defined and major pieces exist, but the full production path (signed bundles, full-system update, rollback, USB/import modes) is not yet fully validated on real hardware. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Implemented and validated on hardware.** The three GUI-driven install paths have been exercised end-to-end on a Pi 4B server and Pi Zero 2W camera. See ADR-0008 (A/B rollback), ADR-0014 (signing), and ADR-0020 (dual transport + privilege-separated installer).
 
-**Delivery modes** (all feed into single `inbox → verify → staging → install` pipeline):
+**Three install paths — all converge on the same SWUpdate install engine:**
+
 ```
-1. USB drive     → udev auto-detect → copy *.swu / *.tar.zst to /data/ota/inbox/
-2. Dashboard     → POST /api/v1/ota/server/upload (multipart file) → inbox/
-3. Camera push   → POST /api/v1/ota/camera/<id>/push (HTTPS + mTLS) → camera inbox/
-4. SSH/SCP       → direct copy to inbox/ (dev builds only)
-5. (Future)      → Suricatta polling from repository URL
+┌──────────── TRANSPORT (how the .swu reaches the device) ────────────┐
+│                                                                     │
+│  Path A — Server self-update (admin GUI, local):                    │
+│    browser → POST /api/v1/ota/server/upload → stage + CMS verify    │
+│    browser → POST /api/v1/ota/server/install → SWUpdate → reboot    │
+│                                                                     │
+│  Path B — Camera update via server (admin GUI, relayed):            │
+│    browser → POST /api/v1/ota/camera/<id>/upload → server inbox     │
+│    browser → POST /api/v1/ota/camera/<id>/push   → mTLS stream to   │
+│                    https://<camera-ip>:8080/ota/upload              │
+│                    (returns 202 Accepted; server polls camera's     │
+│                     /ota/status until installed/error)              │
+│                                                                     │
+│  Path C — Camera direct upload (admin GUI, camera status page):     │
+│    browser → POST https://<camera>:443/api/ota/upload → stage       │
+│    browser → POST https://<camera>:443/api/ota/reboot               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                   ↓
+┌──────────── INSTALL — shared engine on both server and camera ──────┐
+│                                                                     │
+│  1. CMS signature verify (swupdate -c -k swupdate-public.crt) —     │
+│     skipped in dev builds per ADR-0014.                             │
+│  2. swupdate -i <bundle> → raw write to /dev/monitor_standby        │
+│     (symlink to the inactive A/B partition).                        │
+│  3. post-update.sh — flip boot_slot, carry NetworkManager profile,  │
+│     set upgrade_available=1 boot_count=0 bootlimit=3.               │
+│  4. Reboot → U-Boot boots the new slot.                             │
+│  5. swupdate-check.service runs on first boot — probes Flask/NGINX  │
+│     (server) or camera-streamer + :443 (camera), confirms on        │
+│     success (upgrade_available=0). On failure, boot_count increments│
+│     and U-Boot rolls back after bootlimit attempts.                 │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Full-system update (.swu):**
+**Privilege separation on the camera.** `camera-streamer` runs as an
+unprivileged user with `NoNewPrivileges=true`, so it cannot exec
+`swupdate` directly (needs root for `/dev` symlinks, ext4 mount, and
+`fw_setenv`). Paths B and C use a file-based IPC protocol:
+
 ```
-1. CMS signature verification in inbox (production target; dev builds may bypass signing per ADR-0014)
-2. SWUpdate installs to inactive rootfs (A→B or B→A)
-3. U-Boot env: upgrade_available=1, boot_count=0, bootlimit=3
-4. Reboot into new partition
-5. Health check within 90s → fw_setenv upgrade_available 0 (confirm)
-6. If boot fails 3 times → U-Boot altbootcmd rolls back to previous partition
+camera-streamer (user=camera)
+  ├─ writes bundle → /var/lib/camera-ota/staging/update.swu
+  └─ writes trigger → /var/lib/camera-ota/trigger
+                              │
+          systemd camera-ota-installer.path fires
+                              ▼
+camera-ota-installer.service (root, oneshot)
+  ├─ refreshes /dev/monitor_standby from fw_printenv boot_slot
+  ├─ swupdate -c (signature verify) + swupdate -i (install)
+  └─ writes progress → /var/lib/camera-ota/status.json
+                              │
+                              ▼
+camera-streamer proxies status.json back to browser / to server poll.
 ```
 
-**App-only update (.tar.zst + .sig):**
-```
-1. Signature verification in production; dev builds may bypass signing per ADR-0014
-2. Extract to /opt/monitor/releases/<version>/
-3. Symlink swap: current → new version
-4. systemctl restart <service>
-5. Health check → if fail, swap symlink back (instant rollback, no reboot)
-```
+The spool directory is `2775 root:camera` (setgid on group `camera`) so
+the unprivileged streamer can stage bundles and write triggers without
+privilege escalation.
 
-**Camera update:**
-```
-Admin triggers push → server sends artifact to camera OTA agent (port 8080, mTLS)
-Camera runs same inbox → verify → install pipeline locally
-```
+**Upload handshake is async on both camera paths.** Path B and Path C
+both return HTTP 202 as soon as the trigger file is written — they do
+not hold the HTTPS connection open during the 2–3 min install window.
+The client (server or browser) polls `/ota/status` until the installer
+reports a terminal state. Blocking on the connection exhausted RAM on
+the Pi Zero 2W and was a real bricking hazard during testing.
+
+**Other transport modes kept for later:**
+- USB auto-import into `/data/ota/inbox/` (udev rule exists, import UI
+  is wired but not GUI-polished).
+- SSH/SCP direct copy to `/data/ota/` for dev (runs through the same
+  SWUpdate engine, no GUI needed).
+- Suricatta pull-from-repository polling is out of scope for Phase 1.
 
 ### 6.4 Server-to-Camera Control Channel (ADR-0015)
 

@@ -20,6 +20,7 @@ SRC_URI += " \
     file://swupdate-check.sh \
     file://swupdate.cfg \
     file://swupdate-args \
+    file://monitor-standby-symlink.sh \
     "
 
 # Include signing cert only when signing is enabled (ADR-0014)
@@ -43,17 +44,46 @@ do_install:append() {
     cat > ${D}${systemd_system_unitdir}/swupdate-check.service << 'UNIT'
 [Unit]
 Description=Post-boot OTA health check (ADR-0008)
-After=network-online.target monitor.service camera-streamer.service
-Wants=network-online.target
+# network-online.target stalls on boot when systemd-networkd-wait-online
+# times out (camera WiFi managed by NetworkManager, not networkd). The
+# health check only talks to localhost (127.0.0.1:5000 / :443), so
+# network.target is enough — and the script itself retries the HTTP
+# liveness probe for up to 60s to tolerate Type=simple service startup.
+After=network.target monitor.service camera-streamer.service
 
 [Service]
 Type=oneshot
 ExecStart=/opt/monitor/scripts/swupdate-check.sh
 RemainAfterExit=yes
-TimeoutStartSec=120
+TimeoutStartSec=180
 
 [Install]
 WantedBy=multi-user.target
+UNIT
+
+    # --- Boot-time /dev/monitor_standby symlink ---
+    # Required because swupdate's check_free_space stats the install
+    # target before preinst can run — if the symlink is missing at
+    # that instant the install is rejected with a bogus "not enough
+    # free space" error (measured against /tmp's tmpfs).
+    install -m 0755 ${WORKDIR}/monitor-standby-symlink.sh \
+        ${D}/opt/monitor/scripts/monitor-standby-symlink.sh
+
+    cat > ${D}${systemd_system_unitdir}/monitor-standby-symlink.service << 'UNIT'
+[Unit]
+Description=Create /dev/monitor_standby symlink for SWUpdate
+# Must be up before any OTA install can be invoked.
+DefaultDependencies=no
+After=systemd-remount-fs.service local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/scripts/monitor-standby-symlink.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
 UNIT
 
     # --- swupdate config ---
@@ -78,12 +108,14 @@ UNIT
 # Note: /etc/hwrevision is provided by the hwrevision recipe.
 #       /etc/sw-versions is provided by the sw-versions recipe.
 
-SYSTEMD_SERVICE:${PN} += "swupdate-check.service"
+SYSTEMD_SERVICE:${PN} += "swupdate-check.service monitor-standby-symlink.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 FILES:${PN} += " \
     /opt/monitor/scripts/swupdate-check.sh \
+    /opt/monitor/scripts/monitor-standby-symlink.sh \
     ${systemd_system_unitdir}/swupdate-check.service \
+    ${systemd_system_unitdir}/monitor-standby-symlink.service \
     ${sysconfdir}/swupdate.cfg \
     ${sysconfdir}/swupdate/conf.d/00-home-monitor \
     "
