@@ -37,8 +37,20 @@ class TestAuditEventsEndpoint:
     def test_admin_returns_events_newest_first(self, app, client):
         app.audit = MagicMock()
         app.audit.get_events.return_value = [
-            {"timestamp": "2026-04-17T22:30:00Z", "event": "LOGIN_OK", "user": "admin", "ip": "", "detail": ""},
-            {"timestamp": "2026-04-17T22:00:00Z", "event": "OTA_COMPLETED", "user": "", "ip": "", "detail": "v1.2.3"},
+            {
+                "timestamp": "2026-04-17T22:30:00Z",
+                "event": "LOGIN_OK",
+                "user": "admin",
+                "ip": "",
+                "detail": "",
+            },
+            {
+                "timestamp": "2026-04-17T22:00:00Z",
+                "event": "OTA_COMPLETED",
+                "user": "",
+                "ip": "",
+                "detail": "v1.2.3",
+            },
         ]
         _login(app, client)
         response = client.get("/api/v1/audit/events?limit=5")
@@ -53,7 +65,9 @@ class TestAuditEventsEndpoint:
         app.audit.get_events.return_value = []
         _login(app, client)
         client.get("/api/v1/audit/events?event_type=LOGIN_FAILED&limit=10")
-        app.audit.get_events.assert_called_once_with(limit=10, event_type="LOGIN_FAILED")
+        app.audit.get_events.assert_called_once_with(
+            limit=10, event_type="LOGIN_FAILED"
+        )
 
     def test_limit_clamped_to_sane_range(self, app, client):
         app.audit = MagicMock()

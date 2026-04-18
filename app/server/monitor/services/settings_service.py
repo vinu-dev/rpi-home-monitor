@@ -186,11 +186,24 @@ class SettingsService:
         }
         try:
             result = subprocess.run(
-                ["timedatectl", "show",
-                 "-p", "Timezone",
-                 "-p", "NTP", "-p", "NTPSynchronized",
-                 "-p", "TimeUSec", "-p", "RTCTimeUSec"],
-                capture_output=True, text=True, timeout=5, check=False,
+                [
+                    "timedatectl",
+                    "show",
+                    "-p",
+                    "Timezone",
+                    "-p",
+                    "NTP",
+                    "-p",
+                    "NTPSynchronized",
+                    "-p",
+                    "TimeUSec",
+                    "-p",
+                    "RTCTimeUSec",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             for line in result.stdout.splitlines():
                 if "=" not in line:
@@ -199,9 +212,9 @@ class SettingsService:
                 if k == "Timezone":
                     info["timezone"] = v or info["timezone"]
                 elif k == "NTP":
-                    info["ntp_active"] = (v == "yes")
+                    info["ntp_active"] = v == "yes"
                 elif k == "NTPSynchronized":
-                    info["ntp_synchronized"] = (v == "yes")
+                    info["ntp_synchronized"] = v == "yes"
                 elif k == "TimeUSec":
                     info["system_time"] = v
                 elif k == "RTCTimeUSec":
@@ -230,7 +243,10 @@ class SettingsService:
         try:
             result = subprocess.run(
                 ["timedatectl", "set-time", stamp],
-                capture_output=True, text=True, timeout=10, check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
             )
             if result.returncode != 0:
                 err = (result.stderr or result.stdout or "timedatectl failed").strip()

@@ -684,8 +684,7 @@ class TestTimeHelpers:
         assert status == 200
         # timedatectl set-time "2026-04-18 10:30:00"
         assert any(
-            c.args[0][:2] == ["timedatectl", "set-time"]
-            for c in run.call_args_list
+            c.args[0][:2] == ["timedatectl", "set-time"] for c in run.call_args_list
         )
 
     def test_set_manual_time_rejects_non_iso(self):
