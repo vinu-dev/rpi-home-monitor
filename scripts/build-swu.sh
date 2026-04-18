@@ -89,9 +89,13 @@ case "$TARGET" in
         ;;
 esac
 
-# Detect current slot on device to determine target partition
-# Default: write to slot B (partition 3) since devices ship on slot A
-TARGET_PART="/dev/mmcblk0p3"
+# Target partition is NOT baked into the bundle.
+# Invariant: the STANDBY slot is the one we are NOT currently booted from.
+# post-update.sh `preinst` reads live `boot_slot` and symlinks
+# `/dev/monitor_standby` → correct standby partition; sw-description
+# references that stable name. This keeps the bundle partition-agnostic
+# and works regardless of which slot the device is currently on
+# (previously hardcoded to p3, which no-op'd on devices already on B).
 
 # Auto-detect version from rootfs path if not specified
 if [ -z "$VERSION" ]; then
@@ -105,12 +109,11 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo ">>> Building SWU bundle for $TARGET (version: $VERSION)"
 echo "    Rootfs: $ROOTFS"
-echo "    Target partition: $TARGET_PART"
+echo "    Target partition: resolved on device via /dev/monitor_standby"
 echo "    Working dir: $WORK_DIR"
 
 # 1. Generate sw-description from template
 sed -e "s|@@VERSION@@|$VERSION|g" \
-    -e "s|@@TARGET_PART@@|$TARGET_PART|g" \
     "$SW_DESC_TEMPLATE" > "$WORK_DIR/sw-description"
 
 echo ">>> sw-description:"

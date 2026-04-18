@@ -7,7 +7,7 @@ software =
             {
                 filename = "rootfs.ext4.gz";
                 type = "raw";
-                device = "@@TARGET_PART@@";
+                device = "/dev/monitor_standby";
                 compressed = "zlib";
             }
         );
