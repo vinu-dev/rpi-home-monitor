@@ -279,10 +279,9 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
         audit = getattr(app, "audit", None)
 
         def _progress(sent, total):
-            # Map bytes-sent → 0..50 %. The second 50 % is reserved
-            # for verify+install on the camera side (OTAAgent emits
-            # its own 0..100 range; we surface it via the separate
-            # "live" camera status poll from the UI).
+            # Map bytes-sent → 0..50 %. Used only for the byte-level
+            # track within the "uploading" phase; high-level state
+            # transitions are driven by _status below.
             if total > 0:
                 pct = int((sent / total) * 50)
             else:
@@ -291,9 +290,18 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
                 camera_id, "uploading", progress=pct, error="", bytes_sent=sent
             )
 
+        def _status(state, progress, error=""):
+            # push_bundle's high-level state updates (installing,
+            # rebooting, installed, error). Overwrites whatever
+            # _progress last wrote so the UI reflects the real phase.
+            kwargs = {"progress": progress, "error": error or ""}
+            ota.set_status(camera_id, state, **kwargs)
+
         ota.set_status(camera_id, "uploading", progress=0, error="")
         try:
-            ok, msg = client.push_bundle(camera_ip, bundle_path, progress_cb=_progress)
+            ok, msg = client.push_bundle(
+                camera_ip, bundle_path, progress_cb=_progress, status_cb=_status
+            )
         except Exception as exc:  # defensive — never leak out of the thread
             ok, msg = False, f"Unexpected error: {exc}"
 

@@ -1533,11 +1533,18 @@ function settingsPage() {
         /* --- Software Updates (ADR-0020) --- */
         cameraBusy(cam) {
             var s = cam && cam.state;
-            return s === 'uploading' || s === 'downloading' || s === 'verifying' || s === 'installing';
+            return (
+                s === 'uploading' || s === 'downloading' ||
+                s === 'verifying' || s === 'installing' ||
+                s === 'rebooting'
+            );
         },
 
         _serverBusy(state) {
-            return state === 'uploading' || state === 'installing' || state === 'verifying';
+            return (
+                state === 'uploading' || state === 'installing' ||
+                state === 'verifying' || state === 'rebooting'
+            );
         },
 
         async loadOtaStatus() {
