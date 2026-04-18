@@ -88,8 +88,9 @@ class TestSettings:
         d = asdict(Settings())
         assert d["timezone"] == "Europe/Dublin"
         assert isinstance(d, dict)
-        # 9 base + 5 tailscale + 2 ADR-0017 loop-recording watermarks
-        assert len(d) == 16
+        # 9 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
+        assert len(d) == 17
+        assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
 

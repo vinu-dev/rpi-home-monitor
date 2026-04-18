@@ -75,6 +75,11 @@ class Settings:
     """System-wide settings. Persisted to /data/config/settings.json."""
 
     timezone: str = "Europe/Dublin"
+    # Time sync (ADR-0019). ntp_mode=auto → systemd-timesyncd/timedatectl
+    # pulls from configured NTP servers. ntp_mode=manual → NTP disabled,
+    # clock stays where the user set it via /settings/time. Persisted on
+    # /data so OTA rootfs swaps preserve the user's choice.
+    ntp_mode: str = "auto"  # auto | manual
     storage_threshold_percent: int = 90
     clip_duration_seconds: int = 180
     session_timeout_minutes: int = 30

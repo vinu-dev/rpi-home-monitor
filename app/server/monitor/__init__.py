@@ -233,6 +233,13 @@ def _init_services(app):
 
     # Settings service — system config + WiFi management
     app.settings_service = SettingsService(store=app.store, audit=app.audit)
+    # Re-apply persisted timezone/NTP after every startup so an OTA
+    # rootfs swap (which reverts /etc/timezone + /etc/systemd/timesyncd.conf
+    # to factory defaults) is transparent to the user (ADR-0019).
+    try:
+        app.settings_service.reapply_persisted_time_settings()
+    except Exception as _e:  # pragma: no cover — best-effort
+        app.logger.warning("reapply_persisted_time_settings failed: %s", _e)
 
     # Provisioning service — first-boot setup wizard
     app.provisioning_service = ProvisioningService(

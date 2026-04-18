@@ -33,6 +33,23 @@
                     <label for="set-timezone">Timezone</label>
                     <input type="text" id="set-timezone" class="form-input" placeholder="e.g. Europe/Dublin" x-model="settings.timezone">
                 </div>
+                <div class="form-group">
+                    <label>Clock sync</label>
+                    <div style="display:flex; gap:var(--space-3); align-items:center;">
+                        <label style="display:inline-flex; gap:6px; align-items:center;">
+                            <input type="radio" name="ntp-mode" value="auto" x-model="settings.ntp_mode">
+                            Automatic (NTP)
+                        </label>
+                        <label style="display:inline-flex; gap:6px; align-items:center;">
+                            <input type="radio" name="ntp-mode" value="manual" x-model="settings.ntp_mode">
+                            Manual
+                        </label>
+                    </div>
+                    <div class="text-small text-muted" style="margin-top:4px;">
+                        Automatic keeps the server in sync with upstream NTP pools.
+                        Cameras on this LAN use the server as their time source.
+                    </div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="set-storage">Storage Threshold (%)</label>
@@ -50,6 +67,37 @@
                 <button type="submit" class="btn btn--primary">Save Settings</button>
             </form>
         </div>
+    </div>
+
+    <!-- Date & Time (ADR-0019) -->
+    <div class="settings-section">
+        <div class="settings-section__title">Date & Time</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">System Time</span>
+                <span class="info-row__value" x-text="timeStatus.system_time || '--'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Timezone</span>
+                <span class="info-row__value" x-text="timeStatus.timezone || '--'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">NTP</span>
+                <span class="info-row__value">
+                    <span x-text="timeStatus.ntp_active ? 'enabled' : 'disabled'"></span>
+                    <span class="text-muted" x-show="timeStatus.ntp_active"
+                          x-text="timeStatus.ntp_synchronized ? '— synchronized' : '— not yet synchronized'"></span>
+                </span>
+            </div>
+            <div class="info-row" style="border-bottom:none;" x-show="timeStatus.ntp_mode === 'manual'">
+                <span class="info-row__label">Set Manually</span>
+                <span class="info-row__value" style="gap:6px; display:flex;">
+                    <input type="datetime-local" class="form-input" style="min-width:200px;" x-model="manualTimeInput">
+                    <button class="btn btn--sm btn--primary" @click="applyManualTime()" :disabled="!manualTimeInput">Apply</button>
+                </span>
+            </div>
+        </div>
+        <div class="text-small text-muted" style="margin-top: var(--space-2);" x-show="manualTimeMsg" x-text="manualTimeMsg"></div>
     </div>
 
     <!-- System Info (identity + environment) -->
@@ -825,7 +873,10 @@ function settingsPage() {
         showWifiForm: false,
 
         networkInterfaces: [],
-        settings: { hostname: '', timezone: '', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
+        settings: { hostname: '', timezone: '', ntp_mode: 'auto', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
+        timeStatus: { timezone: '', ntp_mode: 'auto', ntp_active: false, ntp_synchronized: false, system_time: '' },
+        manualTimeInput: '',
+        manualTimeMsg: '',
         sysInfo: {
             hostname: '', firmware_version: '', os: '', uptime: '',
             disk_total: '', disk_used: '', disk_free: '', retention: '',
@@ -855,6 +906,7 @@ function settingsPage() {
             } catch(e) {}
 
             this.loadSystemInfo();
+            this.loadTimeStatus();
 
             if (this.isAdmin) {
                 this.loadSettings();
@@ -994,6 +1046,7 @@ function settingsPage() {
                 this.settings = {
                     hostname: data.hostname || '',
                     timezone: data.timezone || '',
+                    ntp_mode: data.ntp_mode || 'auto',
                     storage_threshold_percent: data.storage_threshold_percent || 90,
                     clip_duration_seconds: data.clip_duration_seconds || 180,
                     session_timeout_minutes: data.session_timeout_minutes || 60,
@@ -1005,7 +1058,30 @@ function settingsPage() {
             try {
                 await window.HM.api.put('/api/v1/settings', this.settings);
                 window.HM.toast('Settings saved', 'success');
+                this.loadTimeStatus();
             } catch(e) { window.HM.toast(e.message || 'Failed to save settings', 'error'); }
+        },
+
+        /* --- Date & Time (ADR-0019) --- */
+        async loadTimeStatus() {
+            try {
+                var data = await window.HM.api.get('/api/v1/settings/time');
+                this.timeStatus = data || this.timeStatus;
+            } catch(e) { /* silent on transient failure */ }
+        },
+        async applyManualTime() {
+            if (!this.manualTimeInput) return;
+            // datetime-local returns "YYYY-MM-DDTHH:MM" (no seconds)
+            var t = this.manualTimeInput.length === 16 ? this.manualTimeInput + ':00' : this.manualTimeInput;
+            try {
+                await window.HM.api.post('/api/v1/settings/time', { time: t });
+                this.manualTimeMsg = 'System time set to ' + t;
+                window.HM.toast('Time updated', 'success');
+                this.loadTimeStatus();
+            } catch(e) {
+                this.manualTimeMsg = e.message || 'Failed to set time';
+                window.HM.toast(this.manualTimeMsg, 'error');
+            }
         },
 
         /* --- Factory Reset --- */

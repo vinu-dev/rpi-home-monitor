@@ -313,6 +313,10 @@ components:
       properties:
         timezone:
           type: string
+        ntp_mode:
+          type: string
+          enum: [auto, manual]
+          description: ADR-0019 — auto keeps timedatectl/NTP in sync, manual disables NTP.
         hostname:
           type: string
         storage_threshold_percent:
@@ -320,6 +324,23 @@ components:
         clip_duration_seconds:
           type: integer
         firmware_version:
+          type: string
+    TimeStatus:
+      type: object
+      description: ADR-0019 — current system time, timezone, NTP state.
+      properties:
+        timezone:
+          type: string
+        ntp_mode:
+          type: string
+          enum: [auto, manual]
+        ntp_active:
+          type: boolean
+        ntp_synchronized:
+          type: boolean
+        system_time:
+          type: string
+        rtc_time:
           type: string
     WifiStatus:
       type: object
@@ -816,6 +837,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Settings"
+  /api/v1/settings/time:
+    get:
+      tags: [settings]
+      summary: Current timezone, NTP state, and system time (ADR-0019)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Time status returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeStatus"
+    post:
+      tags: [settings]
+      summary: Set system clock manually (requires ntp_mode=manual)
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [time]
+              properties:
+                time:
+                  type: string
+                  description: ISO-8601 local time (YYYY-MM-DDTHH:MM:SS)
+      responses:
+        "200":
+          description: System time updated
+        "400":
+          description: Invalid time string
+        "409":
+          description: Requires ntp_mode=manual
   /api/v1/settings/wifi:
     get:
       tags: [settings]
