@@ -82,6 +82,23 @@ fi
 
 log "Install requested for $BUNDLE"
 
+# Ensure /dev/monitor_standby is pointing at the STANDBY partition
+# regardless of what monitor-standby-symlink.service did at boot.
+# SWUpdate's check_free_space stats this device before any preinst
+# can run — a missing or wrong symlink silently rejects the install
+# with a "not enough free space" error against /tmp's tmpfs. We've
+# seen the boot-time service occasionally report boot_slot=B even on
+# a slot-A boot (likely a race with /boot mount order), so always
+# refresh here too.
+BOOT_SLOT=$(fw_printenv -n boot_slot 2>/dev/null || echo A)
+case "$BOOT_SLOT" in
+    A) STANDBY=/dev/mmcblk0p3 ;;
+    B) STANDBY=/dev/mmcblk0p2 ;;
+    *) log "FAIL: unknown boot_slot=$BOOT_SLOT"; write_status error 0 "Unknown boot_slot=$BOOT_SLOT"; exit 1 ;;
+esac
+ln -sfn "$STANDBY" /dev/monitor_standby
+log "Standby symlink: /dev/monitor_standby -> $STANDBY (boot_slot=$BOOT_SLOT)"
+
 # Pick verification cert. Prefer /etc shipped key; fall back to /data
 # for dev builds. Absence ⇒ dev/unsigned, allowed by design (ADR-0014).
 PUBKEY=""
