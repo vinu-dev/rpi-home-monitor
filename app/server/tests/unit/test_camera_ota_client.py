@@ -63,22 +63,34 @@ class TestPushBundle:
         assert not ok
         assert "empty" in msg.lower()
 
-    def test_streams_and_reports_success(self, client, tmp_path):
+    def test_streams_upload_then_polls_until_installed(self, client, tmp_path):
+        """Happy path: upload returns 202 Accepted, then the client
+        polls /ota/status until the camera reports state=installed.
+        """
         p = tmp_path / "bundle.swu"
         p.write_bytes(b"x" * (512 * 1024 + 17))  # > one chunk to exercise loop
 
         sent_bytes = []
 
         def _progress(sent, total):
-            sent_bytes.append(sent)
-            assert total == (512 * 1024 + 17)
+            sent_bytes.append((sent, total))
 
-        fake_resp = MagicMock()
-        fake_resp.status = 200
-        fake_resp.read.return_value = b'{"message": "Installed"}'
-
+        # Upload POST returns 202, then the client polls get_status().
+        # We mock get_status so the poll loop terminates quickly without
+        # calling time.sleep for real (poll interval is 5s).
+        upload_resp = MagicMock()
+        upload_resp.status = 202
+        upload_resp.read.return_value = (
+            b'{"message": "Install triggered", "bundle_bytes": ' + str(p.stat().st_size).encode() + b"}"
+        )
         fake_conn = MagicMock()
-        fake_conn.getresponse.return_value = fake_resp
+        fake_conn.getresponse.return_value = upload_resp
+
+        # First poll reports installing at 50, second reports installed.
+        status_sequence = [
+            ({"state": "installing", "progress": 50, "error": ""}, ""),
+            ({"state": "installed", "progress": 100, "error": ""}, ""),
+        ]
 
         with (
             patch(
@@ -86,16 +98,23 @@ class TestPushBundle:
                 return_value=fake_conn,
             ) as mock_conn_cls,
             patch.object(client, "_ssl_context"),
+            patch.object(client, "get_status", side_effect=status_sequence),
+            patch("monitor.services.camera_ota_client.time.sleep"),
         ):
             ok, msg = client.push_bundle("10.0.0.1", str(p), progress_cb=_progress)
 
         assert ok is True
         assert msg == "Installed"
-        assert sent_bytes, "progress callback should have fired"
-        assert sent_bytes[-1] == (512 * 1024 + 17)
+        # Progress fires during upload (0..total) and again while polling
+        # (total+progress, total*2). Both phases must have contributed.
+        total = 512 * 1024 + 17
+        upload_phase = [s for s, t in sent_bytes if t == total]
+        poll_phase = [s for s, t in sent_bytes if t == total * 2]
+        assert upload_phase, "upload progress should have fired"
+        assert poll_phase, "poll progress should have fired"
+        assert upload_phase[-1] == total
 
         mock_conn_cls.assert_called_once()
-        # Connection targets the camera OTA port + upload path
         args, kwargs = mock_conn_cls.call_args
         assert args[0] == "10.0.0.1"
         assert args[1] == OTA_PORT

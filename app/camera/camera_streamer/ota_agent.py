@@ -12,11 +12,21 @@ Flow:
       2. Atomic rename to update.swu on complete
       3. Write trigger → systemd .path fires camera-ota-installer.service
          (root, runs `swupdate -c -i` then `swupdate -i`)
-      4. Poll status.json until terminal state
-      5. Return HTTP 200 on installed / HTTP 500 on error
+      4. Return HTTP 202 Accepted immediately — DO NOT block on install.
+         The server polls GET /ota/status until terminal state.
 
     GET /ota/status
       Returns the current status.json content.
+
+Why we don't block on install here:
+    The Pi Zero 2W has only 362 MB RAM. Holding an mTLS HTTPS
+    connection open for ~3 min while the root installer writes
+    1.8 GB of ext4 to the SD card triggers the OOM killer — we've
+    observed camera-streamer, sshd, and getty all killed mid-install,
+    leaving the box unreachable until a physical power cycle. The
+    camera-direct GUI upload path on :443 already uses the
+    fire-and-poll pattern; OTAAgent matches it so the two transports
+    converge on the same memory profile.
 
 mTLS hardening: if client certs are present the socket enforces
 CERT_REQUIRED. Absence of certs (pre-pairing dev flows) falls back
@@ -159,19 +169,16 @@ class OTAAgent:
             self._send_json(handler, 500, {"error": trigger_msg})
             return
 
-        # Block until the root installer reports a terminal state. The
-        # monitor server is streaming progress over mTLS on the other
-        # end (CameraOTAClient.push_bundle waits for this response).
-        final = ota_installer.wait_for_completion()
-        if final.get("state") == ota_installer.STATE_INSTALLED:
-            self._send_json(
-                handler, 200, {"message": "Installed — reboot required"}
-            )
-            log.info("OTA installation complete — reboot required")
-        else:
-            err = final.get("error") or "Install failed"
-            self._send_json(handler, 500, {"error": err})
-            log.warning("OTA installation failed: %s", err)
+        # Return 202 Accepted immediately. The server polls GET /ota/status
+        # for progress; blocking here until swupdate finishes kept the
+        # mTLS connection open for several minutes and pushed a Pi Zero
+        # 2W into OOM-kill territory (ADR notes).
+        self._send_json(
+            handler,
+            202,
+            {"message": "Install triggered", "bundle_bytes": content_length},
+        )
+        log.info("OTA upload accepted (%d bytes) — installer triggered", content_length)
 
     def _send_json(self, handler, status_code, data):
         body = json.dumps(data).encode()

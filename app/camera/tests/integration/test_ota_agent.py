@@ -131,35 +131,27 @@ class TestHandleUpload:
         agent._handle_upload(handler)
         handler.send_response.assert_called_with(500)
 
-    @patch("camera_streamer.ota_agent.ota_installer.wait_for_completion")
-    def test_successful_install(self, mock_wait, agent, spool):
-        mock_wait.return_value = {
-            "state": "installed",
-            "progress": 100,
-            "error": "",
-        }
+    def test_upload_returns_202_immediately(self, agent, spool):
+        """Agent returns 202 Accepted as soon as trigger is written —
+        it does NOT block on install completion. The server polls
+        /ota/status to observe the root installer's progress. Blocking
+        here kept an mTLS connection open while swupdate ran, which
+        OOM-killed camera-streamer on Pi Zero 2W.
+        """
         body = b"fake-swu-content" * 500
         handler = _make_handler(body)
         agent._handle_upload(handler)
-        handler.send_response.assert_called_with(200)
-        # Bundle staged to the spool, trigger written.
+        handler.send_response.assert_called_with(202)
+        # Bundle staged to the spool and trigger written.
         assert os.path.isfile(os.path.join(spool, "staging", "update.swu"))
-        # NOTE: trigger_install is real; the trigger file was written
-        # and wait_for_completion is the only thing mocked.
         assert os.path.isfile(ota_installer.TRIGGER_PATH)
-        mock_wait.assert_called_once()
 
-    @patch("camera_streamer.ota_agent.ota_installer.wait_for_completion")
-    def test_install_error_returns_500(self, mock_wait, agent, spool):
-        mock_wait.return_value = {
-            "state": "error",
-            "progress": 30,
-            "error": "Signature verification failed",
-        }
-        body = b"fake-swu-content"
-        handler = _make_handler(body)
-        agent._handle_upload(handler)
-        handler.send_response.assert_called_with(500)
+        # The response body carries the accepted byte count so the
+        # server can sanity-check against what it sent.
+        body_out = handler.wfile.getvalue()
+        payload = json.loads(body_out)
+        assert payload["message"] == "Install triggered"
+        assert payload["bundle_bytes"] == len(body)
 
 
 class TestHandleStatus:

@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import ssl
+import time
 
 log = logging.getLogger("monitor.camera_ota_client")
 
@@ -37,11 +38,17 @@ STATUS_PATH = "/ota/status"
 # TLS record framing efficient while bounding server-side RAM use.
 CHUNK_SIZE = 256 * 1024
 
-# Overall upload timeout: a 150 MB bundle over 2.4 GHz WiFi at ~4 MB/s
-# takes ~40 s. Add headroom for slow links. Status polling uses its own
-# short timeout.
-UPLOAD_TIMEOUT = 600  # 10 minutes
+# The upload POST only holds the connection for the bytes-in-flight
+# phase — the camera acks with 202 after it writes the trigger, then
+# the install runs async. 300 s covers a slow-link transfer; no
+# need to wait for the (much longer) install here.
+UPLOAD_TIMEOUT = 300
 STATUS_TIMEOUT = 10
+
+# Poll timings while the root installer runs. The full install on a
+# Pi Zero 2W can take ~3 min — we cap at 15 min with a 5 s poll.
+INSTALL_POLL_INTERVAL = 5
+INSTALL_POLL_TIMEOUT = 900
 
 
 class CameraOTAClient:
@@ -140,23 +147,20 @@ class CameraOTAClient:
             except json.JSONDecodeError:
                 payload = {"raw": body.decode("utf-8", errors="replace")}
 
-            if 200 <= resp.status < 300:
-                msg = payload.get("message") if isinstance(payload, dict) else ""
-                log.info(
-                    "OTA push to %s ok (%d bytes, status=%d, msg=%r)",
-                    camera_ip,
-                    sent,
-                    resp.status,
-                    msg,
-                )
-                return True, msg or "Installed"
+            if not (200 <= resp.status < 300):
+                err = ""
+                if isinstance(payload, dict):
+                    err = payload.get("error") or payload.get("raw") or ""
+                err = err or f"HTTP {resp.status}"
+                log.warning("OTA push to %s upload failed: %s", camera_ip, err)
+                return False, err
 
-            err = ""
-            if isinstance(payload, dict):
-                err = payload.get("error") or payload.get("raw") or ""
-            err = err or f"HTTP {resp.status}"
-            log.warning("OTA push to %s failed: %s", camera_ip, err)
-            return False, err
+            log.info(
+                "OTA push to %s uploaded (%d bytes, status=%d) — polling install",
+                camera_ip,
+                sent,
+                resp.status,
+            )
 
         except ssl.SSLError as exc:
             log.warning("OTA push to %s TLS error: %s", camera_ip, exc)
@@ -170,6 +174,43 @@ class CameraOTAClient:
         finally:
             if conn is not None:
                 conn.close()
+
+        # Poll the camera's status endpoint until the root installer
+        # reaches a terminal state. The upload POST above returned 202
+        # as soon as the trigger file was written; the actual install
+        # runs async on the camera to keep RAM pressure low on the
+        # Pi Zero 2W.
+        deadline = time.time() + INSTALL_POLL_TIMEOUT
+        last_progress = -1
+        while time.time() < deadline:
+            status, err = self.get_status(camera_ip)
+            if status is None:
+                # Transient unreachability is expected during the write
+                # phase — don't fail the whole push on one missed poll.
+                log.debug("status poll transient error for %s: %s", camera_ip, err)
+                time.sleep(INSTALL_POLL_INTERVAL)
+                continue
+            state = status.get("state", "")
+            progress = status.get("progress", 0)
+            if progress != last_progress:
+                if progress_cb is not None:
+                    # Server-side status already ranged bytes-sent 0..50%;
+                    # map the camera's install progress into 50..100%.
+                    try:
+                        progress_cb(total + progress, total * 2)
+                    except Exception as cb_exc:
+                        log.debug("progress_cb raised: %s", cb_exc)
+                last_progress = progress
+            if state == "installed":
+                log.info("OTA push to %s installed (polled)", camera_ip)
+                return True, "Installed"
+            if state == "error":
+                err = status.get("error") or "install failed"
+                log.warning("OTA push to %s install error: %s", camera_ip, err)
+                return False, err
+            time.sleep(INSTALL_POLL_INTERVAL)
+
+        return False, "Install timed out waiting for camera to finish"
 
     def get_status(self, camera_ip):
         """Fetch the camera OTA agent's current status.
