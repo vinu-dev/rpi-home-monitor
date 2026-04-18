@@ -19,6 +19,15 @@
 # =============================================================
 set -e
 
+# SWUpdate invokes shellscript handlers in a sandbox with a stripped
+# environment — PATH is not inherited from the parent, so bare command
+# names like `mktemp`, `mount`, `fw_setenv`, `fw_printenv` resolve to
+# "not found" when the install is driven via the monitor-server API
+# (systemd → swupdate → sandbox). Interactive SSH invocations worked
+# by accident because PATH was inherited from the login shell. Set a
+# conservative PATH here so every code path is identical.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
 # Map slot letter → partition that holds that slot's rootfs.
 # Layout (both server and camera wks): p2 = slot A, p3 = slot B.
 slot_partition() {
