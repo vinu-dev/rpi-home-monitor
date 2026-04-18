@@ -211,6 +211,25 @@ def _get_cpu_temp(thermal_path=None):
         return 0.0
 
 
+def _get_firmware_version(sw_versions_path="/etc/sw-versions"):
+    """Read the camera firmware version from /etc/sw-versions.
+
+    SWUpdate records each installed bundle as "<component> <version>"
+    lines. The camera image ships only the "home-monitor" row (or
+    "home-camera"); we return the version string from the first line,
+    or empty if nothing is readable.
+    """
+    try:
+        with open(sw_versions_path) as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return parts[1]
+    except OSError:
+        pass
+    return ""
+
+
 def _get_uptime():
     """Get human-readable uptime."""
     try:
@@ -824,6 +843,7 @@ def _make_status_handler(
             cpu_temp = _get_cpu_temp(thermal_path)
             uptime = _get_uptime()
             mem_total, mem_used = _get_memory_mb()
+            firmware_version = _get_firmware_version()
 
             paired = pairing_manager.is_paired if pairing_manager else False
 
@@ -836,6 +856,7 @@ def _make_status_handler(
                 "server_connected": server_connected,
                 "streaming": streaming,
                 "paired": paired,
+                "firmware_version": firmware_version,
                 "cpu_temp": cpu_temp,
                 "uptime": uptime,
                 "memory_total_mb": mem_total,

@@ -7,129 +7,210 @@
 <title>Camera · {{CAMERA_ID}}</title>
 <style>
 :root {
-    --bg: #0a0a1a;
-    --surface: #141424;
-    --surface-2: #1b1b30;
-    --border: #272740;
-    --text: #e9e9f2;
-    --muted: #8a8aa3;
-    --dim: #5a5a74;
-    --accent: #e94560;
-    --ok: #3ec57a;
-    --warn: #f6ad3c;
-    --err: #e74c3c;
+    /* Layered dark — near-black base, lift to slate for surfaces,
+       violet-leaning tint on the deepest backgrounds. */
+    --bg: #08081a;
+    --bg-2: #0d0d24;
+    --surface: #15152a;
+    --surface-2: #1c1c38;
+    --surface-3: #242445;
+    --border: #2c2c4c;
+    --border-soft: rgba(255,255,255,0.06);
+    --text: #eff0fa;
+    --muted: #9698b8;
+    --dim: #6a6c8c;
+    /* Accent gradient — coral → violet. Used for CTAs and hero glow.
+       Single named stops so buttons can reuse. */
+    --accent-1: #ff5c7c;
+    --accent-2: #b06bf8;
+    --accent: #ff5c7c;
+    --accent-grad: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 100%);
+    /* Status colors — slightly desaturated for dark-mode comfort. */
+    --ok: #45d684;
+    --warn: #f7b94a;
+    --err: #ef5b4a;
+    --ok-glow:   rgba(69,214,132,0.22);
+    --warn-glow: rgba(247,185,74,0.22);
+    --err-glow:  rgba(239,91,74,0.22);
     --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px;
-    --r-sm: 6px; --r-md: 10px;
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+    --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 24px rgba(0,0,0,0.25);
+    --shadow-lift: 0 10px 28px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04) inset;
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 16px; }
 body {
     font-family: var(--font);
-    background: var(--bg);
     color: var(--text);
     line-height: 1.5;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
+    /* Layered background: deep navy + two soft radial glows in the
+       accent colors, anchored top-left and top-right. Cheap (pure
+       CSS), gives the page a subtle gradient hero without images. */
+    background:
+        radial-gradient(900px 600px at -10% -20%, rgba(255,92,124,0.18), transparent 60%),
+        radial-gradient(800px 500px at 110% -10%, rgba(176,107,248,0.15), transparent 60%),
+        var(--bg);
+    background-attachment: fixed;
 }
+::selection { background: rgba(255,92,124,0.35); color: #fff; }
 
 /* Top bar */
 .bar {
     position: sticky; top: 0; z-index: 20;
-    background: rgba(10,10,26,0.92);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
+    background: rgba(8,8,26,0.72);
+    backdrop-filter: saturate(1.2) blur(14px);
+    -webkit-backdrop-filter: saturate(1.2) blur(14px);
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: var(--gap-2);
 }
 .bar__inner {
-    max-width: 680px; margin: 0 auto;
+    max-width: 720px; margin: 0 auto;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px var(--gap-4);
+    padding: 14px var(--gap-4);
 }
-.bar__title { font-weight: 700; font-size: 1rem; letter-spacing: .02em; }
-.bar__title span { color: var(--muted); font-weight: 400; margin-left: var(--gap-2); font-size: .85rem; }
+.bar__brand { display: flex; align-items: center; gap: 10px; }
+.bar__logo {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--accent-grad);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(255,92,124,0.35);
+    flex: 0 0 auto;
+}
+.bar__logo svg { stroke: #fff; }
+.bar__title { font-weight: 700; font-size: 1.02rem; letter-spacing: .01em; }
+.bar__title span { color: var(--muted); font-weight: 400; margin-left: var(--gap-2); font-size: .82rem; }
 .bar__logout {
-    background: transparent; border: 1px solid var(--border); color: var(--muted);
-    padding: 5px 12px; border-radius: var(--r-sm); font-size: .8rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 12px; border-radius: var(--r-sm); font-size: .8rem;
     text-decoration: none;
-    transition: border-color .15s, color .15s;
+    transition: border-color .15s, color .15s, background .15s;
 }
-.bar__logout:hover { border-color: var(--accent); color: var(--accent); }
+.bar__logout:hover { border-color: var(--accent-1); color: var(--text); background: rgba(255,92,124,0.08); }
 
-/* TOC */
+/* TOC — pill tab strip */
 .toc {
-    max-width: 680px; margin: 0 auto;
+    max-width: 720px; margin: 0 auto;
     display: flex; gap: var(--gap-1);
-    padding: var(--gap-2) var(--gap-4) 0;
+    padding: 2px var(--gap-4) 0;
     overflow-x: auto;
     scrollbar-width: none;
 }
 .toc::-webkit-scrollbar { display: none; }
 .toc a {
     flex: 0 0 auto;
-    padding: 6px 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
     border-radius: 999px;
-    background: var(--surface);
+    background: rgba(255,255,255,0.03);
     color: var(--muted);
     text-decoration: none;
     font-size: .85rem;
     font-weight: 500;
     border: 1px solid transparent;
-    transition: color .15s, border-color .15s;
+    transition: color .15s, border-color .15s, background .15s, transform .15s;
 }
-.toc a:hover { color: var(--text); }
-.toc a.active { color: var(--text); border-color: var(--border); background: var(--surface-2); }
+.toc a svg { width: 14px; height: 14px; stroke-width: 2; opacity: .85; }
+.toc a:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.toc a.active {
+    color: #fff;
+    background: var(--accent-grad);
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(255,92,124,0.35);
+}
+.toc a.active svg { opacity: 1; stroke: #fff; }
 
 /* Content */
-.wrap { max-width: 680px; margin: 0 auto; padding: var(--gap-3) var(--gap-4) var(--gap-6); }
-section + section { margin-top: var(--gap-5); }
+.wrap { max-width: 720px; margin: 0 auto; padding: var(--gap-4) var(--gap-4) var(--gap-6); }
+/* True tab behaviour — only the active section is visible. TOC pills
+ * act as the tab strip. No scroll-spy; hash sync is optional. */
+section { display: none; animation: fadeIn .25s ease; }
+section.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 h2 {
-    font-size: .78rem; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .08em;
-    margin: 0 var(--gap-1) var(--gap-3);
+    font-size: .78rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .1em;
+    margin: 0 2px var(--gap-3);
+    display: flex; align-items: center; gap: 8px;
 }
+h2 svg { width: 14px; height: 14px; stroke-width: 2; color: var(--accent-1); }
 
-/* Hero */
+/* Hero — the statement-of-status card. Gradient border + soft tint
+   so it stands apart from the ordinary cards below. */
 .hero {
-    background: var(--surface);
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(255,92,124,0.04) 0%, transparent 70%),
+        var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
+    border-radius: var(--r-lg);
     padding: var(--gap-5);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+.hero::before {
+    /* accent-colored gradient stripe at the top — subtle premium cue */
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: var(--accent-grad);
+    opacity: .7;
 }
 .hero__dot {
     display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-    vertical-align: middle; margin-right: 10px;
+    vertical-align: middle; margin-right: 12px;
     background: var(--muted);
+    position: relative;
 }
-.hero__dot.ok   { background: var(--ok);   box-shadow: 0 0 0 4px rgba(62,197,122,.15); }
-.hero__dot.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(246,173,60,.15); }
-.hero__dot.err  { background: var(--err);  box-shadow: 0 0 0 4px rgba(231,76,60,.15); }
+.hero__dot.ok,
+.hero__dot.warn,
+.hero__dot.err { animation: pulse 2s ease-in-out infinite; }
+.hero__dot.ok   { background: var(--ok);   box-shadow: 0 0 0 4px var(--ok-glow); }
+.hero__dot.warn { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-glow); }
+.hero__dot.err  { background: var(--err);  box-shadow: 0 0 0 4px var(--err-glow); }
+@keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 4px rgba(255,255,255,0.06); }
+    50%    { box-shadow: 0 0 0 7px rgba(255,255,255,0.01); }
+}
+.hero__dot.ok   { animation-name: pulseOk; }
+.hero__dot.warn { animation-name: pulseWarn; }
+.hero__dot.err  { animation-name: pulseErr; }
+@keyframes pulseOk   { 0%,100% { box-shadow: 0 0 0 4px var(--ok-glow);   }   50% { box-shadow: 0 0 0 9px rgba(69,214,132,0.04); } }
+@keyframes pulseWarn { 0%,100% { box-shadow: 0 0 0 4px var(--warn-glow); }   50% { box-shadow: 0 0 0 9px rgba(247,185,74,0.04); } }
+@keyframes pulseErr  { 0%,100% { box-shadow: 0 0 0 4px var(--err-glow);  }   50% { box-shadow: 0 0 0 9px rgba(239,91,74,0.04); } }
 .hero__line {
-    display: inline-block; font-size: 1.05rem; font-weight: 500;
+    display: inline-block; font-size: 1.08rem; font-weight: 500;
     vertical-align: middle;
+    letter-spacing: -.005em;
 }
 .hero__sub {
-    margin-top: var(--gap-4);
-    display: grid; grid-template-columns: max-content 1fr; gap: 8px var(--gap-4);
+    margin-top: var(--gap-5);
+    display: grid; grid-template-columns: max-content 1fr; gap: 10px var(--gap-5);
     font-size: .88rem;
+    padding-top: var(--gap-4);
+    border-top: 1px solid var(--border-soft);
 }
-.hero__sub dt { color: var(--muted); }
+.hero__sub dt { color: var(--muted); font-weight: 500; }
 .hero__sub dd { color: var(--text); word-break: break-word; }
 
 /* Chips row */
 .chips {
-    margin-top: var(--gap-3);
+    margin-top: var(--gap-4);
     display: flex; flex-wrap: wrap; gap: var(--gap-2);
 }
 .chip {
     background: var(--surface-2);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-soft);
     border-radius: 999px;
-    padding: 4px 10px;
+    padding: 5px 12px;
     font-size: .78rem;
     color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px;
 }
-.chip b { color: var(--text); font-weight: 500; margin-right: 4px; }
+.chip b { color: var(--text); font-weight: 600; }
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-1); }
 
 /* Cards for settings + updates */
 .card {
@@ -137,78 +218,118 @@ h2 {
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     overflow: hidden;
+    box-shadow: var(--shadow-card);
 }
 .card + .card { margin-top: var(--gap-3); }
 
-/* Details rows */
+/* Details rows — dressed like cards with a soft hover */
 details {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+    transition: border-color .15s, background .15s;
 }
 details + details { margin-top: var(--gap-3); }
-details[open] { background: var(--surface); }
+details[open] { border-color: var(--surface-3); }
 summary {
-    padding: 14px var(--gap-4);
+    padding: 16px var(--gap-4);
     cursor: pointer;
     font-weight: 500;
     display: flex; align-items: center; justify-content: space-between;
     list-style: none;
     user-select: none;
+    transition: color .15s;
 }
+summary:hover { color: var(--accent-1); }
 summary::-webkit-details-marker { display: none; }
 summary::after {
-    content: "›";
-    font-size: 1.3rem; color: var(--muted); transform: rotate(90deg);
-    transition: transform .15s;
+    content: "";
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform .2s;
+    margin-right: 4px;
 }
-details[open] summary::after { transform: rotate(-90deg); }
-.details-body { padding: 0 var(--gap-4) var(--gap-4); border-top: 1px solid var(--border); padding-top: var(--gap-4); }
+details[open] summary::after { transform: rotate(45deg); }
+.details-body { padding: var(--gap-4); border-top: 1px solid var(--border-soft); }
 
 /* Forms */
-.field { margin-bottom: var(--gap-3); }
+.field { margin-bottom: var(--gap-4); }
 .field:last-child { margin-bottom: 0; }
-.field > label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; }
+.field > label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
 .input, select.input {
     width: 100%;
-    padding: 10px 12px;
-    background: var(--bg);
+    padding: 11px 14px;
+    background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
     color: var(--text);
     font-size: .95rem;
     font-family: inherit;
     outline: none;
-    transition: border-color .15s;
+    transition: border-color .15s, box-shadow .15s, background .15s;
     -webkit-appearance: none; appearance: none;
 }
-.input:focus { border-color: var(--accent); }
-.input--pin {
-    font-size: 1.4rem; text-align: center; letter-spacing: .35em;
-    font-variant-numeric: tabular-nums;
+.input:hover { border-color: var(--surface-3); }
+.input:focus {
+    border-color: var(--accent-1);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px rgba(255,92,124,0.15);
 }
-.hint { font-size: .78rem; color: var(--dim); margin-top: 4px; }
+.input--pin {
+    font-size: 1.5rem; text-align: center; letter-spacing: .4em;
+    font-variant-numeric: tabular-nums;
+    padding-left: 0; padding-right: 0;
+}
+.hint { font-size: .78rem; color: var(--dim); margin-top: 6px; }
 
-/* Buttons */
+/* Buttons — gradient primary, outline secondary, subtle lift on hover */
 .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 10px 18px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 20px;
     border: 1px solid transparent;
     border-radius: var(--r-sm);
     font-size: .9rem; font-weight: 600;
     cursor: pointer;
-    transition: background .15s, border-color .15s, opacity .15s;
+    transition: transform .12s, background .15s, border-color .15s, box-shadow .15s, opacity .15s;
     font-family: inherit;
+    letter-spacing: .005em;
+    position: relative;
 }
-.btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn--primary  { background: var(--accent); color: #fff; }
-.btn--primary:hover:not(:disabled) { background: #c73a52; }
-.btn--outline  { background: transparent; color: var(--text); border-color: var(--border); }
-.btn--outline:hover:not(:disabled) { border-color: var(--muted); }
-.btn--danger   { background: var(--err); color: #fff; }
-.btn--danger:hover:not(:disabled) { background: #c0392b; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; stroke-width: 2; }
+.btn--primary  {
+    background: var(--accent-grad);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(255,92,124,0.3);
+}
+.btn--primary:hover:not(:disabled) {
+    box-shadow: 0 10px 28px rgba(255,92,124,0.45);
+    transform: translateY(-1px);
+}
+.btn--outline  {
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    border-color: var(--border);
+}
+.btn--outline:hover:not(:disabled) {
+    border-color: var(--surface-3);
+    background: rgba(255,255,255,0.07);
+}
+.btn--danger   {
+    background: linear-gradient(135deg, #ef5b4a 0%, #c0392b 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(239,91,74,0.3);
+}
+.btn--danger:hover:not(:disabled) {
+    box-shadow: 0 10px 28px rgba(239,91,74,0.45);
+    transform: translateY(-1px);
+}
 .btn--full { width: 100%; }
-.btn--sm   { padding: 6px 12px; font-size: .8rem; }
+.btn--sm   { padding: 7px 12px; font-size: .8rem; }
 
 /* Action row */
 .actions { display: flex; gap: var(--gap-2); flex-wrap: wrap; }
@@ -227,34 +348,56 @@ details[open] summary::after { transform: rotate(-90deg); }
 .msg--err  { background: rgba(231,76,60,.12); border-color: rgba(231,76,60,.3); color: var(--err); }
 
 /* Network list */
-.netlist { max-height: 200px; overflow-y: auto; margin: var(--gap-2) 0 var(--gap-3); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.netlist {
+    max-height: 220px; overflow-y: auto; margin: var(--gap-3) 0;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--bg-2);
+}
 .net {
-    padding: 9px 12px;
+    padding: 11px 14px;
     display: flex; justify-content: space-between; align-items: center;
     cursor: pointer;
-    border-bottom: 1px solid var(--border);
-    transition: background .12s;
+    border-bottom: 1px solid var(--border-soft);
+    transition: background .12s, color .12s;
 }
 .net:last-child { border-bottom: none; }
-.net:hover { background: var(--surface-2); }
-.net__signal { color: var(--muted); font-size: .8rem; }
+.net:hover { background: rgba(255,92,124,0.06); color: var(--accent-1); }
+.net__signal { color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
 
-/* OTA progress */
+/* OTA progress — gradient bar fill, subtle shimmer while active */
 .bar-fill {
-    height: 6px; background: var(--surface-2); border-radius: 3px;
-    overflow: hidden; margin: var(--gap-2) 0 6px;
+    position: relative;
+    height: 8px; background: var(--bg-2); border-radius: 4px;
+    overflow: hidden; margin: var(--gap-3) 0 8px;
+    border: 1px solid var(--border-soft);
 }
-.bar-fill > div { height: 100%; background: var(--accent); width: 0%; transition: width .3s; }
-.bar-label { font-size: .82rem; color: var(--muted); }
+.bar-fill > div {
+    height: 100%;
+    background: var(--accent-grad);
+    width: 0%;
+    transition: width .4s ease;
+    box-shadow: 0 0 12px rgba(255,92,124,0.45);
+}
+.bar-label { font-size: .85rem; color: var(--muted); font-weight: 500; }
 
 /* Danger section */
 .danger {
-    border: 1px solid rgba(231,76,60,.4);
-    border-radius: var(--r-md);
-    background: rgba(231,76,60,.05);
-    padding: var(--gap-4);
+    border: 1px solid rgba(239,91,74,0.35);
+    border-radius: var(--r-lg);
+    background:
+        linear-gradient(180deg, rgba(239,91,74,0.06) 0%, transparent 60%),
+        var(--surface);
+    padding: var(--gap-5);
+    box-shadow: var(--shadow-card);
+    position: relative;
+    overflow: hidden;
 }
-.danger > p { font-size: .88rem; color: var(--muted); margin-bottom: var(--gap-3); }
+.danger::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--err) 50%, transparent 100%);
+    opacity: .5;
+}
+.danger > p { font-size: .9rem; color: var(--muted); margin-bottom: var(--gap-4); line-height: 1.6; }
 
 /* Small helpers */
 .muted { color: var(--muted); }
@@ -279,14 +422,34 @@ details[open] summary::after { transform: rotate(-90deg); }
 
 <div class="bar">
   <div class="bar__inner">
-    <div class="bar__title">Camera <span id="bar-host">{{CAMERA_ID}}</span></div>
+    <div class="bar__brand">
+      <span class="bar__logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </span>
+      <div class="bar__title">Camera <span id="bar-host">{{CAMERA_ID}}</span></div>
+    </div>
     <a href="/logout" class="bar__logout">Sign out</a>
   </div>
   <nav class="toc" aria-label="Page sections">
-    <a href="#status" data-toc class="active">Status</a>
-    <a href="#settings" data-toc>Settings</a>
-    <a href="#updates" data-toc>Updates</a>
-    <a href="#danger" data-toc>Reset</a>
+    <a href="#status" data-toc class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      Status
+    </a>
+    <a href="#settings" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.46.1.87.38 1.15.76.28.38.42.84.4 1.31"/></svg>
+      Settings
+    </a>
+    <a href="#updates" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Updates
+    </a>
+    <a href="#danger" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Reset
+    </a>
   </nav>
 </div>
 
@@ -301,6 +464,7 @@ details[open] summary::after { transform: rotate(-90deg); }
       <dt>WiFi</dt><dd id="h-wifi">--</dd>
       <dt>Server</dt><dd id="h-server">--</dd>
       <dt>Running for</dt><dd id="h-uptime">--</dd>
+      <dt>Firmware</dt><dd id="h-firmware" class="mono">--</dd>
     </dl>
     <div class="chips">
       <span class="chip"><b>CPU</b><span id="h-cpu">--</span></span>
@@ -335,7 +499,10 @@ details[open] summary::after { transform: rotate(-90deg); }
 
 <!-- ============ SETTINGS ============ -->
 <section id="settings">
-  <h2>Settings</h2>
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.46.1.87.38 1.15.76.28.38.42.84.4 1.31"/></svg>
+    Settings
+  </h2>
 
   <details>
     <summary>Change WiFi network</summary>
@@ -414,14 +581,27 @@ details[open] summary::after { transform: rotate(-90deg); }
   </details>
 
   <details id="unpair-details" hidden>
-    <summary>Unpair from server</summary>
+    <summary>Pair with a different server · Unpair</summary>
     <div class="details-body">
       <p class="muted" style="font-size:.88rem;margin-bottom:var(--gap-3)">
-        The camera will forget this server and return to waiting for a new
-        pairing PIN. Streams stop immediately. The server will also learn
-        the camera is gone.
+        Paste a PIN from another server's dashboard to move this camera
+        over — no need to unpair first. Or use Unpair below to clear the
+        server link without re-pairing.
       </p>
-      <button class="btn btn--danger" id="btn-unpair" onclick="doUnpair()">Unpair</button>
+      <div class="field">
+        <label>Server address</label>
+        <input type="text" id="repair-server" class="input" placeholder="rpi-divinu.local">
+      </div>
+      <div class="field">
+        <label>Pairing PIN</label>
+        <input type="text" id="repair-pin" class="input input--pin"
+               maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
+               placeholder="000000">
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary" id="btn-repair" onclick="doRepair()">Re-pair</button>
+        <button class="btn btn--danger" id="btn-unpair" onclick="doUnpair()">Unpair</button>
+      </div>
       <div id="unpair-result"></div>
     </div>
   </details>
@@ -429,7 +609,10 @@ details[open] summary::after { transform: rotate(-90deg); }
 
 <!-- ============ UPDATES ============ -->
 <section id="updates">
-  <h2>Firmware update</h2>
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Firmware update
+  </h2>
   <div class="card" style="padding:var(--gap-4)">
     <p class="muted" style="font-size:.88rem;margin-bottom:var(--gap-3)">
       Upload a firmware file. The camera installs it in the background and
@@ -455,7 +638,10 @@ details[open] summary::after { transform: rotate(-90deg); }
 
 <!-- ============ DANGER ============ -->
 <section id="danger">
-  <h2>Danger zone</h2>
+  <h2 style="color:var(--err)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    Danger zone
+  </h2>
   <div class="danger">
     <p>
       Factory reset erases WiFi settings, pairing certificates, and the
@@ -488,20 +674,40 @@ function esc(s) { var d = document.createElement("div"); d.textContent = String(
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
 
-// ---- Mini-TOC active highlight ----
+// ---- Tab switcher ----
+// Proper tabs: one section visible at a time. Clicking a pill hides
+// the others. Deep links via #hash still work (opening the page at
+// e.g. /status.html#updates lands on Updates). window.scrollTo(0,0)
+// after a switch so the active section starts at the top every time
+// — no residual scroll from the previous tab.
 var tocLinks = document.querySelectorAll("[data-toc]");
-var sections = ["status","settings","updates","danger"].map($);
-function updateToc() {
-    var y = window.scrollY + 120;
-    var active = "status";
-    for (var i = 0; i < sections.length; i++) {
-        if (sections[i] && sections[i].offsetTop <= y) active = sections[i].id;
-    }
+var sections = ["status","settings","updates","danger"].map($).filter(Boolean);
+var VALID_IDS = sections.map(function(s){ return s.id; });
+
+function activateTab(id) {
+    if (VALID_IDS.indexOf(id) === -1) id = "status";
+    sections.forEach(function(s){ s.classList.toggle("active", s.id === id); });
     tocLinks.forEach(function(a){
-        a.classList.toggle("active", a.getAttribute("href") === "#" + active);
+        a.classList.toggle("active", a.getAttribute("href") === "#" + id);
     });
+    if (history.replaceState) {
+        history.replaceState(null, "", "#" + id);
+    }
+    window.scrollTo(0, 0);
 }
-window.addEventListener("scroll", updateToc, { passive: true });
+
+tocLinks.forEach(function(a){
+    a.addEventListener("click", function(e){
+        e.preventDefault();
+        activateTab(a.getAttribute("href").slice(1));
+    });
+});
+
+// Respect the hash on first load (e.g. /?#updates deep-links).
+activateTab((location.hash || "#status").slice(1));
+window.addEventListener("hashchange", function(){
+    activateTab((location.hash || "#status").slice(1));
+});
 
 // ---- Plain-English status sentence ----
 function statusSentence(d) {
@@ -541,6 +747,7 @@ function loadStatus() {
             ? (d.server_address || "--")
             : "Not paired";
         $("h-uptime").textContent = friendlyUptime(d.uptime);
+        $("h-firmware").textContent = d.firmware_version || "--";
 
         // Chips
         if (typeof d.cpu_temp === "number") {
@@ -570,6 +777,9 @@ function loadStatus() {
         if (d.paired) {
             hide("pair-cta");
             show("unpair-details");
+            if (!$("repair-server").value && d.server_address) {
+                $("repair-server").value = d.server_address;
+            }
         } else {
             show("pair-cta");
             hide("unpair-details");
@@ -609,6 +819,36 @@ function doPair() {
     }).catch(function(){
         setBusy("btn-pair", false, "Pair camera");
         setMsg("pair-result", "err", "Request failed.");
+    });
+}
+
+function doRepair() {
+    // Re-pair with a (possibly different) server without unpair-then-
+    // pair. The server-side /api/pair handler already calls
+    // pairing_manager.reset_local_state() when is_paired is true, so
+    // we can reuse it unchanged.
+    var pin = $("repair-pin").value.trim();
+    var addr = $("repair-server").value.trim();
+    if (pin.length !== 6) return setMsg("unpair-result", "err", "Enter the 6-digit PIN.");
+    if (!addr) return setMsg("unpair-result", "err", "Enter the server address.");
+    if (!confirm("Move this camera to server " + addr + "?\nThe current pairing will be replaced.")) return;
+    var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
+    setBusy("btn-repair", true, "Re-pairing…");
+    setMsg("unpair-result", "", "");
+    fetch("/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pin, server_url: url })
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-repair", false, "Re-pair");
+        if (d.error) setMsg("unpair-result", "err", d.error);
+        else {
+            setMsg("unpair-result", "warn", "Re-pair accepted — camera restarting. Page will reload.");
+            setTimeout(function(){ window.location.reload(); }, 6000);
+        }
+    }).catch(function(){
+        setBusy("btn-repair", false, "Re-pair");
+        setMsg("unpair-result", "err", "Request failed.");
     });
 }
 
@@ -889,6 +1129,7 @@ function setMsg(id, kind, text) {
 
 // expose for inline onclick handlers
 window.doPair = doPair;
+window.doRepair = doRepair;
 window.doUnpair = doUnpair;
 window.scanNetworks = scanNetworks;
 window.doWifi = doWifi;
