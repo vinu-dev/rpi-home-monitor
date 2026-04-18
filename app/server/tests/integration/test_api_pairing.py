@@ -9,6 +9,15 @@ from monitor.models import Camera, User
 
 
 @pytest.fixture(autouse=True)
+def _clear_register_rate_limiter():
+    """Reset the module-level register rate-limit dict between tests."""
+    import monitor.api.pairing as _pairing_mod
+    _pairing_mod._register_attempts.clear()
+    yield
+    _pairing_mod._register_attempts.clear()
+
+
+@pytest.fixture(autouse=True)
 def _setup_ca_files(app):
     """Create fake CA files so PairingService can read them."""
     certs_dir = app.config["CERTS_DIR"]
@@ -256,3 +265,120 @@ class TestDeleteCameraUnpairs:
         _add_camera(app, status="online")
         resp = client.delete("/api/v1/cameras/cam-001")
         assert resp.status_code == 200
+
+
+class TestRegisterCamera:
+    """POST /api/v1/pair/register — camera self-registers as pending."""
+
+    def test_returns_registered_on_success(self, app, client):
+        resp = client.post(
+            "/api/v1/pair/register",
+            json={"camera_id": "cam-abc123", "firmware_version": "1.0.0"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "registered"
+
+    def test_requires_json_body(self, client):
+        resp = client.post("/api/v1/pair/register")
+        assert resp.status_code == 400
+        assert "JSON body" in resp.get_json()["error"]
+
+    def test_requires_camera_id(self, client):
+        resp = client.post("/api/v1/pair/register", json={"firmware_version": "1.0"})
+        assert resp.status_code == 400
+        assert "camera_id" in resp.get_json()["error"]
+
+    def test_rejects_invalid_camera_id_format(self, client):
+        for bad_id in ["CAM-001", "cam_001", "cam-", "x" * 60, "cam-UPPER"]:
+            resp = client.post("/api/v1/pair/register", json={"camera_id": bad_id})
+            assert resp.status_code == 400, f"Expected 400 for {bad_id}"
+
+    def test_accepts_valid_camera_id_formats(self, client):
+        for good_id in ["cam-001", "cam-abc123", "cam-a1b2c3"]:
+            resp = client.post("/api/v1/pair/register", json={"camera_id": good_id})
+            assert resp.status_code == 200, f"Expected 200 for {good_id}"
+
+    def test_rate_limited_after_10_requests(self, app, client):
+        """11th registration from same IP is rejected with 429."""
+        for _ in range(10):
+            client.post("/api/v1/pair/register", json={"camera_id": f"cam-{_:03d}"})
+        resp = client.post("/api/v1/pair/register", json={"camera_id": "cam-999"})
+        assert resp.status_code == 429
+        assert "Too many" in resp.get_json()["error"]
+
+    def test_does_not_require_session_auth(self, client):
+        """register is open — no login needed."""
+        resp = client.post("/api/v1/pair/register", json={"camera_id": "cam-open1"})
+        assert resp.status_code != 401
+
+    def test_creates_pending_camera_in_store(self, app, client):
+        client.post(
+            "/api/v1/pair/register",
+            json={"camera_id": "cam-reg01", "firmware_version": "2.0.0"},
+        )
+        cam = app.store.get_camera("cam-reg01")
+        assert cam is not None
+        assert cam.status == "pending"
+
+
+class TestSafePairingError:
+    """_safe_pairing_error() sanitises internal messages."""
+
+    def test_sanitises_ca_key_error(self, app, logged_in_client):
+        """CA cert path must not leak to the client."""
+        from unittest.mock import patch
+        with patch(
+            "monitor.services.pairing_service.PairingService.initiate_pairing",
+            return_value=(None, "CA key or certificate not found at /data/certs/ca.key", 500),
+        ):
+            from monitor.models import Camera
+            app.store.save_camera(Camera(id="cam-001", status="pending", ip="192.168.1.1"))
+            client = logged_in_client()
+            resp = client.post("/api/v1/cameras/cam-001/pair")
+        assert resp.status_code == 500
+        body = resp.get_json()["error"]
+        assert "/data/certs" not in body
+        assert "administrator" in body.lower()
+
+    def test_sanitises_openssl_error(self, app, logged_in_client):
+        from unittest.mock import patch
+        with patch(
+            "monitor.services.pairing_service.PairingService.initiate_pairing",
+            return_value=(None, "OpenSSL error: bad signature", 500),
+        ):
+            from monitor.models import Camera
+            app.store.save_camera(Camera(id="cam-002", status="pending", ip="192.168.1.2"))
+            client = logged_in_client()
+            resp = client.post("/api/v1/cameras/cam-002/pair")
+        assert resp.status_code == 500
+        assert "OpenSSL" not in resp.get_json()["error"]
+
+    def test_plain_error_passes_through(self, app, logged_in_client):
+        from unittest.mock import patch
+        with patch(
+            "monitor.services.pairing_service.PairingService.initiate_pairing",
+            return_value=(None, "Camera already online", 400),
+        ):
+            from monitor.models import Camera
+            app.store.save_camera(Camera(id="cam-003", status="online", ip="192.168.1.3"))
+            client = logged_in_client()
+            resp = client.post("/api/v1/cameras/cam-003/pair")
+        assert resp.status_code == 400
+        assert "already online" in resp.get_json()["error"].lower()
+
+
+class TestUnpairCameraErrorPath:
+    """POST /api/v1/cameras/<id>/unpair error path."""
+
+    def test_unpair_service_error_returned(self, app, logged_in_client):
+        from unittest.mock import patch
+        with patch(
+            "monitor.services.pairing_service.PairingService.unpair",
+            return_value=("Internal revocation error", 500),
+        ):
+            from monitor.models import Camera
+            app.store.save_camera(Camera(id="cam-001", status="online", ip="192.168.1.50"))
+            client = logged_in_client()
+            resp = client.post("/api/v1/cameras/cam-001/unpair")
+        assert resp.status_code == 500
+        assert "error" in resp.get_json()
