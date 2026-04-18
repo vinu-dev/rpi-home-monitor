@@ -17,8 +17,12 @@ def certs_dir(data_dir):
     """Directory with fake server.crt + server.key so _ssl_context() passes."""
     d = data_dir / "certs"
     d.mkdir(parents=True, exist_ok=True)
-    (d / "server.crt").write_text("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
-    (d / "server.key").write_text("-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n")
+    (d / "server.crt").write_text(
+        "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n"
+    )
+    (d / "server.key").write_text(
+        "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n"
+    )
     return d
 
 
@@ -76,13 +80,14 @@ class TestPushBundle:
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = fake_resp
 
-        with patch(
-            "monitor.services.camera_ota_client.http.client.HTTPSConnection",
-            return_value=fake_conn,
-        ) as mock_conn_cls, patch.object(client, "_ssl_context"):
-            ok, msg = client.push_bundle(
-                "10.0.0.1", str(p), progress_cb=_progress
-            )
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ) as mock_conn_cls,
+            patch.object(client, "_ssl_context"),
+        ):
+            ok, msg = client.push_bundle("10.0.0.1", str(p), progress_cb=_progress)
 
         assert ok is True
         assert msg == "Installed"
@@ -105,10 +110,13 @@ class TestPushBundle:
         fake_resp.read.return_value = b'{"error": "bad sig"}'
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = fake_resp
-        with patch(
-            "monitor.services.camera_ota_client.http.client.HTTPSConnection",
-            return_value=fake_conn,
-        ), patch.object(client, "_ssl_context"):
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
             ok, msg = client.push_bundle("10.0.0.1", str(p))
         assert ok is False
         assert msg == "bad sig"
@@ -116,10 +124,13 @@ class TestPushBundle:
     def test_oserror_returns_error(self, client, tmp_path):
         p = tmp_path / "bundle.swu"
         p.write_bytes(b"data")
-        with patch(
-            "monitor.services.camera_ota_client.http.client.HTTPSConnection",
-            side_effect=OSError("connection refused"),
-        ), patch.object(client, "_ssl_context"):
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                side_effect=OSError("connection refused"),
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
             ok, msg = client.push_bundle("10.0.0.1", str(p))
         assert ok is False
         assert "connection refused" in msg.lower()
@@ -132,20 +143,26 @@ class TestGetStatus:
         fake_resp.read.return_value = b'{"state": "idle", "progress": 0, "error": ""}'
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = fake_resp
-        with patch(
-            "monitor.services.camera_ota_client.http.client.HTTPSConnection",
-            return_value=fake_conn,
-        ), patch.object(client, "_ssl_context"):
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
             status, err = client.get_status("10.0.0.1")
         assert err == ""
         assert status["state"] == "idle"
         fake_conn.request.assert_called_with("GET", STATUS_PATH)
 
     def test_unreachable(self, client):
-        with patch(
-            "monitor.services.camera_ota_client.http.client.HTTPSConnection",
-            side_effect=OSError("refused"),
-        ), patch.object(client, "_ssl_context"):
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                side_effect=OSError("refused"),
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
             status, err = client.get_status("10.0.0.1")
         assert status is None
         assert "refused" in err.lower()
