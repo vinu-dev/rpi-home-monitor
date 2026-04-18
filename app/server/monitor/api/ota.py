@@ -19,6 +19,7 @@ the install layer is identical on both devices.
 
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 
@@ -169,7 +170,27 @@ def install_server_image():
     if not ok:
         return jsonify({"error": err}), 500
 
-    return jsonify({"message": "Installation complete — reboot required"}), 200
+    # The button says "Install & Reboot", so actually reboot. We flush
+    # the HTTP response first (the client needs the 200 to transition
+    # its UI into the "rebooting" state) and schedule the reboot on a
+    # background thread with a short delay so systemd has a moment to
+    # tear down Flask cleanly.
+    def _reboot_after_delay():
+        import time as _t
+
+        _t.sleep(2.0)
+        try:
+            subprocess.run(["reboot"], check=False, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            current_app.logger.error("reboot command failed: %s", exc)
+
+    ota.set_status("server", "rebooting", progress=100, error="")
+    threading.Thread(
+        target=_reboot_after_delay, daemon=True, name="ota-install-reboot"
+    ).start()
+    return jsonify(
+        {"message": "Installation complete — rebooting now", "rebooting": True}
+    ), 200
 
 
 @ota_bp.route("/camera/<camera_id>/upload", methods=["POST"])
@@ -279,10 +300,9 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
         audit = getattr(app, "audit", None)
 
         def _progress(sent, total):
-            # Map bytes-sent → 0..50 %. The second 50 % is reserved
-            # for verify+install on the camera side (OTAAgent emits
-            # its own 0..100 range; we surface it via the separate
-            # "live" camera status poll from the UI).
+            # Map bytes-sent → 0..50 %. Used only for the byte-level
+            # track within the "uploading" phase; high-level state
+            # transitions are driven by _status below.
             if total > 0:
                 pct = int((sent / total) * 50)
             else:
@@ -291,9 +311,18 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
                 camera_id, "uploading", progress=pct, error="", bytes_sent=sent
             )
 
+        def _status(state, progress, error=""):
+            # push_bundle's high-level state updates (installing,
+            # rebooting, installed, error). Overwrites whatever
+            # _progress last wrote so the UI reflects the real phase.
+            kwargs = {"progress": progress, "error": error or ""}
+            ota.set_status(camera_id, state, **kwargs)
+
         ota.set_status(camera_id, "uploading", progress=0, error="")
         try:
-            ok, msg = client.push_bundle(camera_ip, bundle_path, progress_cb=_progress)
+            ok, msg = client.push_bundle(
+                camera_ip, bundle_path, progress_cb=_progress, status_cb=_status
+            )
         except Exception as exc:  # defensive — never leak out of the thread
             ok, msg = False, f"Unexpected error: {exc}"
 

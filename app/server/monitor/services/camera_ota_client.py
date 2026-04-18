@@ -84,14 +84,22 @@ class CameraOTAClient:
         ctx.load_cert_chain(cert_path, key_path)
         return ctx
 
-    def push_bundle(self, camera_ip, bundle_path, progress_cb=None):
+    def push_bundle(self, camera_ip, bundle_path, progress_cb=None, status_cb=None):
         """Stream a .swu bundle to a camera's OTA agent.
 
         Args:
             camera_ip: Camera IP address.
             bundle_path: Absolute path to .swu file on server disk.
             progress_cb: Optional callback(bytes_sent, total_bytes)
-                invoked after every chunk. Must be fast and thread-safe.
+                invoked during the upload phase for byte-level progress.
+                Must be fast and thread-safe.
+            status_cb: Optional callback(state, progress, error="") that
+                reports high-level phase transitions — state ∈
+                {"uploading", "installing", "rebooting", "installed",
+                "error"} and progress in 0..100. Enables the UI to show
+                "rebooting — waiting for camera" during the window when
+                the camera has dropped off the network mid-install and
+                before it comes back to confirm.
 
         Returns:
             (ok: bool, message_or_error: str). On success the message
@@ -101,6 +109,15 @@ class CameraOTAClient:
         The push is synchronous — the caller runs this on a background
         thread and polls get_status() from the UI.
         """
+
+        def _emit(state, progress, error=""):
+            if status_cb is None:
+                return
+            try:
+                status_cb(state, progress, error)
+            except Exception as cb_exc:
+                log.debug("status_cb raised: %s", cb_exc)
+
         if not os.path.isfile(bundle_path):
             return False, f"Bundle not found: {bundle_path}"
 
@@ -180,33 +197,64 @@ class CameraOTAClient:
         # as soon as the trigger file was written; the actual install
         # runs async on the camera to keep RAM pressure low on the
         # Pi Zero 2W.
+        #
+        # State transitions surfaced to the UI (via status_cb):
+        #   - "installing" while the camera is reachable and reports
+        #     progress through its /ota/status endpoint.
+        #   - "rebooting" once we've seen the camera drop off AFTER we
+        #     confirmed it was installing — this is the expected window
+        #     when it cycles into the new slot and OTAAgent isn't
+        #     listening yet.
+        #   - "installed" when the camera comes back and its
+        #     status.json is "installed".
+        #   - "error" on explicit camera-reported failure.
+        _emit("installing", 50)
         deadline = time.time() + INSTALL_POLL_TIMEOUT
         last_progress = -1
+        saw_reachable = False
+        announced_rebooting = False
         while time.time() < deadline:
             status, err = self.get_status(camera_ip)
             if status is None:
-                # Transient unreachability is expected during the write
-                # phase — don't fail the whole push on one missed poll.
+                if saw_reachable and not announced_rebooting:
+                    # Camera was alive a moment ago and is gone now —
+                    # that's the expected reboot window.
+                    log.info("OTA push to %s: camera rebooting", camera_ip)
+                    _emit("rebooting", 90)
+                    announced_rebooting = True
                 log.debug("status poll transient error for %s: %s", camera_ip, err)
                 time.sleep(INSTALL_POLL_INTERVAL)
                 continue
+
+            saw_reachable = True
             state = status.get("state", "")
             progress = status.get("progress", 0)
             if progress != last_progress:
                 if progress_cb is not None:
-                    # Server-side status already ranged bytes-sent 0..50%;
-                    # map the camera's install progress into 50..100%.
                     try:
                         progress_cb(total + progress, total * 2)
                     except Exception as cb_exc:
                         log.debug("progress_cb raised: %s", cb_exc)
                 last_progress = progress
+            # If camera reports installing/verifying, surface it — this
+            # overrides any earlier "rebooting" we might have announced
+            # if the camera came back up mid-install (rare, but possible
+            # on flaky WiFi).
+            if state in ("installing", "verifying", "downloading"):
+                # Map the camera's 0..100 install progress into 50..95
+                # of the overall push — leave 95..100 for the reboot /
+                # post-boot confirmation windows.
+                overall = 50 + int(progress * 45 / 100)
+                _emit("installing", overall)
+                announced_rebooting = False
             if state == "installed":
                 log.info("OTA push to %s installed (polled)", camera_ip)
+                _emit("installed", 100)
                 return True, "Installed"
             if state == "error":
                 err = status.get("error") or "install failed"
                 log.warning("OTA push to %s install error: %s", camera_ip, err)
+                _emit("error", last_progress if last_progress >= 0 else 50, err)
                 return False, err
             time.sleep(INSTALL_POLL_INTERVAL)
 

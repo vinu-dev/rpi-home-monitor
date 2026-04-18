@@ -903,9 +903,10 @@
                      x-text="ota.server.state + ' — ' + (ota.server.progress || 0) + '%'"></div>
             </div>
             <div class="text-small text-muted" style="margin-top:var(--space-3);">
-                The server validates the .swu signature, stages it to
-                <code>/data/ota/staging</code>, and installs via SWUpdate to
-                the standby partition. A reboot is required after install.
+                Upload a firmware file, then click Install &amp; Reboot. The
+                server installs the update safely in the background and
+                restarts itself — if the new version fails to start, it
+                automatically rolls back to the previous one.
             </div>
         </div>
     </div>
@@ -958,9 +959,11 @@
             </div>
         </template>
         <div class="text-small text-muted">
-            Camera updates are streamed from the server to the camera over mTLS (ADR-0020).
-            The camera verifies the signature and installs via SWUpdate — the same engine
-            used for server updates. A successful install reboots the camera onto the new slot.
+            Upload a firmware file for each camera, then click Push &amp;
+            Install. The server sends the update to the camera over a
+            secure paired connection, installs it, and reboots the
+            camera onto the new version. If the new version fails to
+            start, the camera automatically rolls back.
         </div>
     </div>
 </div>
@@ -1533,23 +1536,55 @@ function settingsPage() {
         /* --- Software Updates (ADR-0020) --- */
         cameraBusy(cam) {
             var s = cam && cam.state;
-            return s === 'uploading' || s === 'downloading' || s === 'verifying' || s === 'installing';
+            return (
+                s === 'uploading' || s === 'downloading' ||
+                s === 'verifying' || s === 'installing' ||
+                s === 'rebooting'
+            );
         },
 
         _serverBusy(state) {
-            return state === 'uploading' || state === 'installing' || state === 'verifying';
+            return (
+                state === 'uploading' || state === 'installing' ||
+                state === 'verifying' || state === 'rebooting'
+            );
         },
 
         async loadOtaStatus() {
             try {
                 var data = await window.HM.api.get('/api/v1/ota/status');
+
+                // Guard only the window when a *client-side* browser upload
+                // is actively streaming bytes — that's the only case where
+                // server status honestly says "idle" (Flask multipart parser
+                // hasn't handed off yet). Once the client upload resolves,
+                // or whenever the server-side push/install is the one
+                // driving progress, we accept the server's updates.
                 var prev = this.ota.server;
-                this.ota.server = Object.assign({ busy: this._serverBusy(data.server && data.server.state) }, prev, data.server || {});
-                this.ota.server.busy = this._serverBusy(this.ota.server.state);
-                if (!this.ota.server.staged_filename) {
-                    this.ota.server.staged_filename = prev.staged_filename || '';
+                if (!prev._clientUploading) {
+                    this.ota.server = Object.assign(
+                        { busy: this._serverBusy(data.server && data.server.state) },
+                        prev,
+                        data.server || {}
+                    );
+                    this.ota.server.busy = this._serverBusy(this.ota.server.state);
+                    if (!this.ota.server.staged_filename) {
+                        this.ota.server.staged_filename = prev.staged_filename || '';
+                    }
                 }
+
+                var existing = {};
+                (this.ota.cameras || []).forEach(function(c) { existing[c.id] = c; });
                 this.ota.cameras = (data.cameras || []).map(function(c) {
+                    var local = existing[c.id];
+                    // Only the client-side upload owns the card; the server-
+                    // side push populates progress via polling like any
+                    // other long-running action.
+                    if (local && local._clientUploading) {
+                        return local;
+                    }
+                    // Preserve client-side _clientUploading flag if somehow
+                    // set without local state surviving (shouldn't happen).
                     return Object.assign({ progress: 0, error: '', state: 'idle' }, c);
                 });
                 this._scheduleOtaPoll();
@@ -1565,20 +1600,37 @@ function settingsPage() {
             this._otaPollTimer = setTimeout(function() { self.loadOtaStatus(); }, delay);
         },
 
-        async _uploadWithCsrf(url, file) {
-            var fd = new FormData();
-            fd.append('file', file);
-            var resp = await fetch(url, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'X-CSRF-Token': window.HM.auth.getCsrfToken() },
-                body: fd,
+        // Upload via XHR, not fetch — XHR is the only way to get reliable
+        // upload-progress events (`upload.onprogress`). `onProgress(pct)` is
+        // invoked with 0..100 while bytes stream; resolves with the parsed
+        // JSON body on 2xx, rejects with Error(message) otherwise.
+        _uploadWithCsrf(url, file, onProgress) {
+            return new Promise(function(resolve, reject) {
+                var fd = new FormData();
+                fd.append('file', file);
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
+                xhr.withCredentials = true;
+                xhr.setRequestHeader('X-CSRF-Token', window.HM.auth.getCsrfToken());
+                xhr.upload.onprogress = function(e) {
+                    if (onProgress && e.lengthComputable) {
+                        onProgress(Math.round((e.loaded / e.total) * 100));
+                    }
+                };
+                xhr.onload = function() {
+                    var body = xhr.responseText || '';
+                    var data = {};
+                    try { data = body ? JSON.parse(body) : {}; } catch (_) { /* non-JSON body */ }
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.error || data.message || ('HTTP ' + xhr.status)));
+                    }
+                };
+                xhr.onerror = function() { reject(new Error('Network error')); };
+                xhr.onabort = function() { reject(new Error('Upload aborted')); };
+                xhr.send(fd);
             });
-            var data = await resp.json().catch(function() { return {}; });
-            if (!resp.ok) {
-                throw new Error(data.error || data.message || ('HTTP ' + resp.status));
-            }
-            return data;
         },
 
         async uploadServerBundle(file) {
@@ -1591,8 +1643,14 @@ function settingsPage() {
             this.ota.server.state = 'uploading';
             this.ota.server.progress = 0;
             this.ota.server.error = '';
+            this.ota.server._clientUploading = true;
+            var self = this;
             try {
-                var data = await this._uploadWithCsrf('/api/v1/ota/server/upload', file);
+                var data = await this._uploadWithCsrf(
+                    '/api/v1/ota/server/upload',
+                    file,
+                    function(pct) { self.ota.server.progress = pct; }
+                );
                 this.ota.server.staged_filename = data.filename || file.name;
                 this.ota.server.state = 'staged';
                 this.ota.server.busy = false;
@@ -1603,6 +1661,7 @@ function settingsPage() {
                 this.ota.server.busy = false;
                 window.HM.toast(this.ota.server.error, 'error');
             }
+            this.ota.server._clientUploading = false;
             this.loadOtaStatus();
         },
 
@@ -1610,14 +1669,18 @@ function settingsPage() {
             if (!confirm('Install this update? The server will reboot into the new partition.')) return;
             this.ota.server.busy = true;
             this.ota.server.state = 'installing';
-            this.ota.server.progress = 50;
+            this.ota.server.progress = 0;
             this.ota.server.error = '';
             try {
                 var data = await window.HM.api.post('/api/v1/ota/server/install', {});
-                this.ota.server.state = 'installed';
+                // The install endpoint reboots the server after a 2s
+                // delay. Move the card into "rebooting" state so the
+                // user sees we're waiting on the box to come back,
+                // rather than letting the status poller flip to idle.
+                this.ota.server.state = 'rebooting';
                 this.ota.server.progress = 100;
-                this.ota.server.busy = false;
-                window.HM.toast(data.message || 'Installed — reboot required', 'success');
+                this.ota.server.busy = true;
+                window.HM.toast(data.message || 'Rebooting…', 'success');
             } catch(e) {
                 this.ota.server.state = 'error';
                 this.ota.server.error = e.message || 'Install failed';
@@ -1636,10 +1699,12 @@ function settingsPage() {
             cam.state = 'uploading';
             cam.progress = 0;
             cam.error = '';
+            cam._clientUploading = true;
             try {
                 var data = await this._uploadWithCsrf(
                     '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/upload',
-                    file
+                    file,
+                    function(pct) { cam.progress = pct; }
                 );
                 cam.staged_filename = data.filename || file.name;
                 cam.state = 'staged';
@@ -1649,6 +1714,7 @@ function settingsPage() {
                 cam.error = e.message || 'Upload failed';
                 window.HM.toast(cam.error, 'error');
             }
+            cam._clientUploading = false;
             this.loadOtaStatus();
         },
 

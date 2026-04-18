@@ -65,14 +65,41 @@ class OTAService:
         return os.path.join(self._data_dir, "ota", "staging")
 
     def get_status(self, device_id="server"):
-        """Get update status for a device."""
+        """Get update status for a device.
+
+        The in-memory status dict is transient — it vanishes on restart.
+        If we have no in-RAM status for the server but a .swu is sitting
+        in the staging dir (from a prior upload that survived the
+        process lifecycle), reconstruct a "staged" state from disk so
+        the UI keeps showing the Install button.
+        """
         with self._status_lock:
-            return dict(
-                self._status.get(
-                    device_id,
-                    {"state": "idle", "version": "", "progress": 0, "error": ""},
-                )
-            )
+            status = self._status.get(device_id)
+            if status is not None:
+                return dict(status)
+
+        default = {"state": "idle", "version": "", "progress": 0, "error": ""}
+        if device_id == "server":
+            staged = self._find_staged_bundle()
+            if staged:
+                default["state"] = "staged"
+                default["staged_filename"] = staged
+        return default
+
+    def _find_staged_bundle(self):
+        """Return the filename of the newest staged .swu, or '' if none."""
+        try:
+            entries = [
+                (os.path.getmtime(os.path.join(self.staging_dir, f)), f)
+                for f in os.listdir(self.staging_dir)
+                if f.endswith(".swu")
+            ]
+        except OSError:
+            return ""
+        if not entries:
+            return ""
+        entries.sort(reverse=True)
+        return entries[0][1]
 
     def set_status(self, device_id, state, **kwargs):
         """Update status for a device."""
@@ -230,42 +257,62 @@ class OTAService:
         if not os.path.isfile(bundle_path):
             return False, "Bundle file not found"
 
-        self.set_status("server", "installing", progress=0, error="")
+        self.set_status("server", "installing", progress=5, error="")
         self._log_audit("OTA_INSTALL_START", user, ip, f"Installing: {bundle_path}")
 
+        # Launch swupdate via Popen so we can tick a coarse progress bar
+        # while it runs. The subprocess doesn't expose structured progress
+        # over stdout (it writes verbose TRACE lines), but a rising
+        # counter is enough for the UI to prove the server hasn't hung.
+        stop_ticker = threading.Event()
+
+        def _ticker():
+            pct = 10
+            while not stop_ticker.wait(3):
+                pct = min(pct + 3, 90)
+                self.set_status("server", "installing", progress=pct, error="")
+
+        t = threading.Thread(target=_ticker, daemon=True, name="ota-install-ticker")
+        t.start()
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 self._install_command(bundle_path),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=600,  # 10 minute timeout for large images
             )
-            if result.returncode == 0:
+            try:
+                _stdout, stderr = proc.communicate(timeout=600)
+                rc = proc.returncode
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                err = "Installation timed out (10 min)"
+                self.set_status("server", "error", error=err)
+                return False, err
+
+            if rc == 0:
                 self.set_status("server", "installed", progress=100, error="")
                 self._log_audit(
                     "OTA_INSTALL_COMPLETE", user, ip, "Installation complete"
                 )
                 log.info("OTA installation complete — reboot required")
                 return True, ""
-            else:
-                error = result.stderr.strip() or "Installation failed"
-                self.set_status("server", "error", error=error)
-                self._log_audit(
-                    "OTA_INSTALL_FAILED", user, ip, f"Install failed: {error}"
-                )
-                return False, error
+            error = (stderr or "").strip() or "Installation failed"
+            self.set_status("server", "error", error=error)
+            self._log_audit("OTA_INSTALL_FAILED", user, ip, f"Install failed: {error}")
+            return False, error
 
         except FileNotFoundError:
             err = "swupdate not installed"
             self.set_status("server", "error", error=err)
             return False, err
-        except subprocess.TimeoutExpired:
-            err = "Installation timed out (10 min)"
-            self.set_status("server", "error", error=err)
-            return False, err
         except OSError as e:
             self.set_status("server", "error", error=str(e))
             return False, str(e)
+        finally:
+            stop_ticker.set()
+            t.join(timeout=2)
 
     def scan_usb(self):
         """Scan USB devices for .swu update bundles.
