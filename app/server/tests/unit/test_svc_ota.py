@@ -207,8 +207,18 @@ class TestInstallBundle:
         assert ok is False
         assert "not found" in err
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_success(self, mock_run, svc, data_dir):
+    # Install now shells out via subprocess.Popen + a ticker thread
+    # (so the UI can see a rising progress bar while swupdate writes).
+    # Tests patch Popen and return a MagicMock whose communicate()
+    # yields (stdout, stderr) and whose returncode matches each case.
+    def _popen_mock(self, returncode=0, stderr=""):
+        proc = MagicMock()
+        proc.communicate.return_value = ("", stderr)
+        proc.returncode = returncode
+        return proc
+
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_success(self, mock_popen, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
@@ -216,12 +226,12 @@ class TestInstallBundle:
         with open(key, "w") as f:
             f.write("PUBLIC KEY")
 
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_popen.return_value = self._popen_mock(returncode=0)
         ok, err = svc.install_bundle(bundle, user="admin", ip="1.2.3.4")
         assert ok is True
         assert svc.get_status("server")["state"] == "installed"
-        mock_run.assert_called_once()
-        assert mock_run.call_args[0][0] == [
+        mock_popen.assert_called_once()
+        assert mock_popen.call_args[0][0] == [
             "swupdate",
             "-i",
             bundle,
@@ -229,8 +239,8 @@ class TestInstallBundle:
             key,
         ]
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_failure(self, mock_run, svc, data_dir):
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_failure(self, mock_popen, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
@@ -238,13 +248,11 @@ class TestInstallBundle:
         with open(key, "w") as f:
             f.write("PUBLIC KEY")
 
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="write failed"
-        )
+        mock_popen.return_value = self._popen_mock(returncode=1, stderr="write failed")
         ok, err = svc.install_bundle(bundle)
         assert ok is False
         assert svc.get_status("server")["state"] == "error"
-        assert mock_run.call_args[0][0] == [
+        assert mock_popen.call_args[0][0] == [
             "swupdate",
             "-i",
             bundle,
@@ -252,49 +260,59 @@ class TestInstallBundle:
             key,
         ]
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_without_key_uses_plain_command(self, mock_run, svc, data_dir):
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_without_key_uses_plain_command(self, mock_popen, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
 
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_popen.return_value = self._popen_mock(returncode=0)
         ok, err = svc.install_bundle(bundle)
         assert ok is True
         assert err == ""
-        assert mock_run.call_args[0][0] == ["swupdate", "-i", bundle]
+        assert mock_popen.call_args[0][0] == ["swupdate", "-i", bundle]
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_swupdate_not_found(self, mock_run, svc, data_dir):
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_swupdate_not_found(self, mock_popen, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
 
-        mock_run.side_effect = FileNotFoundError
+        mock_popen.side_effect = FileNotFoundError
         ok, err = svc.install_bundle(bundle)
         assert ok is False
         assert "not installed" in err
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_timeout(self, mock_run, svc, data_dir):
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_timeout(self, mock_popen, svc, data_dir):
         import subprocess
 
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
 
-        mock_run.side_effect = subprocess.TimeoutExpired("swupdate", 600)
+        # First communicate() raises TimeoutExpired; after Popen.kill
+        # the code calls communicate() again to drain, which returns
+        # ("", "") on our mock.
+        proc = MagicMock()
+        proc.communicate.side_effect = [
+            subprocess.TimeoutExpired("swupdate", 600),
+            ("", ""),
+        ]
+        proc.returncode = -9
+        mock_popen.return_value = proc
+
         ok, err = svc.install_bundle(bundle)
         assert ok is False
         assert "timed out" in err
 
-    @patch("monitor.services.ota_service.subprocess.run")
-    def test_install_logs_audit(self, mock_run, svc, data_dir):
+    @patch("monitor.services.ota_service.subprocess.Popen")
+    def test_install_logs_audit(self, mock_popen, svc, data_dir):
         bundle = os.path.join(data_dir, "test.swu")
         with open(bundle, "wb") as f:
             f.write(b"test")
 
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_popen.return_value = self._popen_mock(returncode=0)
         svc.install_bundle(bundle, user="admin", ip="1.2.3.4")
         calls = [str(c) for c in svc._audit.log_event.call_args_list]
         assert any("OTA_INSTALL_START" in c for c in calls)
