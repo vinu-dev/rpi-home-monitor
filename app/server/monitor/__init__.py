@@ -16,6 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from monitor.logging_config import configure_logging
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_control_client import CameraControlClient
+from monitor.services.camera_ota_client import CameraOTAClient
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
@@ -252,6 +253,14 @@ def _init_services(app):
         store=app.store,
         audit=app.audit,
         data_dir=app.config["DATA_DIR"],
+    )
+
+    # Camera OTA client — streams .swu bundles to a camera's OTA
+    # agent via mTLS (ADR-0020). Dual-transport: server can either
+    # install its own bundle locally or relay a camera bundle to a
+    # paired camera without the user having to ssh anywhere.
+    app.camera_ota_client = CameraOTAClient(
+        certs_dir=app.config["CERTS_DIR"],
     )
 
     # Certificate service — expiry monitoring and renewal

@@ -32,6 +32,8 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0016 | [Camera health heartbeat protocol](0016-camera-health-heartbeat-protocol.md)                    | Accepted   |
 | 0017 | [On-demand, viewer-driven streaming + recording modes](0017-on-demand-viewer-driven-streaming.md) | Proposed |
 | 0018 | [Dashboard information architecture](0018-dashboard-information-architecture.md)                 | Accepted   |
+| 0019 | [Time sync and timezone](0019-time-sync-and-timezone.md)                                         | Accepted   |
+| 0020 | [Dual-transport OTA (server upload + server-to-camera push)](0020-dual-transport-ota.md)         | Accepted   |
 
 ## Writing a new ADR
 
