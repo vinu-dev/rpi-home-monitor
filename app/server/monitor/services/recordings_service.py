@@ -205,7 +205,12 @@ class RecordingsService:
 
         recorder = self._get_recorder()
         clips = recorder.list_clips(camera_id, date)
-        return [asdict(c) for c in clips], None, 200
+        out = []
+        for c in clips:
+            d = asdict(c)
+            d["started_at"] = c.started_at
+            out.append(d)
+        return out, None, 200
 
     def list_dates(self, camera_id: str):
         """List dates that have recordings for a camera.
@@ -236,7 +241,11 @@ class RecordingsService:
         if clip is None:
             return None, "No recordings found", 404
 
-        return asdict(clip), None, 200
+        out = asdict(clip)
+        # asdict() doesn't pick up @property, attach it explicitly so
+        # the dashboard's _relativeTime() renders UTC correctly.
+        out["started_at"] = clip.started_at
+        return out, None, 200
 
     def latest_across_cameras(self):
         """Return the newest clip across every camera (or orphaned archive).
@@ -300,6 +309,11 @@ class RecordingsService:
             "filename": newest_path.name,
             "date": date_str,
             "start_time": start_time,
+            # ISO-8601 with "Z" so the browser treats the timestamp as
+            # UTC — the camera writes filenames in UTC and the dashboard
+            # was rendering them as local, showing every clip as
+            # `<local-offset>h ago`.
+            "started_at": f"{date_str}T{start_time}Z",
             "duration_seconds": 180,
             "size_bytes": size,
             "thumbnail": f"{newest_path.stem}.thumb.jpg",
@@ -369,6 +383,8 @@ class RecordingsService:
                     "filename": mp4.name,
                     "date": date_str,
                     "start_time": start_time,
+                    # UTC ISO-8601 — see latest_across_cameras() above.
+                    "started_at": f"{date_str}T{start_time}Z",
                     "duration_seconds": 180,
                     "size_bytes": size,
                     "thumbnail": thumb_name,

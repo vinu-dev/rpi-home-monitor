@@ -612,6 +612,10 @@ CLIP_FIELDS = {
     "filename",
     "date",
     "start_time",
+    # UTC ISO-8601; browser converts to local for display. Missing the
+    # "Z" here used to cause `N h ago` labels to lag by the local
+    # offset (+1 h on BST, +5:30 h in IST, etc).
+    "started_at",
     "duration_seconds",
     "size_bytes",
     "thumbnail",

@@ -104,7 +104,16 @@ class Clip:
     camera_id: str
     filename: str  # HH-MM-SS.mp4
     date: str  # YYYY-MM-DD
-    start_time: str  # HH:MM:SS
+    start_time: str  # HH:MM:SS  (UTC, matches filename timestamp)
     duration_seconds: int = 180
     size_bytes: int = 0
     thumbnail: str = ""  # HH-MM-SS.thumb.jpg
+
+    @property
+    def started_at(self) -> str:
+        """UTC ISO-8601 of clip start. Filenames are written in UTC
+        on the camera; attach a ``Z`` so the browser doesn't read them
+        as local time and show every clip as ``<offset>h ago``."""
+        if self.date and self.start_time:
+            return f"{self.date}T{self.start_time}Z"
+        return ""
