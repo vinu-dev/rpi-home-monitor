@@ -44,14 +44,18 @@ do_install:append() {
     cat > ${D}${systemd_system_unitdir}/swupdate-check.service << 'UNIT'
 [Unit]
 Description=Post-boot OTA health check (ADR-0008)
-After=network-online.target monitor.service camera-streamer.service
-Wants=network-online.target
+# network-online.target stalls on boot when systemd-networkd-wait-online
+# times out (camera WiFi managed by NetworkManager, not networkd). The
+# health check only talks to localhost (127.0.0.1:5000 / :443), so
+# network.target is enough — and the script itself retries the HTTP
+# liveness probe for up to 60s to tolerate Type=simple service startup.
+After=network.target monitor.service camera-streamer.service
 
 [Service]
 Type=oneshot
 ExecStart=/opt/monitor/scripts/swupdate-check.sh
 RemainAfterExit=yes
-TimeoutStartSec=120
+TimeoutStartSec=180
 
 [Install]
 WantedBy=multi-user.target
