@@ -91,17 +91,38 @@ carry_network_state() {
     rmdir "$MNT" 2>/dev/null || true
 }
 
+# Derive the standby slot + its partition from the live boot_slot.
+# Invariant: the STANDBY slot is the one we are NOT currently booted from,
+# so it is always safe to overwrite. Never assume a fixed "devices ship on
+# A, always write to B" (earlier `build-swu.sh` hardcoded p3) — that
+# silently no-op's once a device has ever been flipped to slot B: the
+# bundle rewrites the running partition and U-Boot boots the OLD standby,
+# leaving the device on the pre-OTA rootfs. We compute it here instead.
+compute_standby() {
+    CURRENT_SLOT=$(fw_printenv -n boot_slot 2>/dev/null || echo "A")
+    if [ "$CURRENT_SLOT" = "A" ]; then
+        NEW_SLOT="B"
+    else
+        NEW_SLOT="A"
+    fi
+    NEW_PART="$(slot_partition "$NEW_SLOT")" || {
+        echo "compute_standby: unknown slot '$NEW_SLOT'" >&2
+        return 1
+    }
+    export CURRENT_SLOT NEW_SLOT NEW_PART
+}
+
 case "$1" in
     preinst)
-        echo "Pre-install: rootfs will be written to standby slot"
+        # Point the stable name sw-description references at the ACTUAL
+        # standby partition for this install. The raw handler then writes
+        # to `/dev/monitor_standby` and lands on the correct slot.
+        compute_standby || exit 1
+        ln -sfn "$NEW_PART" /dev/monitor_standby
+        echo "Pre-install: standby slot $NEW_SLOT ($NEW_PART) → /dev/monitor_standby"
         ;;
     postinst)
-        CURRENT_SLOT=$(fw_printenv -n boot_slot 2>/dev/null || echo "A")
-        if [ "$CURRENT_SLOT" = "A" ]; then
-            NEW_SLOT="B"
-        else
-            NEW_SLOT="A"
-        fi
+        compute_standby || exit 1
         echo "Switching boot slot: $CURRENT_SLOT -> $NEW_SLOT"
 
         # Seed the newly-written rootfs with current network state
@@ -111,9 +132,11 @@ case "$1" in
         fw_setenv boot_slot "$NEW_SLOT"
         fw_setenv boot_count 0
         fw_setenv upgrade_available 1
+        rm -f /dev/monitor_standby 2>/dev/null || true
         echo "Boot environment updated. Reboot to activate."
         ;;
     postfailure)
+        rm -f /dev/monitor_standby 2>/dev/null || true
         echo "Install failed — keeping current boot slot"
         ;;
 esac
