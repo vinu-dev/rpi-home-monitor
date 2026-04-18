@@ -81,7 +81,9 @@ class TestPushBundle:
         upload_resp = MagicMock()
         upload_resp.status = 202
         upload_resp.read.return_value = (
-            b'{"message": "Install triggered", "bundle_bytes": ' + str(p.stat().st_size).encode() + b"}"
+            b'{"message": "Install triggered", "bundle_bytes": '
+            + str(p.stat().st_size).encode()
+            + b"}"
         )
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = upload_resp

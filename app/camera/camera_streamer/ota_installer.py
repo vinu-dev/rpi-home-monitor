@@ -103,9 +103,7 @@ def write_status(state, progress=0, error=""):
     }
     data = json.dumps(payload).encode()
     try:
-        fd, tmp = tempfile.mkstemp(
-            prefix=".status.", suffix=".json", dir=SPOOL_DIR
-        )
+        fd, tmp = tempfile.mkstemp(prefix=".status.", suffix=".json", dir=SPOOL_DIR)
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(data)

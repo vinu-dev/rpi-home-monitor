@@ -1049,8 +1049,7 @@ def _make_status_handler(
                 self._json_response(
                     {
                         "error": (
-                            "No installed update to apply "
-                            f"(current state: {state})"
+                            f"No installed update to apply (current state: {state})"
                         )
                     },
                     400,

@@ -1,7 +1,6 @@
 """Unit tests for camera-side OTA installer client."""
 
 import io
-import json
 import os
 
 import pytest
@@ -16,12 +15,8 @@ def spool(tmp_path, monkeypatch):
     staging.mkdir(parents=True)
     monkeypatch.setattr(ota_installer, "SPOOL_DIR", str(spool_dir))
     monkeypatch.setattr(ota_installer, "STAGING_DIR", str(staging))
-    monkeypatch.setattr(
-        ota_installer, "TRIGGER_PATH", str(spool_dir / "trigger")
-    )
-    monkeypatch.setattr(
-        ota_installer, "STATUS_PATH", str(spool_dir / "status.json")
-    )
+    monkeypatch.setattr(ota_installer, "TRIGGER_PATH", str(spool_dir / "trigger"))
+    monkeypatch.setattr(ota_installer, "STATUS_PATH", str(spool_dir / "status.json"))
     return spool_dir
 
 
