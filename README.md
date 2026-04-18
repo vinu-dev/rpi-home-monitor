@@ -12,7 +12,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 - **Security by design.** HTTPS for web, mTLS camera streaming, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting, PIN-based camera pairing.
 - **Built on real hardware.** Runs on a $35 Raspberry Pi 4B (server) and $15 Zero 2W (cameras). No proprietary hardware required.
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
-- **OTA design includes rollback.** The target system uses A/B rollback; dev update flows are working now, while the full production OTA path is still being validated.
+- **OTA with rollback, validated end-to-end.** A/B SWUpdate with bootlimit rollback, signed bundles, dual-transport (admin GUI and server-pushed), and a camera-side privilege-separated installer. All three install paths have been exercised on real Pi 4B + Pi Zero 2W hardware.
 - **Tapo-style recording.** Continuous 3-minute MP4 clips organized by camera and date, with timeline playback.
 - **Fully open source.** Inspect every line, from the OS image to the web dashboard. AGPL-3.0 licensed.
 
@@ -73,7 +73,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
-| OTA Updates | Dev path works today; production-signed OTA with A/B rollback is designed but not yet fully hardware-validated |
+| OTA Updates | End-to-end validated on real hardware — three install paths: server GUI upload+install, server→camera push, and camera-direct GUI upload. A/B rollback with bootlimit, post-boot health check auto-confirms new slot |
 | Audit Logging | All admin actions logged (append-only) |
 | Encrypted Storage | LUKS-encrypted /data partition for recordings and config |
 | Firewall | nftables — cameras can only talk to server, minimal open ports |
@@ -92,7 +92,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
 | Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
-| OTA updates | **Partial** | Dev-oriented flow exists; production signing and full end-to-end OTA validation are still in progress. See `docs/update-roadmap.md` |
+| OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger (ADR-0020). See `docs/update-roadmap.md` |
 
 ## Quick Start
 
