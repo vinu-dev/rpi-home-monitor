@@ -2,7 +2,7 @@ software =
 {
     version = "@@VERSION@@";
     hardware-compatibility: [ "1.0" ];
-    raspberrypi0-2w-64 = {
+    home-monitor-camera = {
         images: (
             {
                 filename = "rootfs.ext4.gz";
