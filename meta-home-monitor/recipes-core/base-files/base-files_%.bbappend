@@ -17,9 +17,9 @@
 # The append is idempotent: wic may also inject these lines when
 # building the initial SD-card image, so we guard with grep.
 
-ROOTFS_POSTPROCESS_COMMAND += "home_monitor_fstab_append;"
+ROOTFS_POSTPROCESS_COMMAND += "home_monitor_inject_fstab;"
 
-home_monitor_fstab_append() {
+home_monitor_inject_fstab() {
     fstab="${IMAGE_ROOTFS}/etc/fstab"
     if ! grep -q "^/dev/mmcblk0p4" "$fstab"; then
         echo "/dev/mmcblk0p4	/data	ext4	defaults	0	2" >> "$fstab"
