@@ -22,6 +22,10 @@ SRC_URI = " \
     file://config/ensure-camera-overlay.sh \
     file://config/ensure-camera-overlay.service \
     file://config/timesyncd-camera.conf \
+    file://config/camera-ota-installer.service \
+    file://config/camera-ota-installer.path \
+    file://config/camera-ota-tmpfiles.conf \
+    file://scripts/camera-ota-installer.sh \
     file://setup.py \
     "
 
@@ -35,11 +39,13 @@ RDEPENDS:${PN} = " \
     avahi-utils \
     openssl \
     nftables \
+    swupdate \
+    u-boot-fw-utils \
     "
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service ensure-camera-overlay.service"
+SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service ensure-camera-overlay.service camera-ota-installer.path"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create camera system user/group
@@ -61,11 +67,21 @@ do_install() {
     install -m 0755 ${WORKDIR}/config/camera-hotspot.sh ${D}/opt/camera/scripts/camera-hotspot.sh
     install -m 0755 ${WORKDIR}/config/ensure-camera-overlay.sh ${D}/opt/camera/scripts/ensure-camera-overlay.sh
 
+    # Privileged OTA installer (runs as root via path-activated service)
+    install -d ${D}${bindir}
+    install -m 0755 ${WORKDIR}/scripts/camera-ota-installer.sh ${D}${bindir}/camera-ota-installer
+
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/camera-streamer.service ${D}${systemd_system_unitdir}/camera-streamer.service
     install -m 0644 ${WORKDIR}/config/camera-hotspot.service ${D}${systemd_system_unitdir}/camera-hotspot.service
     install -m 0644 ${WORKDIR}/config/ensure-camera-overlay.service ${D}${systemd_system_unitdir}/ensure-camera-overlay.service
+    install -m 0644 ${WORKDIR}/config/camera-ota-installer.service ${D}${systemd_system_unitdir}/camera-ota-installer.service
+    install -m 0644 ${WORKDIR}/config/camera-ota-installer.path ${D}${systemd_system_unitdir}/camera-ota-installer.path
+
+    # tmpfiles.d rule that creates the /var/lib/camera-ota spool
+    install -d ${D}${sysconfdir}/tmpfiles.d
+    install -m 0644 ${WORKDIR}/config/camera-ota-tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/camera-ota.conf
 
     # Firewall rules
     install -d ${D}${sysconfdir}/nftables.d
@@ -82,10 +98,14 @@ do_install() {
 
 FILES:${PN} = " \
     /opt/camera \
+    ${bindir}/camera-ota-installer \
     ${systemd_system_unitdir}/camera-streamer.service \
     ${systemd_system_unitdir}/camera-hotspot.service \
     ${systemd_system_unitdir}/ensure-camera-overlay.service \
+    ${systemd_system_unitdir}/camera-ota-installer.service \
+    ${systemd_system_unitdir}/camera-ota-installer.path \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     ${sysconfdir}/systemd/timesyncd.conf.d/10-home-camera.conf \
+    ${sysconfdir}/tmpfiles.d/camera-ota.conf \
     "

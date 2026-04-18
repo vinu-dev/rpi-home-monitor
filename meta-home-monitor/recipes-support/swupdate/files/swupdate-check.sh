@@ -34,6 +34,26 @@ expand_rootfs() {
 # Returns 0 if all checks pass, 1 if any fail.
 # Checks are device-aware: server checks Flask+MediaMTX+NGINX,
 # camera checks camera-streamer lifecycle.
+# http_alive URL — returns 0 if anything responds on URL.
+# A 401/403/404 is enough proof the app bound its port and is serving HTTP.
+# Only "no HTTP response at all" (http_code 000) is a real liveness failure.
+# Retries because monitor.service/camera-streamer.service are Type=simple:
+# systemd marks them active as soon as python exec()s, long before Flask
+# or http.server bind their sockets. Without retries we'd race them.
+http_alive() {
+    url=$1
+    attempts=0
+    while [ "$attempts" -lt 12 ]; do
+        code=$(curl -sk -o /dev/null --max-time 5 -w '%{http_code}' "$url" 2>/dev/null || echo 000)
+        if [ -n "$code" ] && [ "$code" != "000" ]; then
+            return 0
+        fi
+        attempts=$((attempts + 1))
+        sleep 5
+    done
+    return 1
+}
+
 run_health_checks() {
     CHECKS_PASSED=0
     CHECKS_FAILED=0
@@ -44,8 +64,9 @@ run_health_checks() {
         CHECKS_PASSED=$((CHECKS_PASSED + 1))
 
         # Server-specific checks
-        # Check 2: Flask API responds
-        if wget -q -O /dev/null --timeout=10 http://127.0.0.1:5000/api/v1/ota/status 2>/dev/null; then
+        # Check 2: Flask API alive (any HTTP response from :5000 counts —
+        # the authenticated endpoints return 401 even when fully healthy).
+        if http_alive http://127.0.0.1:5000/api/v1/ota/status; then
             log "CHECK OK: Flask API responding"
             CHECKS_PASSED=$((CHECKS_PASSED + 1))
         else
@@ -63,7 +84,7 @@ run_health_checks() {
         fi
 
         # Check 4: NGINX responding
-        if wget -q -O /dev/null --timeout=10 --no-check-certificate https://127.0.0.1:443/ 2>/dev/null; then
+        if http_alive https://127.0.0.1:443/; then
             log "CHECK OK: NGINX responding on :443"
             CHECKS_PASSED=$((CHECKS_PASSED + 1))
         else
@@ -76,8 +97,10 @@ run_health_checks() {
         CHECKS_PASSED=$((CHECKS_PASSED + 1))
 
         # Camera-specific checks
-        # Check 2: Status server responds
-        if wget -q -O /dev/null --timeout=10 http://127.0.0.1:8080/status 2>/dev/null; then
+        # Check 2: Status server listens on :443 (serves the login/status
+        # page). Port 8080 hosts the mTLS-only OTAAgent which would refuse
+        # an unauthenticated probe — the wrong liveness target.
+        if http_alive https://127.0.0.1:443/login; then
             log "CHECK OK: camera status server responding"
             CHECKS_PASSED=$((CHECKS_PASSED + 1))
         else

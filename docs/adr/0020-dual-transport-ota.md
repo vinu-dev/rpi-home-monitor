@@ -105,5 +105,67 @@ No separate "choose a camera" step — the card **is** the device, matching the 
 
 - `CameraOTAClient` (`app/server/monitor/services/camera_ota_client.py`) wraps `http.client.HTTPSConnection` with the server's mTLS context. It streams the bundle in 256 KiB chunks and invokes a `progress_cb` for UI polling.
 - The push thread pattern mirrors how existing long-running jobs are handled. No task queue (celery, rq) — those would be overkill for 1–2 concurrent OTAs on a single-user home system.
-- Status is stored in `OTAService._status` keyed by device id. The camera has its own authoritative OTA state in its `OTAAgent._status`; `GET /live-status` proxies that for the verify/install phases where only the camera knows what's happening.
+- Status is stored in `OTAService._status` keyed by device id. The camera has its own authoritative OTA state in `status.json` under the spool; `GET /live-status` proxies it for the verify/install phases where only the camera knows what's happening.
 - Audit events: `OTA_CAMERA_UPLOAD`, `OTA_CAMERA_PUSH`, `OTA_CAMERA_INSTALL_COMPLETE`, `OTA_CAMERA_INSTALL_FAILED` are added alongside the existing server events.
+
+## Post-implementation amendments (2026-04-18)
+
+The first implementation exposed four design issues that have since been
+fixed. Recording them here so the ADR reflects what shipped, not the
+original plan:
+
+**1. Privilege separation on the camera.** The camera-streamer runs
+as the `camera` user with `NoNewPrivileges=true`. SWUpdate needs root
+(`/dev/monitor_standby` symlink refresh, ext4 mount of the standby
+slot, `fw_setenv`), so `camera-streamer` cannot exec it directly.
+Implemented as a file-IPC protocol: camera-streamer stages the bundle
+at `/var/lib/camera-ota/staging/update.swu` and writes
+`/var/lib/camera-ota/trigger`. A systemd `.path` unit
+(`camera-ota-installer.path`) watches the trigger and fires the
+root-owned `camera-ota-installer.service` oneshot, which is the only
+place `swupdate -i` runs on the camera. Status and progress flow back
+through `status.json` in the same spool. Alternative A from the
+original ADR (camera-direct upload on :443) also uses this protocol —
+the upload handler stages and triggers, then returns immediately.
+
+**2. Async upload handshake.** The first OTAAgent implementation
+blocked on `wait_for_completion()` before returning 200, keeping the
+mTLS HTTPS connection open for the full 2–3 min install. On a Pi Zero
+2W (362 MB RAM) the combination of `swupdate` (~250 MB RSS), the live
+mTLS socket, and `camera-streamer` pushed the kernel past OOM: we
+saw `camera-streamer`, `sshd`, and `getty` killed mid-install twice
+during integration testing, leaving the device unreachable until a
+physical power cycle. OTAAgent now returns `202 Accepted` as soon as
+the trigger is written and the server polls `/ota/status` for
+terminal state. Camera-direct upload on :443 uses the same async
+shape. `CameraOTAClient.push_bundle()` on the server handles both
+the upload phase and the polling phase, mapping camera install
+progress into the second half of its status bar.
+
+**3. Alternative A (camera-direct upload on :443) shipped.** The
+original ADR rejected this on UX and complexity grounds. We shipped it
+anyway because it turned out to be cheaper than expected once
+`ota_installer.py` existed as a shared module — the :443 status
+server just gets three new routes (`POST /api/ota/upload`,
+`GET /api/ota/status`, `POST /api/ota/reboot`) that delegate to the
+same stage/trigger/poll primitives. It covers a real failure mode:
+an orphaned camera whose server has been factory-reset can still be
+updated by an admin on the LAN with the camera's password.
+
+**4. A `check_free_space` prerequisite.** SWUpdate stats the install
+device *before* preinst can run. If `/dev/monitor_standby` is missing
+it falls back to `/tmp` (a tmpfs) and rejects the install with a
+bogus "not enough free space" error sized against tmpfs, not the real
+2 GiB slot. Added `monitor-standby-symlink.service` (runs
+`Before=sysinit.target` to create the symlink based on `boot_slot`)
+and, as a belt-and-braces safeguard, the privileged installer itself
+refreshes the symlink before invoking `swupdate` — so the protocol is
+self-healing even if the boot service raced the `/boot` mount.
+
+**Validation.** All three transports exercised on real hardware
+(Pi 4B server + Pi Zero 2W camera): server GUI upload+install with
+swupdate-check auto-confirmation, server→camera push without OOM
+(camera stayed responsive throughout), camera-direct GUI upload with
+trigger protocol firing the privileged installer. Pairing, heartbeat,
+and streaming survived every reboot. See the CHANGELOG `Fixed`
+entries for the seven bugs found during this validation.
