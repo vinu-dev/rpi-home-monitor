@@ -903,9 +903,10 @@
                      x-text="ota.server.state + ' — ' + (ota.server.progress || 0) + '%'"></div>
             </div>
             <div class="text-small text-muted" style="margin-top:var(--space-3);">
-                The server validates the .swu signature, stages it to
-                <code>/data/ota/staging</code>, and installs via SWUpdate to
-                the standby partition. A reboot is required after install.
+                Upload a firmware file, then click Install &amp; Reboot. The
+                server installs the update safely in the background and
+                restarts itself — if the new version fails to start, it
+                automatically rolls back to the previous one.
             </div>
         </div>
     </div>
@@ -958,9 +959,11 @@
             </div>
         </template>
         <div class="text-small text-muted">
-            Camera updates are streamed from the server to the camera over mTLS (ADR-0020).
-            The camera verifies the signature and installs via SWUpdate — the same engine
-            used for server updates. A successful install reboots the camera onto the new slot.
+            Upload a firmware file for each camera, then click Push &amp;
+            Install. The server sends the update to the camera over a
+            secure paired connection, installs it, and reboots the
+            camera onto the new version. If the new version fails to
+            start, the camera automatically rolls back.
         </div>
     </div>
 </div>
@@ -1666,14 +1669,18 @@ function settingsPage() {
             if (!confirm('Install this update? The server will reboot into the new partition.')) return;
             this.ota.server.busy = true;
             this.ota.server.state = 'installing';
-            this.ota.server.progress = 50;
+            this.ota.server.progress = 0;
             this.ota.server.error = '';
             try {
                 var data = await window.HM.api.post('/api/v1/ota/server/install', {});
-                this.ota.server.state = 'installed';
+                // The install endpoint reboots the server after a 2s
+                // delay. Move the card into "rebooting" state so the
+                // user sees we're waiting on the box to come back,
+                // rather than letting the status poller flip to idle.
+                this.ota.server.state = 'rebooting';
                 this.ota.server.progress = 100;
-                this.ota.server.busy = false;
-                window.HM.toast(data.message || 'Installed — reboot required', 'success');
+                this.ota.server.busy = true;
+                window.HM.toast(data.message || 'Rebooting…', 'success');
             } catch(e) {
                 this.ota.server.state = 'error';
                 this.ota.server.error = e.message || 'Install failed';

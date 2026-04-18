@@ -59,7 +59,17 @@ EOF
 }
 
 cleanup() {
+    # Trigger must be removed on every exit — otherwise is_busy() on
+    # the camera-streamer side sees it and rejects the next upload
+    # with HTTP 409 "Another update is already in progress", even
+    # though no install is actually running.
     rm -f "$TRIGGER" 2>/dev/null || true
+    # Restart camera-streamer if we stopped it for the install. Variable
+    # may be unset if we exit before phase 2 starts.
+    if [ "${STREAMER_WAS_ACTIVE:-0}" = "1" ]; then
+        log "Restarting camera-streamer"
+        systemctl start camera-streamer.service 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -108,6 +118,22 @@ elif [ -f "$PUBKEY_DATA" ]; then
     PUBKEY="$PUBKEY_DATA"
 fi
 
+# Zero the first 16 MB of the standby partition before swupdate
+# writes. If a previous install was interrupted (OOM kill, power
+# loss, bad bundle) the partition can end up with a "looks mounted
+# but every inode is corrupt" filesystem. swupdate's raw write will
+# overwrite it anyway, but post-update.sh's postinst mounts the
+# freshly-written partition to carry the WiFi profile over — and
+# if that mount hits a stale superblock on top of a half-written
+# image, lookups flood the kernel log with EXT4 checksum errors
+# and systemd-userwor gets stuck walking the mount point,
+# eventually taking sshd + getty + camera-streamer down with it.
+# Zeroing the superblock guarantees the post-swupdate mount is of
+# the NEW filesystem, not the ghost of a broken one.
+log "Zeroing standby partition superblock to clear any stale FS"
+dd if=/dev/zero of="$STANDBY" bs=1M count=16 status=none 2>&1 | tee -a "$LOG" || true
+sync
+
 # Phase 1: verify signature (if a key is available).
 if [ -n "$PUBKEY" ]; then
     write_status "verifying" 10 ""
@@ -142,13 +168,10 @@ if systemctl is-active --quiet camera-streamer.service; then
     log "Stopping camera-streamer to free RAM during install"
     systemctl stop camera-streamer.service || true
 fi
-restart_streamer() {
-    if [ "$STREAMER_WAS_ACTIVE" = "1" ]; then
-        log "Restarting camera-streamer"
-        systemctl start camera-streamer.service || true
-    fi
-}
-trap restart_streamer EXIT
+# Note: camera-streamer restart + trigger cleanup are handled by the
+# single cleanup() trap installed earlier — do NOT add a second
+# `trap ... EXIT` here, it would replace the first handler and leave
+# the trigger file behind, causing HTTP 409 on the next upload.
 
 # Stream swupdate output to the log while installing. A broad progress
 # value of 60 is reported during install; SWUpdate itself is the slow
