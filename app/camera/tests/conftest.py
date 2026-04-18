@@ -47,6 +47,19 @@ def pytest_collection_modifyitems(config, items):
             )
 
 
+@pytest.fixture(autouse=True)
+def _camera_skip_mount_check(monkeypatch):
+    """Bypass ConfigManager's /data-is-mounted guard in unit tests.
+
+    Production refuses to write default camera.conf unless /data is a
+    real mountpoint distinct from / (ADR-0008 persistence contract).
+    Tests use pytest's tmp_path, which always shares a device with /,
+    so we flip the escape hatch env var for the whole camera suite.
+    Individual tests that want to exercise the guard set it to "0".
+    """
+    monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "1")
+
+
 @pytest.fixture
 def data_dir(tmp_path):
     """Create a temporary /data directory structure for the camera."""

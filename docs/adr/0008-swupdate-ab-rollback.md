@@ -354,6 +354,40 @@ Designed into the pipeline from day one. Implementation deferred.
 
 ---
 
+### 7a. Persistence contract across A/B swap
+
+**What persists**, guaranteed by partition layout:
+- `/data` (partition 4) — recordings, certs, `/data/config/*`, audit log,
+  pairing state, client/server TLS material. Mounted by both slots from
+  the same physical partition.
+- `/boot` (partition 1) — shared kernel + U-Boot env.
+
+**What does NOT persist** (lives on the per-slot rootfs and is replaced
+by every OTA):
+- `/etc/NetworkManager/system-connections/*.nmconnection` — WiFi profiles.
+- `/etc/hostname` — pairing-time hostname (e.g. `rpi-divinu-cam`).
+- `/etc/machine-id` — intentionally regenerated per rootfs.
+- Any other `/etc` overrides.
+
+To keep the device on the LAN across an OTA, `swupdate/post-update.sh`
+copies the WiFi profiles and hostname from the active slot's rootfs
+into the freshly-written standby rootfs **before** the boot slot is
+switched. The factory `HomeCam-Setup.nmconnection` (shipped on every
+rootfs) is explicitly skipped so it doesn't shadow the carried home
+profile on the next boot. This runs best-effort — if the standby
+partition won't mount, the OTA still proceeds and U-Boot's 3-strike
+rollback is the safety net.
+
+**Defense-in-depth on the camera side** (regression fix, 2026-04-18):
+- `ConfigManager._ensure_config_exists()` refuses to write defaults to
+  `/data/config/camera.conf` unless `/data` is a real mountpoint
+  distinct from `/`. A silent /data mount failure used to cause
+  `camera-streamer` to see an empty overlay, write defaults, and
+  factory-reset the camera into setup/AP mode on the next boot.
+- `first-boot-setup.sh` now hard-exits (instead of warning) when
+  `/data` is not mounted, so downstream services that declare
+  `Requires=first-boot-setup.service` never see a stub state.
+
 ### 8. App-only install flow
 
 ```
