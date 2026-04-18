@@ -1,17 +1,24 @@
-"""Tests for OTAAgent — camera-side OTA update handler."""
+"""Tests for OTAAgent — server→camera push endpoint.
 
+The agent delegates all install work to the root-privileged
+`camera-ota-installer.service` via ota_installer's trigger-file
+protocol, so these tests focus on the HTTP surface and the
+agent's interaction with the installer module.
+"""
+
+import io
+import json
 import os
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from camera_streamer.ota_agent import CHUNK_SIZE, MAX_BUNDLE_SIZE, OTA_PORT, OTAAgent
+from camera_streamer import ota_installer
+from camera_streamer.ota_agent import MAX_BUNDLE_SIZE, OTA_PORT, OTAAgent
 
 
 @pytest.fixture
 def config(tmp_path):
-    """Create a mock config with temp directories."""
     cfg = MagicMock()
     cfg.data_dir = str(tmp_path)
     cfg.certs_dir = str(tmp_path / "certs")
@@ -20,224 +27,48 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def agent(config):
-    """Create an OTAAgent with mock config."""
+def spool(tmp_path, monkeypatch):
+    """Redirect the installer spool to a tmp dir so tests don't touch
+    /var/lib/camera-ota."""
+    spool_dir = tmp_path / "spool"
+    staging = spool_dir / "staging"
+    staging.mkdir(parents=True)
+    monkeypatch.setattr(ota_installer, "SPOOL_DIR", str(spool_dir))
+    monkeypatch.setattr(ota_installer, "STAGING_DIR", str(staging))
+    monkeypatch.setattr(
+        ota_installer, "TRIGGER_PATH", str(spool_dir / "trigger")
+    )
+    monkeypatch.setattr(
+        ota_installer, "STATUS_PATH", str(spool_dir / "status.json")
+    )
+    return spool_dir
+
+
+@pytest.fixture
+def agent(config, spool):
     return OTAAgent(config)
 
 
-class TestInit:
-    """Test agent initialization."""
+def _make_handler(body, content_length=None):
+    handler = MagicMock()
+    handler.headers = {"Content-Length": str(content_length or len(body))}
+    handler.rfile = io.BytesIO(body)
+    handler.wfile = io.BytesIO()
+    return handler
 
-    def test_default_status_idle(self, agent):
+
+class TestStatusProxy:
+    def test_defaults_to_idle(self, agent):
         assert agent.status["state"] == "idle"
         assert agent.status["progress"] == 0
-        assert agent.status["error"] == ""
 
-    def test_staging_dir(self, agent, config):
-        expected = os.path.join(config.data_dir, "ota", "staging")
-        assert agent.staging_dir == expected
-
-    def test_status_returns_copy(self, agent):
-        s1 = agent.status
-        s1["state"] = "modified"
-        assert agent.status["state"] == "idle"
-
-
-class TestSetStatus:
-    """Test status updates."""
-
-    def test_set_status(self, agent):
-        agent._set_status("downloading", progress=25)
-        assert agent.status["state"] == "downloading"
-        assert agent.status["progress"] == 25
-
-    def test_set_status_with_error(self, agent):
-        agent._set_status("error", error="disk full")
-        assert agent.status["state"] == "error"
-        assert agent.status["error"] == "disk full"
-
-    def test_set_status_preserves_fields(self, agent):
-        agent._set_status("downloading", progress=50)
-        agent._set_status("verifying")
-        assert agent.status["progress"] == 50  # preserved
-
-
-class TestVerifyBundle:
-    """Test bundle signature verification."""
-
-    def test_no_public_key_skips(self, agent, tmp_path):
-        """Should skip verification when no public key exists (dev mode)."""
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-        valid, err = agent._verify_bundle(bundle)
-        assert valid is True
-        assert err == ""
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_verify_success(self, mock_run, agent, config, tmp_path):
-        """Should return True when swupdate verification passes."""
-        # Create verification cert so verification runs
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        valid, err = agent._verify_bundle(bundle)
-        assert valid is True
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_verify_failure(self, mock_run, agent, config, tmp_path):
-        """Should return False when signature is invalid."""
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="bad signature"
-        )
-        valid, err = agent._verify_bundle(bundle)
-        assert valid is False
-        assert "bad signature" in err
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_swupdate_not_found(self, mock_run, agent, config, tmp_path):
-        """Should skip verification when swupdate not installed."""
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.side_effect = FileNotFoundError
-        valid, err = agent._verify_bundle(bundle)
-        assert valid is True  # dev mode fallback
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_verify_timeout(self, mock_run, agent, config, tmp_path):
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.side_effect = subprocess.TimeoutExpired("swupdate", 60)
-        valid, err = agent._verify_bundle(bundle)
-        assert valid is False
-        assert "timed out" in err.lower()
-
-
-class TestInstallBundle:
-    """Test bundle installation via swupdate."""
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_success(self, mock_run, agent, config, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        ok, err = agent._install_bundle(bundle)
-        assert ok is True
-        assert err == ""
-        assert mock_run.call_args[0][0] == [
-            "swupdate",
-            "-i",
-            bundle,
-            "-k",
-            key_path,
-        ]
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_failure(self, mock_run, agent, config, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-        key_path = os.path.join(config.certs_dir, "swupdate-public.crt")
-        with open(key_path, "w") as f:
-            f.write("PUBLIC KEY")
-
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="write failed"
-        )
-        ok, err = agent._install_bundle(bundle)
-        assert ok is False
-        assert "write failed" in err
-        assert mock_run.call_args[0][0] == [
-            "swupdate",
-            "-i",
-            bundle,
-            "-k",
-            key_path,
-        ]
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_without_key_uses_plain_command(self, mock_run, agent, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        ok, err = agent._install_bundle(bundle)
-        assert ok is True
-        assert err == ""
-        assert mock_run.call_args[0][0] == ["swupdate", "-i", bundle]
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_not_found(self, mock_run, agent, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.side_effect = FileNotFoundError
-        ok, err = agent._install_bundle(bundle)
-        assert ok is False
-        assert "not installed" in err
-
-    @patch("camera_streamer.ota_agent.subprocess.run")
-    def test_install_timeout(self, mock_run, agent, tmp_path):
-        bundle = str(tmp_path / "test.swu")
-        with open(bundle, "wb") as f:
-            f.write(b"test")
-
-        mock_run.side_effect = subprocess.TimeoutExpired("swupdate", 600)
-        ok, err = agent._install_bundle(bundle)
-        assert ok is False
-        assert "timed out" in err.lower()
-
-
-class TestCleanup:
-    """Test bundle cleanup."""
-
-    def test_removes_file(self, agent, tmp_path):
-        path = str(tmp_path / "test.swu")
-        with open(path, "w") as f:
-            f.write("test")
-        agent._cleanup(path)
-        assert not os.path.exists(path)
-
-    def test_handles_missing_file(self, agent):
-        agent._cleanup("/nonexistent/file.swu")  # Should not raise
+    def test_reads_installer_status(self, agent, spool):
+        ota_installer.write_status("installing", progress=42)
+        assert agent.status["state"] == "installing"
+        assert agent.status["progress"] == 42
 
 
 class TestStartStop:
-    """Test agent lifecycle."""
-
     def test_start_creates_thread(self, agent):
         with patch.object(agent, "_run_server"):
             agent.start()
@@ -245,7 +76,7 @@ class TestStartStop:
             assert agent._running is True
             agent.stop()
 
-    def test_stop_sets_flag(self, agent):
+    def test_stop_clears_flag(self, agent):
         with patch.object(agent, "_run_server"):
             agent.start()
             agent.stop()
@@ -255,26 +86,20 @@ class TestStartStop:
         with patch.object(agent, "_run_server"):
             agent.start()
             thread1 = agent._thread
-            agent.start()  # Should not create a second thread
+            agent.start()
             assert agent._thread is thread1
             agent.stop()
 
 
 class TestWrapTLS:
-    """Test mTLS wrapper."""
-
-    def test_no_certs_returns_plain_server(self, agent):
-        """Should return server unchanged when no certs exist."""
+    def test_no_certs_returns_plain(self, agent):
         mock_server = MagicMock()
-        result = agent._wrap_tls(mock_server)
-        assert result is mock_server
+        assert agent._wrap_tls(mock_server) is mock_server
 
     def test_with_certs_wraps_socket(self, agent, config):
-        """Should attempt to wrap socket when all certs exist."""
         for name in ["client.crt", "client.key", "ca.crt"]:
             with open(os.path.join(config.certs_dir, name), "w") as f:
                 f.write("FAKE")
-
         mock_server = MagicMock()
         with patch("camera_streamer.ota_agent.ssl.SSLContext") as mock_ctx:
             mock_ctx.return_value = MagicMock()
@@ -283,107 +108,75 @@ class TestWrapTLS:
 
 
 class TestHandleUpload:
-    """Test the upload handler logic."""
-
-    def _make_handler(self, body, content_length=None):
-        """Create a mock HTTP handler with given body."""
-        import io
-
-        handler = MagicMock()
-        handler.headers = {"Content-Length": str(content_length or len(body))}
-        handler.rfile = io.BytesIO(body)
-        handler.wfile = io.BytesIO()
-        return handler
-
     def test_rejects_no_content(self, agent):
-        handler = self._make_handler(b"", content_length=0)
+        handler = _make_handler(b"", content_length=0)
         agent._handle_upload(handler)
         handler.send_response.assert_called_with(400)
 
     def test_rejects_oversized(self, agent):
-        handler = self._make_handler(b"x", content_length=MAX_BUNDLE_SIZE + 1)
+        handler = _make_handler(b"x", content_length=MAX_BUNDLE_SIZE + 1)
         agent._handle_upload(handler)
         handler.send_response.assert_called_with(400)
 
-    @patch.object(OTAAgent, "_install_bundle", return_value=(True, ""))
-    @patch.object(OTAAgent, "_verify_bundle", return_value=(True, ""))
-    def test_successful_upload(self, mock_verify, mock_install, agent, config):
-        """Should download, verify, install, and return 200."""
-        body = b"fake-swu-content" * 100
-        handler = self._make_handler(body)
+    def test_rejects_when_busy(self, agent, spool):
+        ota_installer.write_status("installing", progress=50)
+        # Write a trigger so is_busy() returns True.
+        open(ota_installer.TRIGGER_PATH, "w").close()
+        handler = _make_handler(b"some bytes")
         agent._handle_upload(handler)
-        handler.send_response.assert_called_with(200)
-        mock_verify.assert_called_once()
-        mock_install.assert_called_once()
-        assert agent.status["state"] == "installed"
+        handler.send_response.assert_called_with(409)
 
-    @patch.object(OTAAgent, "_verify_bundle", return_value=(False, "bad sig"))
-    def test_verification_failure(self, mock_verify, agent, config):
-        """Should return 400 on verification failure."""
-        body = b"fake-swu-content"
-        handler = self._make_handler(body)
-        agent._handle_upload(handler)
-        handler.send_response.assert_called_with(400)
-        assert agent.status["state"] == "error"
-
-    @patch.object(OTAAgent, "_install_bundle", return_value=(False, "disk full"))
-    @patch.object(OTAAgent, "_verify_bundle", return_value=(True, ""))
-    def test_install_failure(self, mock_verify, mock_install, agent, config):
-        """Should return 500 on install failure."""
-        body = b"fake-swu-content"
-        handler = self._make_handler(body)
+    def test_rejects_incomplete_upload(self, agent):
+        handler = _make_handler(b"short", content_length=1000)
         agent._handle_upload(handler)
         handler.send_response.assert_called_with(500)
-        assert agent.status["state"] == "error"
 
-    @patch.object(OTAAgent, "_install_bundle", return_value=(True, ""))
-    @patch.object(OTAAgent, "_verify_bundle", return_value=(True, ""))
-    def test_streams_to_disk(self, mock_verify, mock_install, agent, config):
-        """Should write bundle to staging dir, not hold in memory."""
-        body = b"x" * (CHUNK_SIZE * 3)  # Multiple chunks
-        handler = self._make_handler(body)
+    @patch("camera_streamer.ota_agent.ota_installer.wait_for_completion")
+    def test_successful_install(self, mock_wait, agent, spool):
+        mock_wait.return_value = {
+            "state": "installed",
+            "progress": 100,
+            "error": "",
+        }
+        body = b"fake-swu-content" * 500
+        handler = _make_handler(body)
         agent._handle_upload(handler)
-        # Verify the bundle was passed to verify and install
-        bundle_path = mock_verify.call_args[0][0]
-        assert "staging" in bundle_path
-        assert bundle_path.endswith("update.swu")
+        handler.send_response.assert_called_with(200)
+        # Bundle staged to the spool, trigger written.
+        assert os.path.isfile(os.path.join(spool, "staging", "update.swu"))
+        # NOTE: trigger_install is real; the trigger file was written
+        # and wait_for_completion is the only thing mocked.
+        assert os.path.isfile(ota_installer.TRIGGER_PATH)
+        mock_wait.assert_called_once()
 
-    def test_incomplete_upload(self, agent, config):
-        """Should reject incomplete uploads."""
-        body = b"short"
-        handler = self._make_handler(body, content_length=1000)
+    @patch("camera_streamer.ota_agent.ota_installer.wait_for_completion")
+    def test_install_error_returns_500(self, mock_wait, agent, spool):
+        mock_wait.return_value = {
+            "state": "error",
+            "progress": 30,
+            "error": "Signature verification failed",
+        }
+        body = b"fake-swu-content"
+        handler = _make_handler(body)
         agent._handle_upload(handler)
-        handler.send_response.assert_called_with(400)
-        assert agent.status["state"] == "error"
+        handler.send_response.assert_called_with(500)
 
 
 class TestHandleStatus:
-    """Test the status handler."""
-
-    def test_returns_status_json(self, agent):
-        import io
-        import json
-
+    def test_returns_status_json(self, agent, spool):
+        ota_installer.write_status("installing", progress=77)
         handler = MagicMock()
         handler.wfile = io.BytesIO()
-        agent._set_status("installing", progress=75)
         agent._handle_status(handler)
         handler.send_response.assert_called_with(200)
-        # Parse the response body
-        body = handler.wfile.getvalue()
-        data = json.loads(body)
+        data = json.loads(handler.wfile.getvalue())
         assert data["state"] == "installing"
-        assert data["progress"] == 75
+        assert data["progress"] == 77
 
 
 class TestConstants:
-    """Test module constants."""
-
     def test_port(self):
         assert OTA_PORT == 8080
 
     def test_max_bundle_size(self):
         assert MAX_BUNDLE_SIZE == 500 * 1024 * 1024
-
-    def test_chunk_size(self):
-        assert CHUNK_SIZE == 64 * 1024

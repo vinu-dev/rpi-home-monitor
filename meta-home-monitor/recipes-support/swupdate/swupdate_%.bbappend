@@ -20,6 +20,7 @@ SRC_URI += " \
     file://swupdate-check.sh \
     file://swupdate.cfg \
     file://swupdate-args \
+    file://monitor-standby-symlink.sh \
     "
 
 # Include signing cert only when signing is enabled (ADR-0014)
@@ -56,6 +57,31 @@ TimeoutStartSec=120
 WantedBy=multi-user.target
 UNIT
 
+    # --- Boot-time /dev/monitor_standby symlink ---
+    # Required because swupdate's check_free_space stats the install
+    # target before preinst can run — if the symlink is missing at
+    # that instant the install is rejected with a bogus "not enough
+    # free space" error (measured against /tmp's tmpfs).
+    install -m 0755 ${WORKDIR}/monitor-standby-symlink.sh \
+        ${D}/opt/monitor/scripts/monitor-standby-symlink.sh
+
+    cat > ${D}${systemd_system_unitdir}/monitor-standby-symlink.service << 'UNIT'
+[Unit]
+Description=Create /dev/monitor_standby symlink for SWUpdate
+# Must be up before any OTA install can be invoked.
+DefaultDependencies=no
+After=systemd-remount-fs.service local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/scripts/monitor-standby-symlink.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+UNIT
+
     # --- swupdate config ---
     install -d ${D}${sysconfdir}/swupdate
     install -m 0644 ${WORKDIR}/swupdate.cfg ${D}${sysconfdir}/swupdate.cfg
@@ -78,12 +104,14 @@ UNIT
 # Note: /etc/hwrevision is provided by the hwrevision recipe.
 #       /etc/sw-versions is provided by the sw-versions recipe.
 
-SYSTEMD_SERVICE:${PN} += "swupdate-check.service"
+SYSTEMD_SERVICE:${PN} += "swupdate-check.service monitor-standby-symlink.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 FILES:${PN} += " \
     /opt/monitor/scripts/swupdate-check.sh \
+    /opt/monitor/scripts/monitor-standby-symlink.sh \
     ${systemd_system_unitdir}/swupdate-check.service \
+    ${systemd_system_unitdir}/monitor-standby-symlink.service \
     ${sysconfdir}/swupdate.cfg \
     ${sysconfdir}/swupdate/conf.d/00-home-monitor \
     "

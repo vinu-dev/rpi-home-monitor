@@ -19,10 +19,14 @@ import subprocess
 import threading
 import time
 
-from camera_streamer import wifi
+from camera_streamer import ota_installer, wifi
 from camera_streamer.control import ControlHandler, parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
 from camera_streamer.server_notifier import notify_config_change
+
+# Cap direct-upload bundle size: matches OTAAgent's cap. A 512 MB camera
+# cannot stage anything larger without swapping out important pages.
+MAX_BUNDLE_SIZE = 500 * 1024 * 1024
 
 log = logging.getLogger("camera-streamer.status-server")
 
@@ -576,6 +580,10 @@ def _make_status_handler(
                     return
                 nets = wifi.scan_networks(wifi_interface)
                 self._json_response({"networks": nets})
+            elif self.path == "/api/ota/status":
+                if not self._require_auth():
+                    return
+                self._json_response(ota_installer.read_status())
             else:
                 self.send_response(302)
                 self.send_header("Location", "/")
@@ -630,6 +638,19 @@ def _make_status_handler(
                 self.send_error(404)
 
         def do_POST(self):
+            # OTA upload is streamed directly from self.rfile — must not
+            # pre-buffer the body (bundles can be hundreds of MB).
+            if self.path == "/api/ota/upload":
+                if not self._require_auth():
+                    return
+                self._handle_ota_upload()
+                return
+            if self.path == "/api/ota/reboot":
+                if not self._require_auth():
+                    return
+                self._handle_ota_reboot()
+                return
+
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len) if content_len > 0 else b""
 
@@ -967,6 +988,85 @@ def _make_status_handler(
                 import threading as _t2
 
                 _t2.Thread(target=_restart_after_pair, daemon=True).start()
+
+        def _handle_ota_upload(self):
+            """Stream a .swu bundle from the browser into the OTA spool,
+            then fire the root installer via the trigger-file protocol.
+
+            The bundle is streamed straight to disk — never buffered in
+            RAM — so 512 MB cameras can accept 200+ MB updates without
+            OOM pressure. After staging, we write the trigger and return
+            200 immediately; the browser polls /api/ota/status to watch
+            the install progress. If we blocked here waiting on
+            wait_for_completion() the HTTP request would be held open
+            for several minutes and proxies/browsers would time out.
+            """
+            try:
+                content_len = int(self.headers.get("Content-Length", 0))
+            except (TypeError, ValueError):
+                self._json_response({"error": "Invalid Content-Length"}, 400)
+                return
+            if content_len <= 0:
+                self._json_response({"error": "Empty upload"}, 400)
+                return
+            if content_len > MAX_BUNDLE_SIZE:
+                self._json_response(
+                    {"error": f"Bundle too large (limit {MAX_BUNDLE_SIZE} bytes)"},
+                    413,
+                )
+                return
+            if ota_installer.is_busy():
+                self._json_response(
+                    {"error": "Another update is already in progress"}, 409
+                )
+                return
+
+            ok, msg = ota_installer.stage_bundle(self.rfile, content_len)
+            if not ok:
+                self._json_response({"error": msg}, 500)
+                return
+
+            ok, msg = ota_installer.trigger_install(msg)
+            if not ok:
+                self._json_response({"error": msg}, 500)
+                return
+
+            self._json_response(
+                {"message": "Install triggered", "bundle_bytes": content_len}
+            )
+
+        def _handle_ota_reboot(self):
+            """Reboot the camera after a successful install.
+
+            We only honour reboot when status.json is in the 'installed'
+            terminal state — rebooting mid-install would brick the
+            standby slot. HTTP response is flushed before reboot runs
+            so the browser sees the 200 before the network drops.
+            """
+            status = ota_installer.read_status()
+            state = status.get("state")
+            if state != ota_installer.STATE_INSTALLED:
+                self._json_response(
+                    {
+                        "error": (
+                            "No installed update to apply "
+                            f"(current state: {state})"
+                        )
+                    },
+                    400,
+                )
+                return
+
+            self._json_response({"message": "Rebooting"})
+
+            def _reboot():
+                time.sleep(1.0)
+                try:
+                    subprocess.run(["reboot"], check=False, timeout=15)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    log.error("reboot command failed: %s", exc)
+
+            threading.Thread(target=_reboot, daemon=True, name="ota-reboot").start()
 
         def _handle_factory_reset(self):
             """Wipe camera config, certs, and restart in setup mode.
