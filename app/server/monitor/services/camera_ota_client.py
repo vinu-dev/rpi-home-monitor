@@ -117,6 +117,7 @@ class CameraOTAClient:
                 status_cb(state, progress, error)
             except Exception as cb_exc:
                 log.debug("status_cb raised: %s", cb_exc)
+
         if not os.path.isfile(bundle_path):
             return False, f"Bundle not found: {bundle_path}"
 

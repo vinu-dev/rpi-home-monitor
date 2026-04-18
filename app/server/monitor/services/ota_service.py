@@ -300,9 +300,7 @@ class OTAService:
                 return True, ""
             error = (stderr or "").strip() or "Installation failed"
             self.set_status("server", "error", error=error)
-            self._log_audit(
-                "OTA_INSTALL_FAILED", user, ip, f"Install failed: {error}"
-            )
+            self._log_audit("OTA_INSTALL_FAILED", user, ip, f"Install failed: {error}")
             return False, error
 
         except FileNotFoundError:

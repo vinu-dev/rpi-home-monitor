@@ -324,6 +324,7 @@ STATUS_API_FIELDS = {
     "server_connected",
     "streaming",
     "paired",
+    "firmware_version",
     "cpu_temp",
     "uptime",
     "memory_total_mb",
