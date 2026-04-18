@@ -65,14 +65,41 @@ class OTAService:
         return os.path.join(self._data_dir, "ota", "staging")
 
     def get_status(self, device_id="server"):
-        """Get update status for a device."""
+        """Get update status for a device.
+
+        The in-memory status dict is transient — it vanishes on restart.
+        If we have no in-RAM status for the server but a .swu is sitting
+        in the staging dir (from a prior upload that survived the
+        process lifecycle), reconstruct a "staged" state from disk so
+        the UI keeps showing the Install button.
+        """
         with self._status_lock:
-            return dict(
-                self._status.get(
-                    device_id,
-                    {"state": "idle", "version": "", "progress": 0, "error": ""},
-                )
-            )
+            status = self._status.get(device_id)
+            if status is not None:
+                return dict(status)
+
+        default = {"state": "idle", "version": "", "progress": 0, "error": ""}
+        if device_id == "server":
+            staged = self._find_staged_bundle()
+            if staged:
+                default["state"] = "staged"
+                default["staged_filename"] = staged
+        return default
+
+    def _find_staged_bundle(self):
+        """Return the filename of the newest staged .swu, or '' if none."""
+        try:
+            entries = [
+                (os.path.getmtime(os.path.join(self.staging_dir, f)), f)
+                for f in os.listdir(self.staging_dir)
+                if f.endswith(".swu")
+            ]
+        except OSError:
+            return ""
+        if not entries:
+            return ""
+        entries.sort(reverse=True)
+        return entries[0][1]
 
     def set_status(self, device_id, state, **kwargs):
         """Update status for a device."""

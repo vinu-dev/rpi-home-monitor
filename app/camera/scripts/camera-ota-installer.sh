@@ -126,6 +126,30 @@ fi
 write_status "installing" 30 ""
 log "Running swupdate -i $BUNDLE"
 
+# Stop camera-streamer to free RAM before the heavy write phase.
+# On a Pi Zero 2W (362 MB total) the overlap of camera-streamer
+# (~90 MB), swupdate (~250 MB RSS), and kernel buffers during the
+# 1.8 GB raw write pushes the kernel into OOM territory — we've seen
+# camera-streamer, sshd, and getty all killed mid-install, leaving
+# the box unreachable until a physical power cycle.
+#
+# A trap guarantees we restart it even if swupdate or the script
+# fails, so a bad install doesn't leave the device permanently
+# without its main service.
+STREAMER_WAS_ACTIVE=0
+if systemctl is-active --quiet camera-streamer.service; then
+    STREAMER_WAS_ACTIVE=1
+    log "Stopping camera-streamer to free RAM during install"
+    systemctl stop camera-streamer.service || true
+fi
+restart_streamer() {
+    if [ "$STREAMER_WAS_ACTIVE" = "1" ]; then
+        log "Restarting camera-streamer"
+        systemctl start camera-streamer.service || true
+    fi
+}
+trap restart_streamer EXIT
+
 # Stream swupdate output to the log while installing. A broad progress
 # value of 60 is reported during install; SWUpdate itself is the slow
 # part and we can't easily parse its IPC socket from /bin/sh.
