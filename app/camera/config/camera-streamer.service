@@ -27,7 +27,11 @@ Environment=CAMERA_CERTS_DIR=/data/certs
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/data
+# /data — persistent config, certs, logs (normal use).
+# /var/lib/camera-ota — OTA spool dir, shared with the privileged
+# camera-ota-installer.service via the trigger-file protocol. Without
+# this exemption ProtectSystem=strict rejects writes with EROFS.
+ReadWritePaths=/data /var/lib/camera-ota
 PrivateTmp=true
 # Camera device access
 SupplementaryGroups=video
