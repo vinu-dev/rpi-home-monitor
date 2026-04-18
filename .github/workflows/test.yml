@@ -214,7 +214,7 @@ jobs:
             --tls-verify=false \
             -H "Cookie:$COOKIE" \
             -H "X-CSRF-Token:$CSRF" \
-            --phases=examples
+            --phases=examples,fuzzing
 
   server-security:
     name: Server Security
@@ -334,7 +334,7 @@ jobs:
             --url https://127.0.0.1:5444 \
             --tls-verify=false \
             -H "Cookie:$COOKIE" \
-            --phases=examples
+            --phases=examples,fuzzing
 
   camera-security:
     name: Camera Security

@@ -2,30 +2,7 @@
 
 import os
 
-from monitor.auth import hash_password
 from monitor.models import Camera
-
-
-def _login(app, client, role="admin"):
-    """Helper: create admin user and login."""
-    from monitor.models import User
-
-    app.store.save_user(
-        User(
-            id="user-admin",
-            username="admin",
-            password_hash=hash_password("pass"),
-            role=role,
-        )
-    )
-    response = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": "admin",
-            "password": "pass",
-        },
-    )
-    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
 
 
 def _add_camera(app, camera_id="cam-001"):
@@ -49,19 +26,19 @@ class TestListClips:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/recordings/cam-001").status_code == 401
 
-    def test_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_camera_not_found(self, logged_in_client):
+        client = logged_in_client()
         response = client.get("/api/v1/recordings/cam-xxx")
         assert response.status_code == 404
 
-    def test_empty_recordings(self, app, client):
-        _login(app, client)
+    def test_empty_recordings(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         data = client.get("/api/v1/recordings/cam-001?date=2026-04-09").get_json()
         assert data == []
 
-    def test_lists_clips(self, app, client):
-        _login(app, client)
+    def test_lists_clips(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
         _make_clip(app, "cam-001", "2026-04-09", "14-30-00")
@@ -69,8 +46,8 @@ class TestListClips:
         assert len(data) == 2
         assert data[0]["start_time"] == "14:00:00"
 
-    def test_viewer_can_list(self, app, client):
-        _login(app, client, role="viewer")
+    def test_viewer_can_list(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         _add_camera(app)
         assert (
             client.get("/api/v1/recordings/cam-001?date=2026-04-09").status_code == 200
@@ -83,16 +60,16 @@ class TestListDates:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/recordings/cam-001/dates").status_code == 401
 
-    def test_returns_dates(self, app, client):
-        _login(app, client)
+    def test_returns_dates(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_clip(app, "cam-001", "2026-04-08", "10-00-00")
         _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
         data = client.get("/api/v1/recordings/cam-001/dates").get_json()
         assert data["dates"] == ["2026-04-08", "2026-04-09"]
 
-    def test_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_camera_not_found(self, logged_in_client):
+        client = logged_in_client()
         assert client.get("/api/v1/recordings/cam-xxx/dates").status_code == 404
 
 
@@ -102,52 +79,52 @@ class TestLatestClip:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/recordings/cam-001/latest").status_code == 401
 
-    def test_no_recordings(self, app, client):
-        _login(app, client)
+    def test_no_recordings(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         assert client.get("/api/v1/recordings/cam-001/latest").status_code == 404
 
-    def test_returns_latest(self, app, client):
-        _login(app, client)
+    def test_returns_latest(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
         _make_clip(app, "cam-001", "2026-04-09", "15-30-00")
         data = client.get("/api/v1/recordings/cam-001/latest").get_json()
         assert data["start_time"] == "15:30:00"
 
-    def test_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_camera_not_found(self, logged_in_client):
+        client = logged_in_client()
         assert client.get("/api/v1/recordings/cam-xxx/latest").status_code == 404
 
 
 class TestDeleteClip:
     """Test DELETE /api/v1/recordings/<cam-id>/<date>/<filename>."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, logged_in_client):
+        client = logged_in_client("viewer")
         response = client.delete("/api/v1/recordings/cam-001/2026-04-09/14-00-00.mp4")
         assert response.status_code == 403
 
-    def test_deletes_clip(self, app, client):
-        _login(app, client)
+    def test_deletes_clip(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         path = _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
         response = client.delete("/api/v1/recordings/cam-001/2026-04-09/14-00-00.mp4")
         assert response.status_code == 200
         assert not os.path.exists(path)
 
-    def test_clip_not_found(self, app, client):
-        _login(app, client)
+    def test_clip_not_found(self, logged_in_client):
+        client = logged_in_client()
         response = client.delete("/api/v1/recordings/cam-001/2026-04-09/nope.mp4")
         assert response.status_code == 404
 
-    def test_invalid_filename(self, app, client):
-        _login(app, client)
+    def test_invalid_filename(self, logged_in_client):
+        client = logged_in_client()
         response = client.delete("/api/v1/recordings/cam-001/2026-04-09/bad.txt")
         assert response.status_code == 400
 
-    def test_delete_logs_audit(self, app, client):
-        _login(app, client)
+    def test_delete_logs_audit(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
         client.delete("/api/v1/recordings/cam-001/2026-04-09/14-00-00.mp4")

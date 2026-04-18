@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 
-from monitor.auth import hash_password
 from monitor.models import Camera, User
 
 
@@ -24,22 +23,6 @@ def _setup_ca_files(app):
             f.write("FAKE CA KEY FOR TESTING")
 
 
-def _login(app, client, role="admin"):
-    """Helper: create admin user and login."""
-    app.store.save_user(
-        User(
-            id="user-admin",
-            username="admin",
-            password_hash=hash_password("pass"),
-            role=role,
-        )
-    )
-    response = client.post(
-        "/api/v1/auth/login", json={"username": "admin", "password": "pass"}
-    )
-    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
-
-
 def _add_camera(app, camera_id="cam-001", status="pending"):
     """Helper: add a camera to the store."""
     camera = Camera(id=camera_id, status=status, ip="192.168.1.50")
@@ -54,14 +37,14 @@ class TestInitiatePairing:
         resp = client.post("/api/v1/cameras/cam-001/pair")
         assert resp.status_code == 401
 
-    def test_viewer_cannot_pair(self, app, client):
-        _login(app, client, role="viewer")
+    def test_viewer_cannot_pair(self, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/cameras/cam-001/pair")
         assert resp.status_code == 403
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_returns_pin_on_success(self, mock_gen, app, client):
-        _login(app, client)
+    def test_returns_pin_on_success(self, mock_gen, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CERT", "key": "KEY", "serial": "ABC123"},
@@ -74,14 +57,14 @@ class TestInitiatePairing:
         assert len(data["pin"]) == 6
         assert data["expires_in"] == 300
 
-    def test_returns_404_for_unknown_camera(self, app, client):
-        _login(app, client)
+    def test_returns_404_for_unknown_camera(self, logged_in_client):
+        client = logged_in_client()
         resp = client.post("/api/v1/cameras/nonexistent/pair")
         assert resp.status_code == 404
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_rejects_online_camera(self, mock_gen, app, client):
-        _login(app, client)
+    def test_rejects_online_camera(self, mock_gen, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="online")
         resp = client.post("/api/v1/cameras/cam-001/pair")
         assert resp.status_code == 400
@@ -94,28 +77,28 @@ class TestUnpairCamera:
         resp = client.post("/api/v1/cameras/cam-001/unpair")
         assert resp.status_code == 401
 
-    def test_viewer_cannot_unpair(self, app, client):
-        _login(app, client, role="viewer")
+    def test_viewer_cannot_unpair(self, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/cameras/cam-001/unpair")
         assert resp.status_code == 403
 
-    def test_unpairs_camera(self, app, client):
-        _login(app, client)
+    def test_unpairs_camera(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="online")
         resp = client.post("/api/v1/cameras/cam-001/unpair")
         assert resp.status_code == 200
         assert resp.get_json()["message"] == "Camera unpaired"
 
-    def test_returns_404_for_unknown_camera(self, app, client):
-        _login(app, client)
+    def test_returns_404_for_unknown_camera(self, logged_in_client):
+        client = logged_in_client()
         resp = client.post("/api/v1/cameras/nonexistent/unpair")
         assert resp.status_code == 404
 
-    def test_unpair_stops_streaming(self, app, client):
+    def test_unpair_stops_streaming(self, app, logged_in_client):
         """Unpair should stop the streaming pipeline."""
         from unittest.mock import MagicMock
 
-        _login(app, client)
+        client = logged_in_client()
         _add_camera(app, status="online")
         app.streaming.stop_camera = MagicMock()
 
@@ -123,9 +106,9 @@ class TestUnpairCamera:
         assert resp.status_code == 200
         app.streaming.stop_camera.assert_called_once_with("cam-001")
 
-    def test_unpair_unknown_camera(self, app, client):
+    def test_unpair_unknown_camera(self, logged_in_client):
         """Unpair non-existent camera returns 404."""
-        _login(app, client)
+        client = logged_in_client()
         resp = client.post("/api/v1/cameras/no-such-cam/unpair")
         assert resp.status_code == 404
 
@@ -139,7 +122,7 @@ class TestExchangeCerts:
             "/api/v1/pair/exchange",
             json={"pin": "123456", "camera_id": "cam-001"},
         )
-        # Should not return 401 — instead returns 404 (no pending pairing)
+        # Should not return 401 â€” instead returns 404 (no pending pairing)
         assert resp.status_code != 401
 
     def test_requires_json_body(self, client):
@@ -164,9 +147,9 @@ class TestExchangeCerts:
         assert resp.status_code == 404
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_full_pairing_flow(self, mock_gen, app, client):
+    def test_full_pairing_flow(self, mock_gen, app, logged_in_client):
         """End-to-end: initiate as admin, exchange as camera."""
-        _login(app, client)
+        client = logged_in_client()
         _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CLIENT CERT", "key": "CLIENT KEY", "serial": "ABC123"},
@@ -194,12 +177,12 @@ class TestExchangeCerts:
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_exchange_starts_streaming_for_continuous_camera(
-        self, mock_gen, app, client
+        self, mock_gen, app, logged_in_client
     ):
         """Streaming pipeline starts automatically after successful pairing."""
         from unittest.mock import MagicMock
 
-        _login(app, client)
+        client = logged_in_client()
         cam = _add_camera(app)
         cam.recording_mode = "continuous"
         app.store.save_camera(cam)
@@ -221,11 +204,11 @@ class TestExchangeCerts:
         app.streaming.start_camera.assert_called_once_with("cam-001")
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_exchange_skips_streaming_for_on_demand_camera(self, mock_gen, app, client):
+    def test_exchange_skips_streaming_for_on_demand_camera(self, mock_gen, app, logged_in_client):
         """Streaming pipeline does NOT start if recording_mode is on_demand."""
         from unittest.mock import MagicMock
 
-        _login(app, client)
+        client = logged_in_client()
         cam = _add_camera(app)
         cam.recording_mode = "on_demand"
         app.store.save_camera(cam)
@@ -247,9 +230,9 @@ class TestExchangeCerts:
         app.streaming.start_camera.assert_not_called()
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_wrong_pin_rejected(self, mock_gen, app, client):
+    def test_wrong_pin_rejected(self, mock_gen, app, logged_in_client):
         """Wrong PIN returns 403."""
-        _login(app, client)
+        client = logged_in_client()
         _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CERT", "key": "KEY", "serial": "S"},
@@ -268,8 +251,8 @@ class TestExchangeCerts:
 class TestDeleteCameraUnpairs:
     """Test that DELETE /cameras/<id> also revokes certs."""
 
-    def test_delete_calls_unpair(self, app, client):
-        _login(app, client)
+    def test_delete_calls_unpair(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="online")
         resp = client.delete("/api/v1/cameras/cam-001")
         assert resp.status_code == 200
