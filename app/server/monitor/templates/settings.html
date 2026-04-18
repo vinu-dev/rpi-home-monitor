@@ -14,6 +14,7 @@
     <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
     <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
     <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
+    <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -859,6 +860,111 @@
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════
+     UPDATES TAB (admin only) — ADR-0020
+     Dual-transport OTA:
+       • Server: upload .swu → verify → install locally
+       • Camera: upload .swu → server streams to camera over mTLS →
+                 camera verifies + installs (same engine on both)
+     ═══════════════════════════════════════════════════════════ -->
+<div x-show="isAdmin && tab === 'updates'" x-cloak>
+    <!-- Server OTA -->
+    <div class="settings-section">
+        <div class="settings-section__title">Server Software Update</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Current version</span>
+                <span class="info-row__value" x-text="ota.server.current_version || '--'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Status</span>
+                <span class="info-row__value">
+                    <span x-text="ota.server.state || 'idle'"></span>
+                    <span class="text-muted" x-show="ota.server.error" x-text="'— ' + ota.server.error"></span>
+                </span>
+            </div>
+            <div style="margin-top:var(--space-3);">
+                <label class="btn btn--secondary" :class="{ 'btn--disabled': ota.server.busy }" style="display:inline-block;">
+                    <input type="file" accept=".swu" style="display:none;"
+                           :disabled="ota.server.busy"
+                           @change="uploadServerBundle($event.target.files[0])">
+                    <span x-text="ota.server.staged_filename ? 'Replace file…' : 'Choose .swu file…'"></span>
+                </label>
+                <span class="text-small text-muted" style="margin-left:var(--space-2);"
+                      x-show="ota.server.staged_filename"
+                      x-text="ota.server.staged_filename"></span>
+                <button class="btn btn--primary" style="margin-left:var(--space-2);"
+                        :disabled="!ota.server.staged_filename || ota.server.busy"
+                        @click="installServerBundle()">Install &amp; Reboot</button>
+            </div>
+            <div x-show="ota.server.busy" style="margin-top:var(--space-3);">
+                <div class="progress-bar"><div class="progress-bar__fill" :style="'width:' + (ota.server.progress || 0) + '%'"></div></div>
+                <div class="text-small text-muted" style="margin-top:4px;"
+                     x-text="ota.server.state + ' — ' + (ota.server.progress || 0) + '%'"></div>
+            </div>
+            <div class="text-small text-muted" style="margin-top:var(--space-3);">
+                The server validates the .swu signature, stages it to
+                <code>/data/ota/staging</code>, and installs via SWUpdate to
+                the standby partition. A reboot is required after install.
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera OTA -->
+    <div class="settings-section">
+        <div class="settings-section__title">Camera Software Updates</div>
+        <div class="card" x-show="(ota.cameras || []).length === 0">
+            <p class="text-small text-muted" style="margin:0;">No cameras paired yet.</p>
+        </div>
+        <template x-for="cam in ota.cameras" :key="cam.id">
+            <div class="card" style="margin-bottom:var(--space-3);">
+                <div class="info-row">
+                    <span class="info-row__label"><strong x-text="cam.name || cam.id"></strong></span>
+                    <span class="info-row__value">
+                        <span :class="cam.online ? 'badge badge--ok' : 'badge badge--warn'"
+                              x-text="cam.online ? 'online' : 'offline'"></span>
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Current version</span>
+                    <span class="info-row__value" x-text="cam.current_version || '--'"></span>
+                </div>
+                <div class="info-row" style="border-bottom:none;">
+                    <span class="info-row__label">Status</span>
+                    <span class="info-row__value">
+                        <span x-text="cam.state || 'idle'"></span>
+                        <span class="text-muted" x-show="cam.error" x-text="'— ' + cam.error"></span>
+                    </span>
+                </div>
+                <div style="margin-top:var(--space-3);">
+                    <label class="btn btn--secondary" :class="{ 'btn--disabled': cameraBusy(cam) }" style="display:inline-block;">
+                        <input type="file" accept=".swu" style="display:none;"
+                               :disabled="cameraBusy(cam)"
+                               @change="uploadCameraBundle(cam, $event.target.files[0])">
+                        <span x-text="cam.staged_filename ? 'Replace file…' : 'Choose .swu file…'"></span>
+                    </label>
+                    <span class="text-small text-muted" style="margin-left:var(--space-2);"
+                          x-show="cam.staged_filename"
+                          x-text="cam.staged_filename"></span>
+                    <button class="btn btn--primary" style="margin-left:var(--space-2);"
+                            :disabled="!cam.staged_filename || !cam.online || cameraBusy(cam)"
+                            @click="pushCameraBundle(cam)">Push &amp; Install</button>
+                </div>
+                <div x-show="cameraBusy(cam)" style="margin-top:var(--space-3);">
+                    <div class="progress-bar"><div class="progress-bar__fill" :style="'width:' + (cam.progress || 0) + '%'"></div></div>
+                    <div class="text-small text-muted" style="margin-top:4px;"
+                         x-text="cam.state + ' — ' + (cam.progress || 0) + '%'"></div>
+                </div>
+            </div>
+        </template>
+        <div class="text-small text-muted">
+            Camera updates are streamed from the server to the camera over mTLS (ADR-0020).
+            The camera verifies the signature and installs via SWUpdate — the same engine
+            used for server updates. A successful install reboots the camera onto the new slot.
+        </div>
+    </div>
+</div>
+
 </div>
 {% endblock %}
 
@@ -897,6 +1003,10 @@ function settingsPage() {
 
         resetConfirm: false,
         resetKeepRecordings: false,
+
+        // OTA state (ADR-0020 dual-transport updates)
+        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
+        _otaPollTimer: null,
 
         async init() {
             try {
@@ -1418,6 +1528,147 @@ function settingsPage() {
                 window.HM.toast(data.message || 'USB ejected', 'success');
                 this.loadStorageStatus();
             } catch(e) { window.HM.toast(e.message || 'Eject failed', 'error'); }
+        },
+
+        /* --- Software Updates (ADR-0020) --- */
+        cameraBusy(cam) {
+            var s = cam && cam.state;
+            return s === 'uploading' || s === 'downloading' || s === 'verifying' || s === 'installing';
+        },
+
+        _serverBusy(state) {
+            return state === 'uploading' || state === 'installing' || state === 'verifying';
+        },
+
+        async loadOtaStatus() {
+            try {
+                var data = await window.HM.api.get('/api/v1/ota/status');
+                var prev = this.ota.server;
+                this.ota.server = Object.assign({ busy: this._serverBusy(data.server && data.server.state) }, prev, data.server || {});
+                this.ota.server.busy = this._serverBusy(this.ota.server.state);
+                if (!this.ota.server.staged_filename) {
+                    this.ota.server.staged_filename = prev.staged_filename || '';
+                }
+                this.ota.cameras = (data.cameras || []).map(function(c) {
+                    return Object.assign({ progress: 0, error: '', state: 'idle' }, c);
+                });
+                this._scheduleOtaPoll();
+            } catch(e) { /* keep last state */ }
+        },
+
+        _scheduleOtaPoll() {
+            if (this._otaPollTimer) clearTimeout(this._otaPollTimer);
+            var anyBusy = this.ota.server.busy || (this.ota.cameras || []).some(this.cameraBusy);
+            if (this.tab !== 'updates') return;
+            var self = this;
+            var delay = anyBusy ? 1500 : 5000;
+            this._otaPollTimer = setTimeout(function() { self.loadOtaStatus(); }, delay);
+        },
+
+        async _uploadWithCsrf(url, file) {
+            var fd = new FormData();
+            fd.append('file', file);
+            var resp = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-CSRF-Token': window.HM.auth.getCsrfToken() },
+                body: fd,
+            });
+            var data = await resp.json().catch(function() { return {}; });
+            if (!resp.ok) {
+                throw new Error(data.error || data.message || ('HTTP ' + resp.status));
+            }
+            return data;
+        },
+
+        async uploadServerBundle(file) {
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.swu')) {
+                window.HM.toast('Only .swu files are accepted', 'error');
+                return;
+            }
+            this.ota.server.busy = true;
+            this.ota.server.state = 'uploading';
+            this.ota.server.progress = 0;
+            this.ota.server.error = '';
+            try {
+                var data = await this._uploadWithCsrf('/api/v1/ota/server/upload', file);
+                this.ota.server.staged_filename = data.filename || file.name;
+                this.ota.server.state = 'staged';
+                this.ota.server.busy = false;
+                window.HM.toast('Bundle uploaded and verified', 'success');
+            } catch(e) {
+                this.ota.server.state = 'error';
+                this.ota.server.error = e.message || 'Upload failed';
+                this.ota.server.busy = false;
+                window.HM.toast(this.ota.server.error, 'error');
+            }
+            this.loadOtaStatus();
+        },
+
+        async installServerBundle() {
+            if (!confirm('Install this update? The server will reboot into the new partition.')) return;
+            this.ota.server.busy = true;
+            this.ota.server.state = 'installing';
+            this.ota.server.progress = 50;
+            this.ota.server.error = '';
+            try {
+                var data = await window.HM.api.post('/api/v1/ota/server/install', {});
+                this.ota.server.state = 'installed';
+                this.ota.server.progress = 100;
+                this.ota.server.busy = false;
+                window.HM.toast(data.message || 'Installed — reboot required', 'success');
+            } catch(e) {
+                this.ota.server.state = 'error';
+                this.ota.server.error = e.message || 'Install failed';
+                this.ota.server.busy = false;
+                window.HM.toast(this.ota.server.error, 'error');
+            }
+            this.loadOtaStatus();
+        },
+
+        async uploadCameraBundle(cam, file) {
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.swu')) {
+                window.HM.toast('Only .swu files are accepted', 'error');
+                return;
+            }
+            cam.state = 'uploading';
+            cam.progress = 0;
+            cam.error = '';
+            try {
+                var data = await this._uploadWithCsrf(
+                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/upload',
+                    file
+                );
+                cam.staged_filename = data.filename || file.name;
+                cam.state = 'staged';
+                window.HM.toast('Bundle staged for ' + (cam.name || cam.id), 'success');
+            } catch(e) {
+                cam.state = 'error';
+                cam.error = e.message || 'Upload failed';
+                window.HM.toast(cam.error, 'error');
+            }
+            this.loadOtaStatus();
+        },
+
+        async pushCameraBundle(cam) {
+            if (!cam.online) { window.HM.toast('Camera is offline', 'error'); return; }
+            if (!confirm('Push this update to ' + (cam.name || cam.id) + '? The camera will reboot into the new partition.')) return;
+            cam.state = 'uploading';
+            cam.progress = 0;
+            cam.error = '';
+            try {
+                var data = await window.HM.api.post(
+                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/push', {}
+                );
+                window.HM.toast(data.message || 'Push started', 'info');
+            } catch(e) {
+                cam.state = 'error';
+                cam.error = e.message || 'Push failed';
+                window.HM.toast(cam.error, 'error');
+            }
+            this.loadOtaStatus();
         },
     };
 }
