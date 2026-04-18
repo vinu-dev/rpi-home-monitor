@@ -63,5 +63,22 @@ set_product_hostname() {
 }
 ROOTFS_POSTPROCESS_COMMAND += "set_product_hostname;"
 
+# --- /data + /boot fstab entries (ADR-0008) -------------------
+# Must be in the image rootfs (not wic-injected) so the OTA'd
+# slot also carries them. do_image_ext4 bypasses wic, so if these
+# are missing the new slot boots without /data mounted and WiFi/
+# LUKS carry-over silently fails → device drops to AP setup mode.
+# Idempotent: wic may append the same lines for the SD-card image.
+home_monitor_inject_fstab() {
+    fstab="${IMAGE_ROOTFS}/etc/fstab"
+    if ! grep -q "^/dev/mmcblk0p4" "$fstab"; then
+        echo "/dev/mmcblk0p4	/data	ext4	defaults	0	2" >> "$fstab"
+    fi
+    if ! grep -q "^/dev/mmcblk0p1" "$fstab"; then
+        echo "/dev/mmcblk0p1	/boot	vfat	defaults	0	0" >> "$fstab"
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += "home_monitor_inject_fstab;"
+
 # --- Extra space for video recordings (1GB) ---
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
