@@ -170,6 +170,10 @@ class MotionRunner:
         frame_reader: Optional override for frame reading. Callable
             returning a generator of 2-D uint8 ndarrays. Used by tests
             to sidestep real fd IO.
+        passive: If True, the runner starts no thread; the caller is
+            expected to push frames via ``process_frame(y_plane)``. This
+            is the Picamera2-dual-stream path where the lores callback
+            is already running on its own thread (picam_backend).
     """
 
     def __init__(
@@ -180,9 +184,12 @@ class MotionRunner:
         motion_config: MotionConfig | None = None,
         poster_factory: Callable | None = None,
         frame_reader: Callable | None = None,
+        passive: bool = False,
     ):
-        if frame_fd is None and frame_reader is None:
-            raise ValueError("MotionRunner requires frame_fd or frame_reader")
+        if not passive and frame_fd is None and frame_reader is None:
+            raise ValueError(
+                "MotionRunner requires frame_fd, frame_reader, or passive=True"
+            )
         self._config = config
         self._pairing = pairing_manager
         self._frame_fd = frame_fd
@@ -192,12 +199,19 @@ class MotionRunner:
         self._running = False
         self._thread: threading.Thread | None = None
         self._frame_reader = frame_reader
+        self._passive = passive
+        self._passive_lock = threading.Lock()
 
     def start(self) -> bool:
         if self._thread and self._thread.is_alive():
             log.debug("MotionRunner already running")
             return True
         self._running = True
+        if self._passive:
+            # No thread — frames arrive via process_frame() from the
+            # Picamera2 lores callback.
+            log.info("MotionRunner started (passive mode)")
+            return True
         self._thread = threading.Thread(
             target=self._run, name="motion-runner", daemon=True
         )
@@ -208,6 +222,21 @@ class MotionRunner:
             "yes" if self._frame_reader else "no",
         )
         return True
+
+    def process_frame(self, y_plane: "np.ndarray") -> None:
+        """Feed a single lores grayscale frame (passive mode).
+
+        Safe to call from any thread; the detector + event emission
+        are serialised by an internal lock so bursts of frames don't
+        interleave half-updated state.
+        """
+        if not self._running:
+            return
+        with self._passive_lock:
+            self._detector.process_frame(y_plane)
+            transition = self._detector.poll_event()
+            if transition is not None:
+                self._emit_transition(transition)
 
     def stop(self) -> None:
         self._running = False

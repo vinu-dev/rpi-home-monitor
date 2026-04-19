@@ -3,15 +3,22 @@ RTSP stream manager.
 
 Manages the video capture and RTSP streaming pipeline.
 
+**Primary path (ADR-0021):** Picamera2 dual-stream.
+  - main 1920×1080 YUV → hardware H264Encoder → ffmpeg -c copy → RTSPS
+  - lores 320×240 YUV → MotionRunner.process_frame() (no decode, no tee)
+  This is the default when the ``picamera2`` module is importable.
+
+**Fallback path:** libcamera-vid CLI + ffmpeg -c copy.
+  - Used when ``CAMERA_STREAM_BACKEND=cli`` is set or picamera2 is
+    unavailable.
+  - Motion detection in this mode uses the old ffmpeg-tee pipeline,
+    which costs ~54 % of a Zero 2W core decoding 1080p and introduces
+    a ~20 s live-feed delay — motion should be OFF on this path.
+
 The OV5647 sensor (PiHut ZeroCam) outputs raw Bayer data, NOT H.264.
-We use libcamera-vid to handle the full ISP pipeline:
-  Bayer → demosaic → YUV → H.264 encode (via GPU)
-
-Pipeline:
-  libcamera-vid (H.264 output to stdout) | ffmpeg (RTSP push to server)
-
-If libcamera-vid is not available, falls back to direct ffmpeg v4l2
-capture (works for cameras that output H.264 natively).
+Both paths push the ISP output through the hardware H.264 encoder; the
+only difference is whether Picamera2 owns the pipeline in-process or
+whether we shell out to ``libcamera-vid``.
 
 Features:
 - Auto-reconnect on server disconnect (exponential backoff, max 60s)
@@ -64,6 +71,9 @@ class StreamManager:
         self._consecutive_failures = 0
         self._lock = threading.Lock()
         self._motion_runner = None
+        # Picamera2 backend (preferred path). None means we're on the
+        # CLI fallback or the backend hasn't been started yet.
+        self._picam_backend = None
         # Pipe between ffmpeg (write end, inherited via pass_fds) and
         # MotionRunner (read end). Non-None only while a ffmpeg process
         # is being launched + running. See _prepare_motion_pipe.
@@ -72,9 +82,23 @@ class StreamManager:
 
     @property
     def is_streaming(self):
-        """Return True if ffmpeg is currently running."""
+        """Return True if the streaming pipeline is up."""
         with self._lock:
+            if self._picam_backend is not None:
+                return self._picam_backend.is_streaming
             return self._process is not None and self._process.poll() is None
+
+    # --- Backend selection ---------------------------------------------
+
+    def _prefer_picamera(self) -> bool:
+        """Use Picamera2 backend unless explicitly overridden or unavailable."""
+        if os.environ.get("CAMERA_STREAM_BACKEND", "").lower() == "cli":
+            return False
+        try:
+            import picamera2  # noqa: F401
+        except Exception:
+            return False
+        return True
 
     @property
     def consecutive_failures(self):
@@ -176,13 +200,27 @@ class StreamManager:
             self._cleanup_motion_pipe()
 
     def stop(self):
-        """Stop streaming and kill the ffmpeg process."""
+        """Stop streaming and tear down whichever backend is active."""
         self._running = False
+        self._teardown_picam_backend()
         self._kill_ffmpeg()
         self._stop_motion_runner()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=10)
         log.info("Stream manager stopped")
+
+    def _teardown_picam_backend(self):
+        """Stop the Picamera2 backend + any passive motion runner."""
+        backend = None
+        with self._lock:
+            backend = self._picam_backend
+            self._picam_backend = None
+        if backend is not None:
+            try:
+                backend.stop()
+            except Exception:
+                log.exception("Picamera backend stop failed")
+        self._stop_motion_runner()
 
     def _stop_motion_runner(self):
         if self._motion_runner is not None:
@@ -205,11 +243,22 @@ class StreamManager:
         return self.start()
 
     def _stream_loop(self):
-        """Main loop: start ffmpeg, monitor, reconnect on failure."""
+        """Main loop: start pipeline, monitor, reconnect on failure."""
+        use_picam = self._prefer_picamera()
+        if not use_picam:
+            log.info(
+                "Using CLI streaming backend (libcamera-vid + ffmpeg); "
+                "set CAMERA_STREAM_BACKEND=picamera once picamera2 is installed"
+            )
         while self._running:
             try:
-                self._start_ffmpeg()
-                self._monitor_ffmpeg()
+                if use_picam:
+                    if self._start_picam_backend():
+                        self._monitor_picam_backend()
+                    self._teardown_picam_backend()
+                else:
+                    self._start_ffmpeg()
+                    self._monitor_ffmpeg()
             except Exception:
                 log.exception("Unexpected error in stream loop")
 
@@ -412,6 +461,61 @@ class StreamManager:
             *self._motion_tee_args(motion_write_fd),
         ]
         return cmd
+
+    def _start_picam_backend(self):
+        """Bring up the Picamera2-based pipeline.
+
+        Creates a passive MotionRunner first (so we have a callback to
+        hand to the backend), then starts the backend which owns the
+        Picamera2 instance, ffmpeg subprocess, and lores capture thread.
+        """
+        from camera_streamer.picam_backend import PicameraH264Backend
+
+        motion_enabled = self._motion_enabled()
+        frame_cb = None
+        if motion_enabled:
+            try:
+                from camera_streamer.motion_runner import MotionRunner
+            except ImportError as exc:
+                log.warning(
+                    "MotionRunner unavailable (%s) — motion detection disabled",
+                    exc,
+                )
+                motion_enabled = False
+            else:
+                self._motion_runner = MotionRunner(
+                    config=self._config,
+                    pairing_manager=self._pairing_manager,
+                    passive=True,
+                )
+                self._motion_runner.start()
+                frame_cb = self._motion_runner.process_frame
+
+        backend = PicameraH264Backend(
+            config=self._config,
+            frame_cb=frame_cb,
+            motion_enabled=motion_enabled,
+        )
+        if not backend.start():
+            log.error("Picamera backend failed to start")
+            self._stop_motion_runner()
+            return False
+        with self._lock:
+            self._picam_backend = backend
+        log.info(
+            "Streaming via Picamera2 backend (motion=%s)",
+            motion_enabled,
+        )
+        return True
+
+    def _monitor_picam_backend(self):
+        """Block until the Picamera2 backend stops streaming."""
+        backend = self._picam_backend
+        if backend is None:
+            return
+        while self._running and backend.is_streaming:
+            time.sleep(1.0)
+        log.info("Picamera backend no longer streaming")
 
     def _start_ffmpeg(self):
         """Launch the streaming pipeline."""
