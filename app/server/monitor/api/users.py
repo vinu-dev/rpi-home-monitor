@@ -81,4 +81,10 @@ def change_password(user_id):
     )
     if status != 200:
         return jsonify({"error": msg}), status
+    # If the caller just cleared their OWN forced-change flag, drop the
+    # session-level gate so subsequent requests go straight through. A
+    # stale "True" here would keep the user locked on the change screen
+    # even though the DB flag has been cleared.
+    if user_id == session.get("user_id"):
+        session["must_change_password"] = False
     return jsonify({"message": msg}), status

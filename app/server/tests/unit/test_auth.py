@@ -447,6 +447,61 @@ class TestMustChangePassword:
         data = response.get_json()
         assert "must_change_password" not in data
 
+    def test_flagged_user_blocked_from_protected_endpoints(self, app, client):
+        # Flag-only gating used to be client-side: any API client ignoring
+        # the `must_change_password: true` field in the login response could
+        # keep using default credentials to hit every endpoint. The gate
+        # moved into login_required / admin_required — this asserts
+        # protected endpoints refuse to serve a flagged session.
+        user = _create_test_user(app)
+        user.must_change_password = True
+        app.store.save_user(user)
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert login.status_code == 200
+
+        # /me is in the allow-list so the UI can still render the
+        # "password change required" screen.
+        me = client.get("/api/v1/auth/me")
+        assert me.status_code == 200
+
+        # A protected read (admin-only) must be refused with 403 and a
+        # machine-readable signal.
+        cams = client.get("/api/v1/cameras")
+        assert cams.status_code == 403
+        assert cams.get_json().get("must_change_password") is True
+
+    def test_flagged_user_can_complete_password_change(self, app, client):
+        user = _create_test_user(app)
+        user.must_change_password = True
+        app.store.save_user(user)
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        csrf = login.get_json()["csrf_token"]
+        uid = login.get_json()["user"]["id"]
+
+        # The password-change endpoint itself must remain reachable or
+        # the user has no way out of the gate.
+        resp = client.put(
+            f"/api/v1/users/{uid}/password",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "current_password": "correct-password",
+                "new_password": "a-new-strong-password-42",
+            },
+        )
+        assert resp.status_code == 200
+
+        # After the change the user should no longer be blocked.
+        cams = client.get("/api/v1/cameras")
+        assert cams.status_code == 200
+
 
 class TestPasswordPolicy:
     """Test password policy enforcement (NIST SP 800-63B)."""
