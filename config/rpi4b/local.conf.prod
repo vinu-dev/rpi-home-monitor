@@ -1,0 +1,27 @@
+# =============================================================
+# local.conf.prod — RPi 4 Model B (Server), PRODUCTION build
+#
+# Inherits everything from local.conf (single source of truth for
+# machine, kernel, hardware flags) and overrides only policy bits
+# that differ between dev and prod. See ADR-0014 for rationale
+# — per-user signing keypair, cert baked in, enforcement marker.
+#
+# Invocation:
+#   ./scripts/build.sh server-prod
+# which maps to this file via `require local.conf` below and then
+# the bitbake run proceeds normally. Keys are expected at
+# ~/.monitor-keys/ota-signing.{key,crt} — run
+# ./scripts/generate-ota-keys.sh on first prod build.
+# =============================================================
+
+# Inherit all dev settings (machine, kernel, hardware flags)
+require local.conf
+
+# Production overrides
+# -------------------
+
+# OTA signing (ADR-0014) — CONFIG_SIGNED_IMAGES enabled.
+# With this set, the image ships /etc/swupdate-enforce and rejects
+# any unsigned .swu at install time. build-swu.sh --sign must be
+# used for bundles targeting this image.
+SWUPDATE_SIGNING = "1"
