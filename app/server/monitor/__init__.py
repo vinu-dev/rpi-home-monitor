@@ -22,6 +22,7 @@ from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
+from monitor.services.motion_event_store import MotionEventStore
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
@@ -172,6 +173,9 @@ def _init_infrastructure(app):
         data_dir=app.config["DATA_DIR"],
         threshold_percent=app.config.get("STORAGE_THRESHOLD_PERCENT"),
     )
+
+    motion_events_path = os.path.join(app.config["CONFIG_DIR"], "motion_events.json")
+    app.motion_event_store = MotionEventStore(motion_events_path)
 
 
 def _load_persisted_settings(app, explicit_config_keys=None):

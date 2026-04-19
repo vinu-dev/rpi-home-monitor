@@ -103,6 +103,28 @@ class Settings:
 
 
 @dataclass
+class MotionEvent:
+    """A single motion detection, as surfaced by a camera.
+
+    See `docs/exec-plans/motion-detection.md`. Events are always logged
+    regardless of the camera's `recording_mode`; the optional `clip_ref`
+    is populated by the server when it can match the event timestamp to
+    a finalised clip on disk.
+    """
+
+    id: str  # e.g. "mot-20260419T143002Z-cam-d8ee"
+    camera_id: str
+    started_at: str  # ISO-8601 UTC, server-side authoritative time
+    ended_at: str | None = None  # None while active
+    peak_score: float = 0.0  # 0.0-1.0 fraction of pixels changed
+    peak_pixels_changed: int = 0
+    duration_seconds: float = 0.0
+    clip_ref: dict | None = None  # {camera_id, date, filename, offset_seconds}
+    zones: list[dict] = field(default_factory=list)  # future motion-zone support
+    version: int = 1
+
+
+@dataclass
 class Clip:
     """Represents a single recorded video clip."""
 

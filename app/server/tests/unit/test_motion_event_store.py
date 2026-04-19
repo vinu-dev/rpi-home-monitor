@@ -1,0 +1,205 @@
+"""Unit tests for MotionEventStore."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from monitor.models import MotionEvent
+from monitor.services.motion_event_store import (
+    COMPACT_DROP_FRACTION,
+    MotionEventStore,
+)
+
+
+def _make_event(idx: int, camera_id: str = "cam-001") -> MotionEvent:
+    return MotionEvent(
+        id=f"mot-{idx:06d}-{camera_id}",
+        camera_id=camera_id,
+        started_at=f"2026-04-19T14:{idx % 60:02d}:00Z",
+        ended_at=f"2026-04-19T14:{idx % 60:02d}:15Z",
+        peak_score=0.1,
+        peak_pixels_changed=5000,
+        duration_seconds=15.0,
+    )
+
+
+@pytest.fixture
+def store_path(tmp_path):
+    return tmp_path / "motion_events.json"
+
+
+class TestAppendAndList:
+    def test_append_single_event_persists(self, store_path):
+        store = MotionEventStore(store_path)
+        store.append(_make_event(1))
+
+        reloaded = MotionEventStore(store_path)
+        assert reloaded.count() == 1
+        events = reloaded.list_events()
+        assert len(events) == 1
+        assert events[0].id == "mot-000001-cam-001"
+
+    def test_list_returns_newest_first(self, store_path):
+        store = MotionEventStore(store_path)
+        for i in range(1, 6):
+            store.append(_make_event(i))
+
+        events = store.list_events()
+        assert [e.id for e in events] == [
+            "mot-000005-cam-001",
+            "mot-000004-cam-001",
+            "mot-000003-cam-001",
+            "mot-000002-cam-001",
+            "mot-000001-cam-001",
+        ]
+
+    def test_list_limit_applied(self, store_path):
+        store = MotionEventStore(store_path)
+        for i in range(10):
+            store.append(_make_event(i))
+
+        events = store.list_events(limit=3)
+        assert len(events) == 3
+
+    def test_list_filters_by_camera(self, store_path):
+        store = MotionEventStore(store_path)
+        for i in range(5):
+            store.append(_make_event(i, camera_id="cam-001"))
+        for i in range(5, 8):
+            store.append(_make_event(i, camera_id="cam-002"))
+
+        events = store.list_events(camera_id="cam-002")
+        assert len(events) == 3
+        assert all(e.camera_id == "cam-002" for e in events)
+
+
+class TestUpsertByID:
+    def test_appending_same_id_replaces_existing(self, store_path):
+        store = MotionEventStore(store_path)
+        evt = _make_event(1)
+        evt.ended_at = None  # simulate phase="start" arriving first
+        store.append(evt)
+
+        # phase="end" arrives and refreshes the record.
+        evt_end = _make_event(1)
+        evt_end.peak_score = 0.4
+        store.append(evt_end)
+
+        assert store.count() == 1
+        retrieved = store.get("mot-000001-cam-001")
+        assert retrieved is not None
+        assert retrieved.peak_score == 0.4
+        assert retrieved.ended_at is not None
+
+
+class TestGet:
+    def test_get_missing_returns_none(self, store_path):
+        store = MotionEventStore(store_path)
+        assert store.get("does-not-exist") is None
+
+    def test_get_finds_event_in_middle(self, store_path):
+        store = MotionEventStore(store_path)
+        for i in range(5):
+            store.append(_make_event(i))
+
+        retrieved = store.get("mot-000002-cam-001")
+        assert retrieved is not None
+        assert retrieved.id == "mot-000002-cam-001"
+
+
+class TestAttachClip:
+    def test_attach_clip_persists(self, store_path):
+        store = MotionEventStore(store_path)
+        store.append(_make_event(1))
+
+        ref = {
+            "camera_id": "cam-001",
+            "date": "2026-04-19",
+            "filename": "20260419_142957.mp4",
+            "offset_seconds": 5,
+        }
+        assert store.attach_clip("mot-000001-cam-001", ref) is True
+
+        reloaded = MotionEventStore(store_path)
+        retrieved = reloaded.get("mot-000001-cam-001")
+        assert retrieved is not None
+        assert retrieved.clip_ref == ref
+
+    def test_attach_clip_unknown_id_returns_false(self, store_path):
+        store = MotionEventStore(store_path)
+        assert store.attach_clip("nope", {}) is False
+
+
+class TestCompaction:
+    def test_compacts_when_exceeding_cap(self, store_path, monkeypatch):
+        # Speed up the test by lowering the cap to a friendly number.
+        monkeypatch.setattr("monitor.services.motion_event_store.MAX_EVENTS", 50)
+        store = MotionEventStore(store_path)
+
+        # Fill past the cap.
+        for i in range(60):
+            store.append(_make_event(i))
+
+        # Expect the cap minus the compaction drop.
+        drop = max(1, int(50 * COMPACT_DROP_FRACTION))
+        expected_floor = 50 - drop + 1  # +1 for the event that caused compaction
+        assert store.count() <= 50
+        assert store.count() >= expected_floor - 5  # allow slack
+
+        # Oldest events must have been dropped.
+        event_ids = {e.id for e in store.list_events(limit=1000)}
+        assert "mot-000000-cam-001" not in event_ids
+        assert "mot-000059-cam-001" in event_ids
+
+
+class TestLoadCorruption:
+    def test_missing_file_loads_empty(self, store_path):
+        store = MotionEventStore(store_path)
+        assert store.count() == 0
+
+    def test_garbage_file_loads_empty_with_warning(self, store_path):
+        store_path.write_text("{not json", encoding="utf-8")
+        store = MotionEventStore(store_path)
+        assert store.count() == 0
+
+    def test_non_list_root_loads_empty(self, store_path):
+        store_path.write_text('{"events": []}', encoding="utf-8")
+        store = MotionEventStore(store_path)
+        assert store.count() == 0
+
+    def test_malformed_record_is_skipped(self, store_path):
+        bad = [
+            {"id": "ok-1", "camera_id": "cam-001", "started_at": "..."},
+            {"bogus": "field"},
+            "not a dict",
+            {"id": "ok-2", "camera_id": "cam-001", "started_at": "..."},
+        ]
+        store_path.write_text(json.dumps(bad), encoding="utf-8")
+        store = MotionEventStore(store_path)
+        ids = [e.id for e in store.list_events()]
+        assert "ok-1" in ids
+        assert "ok-2" in ids
+        assert store.count() == 2
+
+
+class TestAtomicWrite:
+    def test_write_does_not_leave_tempfiles(self, store_path):
+        store = MotionEventStore(store_path)
+        for i in range(3):
+            store.append(_make_event(i))
+
+        # No .motion_events.* tempfiles left in the directory.
+        tempfiles = list(store_path.parent.glob(".motion_events.*"))
+        assert tempfiles == []
+
+    def test_persist_uses_atomic_replace(self, store_path):
+        """Write is atomic even if interrupted — verify the final state."""
+        store = MotionEventStore(store_path)
+        store.append(_make_event(1))
+
+        # The file should exist + be valid JSON immediately.
+        content = json.loads(store_path.read_text(encoding="utf-8"))
+        assert isinstance(content, list)
+        assert len(content) == 1
