@@ -28,6 +28,74 @@ SNAPSHOT_INTERVAL = 30  # seconds between snapshot updates
 CLIP_DURATION = 180  # default segment duration if caller doesn't override
 FFMPEG_LOG_DIR = Path("/data/logs/ffmpeg")
 
+
+def finalize_completed_segments(
+    cam_rec_dir: Path, segments_log: Path, last_offset: int
+) -> int:
+    """Rename newly-completed `.mp4.part` files to `.mp4`.
+
+    ffmpeg's segment muxer appends one line per completed segment to
+    ``segments_log`` — the line arrives *after* the file is closed, so
+    "in the log" is a strict "safe to rename" signal. The log may use
+    either the original `.part` filename or the base name depending on
+    ffmpeg version; we handle both.
+
+    Args:
+        cam_rec_dir: Directory containing the .part files.
+        segments_log: ffmpeg's -segment_list manifest.
+        last_offset: Byte offset into the log we last consumed (so we
+            don't re-process lines on each poll).
+
+    Returns:
+        New byte offset to pass on the next call.
+    """
+    if not segments_log.exists():
+        return last_offset
+    try:
+        size = segments_log.stat().st_size
+    except OSError:
+        return last_offset
+    if size <= last_offset:
+        return last_offset
+
+    try:
+        with open(segments_log, "rb") as f:
+            f.seek(last_offset)
+            raw = f.read()
+    except OSError:
+        return last_offset
+
+    new_offset = last_offset + len(raw)
+    for line in raw.splitlines():
+        name = line.decode("utf-8", errors="replace").strip()
+        if not name:
+            continue
+        # Log may contain just the basename, a `.mp4.part`, a bare `.mp4`,
+        # or a full path. Normalise to `<stem>.mp4.part` inside cam_rec_dir.
+        base = Path(name).name
+        if base.endswith(".mp4.part"):
+            part = cam_rec_dir / base
+            final = cam_rec_dir / base[: -len(".part")]
+        elif base.endswith(".mp4"):
+            part = cam_rec_dir / f"{base}.part"
+            final = cam_rec_dir / base
+        else:
+            continue
+
+        if not part.exists():
+            continue
+        try:
+            # `.mp4` may already exist if a previous pass crashed between
+            # rename + segment_list flush; os.replace is atomic on POSIX
+            # and overwrites on Windows.
+            import os as _os
+
+            _os.replace(part, final)
+        except OSError as exc:
+            log.warning("Failed to finalise %s → %s: %s", part.name, final.name, exc)
+    return new_offset
+
+
 # Legacy constants kept for backwards-compat with import sites that still
 # reference them. HLS is no longer used server-side for live view.
 HLS_SEGMENT_DURATION = 2
@@ -216,6 +284,13 @@ class StreamingService:
 
         Idempotent: if a recorder is already alive, this is a no-op.
         Segment directory structure: <recordings_dir>/<cam_id>/YYYYMMDD_HHMMSS.mp4
+
+        Partial-write discipline (docs/exec-plans/motion-detection.md):
+        ffmpeg writes each segment as ``<stem>.mp4.part`` and appends the
+        finished filename to ``.segments.log`` on clean close. A finaliser
+        thread (started per cam on first use) tails that log and renames
+        ``.mp4.part → .mp4`` — so downstream code (recordings list,
+        motion clip correlator) only ever sees fully-written clips.
         """
         with self._lock:
             existing = self._rec_procs.get(cam_id)
@@ -225,6 +300,7 @@ class StreamingService:
 
         cam_rec_dir = self._recordings_dir / cam_id
         cam_rec_dir.mkdir(parents=True, exist_ok=True)
+        segments_log = cam_rec_dir / ".segments.log"
 
         cmd = [
             "ffmpeg",
@@ -247,15 +323,77 @@ class StreamingService:
             "1",
             "-strftime",
             "1",
-            str(cam_rec_dir / "%Y%m%d_%H%M%S.mp4"),
+            # Append one line per completed segment. Segment muxer writes
+            # the line only after closing the file, so "in the log" == "safe
+            # to rename" is a strict invariant.
+            "-segment_list",
+            str(segments_log),
+            "-segment_list_flags",
+            "+live",
+            "-segment_list_type",
+            "flat",
+            str(cam_rec_dir / "%Y%m%d_%H%M%S.mp4.part"),
         ]
         proc = self._launch_ffmpeg(cmd, f"rec-{cam_id}")
         if proc:
             with self._lock:
                 self._rec_procs[cam_id] = proc
+            self._start_finalizer(cam_id, cam_rec_dir, segments_log)
             log.info("Recorder started for %s (PID %d)", cam_id, proc.pid)
             return True
         return False
+
+    # --- Recorder finalizer (rename .mp4.part → .mp4 on segment close) ----
+
+    def _start_finalizer(self, cam_id, cam_rec_dir, segments_log):
+        """Spawn (idempotently) the thread that renames completed segments.
+
+        The thread polls the segment manifest at a short interval and
+        renames each listed `.mp4.part` file to `.mp4`. Exits when the
+        recorder stops OR the service is shut down.
+        """
+        with self._lock:
+            existing = (
+                self._finalizer_threads.get(cam_id)
+                if hasattr(self, "_finalizer_threads")
+                else None
+            )
+            if existing and existing.is_alive():
+                return
+            if not hasattr(self, "_finalizer_threads"):
+                self._finalizer_threads = {}
+
+        def _loop():
+            last_offset = 0
+            while self._running:
+                try:
+                    last_offset = finalize_completed_segments(
+                        cam_rec_dir, segments_log, last_offset
+                    )
+                except Exception as exc:  # pragma: no cover — defensive
+                    log.warning("Finalizer error for %s: %s", cam_id, exc)
+                # Exit cleanly when the recorder has been stopped.
+                with self._lock:
+                    if self._recorder_intent.get(cam_id) == "stopped":
+                        proc = self._rec_procs.get(cam_id)
+                        if proc is None or proc.poll() is not None:
+                            # One last sweep so we don't lose the final segment.
+                            try:
+                                finalize_completed_segments(
+                                    cam_rec_dir, segments_log, last_offset
+                                )
+                            except Exception:  # pragma: no cover
+                                pass
+                            return
+                for _ in range(10):
+                    if not self._running:
+                        return
+                    time.sleep(0.1)
+
+        t = threading.Thread(target=_loop, daemon=True, name=f"rec-finalizer-{cam_id}")
+        with self._lock:
+            self._finalizer_threads[cam_id] = t
+        t.start()
 
     def stop_recorder(self, cam_id):
         """Deliberately stop the recorder for a camera."""

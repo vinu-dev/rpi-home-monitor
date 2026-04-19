@@ -22,6 +22,7 @@ from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
+from monitor.services.motion_clip_correlator import MotionClipCorrelator
 from monitor.services.motion_event_store import MotionEventStore
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
@@ -176,6 +177,10 @@ def _init_infrastructure(app):
 
     motion_events_path = os.path.join(app.config["CONFIG_DIR"], "motion_events.json")
     app.motion_event_store = MotionEventStore(motion_events_path)
+    app.motion_clip_correlator = MotionClipCorrelator(
+        app.config["RECORDINGS_DIR"],
+        clip_duration_seconds=app.config.get("CLIP_DURATION_SECONDS", 180),
+    )
 
 
 def _load_persisted_settings(app, explicit_config_keys=None):
@@ -510,6 +515,7 @@ def _register_blueprints(app):
     from monitor.api.audit import audit_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
+    from monitor.api.motion_events import events_router_bp, motion_events_bp
     from monitor.api.on_demand import on_demand_bp
     from monitor.api.ota import ota_bp
     from monitor.api.pairing import pairing_bp
@@ -537,6 +543,10 @@ def _register_blueprints(app):
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
+    app.register_blueprint(motion_events_bp, url_prefix="/api/v1/motion-events")
+    # Click-through router at /events/<id>. Mounted at root (not /api/v1)
+    # so it can issue user-navigable redirects into /recordings and /live.
+    app.register_blueprint(events_router_bp)
     # ADR-0017: localhost-only on-demand coordinator for MediaMTX hooks.
     # Mounted outside /api/v1 so the CSRF layer on /api/* can stay strict.
     app.register_blueprint(on_demand_bp, url_prefix="/internal/on-demand")

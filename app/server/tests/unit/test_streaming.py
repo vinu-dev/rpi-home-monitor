@@ -109,7 +109,10 @@ class TestRecorderPipeline:
         cmd = mock_popen.call_args[0][0]
         assert "-c" in cmd and "copy" in cmd
         assert "-f" in cmd and "segment" in cmd
-        assert any(arg.endswith(".mp4") for arg in cmd)
+        # ffmpeg writes to .mp4.part; finalizer renames to .mp4 on segment
+        # close (partial-write discipline, docs/exec-plans/motion-detection.md).
+        assert any(arg.endswith(".mp4.part") for arg in cmd)
+        assert "-segment_list" in cmd
         svc.stop()
 
     @patch("subprocess.Popen")
