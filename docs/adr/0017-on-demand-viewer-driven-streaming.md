@@ -1,6 +1,6 @@
 # ADR-0017: On-Demand, Viewer-Driven Streaming + Recording Modes
 
-**Status:** Proposed
+**Status:** Accepted (shipped v1.1.0, 2026-04-13)
 **Date:** 2026-04-17
 **Deciders:** vinu-dev
 

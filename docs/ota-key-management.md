@@ -1,7 +1,7 @@
 # OTA Signing Key Management
 
-Version: 1.0
-Date: 2026-04-14
+Version: 1.2
+Date: 2026-04-19
 
 This document defines how the production OTA signing keypair is backed up,
 rotated, recovered, and wired into GitHub Actions without ever committing the

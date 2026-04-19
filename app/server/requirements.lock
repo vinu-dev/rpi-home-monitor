@@ -1,0 +1,24 @@
+# Exact-version pin lockfile for the server app — produced from the
+# development environment used to ship v1.2.0. Regenerate after every
+# `requirements.txt` change with:
+#
+#   python -m pip install -r app/server/requirements.txt
+#   python -m pip freeze --exclude-editable > app/server/requirements.lock
+#
+# Ship this file to deterministic targets (Yocto recipes, CI) so
+# upstream patch releases can't land unreviewed. `requirements.txt`
+# keeps the soft floors documented for human readers.
+
+# Direct dependencies (declared in requirements.txt)
+Flask==3.1.3
+bcrypt==5.0.0
+Jinja2==3.1.6
+zeroconf==0.148.0
+
+# Transitive dependencies (pinned for reproducibility)
+blinker==1.9.0
+click==8.3.2
+ifaddr==0.2.0
+itsdangerous==2.2.0
+MarkupSafe==3.0.3
+Werkzeug==3.1.8

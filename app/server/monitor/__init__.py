@@ -40,7 +40,16 @@ log = logging.getLogger("monitor")
 
 
 def _load_or_create_secret_key(config_dir):
-    """Load persistent secret key, or create one on first boot."""
+    """Load persistent secret key, or create one on first boot.
+
+    If the file is missing we generate a fresh 32-byte key and persist
+    it with 0o600 permissions. Previously this swallowed OSError on the
+    write path, silently returning an ephemeral key that would rotate
+    on every restart and invalidate every existing session. That is a
+    correctness-grade bug for a production box, so any I/O failure now
+    raises RuntimeError — the operator must fix the filesystem before
+    the app can come up, rather than silently losing sessions.
+    """
     key_file = os.path.join(config_dir, ".secret_key")
     try:
         with open(key_file) as f:
@@ -56,8 +65,12 @@ def _load_or_create_secret_key(config_dir):
         with open(key_file, "w") as f:
             f.write(key)
         os.chmod(key_file, 0o600)
-    except OSError:
-        pass
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to persist SECRET_KEY to {key_file}: {exc}. "
+            "Fix filesystem permissions or the data volume before restart — "
+            "an ephemeral key would invalidate every session on the next boot."
+        ) from exc
     return key
 
 

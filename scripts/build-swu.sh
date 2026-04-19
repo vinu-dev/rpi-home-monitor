@@ -142,6 +142,19 @@ fi
 echo ">>> sw-description:"
 cat "$WORK_DIR/sw-description"
 
+# Placeholder gate — catches typo'd `@@NAME@@` placeholders that neither
+# branch substituted nor stripped. Without this check a renamed field
+# in the template (say, `@@VERISON@@`) silently ships to devices as a
+# literal `@@VERISON@@` in sw-description, which SWUpdate may or may
+# not reject depending on the field.
+if grep -q '@@[A-Za-z0-9_]*@@' "$WORK_DIR/sw-description"; then
+    echo ""
+    echo "ABORT: sw-description still contains unresolved @@PLACEHOLDER@@ markers." >&2
+    echo "       Template added a new field without a matching sed rule in build-swu.sh?" >&2
+    grep -n '@@[A-Za-z0-9_]*@@' "$WORK_DIR/sw-description" >&2
+    exit 1
+fi
+
 # 3. Sign sw-description if requested (CMS/PKCS7 for SWUpdate)
 if [ "$SIGN" = true ]; then
     if [ ! -f "$SIGNING_KEY" ]; then

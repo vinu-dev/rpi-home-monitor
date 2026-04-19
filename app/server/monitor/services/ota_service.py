@@ -223,9 +223,23 @@ class OTAService:
         os.makedirs(self.staging_dir, exist_ok=True)
         staged_path = os.path.join(self.staging_dir, filename)
 
+        # os.replace is atomic on POSIX within a single filesystem and
+        # atomically overwrites an existing destination; shutil.move falls
+        # back to copy+delete when source and destination live on different
+        # mounts. Two concurrent uploads against the same filename would
+        # happily interleave copy+delete and land a corrupted bundle in
+        # staging. Stage uploads to a per-request temp file under the same
+        # directory, then os.replace() into place.
+        tmp_path = f"{staged_path}.partial-{os.getpid()}-{os.urandom(4).hex()}"
         try:
-            shutil.move(source_path, staged_path)
+            shutil.move(source_path, tmp_path)
+            os.replace(tmp_path, staged_path)
         except OSError as e:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
             return None, f"Failed to stage file: {e}"
 
         target_version = extract_bundle_version(staged_path)
