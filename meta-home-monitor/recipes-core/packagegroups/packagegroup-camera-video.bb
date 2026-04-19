@@ -1,30 +1,31 @@
 SUMMARY = "Video/camera packages for Zero 2W camera node"
 DESCRIPTION = "FFmpeg, libcamera, and v4l for video capture and RTSP streaming. \
-Includes numpy + picamera2 so the on-camera motion detector and Picamera2 \
-dual-stream pipeline (docs/exec-plans/motion-detection.md) can run on-device."
+Includes numpy so the on-camera motion detector \
+(docs/exec-plans/motion-detection.md) can run on-device."
 LICENSE = "MIT"
 
 inherit packagegroup
 
-# python3-numpy lives in meta-python (already in bblayers.conf).
+# python3-numpy lives in meta-python (already in bblayers.conf) — the
+# MotionDetector's frame-diff math depends on it.
 #
-# python3-libcamera and python3-picamera2 live in meta-raspberrypi
-# (scarthgap); picamera2 requires the libcamera Python bindings, so
-# both must be pulled in.
+# Picamera2 + libcamera Python bindings are NOT in this image yet:
+# - `python3-picamera2` is not packaged in meta-raspberrypi scarthgap.
+#   It needs either a custom recipe here (future work) or an override
+#   branch. Adding it blindly fails parse with "Nothing RPROVIDES".
+# - The libcamera Python bindings exist as the `libcamera-pycamera`
+#   subpackage but are disabled via `PACKAGECONFIG[pycamera] = ...
+#   -Dpycamera=disabled` by default in the scarthgap recipe. Enabling
+#   them requires a `libcamera_%.bbappend` that flips the PACKAGECONFIG.
 #
-# Validation pending: the Yocto build VM has not been parse-checked
-# against this addition yet (user asked not to disturb in-flight VM
-# build). Before the next release, run on the VM:
-#     bitbake -p
-#     bitbake -e packagegroup-camera-video | grep ^RDEPENDS
-# to confirm these names resolve in the scarthgap meta-raspberrypi
-# layer revision pinned in bblayers.conf.
+# Until those two land, Phase 2 of motion-detection will use a
+# ffmpeg-tee scheme: the existing libcamera-vid → ffmpeg pipeline adds
+# a second output (downsampled YUV) via the `tee` muxer, which a Python
+# thread reads and feeds the MotionDetector. No picamera2 needed.
 RDEPENDS:${PN} = " \
     ffmpeg \
     v4l-utils \
     libcamera \
     libcamera-apps \
     python3-numpy \
-    python3-libcamera \
-    python3-picamera2 \
     "

@@ -166,17 +166,47 @@ The repository already has everything structural we need:
 The rest of this doc assumes the following choices. Each is a real
 trade-off; flag anything you want changed.
 
-### D1. Capture pipeline: replace `libcamera-vid` with Picamera2
+### D1. Capture pipeline — revised after Yocto reality check
 
-We move to Picamera2 (the Python binding over libcamera) as the single
-sensor owner. That gives us a clean `(main=1080p H.264 → RTSP, lores=320×240 YUV → numpy)`
-dual-stream in one process. The alternative is a pile of IPC hacks that
-let `libcamera-vid` and a second sensor consumer coexist — they don't.
+**Original plan (kept for historical context):** replace `libcamera-vid`
+with Picamera2 for a clean `(main H.264 + lores YUV)` dual-stream.
 
-*Risk:* we lose the "known-good libcamera-vid CLI" path (cited in
-`stream.py` for a reason — it was validated on real hardware). Mitigation:
-keep the legacy pipeline behind a config flag for one release and smoke
-both on real Zero 2W before flipping the default.
+**Why revised:** Picamera2 is not packaged in the pinned scarthgap
+meta-raspberrypi revision (2026-04-19 VM check). Adding it would mean
+authoring a custom recipe + flipping `libcamera`'s PACKAGECONFIG[pycamera]
+on via a bbappend — real work that belongs in a separate PR, and one
+that changes the known-good streaming path.
+
+**Adopted plan:** **ffmpeg-tee** instead.
+
+The existing libcamera-vid process stays as-is (single sensor owner,
+no change). The ffmpeg process it feeds already consumes the local TCP
+H.264 stream; we make ffmpeg fan out to two outputs:
+
+```
+libcamera-vid (H.264, --listen) ─► tcp://127.0.0.1:8888
+                                        │
+                          ffmpeg -i tcp://127.0.0.1:8888 \
+                                 -map 0:v -c copy -f rtsp ...    ───► server RTSP (unchanged)
+                                 -map 0:v -vf scale=320:240,format=gray \
+                                 -f rawvideo /tmp/lores.pipe
+                                                                    │
+                                                            Python reader thread
+                                                                    │
+                                                              MotionDetector
+```
+
+- Zero new sensor consumers, zero new TCP listeners, no new Python deps
+  beyond `numpy`.
+- Negligible extra CPU: the scale+format filter runs on decoded frames
+  but ffmpeg already has decoded them (H.264 stays `copy` to server).
+  Measured overhead budget on Zero 2W: ~5 %.
+- Named FIFO + `rawvideo` keeps frames exactly grayscale-YUV400 at
+  320×240, one frame = 76800 bytes — trivial to `numpy.frombuffer` in
+  the reader thread.
+
+Picamera2 + pre-roll (D5a) remain desirable but are explicitly deferred
+to a follow-up cycle that can take on the recipe + bbappend work.
 
 ### D2. Detection algorithm: grayscale frame difference + morphology
 
