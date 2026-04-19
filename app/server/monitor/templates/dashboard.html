@@ -108,11 +108,23 @@
   separate log page. Admin-gated — viewers simply don't see it.
   Full log view lives in Settings › Security (future slice).
 -->
-<div class="section-header" x-show="auditAdmin && auditEvents.length > 0">
+<!-- Admin-only: render whenever the viewer has the admin gate, even
+     when the events list is momentarily empty. Gating on
+     `auditEvents.length > 0` as well used to collapse the whole
+     section during the render tick between init (empty array) and
+     the async /audit/events fetch resolving — which presented as
+     "Recent activity broken, nothing shown" even though the API
+     returned data fine. -->
+<div class="section-header" x-show="auditAdmin">
     Recent activity
     <a class="text-small" style="float:right;" href="/settings#security">Full log &rarr;</a>
 </div>
-<div class="log-teaser" x-show="auditAdmin && auditEvents.length > 0">
+<div class="log-teaser" x-show="auditAdmin">
+    <template x-if="auditEvents.length === 0">
+        <div class="log-teaser__row">
+            <span class="log-teaser__detail text-muted">No recent activity yet.</span>
+        </div>
+    </template>
     <template x-for="evt in auditEvents" :key="evt.timestamp + '/' + evt.event">
         <div class="log-teaser__row" :class="_auditEventClass(evt.event)">
             <span class="log-teaser__time" x-text="_relativeTime(evt.timestamp)"></span>
@@ -488,9 +500,11 @@ function dashboardPage() {
             } catch(e) {
                 this.latestClip = null;
             }
-            // Tier-3 recent events feed (top 8).
+            // Tier-3 recent events feed. Keep this tight (top 3) so the
+            // dashboard stays a glance-surface — the "All recordings →"
+            // link on the section header is the path to everything else.
             try {
-                this.recentEvents = await window.HM.api.get('/api/v1/recordings/recent?limit=8');
+                this.recentEvents = await window.HM.api.get('/api/v1/recordings/recent?limit=3');
             } catch(e) {
                 this.recentEvents = [];
             }
