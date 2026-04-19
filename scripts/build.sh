@@ -181,7 +181,47 @@ package_swu() {
         echo "!!! rootfs not found at $rootfs — skipping .swu for $target"
         return 1
     fi
-    version="dev-$(date +%Y%m%d-%H%M)"
+
+    # Version selection (per-target, not a hardcoded dev-timestamp).
+    # Priority:
+    #   1. MONITOR_VERSION env var — explicit override for ad-hoc builds
+    #   2. git describe --tags HEAD — when the release tag is checked out
+    #      this returns e.g. "v1.2.1" (exact) or "v1.2.1-3-gabc123" (ahead)
+    #   3. fall-through per target mode
+    #
+    # Policy:
+    #   *-prod  must ship a real version. Refuses to build with a
+    #           dev-timestamp — signed bundles that impersonate a
+    #           release version are a supply-chain hazard. Operator
+    #           must either tag HEAD or set MONITOR_VERSION.
+    #   *-dev   accepts anything. Prefers git tag when clean, falls
+    #           back to a dated stamp so iterative dev builds don't
+    #           require a new tag each time.
+    local git_ver
+    git_ver=$(git -C "$YOCTO_DIR" describe --tags HEAD 2>/dev/null || true)
+    if [ -n "${MONITOR_VERSION:-}" ]; then
+        version="$MONITOR_VERSION"
+    elif [[ "$TARGET" == *-prod ]]; then
+        if [ -z "$git_ver" ] || [[ "$git_ver" == *-g* ]]; then
+            echo "ERROR: $TARGET requires an exact release tag on HEAD or" >&2
+            echo "       MONITOR_VERSION explicitly set. HEAD resolves to:" >&2
+            echo "       ${git_ver:-<untagged>}" >&2
+            echo "       Tag HEAD (e.g. 'git tag vX.Y.Z && git push --tags')" >&2
+            echo "       or rerun as 'MONITOR_VERSION=vX.Y.Z ./scripts/build.sh $TARGET'." >&2
+            return 1
+        fi
+        version="$git_ver"
+    else
+        # Dev path. Clean tag (no "-gNNN" suffix) → use it as "<tag>-dev"
+        # so the .swu carries the upstream version + dev marker. Otherwise
+        # fall back to the legacy timestamp.
+        if [ -n "$git_ver" ] && [[ "$git_ver" != *-g* ]]; then
+            version="${git_ver}-dev"
+        else
+            version="dev-$(date +%Y%m%d-%H%M)"
+        fi
+    fi
+
     echo ""
     echo ">>> Packaging $target .swu ($version)"
     ( cd "$YOCTO_DIR" && \
