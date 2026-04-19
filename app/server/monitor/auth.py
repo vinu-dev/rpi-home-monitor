@@ -147,6 +147,30 @@ def _is_session_valid() -> bool:
     return True
 
 
+# Endpoints that stay reachable while a user is blocked on
+# must_change_password. The password-change endpoint itself has to be
+# callable or the user can never clear the flag; logout + /me are
+# included so the UI can render the "change your password" screen and
+# let the user sign out if they pick the wrong account.
+_MUST_CHANGE_ALLOWED_ENDPOINTS = frozenset(
+    {
+        "users.change_password",
+        "auth.logout",
+        "auth.me",
+    }
+)
+
+
+def _must_change_block() -> bool:
+    """Return True iff the current session must change password AND the
+    request is NOT targeting one of the allow-listed endpoints."""
+    if not session.get("must_change_password"):
+        return False
+    # request.endpoint is "<blueprint>.<view_func>" — use it instead of
+    # comparing paths so a URL rewrite doesn't silently unlock the gate.
+    return request.endpoint not in _MUST_CHANGE_ALLOWED_ENDPOINTS
+
+
 def login_required(f):
     """Decorator: require authenticated session."""
 
@@ -155,6 +179,13 @@ def login_required(f):
         if not _is_session_valid():
             session.clear()
             return jsonify({"error": "Authentication required"}), 401
+        if _must_change_block():
+            return jsonify(
+                {
+                    "error": "Password change required",
+                    "must_change_password": True,
+                }
+            ), 403
         session["last_active"] = time.time()
         return f(*args, **kwargs)
 
@@ -171,6 +202,13 @@ def admin_required(f):
             return jsonify({"error": "Authentication required"}), 401
         if session.get("role") != "admin":
             return jsonify({"error": "Admin access required"}), 403
+        if _must_change_block():
+            return jsonify(
+                {
+                    "error": "Password change required",
+                    "must_change_password": True,
+                }
+            ), 403
         session["last_active"] = time.time()
         return f(*args, **kwargs)
 
@@ -277,6 +315,12 @@ def login():
     session["role"] = user.role
     session["created_at"] = time.time()
     session["last_active"] = time.time()
+    # Carry the "forced change on next login" flag into the session so
+    # login_required / admin_required can refuse every non-password-change
+    # endpoint until the user completes the change. Without this the flag
+    # was a suggestion to the client (returned in the login response body)
+    # and any API client ignoring it could keep using default credentials.
+    session["must_change_password"] = bool(user.must_change_password)
 
     csrf_token = generate_csrf_token()
 
