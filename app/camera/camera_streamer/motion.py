@@ -95,6 +95,10 @@ class MotionDetector:
         self._frames_below = 0
         self._current: MotionEvent | None = None
         self._pending_transition: tuple[str, MotionEvent] | None = None
+        # True once the "start" transition for the current event has been
+        # emitted — prevents repeated start emissions while in-event.
+        # Reset to False when the event ends.
+        self._start_emitted: bool = False
 
     @property
     def config(self) -> MotionConfig:
@@ -112,6 +116,7 @@ class MotionDetector:
         self._frames_below = 0
         self._current = None
         self._pending_transition = None
+        self._start_emitted = False
 
     def process_frame(self, frame: np.ndarray) -> None:
         """Feed one grayscale frame into the detector.
@@ -211,25 +216,35 @@ class MotionDetector:
                 self._maybe_emit_start(now)
 
     def _maybe_emit_start(self, now: float) -> None:
-        """Emit the pending ``start`` if the event has outlived the min-duration."""
+        """Emit the pending ``start`` if the event has outlived the min-duration.
+
+        Idempotent: once the start has been emitted for the current event,
+        further frames don't re-fire it. `_start_emitted` is cleared when
+        the event closes (see ``_close_event``) or on ``reset()``.
+        """
         evt = self._current
         if evt is None:
             return
+        if self._start_emitted:
+            return  # already emitted for this event
         if self._pending_transition is not None:
-            return  # already queued
+            return  # already queued for the poller
         age = now - evt.started_at
         if age >= self._cfg.min_event_duration_seconds:
             self._pending_transition = ("start", evt)
+            self._start_emitted = True
 
     def _close_event(self, now: float) -> None:
         evt = self._current
         self._current = None
         self._frames_below = 0
         self._frames_above = 0
+        start_was_emitted = self._start_emitted
+        self._start_emitted = False
         if evt is None:
             return
         duration = now - evt.started_at
-        if duration < self._cfg.min_event_duration_seconds:
+        if duration < self._cfg.min_event_duration_seconds or not start_was_emitted:
             # Event was too brief to emit a start — drop silently so the
             # server never sees a phantom event. The next transition
             # becomes a fresh onset.

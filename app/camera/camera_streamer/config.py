@@ -38,6 +38,11 @@ DEFAULTS = {
     "CAMERA_ID": "",
     "ADMIN_USERNAME": "admin",  # default username
     "ADMIN_PASSWORD": "",  # salt:hash (PBKDF2-SHA256)
+    # Motion detection (docs/exec-plans/motion-detection.md). When true,
+    # the streaming ffmpeg tees a downsampled grayscale stream to a FIFO
+    # and MotionRunner drives the detector off it. Events are POSTed to
+    # the paired server via HMAC. Requires numpy on-device.
+    "MOTION_DETECTION": "false",
 }
 
 
@@ -97,6 +102,11 @@ class ConfigManager:
     @property
     def vflip(self):
         return self._values["VFLIP"].lower() == "true"
+
+    @property
+    def motion_detection(self):
+        """True if the motion-detection pipeline should run (numpy required)."""
+        return str(self._values.get("MOTION_DETECTION", "false")).lower() == "true"
 
     @property
     def camera_id(self):
