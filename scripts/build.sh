@@ -52,7 +52,9 @@ echo ">>> Target: $TARGET"
 
 stage_local_ota_cert() {
     local configdir=$1
+    local builddir=$2
     local config_path="$YOCTO_DIR/config/$configdir/local.conf"
+    local build_conf="$builddir/conf/local.conf"
 
     # Enforcement comes from two places:
     #   1. The machine-wide local.conf ("production" target sets it).
@@ -85,16 +87,16 @@ stage_local_ota_cert() {
     echo ">>> Staged local OTA verification cert for build:"
     echo "    $GENERATED_CERT"
 
-    # When --sign is used on a dev target, inject SWUPDATE_SIGNING=1
-    # into the build's local.conf so the swupdate recipe actually
-    # compiles in CONFIG_SIGNED_IMAGES + writes the -k flag to the
-    # device's swupdate-args drop-in. Idempotent — remove any prior
-    # injection first so we don't accumulate duplicates across builds.
-    if ! grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
-        echo ">>> Injecting SWUPDATE_SIGNING = \"1\" into $config_path (--sign)"
-        # Strip any previous auto-injected line.
-        sed -i '/^SWUPDATE_SIGNING = "1"  # auto-injected by --sign$/d' "$config_path"
-        printf '\nSWUPDATE_SIGNING = "1"  # auto-injected by --sign\n' >> "$config_path"
+    # Flip SWUPDATE_SIGNING on in the BUILD dir's local.conf — that's
+    # the one bitbake reads. build_image already copied the template
+    # from config/$configdir/local.conf into $builddir/conf/local.conf
+    # before calling us; overwrite its SWUPDATE_SIGNING line (or append
+    # if absent). Idempotent — we both remove any previous override and
+    # rewrite the current value.
+    if [ -n "$build_conf" ] && [ -f "$build_conf" ]; then
+        echo ">>> Setting SWUPDATE_SIGNING = \"1\" in $build_conf"
+        sed -i '/^SWUPDATE_SIGNING\s*=/d' "$build_conf"
+        printf '\nSWUPDATE_SIGNING = "1"\n' >> "$build_conf"
     fi
 }
 
@@ -134,7 +136,7 @@ build_image() {
 
     cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
-    stage_local_ota_cert "$configdir"
+    stage_local_ota_cert "$configdir" "$builddir"
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"
