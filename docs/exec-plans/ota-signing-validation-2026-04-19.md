@@ -97,33 +97,70 @@ SWUpdate caught the hash mismatch exactly as the signed design
 promises — the signature on sw-description protects the hash field,
 and the hash protects the payload.
 
-## What's still unvalidated on hardware this session
+## Camera-side repeat (1 hour later, same session)
 
-The camera was alive on HTTPS but SSH had wedged (banner-exchange
-hang, the same pattern we saw during earlier install-heavy sessions).
-Rather than burn another power-cycle loop, the camera bootstrap
-(installing the signed dev image + repeating tests 1-3 against
-`https://camera/api/ota/upload`) was deferred.
+Bootstrapping path — an unsigned camera can't accept a hashed bundle
+("hash verification not enabled but hash supplied"). Had to build a
+one-off transitional bundle: signed-enforcing rootfs inside, but
+packaged without `--sign` so the current (unsigned) camera swupdate
+would accept it. Once that installs and the camera reboots onto the
+enforce-marked rootfs, further bundles must be signed+hashed.
+Logic captured in `build-swu.sh`: `--sign` substitutes real hashes,
+the unsigned branch deletes the `sha256` line entirely (commit b25bb0b).
 
-The camera runs the same `extract_bundle_version`, the same
-`/etc/swupdate-enforce` marker logic, and the same `swupdate -c`
-verification path as the server. Every server test above exercises
-code identical to what the camera runs. High confidence that the
-camera path behaves the same; still, the proper rehearsal closes
-with a camera install once it's power-cycled.
+After bootstrap the camera ran with `/etc/swupdate-enforce` +
+`/etc/swupdate-public.crt` present, `SWUPDATE_ARGS="-v -k /etc/swupdate-public.crt"`.
 
-## Resume checklist
+### Camera Test 1 — signed + hashed (positive)
 
-1. Power-cycle camera (USB-C for ~10 s).
-2. SSH in, `scp camera-update-dev-20260419-0151.swu root@.../data/ota/`.
-3. `swupdate -i` the signed bundle, reboot, confirm
-   `/etc/swupdate-enforce` is present on the new slot.
-4. Browser-login to camera, upload same 0151 bundle → expect 200 +
-   target_version in response.
-5. Upload an old unsigned bundle → expect 500 with "Signature
-   verification failed".
-6. Upload a byte-flipped copy of 0151 → expect 500 with hash
-   mismatch.
-7. If all three pass on the camera, open the PR from
-   `feat/ota-production-hardening` and (per the user's direction)
-   merge after their review.
+`POST https://192.168.1.186/api/ota/upload` with
+`camera-update-dev-20260419-0151.swu`:
+```
+HTTP 200
+{"message": "Install triggered", "bundle_bytes": 133333504}
+```
+Followed by /api/ota/status polling → `state: installing → installed`,
+`progress: 100`. End-to-end signed install through the camera GUI
+succeeded.
+
+### Camera Test 2 — unsigned (negative)
+
+`POST /api/ota/upload` with the pre-signing `camera-update-dev-20260418-2154.swu`:
+```
+HTTP 200 (upload accepted — camera-direct is async; sig check runs
+         in the root installer after the trigger fires)
+```
+Followed by status poll → `state: error, error: "Signature verification failed"`.
+Rejected.
+
+### Camera Test 3 — tampered signed (negative)
+
+Same byte-flip trick — copy of 0151, one byte flipped at offset 2 MB.
+Upload accepted, then:
+```
+state: verifying (10 %) → error (10 %)
+error: "Signature verification failed"
+```
+
+Camera returns the generic "Signature verification failed" rather
+than the explicit "HASH mismatch" that the server showed, because
+SWUpdate on the camera short-circuits on the CMS signature check
+before reaching the per-image hash check. Same correctness, less
+granular error text — acceptable.
+
+## Summary — 6/6 tests pass
+
+| # | Device | Bundle | Expected | Got |
+|---|---|---|---|---|
+| 1 | Server | signed + hashed | accept + target_version shown | ✓ |
+| 2 | Server | unsigned legacy | rejected | ✓ "Image invalid or corrupted" |
+| 3 | Server | tampered signed | rejected | ✓ "HASH mismatch" |
+| 4 | Camera | signed + hashed | accept + install | ✓ state=installed |
+| 5 | Camera | unsigned legacy | rejected | ✓ error "Signature verification failed" |
+| 6 | Camera | tampered signed | rejected | ✓ error "Signature verification failed" |
+
+## Deferred to user handoff
+
+* PR opening / merge to main — branch `feat/ota-production-hardening`
+  is up-to-date on origin. Waiting on explicit go-ahead per user
+  instruction. No code changes pending.
