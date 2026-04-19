@@ -115,20 +115,29 @@ echo "    Working dir: $WORK_DIR"
 # 1. Copy payloads first so we can hash them before stamping
 #    sw-description. SWUpdate built with CONFIG_SIGNED_IMAGES requires
 #    every image and shellscript entry to declare a sha256 that it
-#    verifies on the device against the actual bytes it receives.
-#    Without it the daemon aborts with "Hash not set for rootfs.ext4.gz".
+#    verifies on-device. SWUpdate built WITHOUT signing does the
+#    opposite — it refuses bundles that carry hashes
+#    ("hash verification not enabled but hash supplied"). So the
+#    presence of the sha256 line has to match the target build mode.
 cp "$SWU_TEMPLATES/post-update.sh" "$WORK_DIR/post-update.sh"
 chmod +x "$WORK_DIR/post-update.sh"
 cp "$ROOTFS" "$WORK_DIR/rootfs.ext4.gz"
 
-ROOTFS_SHA256=$(sha256sum "$WORK_DIR/rootfs.ext4.gz" | awk '{print $1}')
-POST_UPDATE_SHA256=$(sha256sum "$WORK_DIR/post-update.sh" | awk '{print $1}')
-
-# 2. Generate sw-description from template, substituting version + hashes
-sed -e "s|@@VERSION@@|$VERSION|g" \
-    -e "s|@@ROOTFS_SHA256@@|$ROOTFS_SHA256|g" \
-    -e "s|@@POST_UPDATE_SHA256@@|$POST_UPDATE_SHA256|g" \
-    "$SW_DESC_TEMPLATE" > "$WORK_DIR/sw-description"
+# 2. Generate sw-description from template:
+#      - --sign  → substitute actual sha256 hashes into @@..@@ slots
+#      - unsigned → strip the whole sha256 = "..."; line
+if [ "$SIGN" = true ]; then
+    ROOTFS_SHA256=$(sha256sum "$WORK_DIR/rootfs.ext4.gz" | awk '{print $1}')
+    POST_UPDATE_SHA256=$(sha256sum "$WORK_DIR/post-update.sh" | awk '{print $1}')
+    sed -e "s|@@VERSION@@|$VERSION|g" \
+        -e "s|@@ROOTFS_SHA256@@|$ROOTFS_SHA256|g" \
+        -e "s|@@POST_UPDATE_SHA256@@|$POST_UPDATE_SHA256|g" \
+        "$SW_DESC_TEMPLATE" > "$WORK_DIR/sw-description"
+else
+    sed -e "s|@@VERSION@@|$VERSION|g" \
+        -e '/sha256\s*=\s*"@@.*@@";/d' \
+        "$SW_DESC_TEMPLATE" > "$WORK_DIR/sw-description"
+fi
 
 echo ">>> sw-description:"
 cat "$WORK_DIR/sw-description"
