@@ -1,6 +1,10 @@
 -r requirements.txt
 pytest>=8.0
 pytest-cov>=5.0
+pytest-xdist>=3.5
+pytest-timeout>=2.3
+mutmut>=2.4,<3.0  # 3.x drops the SQLite cache and breaks our setup.cfg runner + kill-rate CI gate
 schemathesis>=3.35.0
 PyYAML>=6.0.2
 cryptography>=42.0
+hypothesis>=6.100

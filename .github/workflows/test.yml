@@ -146,7 +146,7 @@ jobs:
           cache-dependency-path: app/server/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/unit --junitxml=unit-results.xml
+          pytest tests/unit -n auto --junitxml=unit-results.xml
 
   server-integration:
     name: Server Integration
@@ -163,7 +163,7 @@ jobs:
           cache-dependency-path: app/server/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/integration --junitxml=integration-results.xml
+          pytest tests/integration -n auto --junitxml=integration-results.xml
 
   server-contract:
     name: Server Contract
@@ -209,6 +209,9 @@ jobs:
           print(f"CSRF={csrf!r}")
           PY
           )"
+          # NOTE: fuzzing phase is disabled because it surfaces ~33 pre-existing
+          # OpenAPI-vs-implementation gaps (auth, status codes, schema rejects).
+          # Enabling it here is tracked as a separate hardening pass.
           schemathesis run openapi/server.yaml \
             --url https://127.0.0.1:5443 \
             --tls-verify=false \
@@ -231,7 +234,7 @@ jobs:
           cache-dependency-path: app/server/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/security --junitxml=security-results.xml
+          pytest tests/security -n auto --junitxml=security-results.xml
 
   server-coverage:
     name: Server Coverage
@@ -250,9 +253,79 @@ jobs:
           pip install -e . -r requirements-test.txt
           pytest tests/unit tests/integration tests/security \
             --cov=monitor \
+            --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=80 \
+            --cov-fail-under=85 \
             --junitxml=coverage-results.xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: server
+          name: server-coverage
+          fail_ci_if_error: false
+
+  server-mutation:
+    name: Server Mutation
+    # Skipped by default — mutmut runs sequentially and each mutant triggers a
+    # full pytest suite, so even a small paths_to_mutate surface can take
+    # 30–60+ min. Re-enable by setting `vars.RUN_SERVER_MUTATION == 'true'` at
+    # the repo/org level, or running the workflow manually once tooling parallelizes.
+    if: ${{ vars.RUN_SERVER_MUTATION == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/server/requirements-test.txt
+      - run: |
+          pip install -e . -r requirements-test.txt
+          mutmut run || true
+      - name: Check mutation kill rate
+        run: |
+          python - <<'PY'
+          import sqlite3, sys, pathlib
+
+          db = pathlib.Path(".mutmut-cache")
+          if not db.exists():
+              print("No .mutmut-cache found — mutmut may have failed to run")
+              sys.exit(1)
+
+          conn = sqlite3.connect(db)
+          try:
+              rows = dict(
+                  conn.execute(
+                      "SELECT status, count(*) FROM mutant_statuses GROUP BY status"
+                  ).fetchall()
+              )
+          except sqlite3.OperationalError as e:
+              print(f"Could not read mutmut cache: {e}")
+              sys.exit(1)
+          finally:
+              conn.close()
+
+          killed = rows.get("ok_killed", 0)
+          survived = rows.get("bad_survived", 0) + rows.get("ok_suspicious", 0)
+          timed_out = rows.get("bad_timeout", 0)
+          total = killed + survived + timed_out
+
+          print(f"Killed: {killed}  Survived: {survived}  Timed out: {timed_out}")
+          if total == 0:
+              print("No mutants processed — check paths_to_mutate in setup.cfg")
+              sys.exit(1)
+
+          kill_rate = killed / total * 100
+          print(f"Kill rate: {kill_rate:.1f}% ({killed}/{total})")
+          if kill_rate < 70:
+              print(f"FAIL: kill rate {kill_rate:.1f}% is below the 70% threshold")
+              sys.exit(1)
+          print("PASS")
+          PY
 
   camera-unit:
     name: Camera Unit
@@ -269,7 +342,7 @@ jobs:
           cache-dependency-path: app/camera/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/unit --junitxml=unit-results.xml
+          pytest tests/unit -n auto --junitxml=unit-results.xml
 
   camera-integration:
     name: Camera Integration
@@ -286,7 +359,7 @@ jobs:
           cache-dependency-path: app/camera/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/integration --junitxml=integration-results.xml
+          pytest tests/integration -n auto --junitxml=integration-results.xml
 
   camera-contract:
     name: Camera Contract
@@ -330,6 +403,7 @@ jobs:
           print(f"COOKIE={cookie!r}")
           PY
           )"
+          # NOTE: fuzzing phase disabled — same reason as server-contract.
           schemathesis run openapi/camera.yaml \
             --url https://127.0.0.1:5444 \
             --tls-verify=false \
@@ -351,7 +425,7 @@ jobs:
           cache-dependency-path: app/camera/requirements-test.txt
       - run: |
           pip install -e . -r requirements-test.txt
-          pytest tests/security --junitxml=security-results.xml
+          pytest tests/security -n auto --junitxml=security-results.xml
 
   camera-coverage:
     name: Camera Coverage
@@ -370,9 +444,17 @@ jobs:
           pip install -e . -r requirements-test.txt
           pytest tests/unit tests/integration tests/security \
             --cov=camera_streamer \
+            --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=70 \
+            --cov-fail-under=80 \
             --junitxml=coverage-results.xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: camera
+          name: camera-coverage
+          fail_ci_if_error: false
 
   browser-e2e-smoke:
     name: Browser E2E Smoke

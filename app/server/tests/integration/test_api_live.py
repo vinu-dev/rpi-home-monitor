@@ -2,30 +2,7 @@
 
 import os
 
-from monitor.auth import hash_password
 from monitor.models import Camera
-
-
-def _login(app, client, role="admin"):
-    """Helper: create admin user and login."""
-    from monitor.models import User
-
-    app.store.save_user(
-        User(
-            id="user-admin",
-            username="admin",
-            password_hash=hash_password("pass"),
-            role=role,
-        )
-    )
-    response = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": "admin",
-            "password": "pass",
-        },
-    )
-    client.environ_base["HTTP_X_CSRF_TOKEN"] = response.get_json()["csrf_token"]
 
 
 def _add_camera(app, camera_id="cam-001", status="online"):
@@ -61,24 +38,24 @@ class TestHLSPlaylist:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/live/cam-001/stream.m3u8").status_code == 401
 
-    def test_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_camera_not_found(self, logged_in_client):
+        client = logged_in_client()
         assert client.get("/api/v1/live/cam-xxx/stream.m3u8").status_code == 404
 
-    def test_camera_offline(self, app, client):
-        _login(app, client)
+    def test_camera_offline(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="offline")
         response = client.get("/api/v1/live/cam-001/stream.m3u8")
         assert response.status_code == 503
 
-    def test_no_playlist_file(self, app, client):
-        _login(app, client)
+    def test_no_playlist_file(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         response = client.get("/api/v1/live/cam-001/stream.m3u8")
         assert response.status_code == 503
 
-    def test_serves_playlist(self, app, client):
-        _login(app, client)
+    def test_serves_playlist(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_playlist(app, "cam-001")
         response = client.get("/api/v1/live/cam-001/stream.m3u8")
@@ -87,19 +64,19 @@ class TestHLSPlaylist:
 
 
 class TestHLSSegment:
-    """Test GET /api/v1/live/<cam-id>/<filename> — auth + path traversal."""
+    """Test GET /api/v1/live/<cam-id>/<filename> â€” auth + path traversal."""
 
     def test_requires_auth(self, client):
         assert client.get("/api/v1/live/cam-001/seg001.ts").status_code == 401
 
-    def test_rejects_invalid_extension(self, app, client):
-        _login(app, client)
+    def test_rejects_invalid_extension(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         response = client.get("/api/v1/live/cam-001/stream.avi")
         assert response.status_code == 400
 
-    def test_serves_ts_segment(self, app, client):
-        _login(app, client)
+    def test_serves_ts_segment(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         live_dir = os.path.join(app.config["LIVE_DIR"], "cam-001")
         os.makedirs(live_dir, exist_ok=True)
@@ -110,17 +87,17 @@ class TestHLSSegment:
         assert response.status_code == 200
         assert response.content_type == "video/mp2t"
 
-    def test_path_traversal_rejected(self, app, client):
+    def test_path_traversal_rejected(self, app, logged_in_client):
         """Path traversal attempt outside live_dir returns 400."""
-        _login(app, client)
+        client = logged_in_client()
         _add_camera(app)
         # ../../../etc/passwd style traversal
         response = client.get("/api/v1/live/cam-001/../../../etc/passwd")
         # nginx would normalise this, but test the Flask layer directly
         assert response.status_code in (400, 404)
 
-    def test_missing_segment_returns_404(self, app, client):
-        _login(app, client)
+    def test_missing_segment_returns_404(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         response = client.get("/api/v1/live/cam-001/nonexistent.ts")
         assert response.status_code == 404
@@ -132,22 +109,22 @@ class TestSnapshot:
     def test_requires_auth(self, client):
         assert client.get("/api/v1/live/cam-001/snapshot").status_code == 401
 
-    def test_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_camera_not_found(self, logged_in_client):
+        client = logged_in_client()
         assert client.get("/api/v1/live/cam-xxx/snapshot").status_code == 404
 
-    def test_camera_offline(self, app, client):
-        _login(app, client)
+    def test_camera_offline(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="offline")
         assert client.get("/api/v1/live/cam-001/snapshot").status_code == 503
 
-    def test_no_snapshot_file(self, app, client):
-        _login(app, client)
+    def test_no_snapshot_file(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         assert client.get("/api/v1/live/cam-001/snapshot").status_code == 503
 
-    def test_serves_snapshot(self, app, client):
-        _login(app, client)
+    def test_serves_snapshot(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         _make_snapshot(app, "cam-001")
         response = client.get("/api/v1/live/cam-001/snapshot")

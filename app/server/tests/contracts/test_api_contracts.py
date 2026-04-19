@@ -19,25 +19,6 @@ from monitor.models import Camera, User
 # ---------------------------------------------------------------------------
 
 
-def _login(app, client, role="admin"):
-    """Create a user and log in, return the CSRF token."""
-    app.store.save_user(
-        User(
-            id="user-test",
-            username="testadmin",
-            password_hash=hash_password("testpass"),
-            role=role,
-            created_at="2026-01-01T00:00:00Z",
-        )
-    )
-    resp = client.post(
-        "/api/v1/auth/login",
-        json={"username": "testadmin", "password": "testpass"},
-    )
-    client.environ_base["HTTP_X_CSRF_TOKEN"] = resp.get_json().get("csrf_token", "")
-    return resp.get_json().get("csrf_token", "")
-
-
 def _add_camera(app, cam_id="cam-001", status="online"):
     """Add a camera to the store."""
     cam = Camera(
@@ -114,8 +95,8 @@ class TestAuthLogoutContract:
 class TestAuthMeContract:
     """GET /api/v1/auth/me — response field names."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/auth/me")
         data = resp.get_json()
         _assert_fields(data, {"user", "csrf_token"})
@@ -179,18 +160,18 @@ CAMERA_LIST_FIELDS = CAMERA_LIST_FIELDS_ADMIN
 class TestCamerasListContract:
     """GET /api/v1/cameras — array of camera objects."""
 
-    def test_camera_object_fields_admin(self, app, client):
+    def test_camera_object_fields_admin(self, app, logged_in_client):
         """Admin sees full camera detail including IP and health metrics."""
-        _login(app, client)
+        client = logged_in_client()
         _add_camera(app)
         data = client.get("/api/v1/cameras").get_json()
         assert isinstance(data, list)
         assert len(data) >= 1
         _assert_fields(data[0], CAMERA_LIST_FIELDS_ADMIN)
 
-    def test_camera_object_fields_viewer(self, app, client):
+    def test_camera_object_fields_viewer(self, app, logged_in_client):
         """Viewer sees limited fields — no IP or health metrics."""
-        _login(app, client, role="viewer")
+        client = logged_in_client("viewer")
         _add_camera(app)
         data = client.get("/api/v1/cameras").get_json()
         assert isinstance(data, list)
@@ -203,8 +184,8 @@ class TestCamerasListContract:
         for field in CAMERA_LIST_FIELDS_VIEWER:
             assert field in cam, f"Expected viewer field '{field}' missing"
 
-    def test_excludes_sensitive_fields(self, app, client):
-        _login(app, client)
+    def test_excludes_sensitive_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         data = client.get("/api/v1/cameras").get_json()
         cam = data[0]
@@ -215,8 +196,8 @@ class TestCamerasListContract:
 class TestCameraAddContract:
     """POST /api/v1/cameras."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.post(
             "/api/v1/cameras",
             json={"id": "cam-new", "name": "Front", "location": "Yard"},
@@ -225,8 +206,8 @@ class TestCameraAddContract:
         _assert_has_fields(data, {"id", "name", "status"})
         assert data["status"] == "pending"
 
-    def test_duplicate_error(self, app, client):
-        _login(app, client)
+    def test_duplicate_error(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.post("/api/v1/cameras", json={"id": "cam-001"})
         data = resp.get_json()
@@ -236,8 +217,8 @@ class TestCameraAddContract:
 class TestCameraConfirmContract:
     """POST /api/v1/cameras/<id>/confirm."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, status="pending")
         resp = client.post(
             "/api/v1/cameras/cam-001/confirm",
@@ -246,8 +227,8 @@ class TestCameraConfirmContract:
         data = resp.get_json()
         _assert_has_fields(data, {"id", "name", "status", "paired_at"})
 
-    def test_not_found_error(self, app, client):
-        _login(app, client)
+    def test_not_found_error(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.post(
             "/api/v1/cameras/nonexistent/confirm",
             json={"name": "X"},
@@ -259,8 +240,8 @@ class TestCameraConfirmContract:
 class TestCameraStatusContract:
     """GET /api/v1/cameras/<id>/status."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.get("/api/v1/cameras/cam-001/status")
         data = resp.get_json()
@@ -383,15 +364,15 @@ USER_LIST_FIELDS = {"id", "username", "role", "created_at", "last_login"}
 class TestUsersListContract:
     """GET /api/v1/users."""
 
-    def test_user_object_fields(self, app, client):
-        _login(app, client)
+    def test_user_object_fields(self, app, logged_in_client):
+        client = logged_in_client()
         data = client.get("/api/v1/users").get_json()
         assert isinstance(data, list)
         assert len(data) >= 1
         _assert_fields(data[0], USER_LIST_FIELDS)
 
-    def test_excludes_password_hash(self, app, client):
-        _login(app, client)
+    def test_excludes_password_hash(self, app, logged_in_client):
+        client = logged_in_client()
         data = client.get("/api/v1/users").get_json()
         for user in data:
             assert "password_hash" not in user
@@ -400,8 +381,8 @@ class TestUsersListContract:
 class TestUsersCreateContract:
     """POST /api/v1/users."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.post(
             "/api/v1/users",
             json={"username": "newuser", "password": "securepass123", "role": "viewer"},
@@ -409,8 +390,8 @@ class TestUsersCreateContract:
         data = resp.get_json()
         _assert_has_fields(data, {"id", "username", "role", "created_at"})
 
-    def test_error_fields(self, app, client):
-        _login(app, client)
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.post(
             "/api/v1/users",
             json={"username": "", "password": ""},
@@ -422,8 +403,8 @@ class TestUsersCreateContract:
 class TestUsersDeleteContract:
     """DELETE /api/v1/users/<id>."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         # Create a user to delete
         app.store.save_user(
             User(
@@ -441,10 +422,11 @@ class TestUsersDeleteContract:
 class TestUsersChangePasswordContract:
     """PUT /api/v1/users/<id>/password."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        # Change the logged-in admin's own password (user-admin is created by the fixture)
         resp = client.put(
-            "/api/v1/users/user-test/password",
+            "/api/v1/users/user-admin/password",
             json={"new_password": "newsecurepass123"},
         )
         data = resp.get_json()
@@ -469,8 +451,8 @@ SETTINGS_FIELDS = {
 class TestSettingsGetContract:
     """GET /api/v1/settings."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/settings")
         data = resp.get_json()
         _assert_has_fields(data, SETTINGS_FIELDS)
@@ -479,8 +461,8 @@ class TestSettingsGetContract:
 class TestSettingsUpdateContract:
     """PUT /api/v1/settings."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.put(
             "/api/v1/settings",
             json={"timezone": "US/Eastern"},
@@ -488,8 +470,8 @@ class TestSettingsUpdateContract:
         data = resp.get_json()
         _assert_fields(data, {"message"})
 
-    def test_error_fields(self, app, client):
-        _login(app, client)
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.put(
             "/api/v1/settings",
             json={"timezone": ""},
@@ -516,8 +498,8 @@ HEALTH_FIELDS = {
 class TestSystemHealthContract:
     """GET /api/v1/system/health."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/system/health")
         data = resp.get_json()
         _assert_has_fields(data, HEALTH_FIELDS)
@@ -542,8 +524,8 @@ class TestSystemHealthContract:
 class TestSystemInfoContract:
     """GET /api/v1/system/info."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/system/info")
         data = resp.get_json()
         _assert_fields(
@@ -563,8 +545,8 @@ class TestSystemInfoContract:
 class TestSystemSummaryContract:
     """GET /api/v1/system/summary (ADR-0018 dashboard status strip)."""
 
-    def test_top_level_shape(self, app, client):
-        _login(app, client)
+    def test_top_level_shape(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/system/summary")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -573,8 +555,8 @@ class TestSystemSummaryContract:
         assert isinstance(data["summary"], str) and data["summary"]
         assert isinstance(data["deep_link"], str) and data["deep_link"].startswith("/")
 
-    def test_details_shape(self, app, client):
-        _login(app, client)
+    def test_details_shape(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/system/summary")
         data = resp.get_json()
         _assert_fields(
@@ -625,8 +607,8 @@ CLIP_FIELDS = {
 class TestRecordingsListContract:
     """GET /api/v1/recordings/<cam-id>."""
 
-    def test_clip_object_fields(self, app, client):
-        _login(app, client)
+    def test_clip_object_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         # Create a fake clip
         rec_dir = app.config["RECORDINGS_DIR"]
@@ -641,8 +623,8 @@ class TestRecordingsListContract:
         assert len(data) >= 1
         _assert_fields(data[0], CLIP_FIELDS)
 
-    def test_empty_returns_list(self, app, client):
-        _login(app, client)
+    def test_empty_returns_list(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         data = client.get("/api/v1/recordings/cam-001?date=2026-01-01").get_json()
         assert isinstance(data, list)
@@ -652,8 +634,8 @@ class TestRecordingsListContract:
 class TestRecordingsDatesContract:
     """GET /api/v1/recordings/<cam-id>/dates."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.get("/api/v1/recordings/cam-001/dates")
         data = resp.get_json()
@@ -664,8 +646,8 @@ class TestRecordingsDatesContract:
 class TestRecordingsLatestContract:
     """GET /api/v1/recordings/<cam-id>/latest."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         rec_dir = app.config["RECORDINGS_DIR"]
         clip_dir = os.path.join(rec_dir, "cam-001", "2026-04-11")
@@ -677,8 +659,8 @@ class TestRecordingsLatestContract:
         data = resp.get_json()
         _assert_fields(data, CLIP_FIELDS)
 
-    def test_no_clips_error(self, app, client):
-        _login(app, client)
+    def test_no_clips_error(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.get("/api/v1/recordings/cam-001/latest")
         data = resp.get_json()
@@ -688,8 +670,8 @@ class TestRecordingsLatestContract:
 class TestRecordingsLatestAcrossContract:
     """GET /api/v1/recordings/latest — cross-camera newest clip (ADR-0018)."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, cam_id="cam-a")
         _add_camera(app, cam_id="cam-b")
         rec_dir = app.config["RECORDINGS_DIR"]
@@ -709,8 +691,8 @@ class TestRecordingsLatestAcrossContract:
         data = resp.get_json()
         _assert_has_fields(data, CLIP_FIELDS | {"camera_name"})
 
-    def test_no_clips_error(self, app, client):
-        _login(app, client)
+    def test_no_clips_error(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/recordings/latest")
         assert resp.status_code == 404
         _assert_fields(resp.get_json(), {"error"})
@@ -719,8 +701,8 @@ class TestRecordingsLatestAcrossContract:
 class TestRecordingsRecentContract:
     """GET /api/v1/recordings/recent?limit=N — recent events feed (ADR-0018)."""
 
-    def test_returns_list_with_camera_name(self, app, client):
-        _login(app, client)
+    def test_returns_list_with_camera_name(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app, cam_id="cam-a")
         rec_dir = app.config["RECORDINGS_DIR"]
         clip_dir = os.path.join(rec_dir, "cam-a", "2026-04-11")
@@ -738,8 +720,8 @@ class TestRecordingsRecentContract:
         assert isinstance(data, list) and data
         _assert_has_fields(data[0], CLIP_FIELDS | {"camera_name"})
 
-    def test_empty_returns_empty_list(self, app, client):
-        _login(app, client)
+    def test_empty_returns_empty_list(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/recordings/recent")
         assert resp.status_code == 200
         assert resp.get_json() == []
@@ -748,8 +730,8 @@ class TestRecordingsRecentContract:
 class TestRecordingsDeleteContract:
     """DELETE /api/v1/recordings/<cam-id>/<date>/<filename>."""
 
-    def test_success_fields(self, app, client):
-        _login(app, client)
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         rec_dir = app.config["RECORDINGS_DIR"]
         clip_dir = os.path.join(rec_dir, "cam-001", "2026-04-11")
@@ -761,8 +743,8 @@ class TestRecordingsDeleteContract:
         data = resp.get_json()
         _assert_fields(data, {"message"})
 
-    def test_not_found_error(self, app, client):
-        _login(app, client)
+    def test_not_found_error(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.delete("/api/v1/recordings/cam-001/2026-01-01/nope.mp4")
         data = resp.get_json()
         _assert_fields(data, {"error"})
@@ -771,8 +753,8 @@ class TestRecordingsDeleteContract:
 class TestRecordingsCamerasContract:
     """GET /api/v1/recordings/cameras — paired + orphan archive list."""
 
-    def test_paired_camera_fields(self, app, client):
-        _login(app, client)
+    def test_paired_camera_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.get("/api/v1/recordings/cameras")
         data = resp.get_json()
@@ -781,8 +763,8 @@ class TestRecordingsCamerasContract:
         _assert_fields(data[0], {"id", "name", "status"})
         assert data[0]["status"] in {"online", "offline", "removed"}
 
-    def test_orphan_surfaces_as_removed(self, app, client):
-        _login(app, client)
+    def test_orphan_surfaces_as_removed(self, app, logged_in_client):
+        client = logged_in_client()
         # No Camera record — just a clip on disk.
         rec_dir = app.config["RECORDINGS_DIR"]
         clip_dir = os.path.join(rec_dir, "cam-orphan", "2026-04-11")
@@ -807,8 +789,8 @@ class TestRecordingsBulkDeleteContract:
             with open(os.path.join(clip_dir, f"{t}.mp4"), "wb") as f:
                 f.write(b"\x00" * 128)
 
-    def test_delete_date_success_fields(self, app, client):
-        _login(app, client)
+    def test_delete_date_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         self._seed(app)
         resp = client.delete("/api/v1/recordings/cam-001/2026-04-11")
@@ -816,15 +798,15 @@ class TestRecordingsBulkDeleteContract:
         _assert_fields(data, {"message", "count"})
         assert data["count"] == 2
 
-    def test_delete_date_bad_date(self, app, client):
-        _login(app, client)
+    def test_delete_date_bad_date(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.delete("/api/v1/recordings/cam-001/not-a-date")
         data = resp.get_json()
         _assert_fields(data, {"error"})
 
-    def test_delete_camera_success_fields(self, app, client):
-        _login(app, client)
+    def test_delete_camera_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         self._seed(app, date="2026-04-11")
         self._seed(app, date="2026-04-12")
@@ -833,8 +815,8 @@ class TestRecordingsBulkDeleteContract:
         _assert_fields(data, {"message", "count"})
         assert data["count"] == 4
 
-    def test_delete_camera_not_found(self, app, client):
-        _login(app, client)
+    def test_delete_camera_not_found(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.delete("/api/v1/recordings/nope")
         data = resp.get_json()
         _assert_fields(data, {"error"})
@@ -848,8 +830,8 @@ class TestRecordingsBulkDeleteContract:
 class TestStorageStatusContract:
     """GET /api/v1/storage/status."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/storage/status")
         data = resp.get_json()
         _assert_has_fields(
@@ -862,8 +844,8 @@ class TestStorageDevicesContract:
     """GET /api/v1/storage/devices."""
 
     @patch("monitor.services.storage_service.usb.detect_devices")
-    def test_fields(self, mock_detect, app, client):
-        _login(app, client)
+    def test_fields(self, mock_detect, app, logged_in_client):
+        client = logged_in_client()
         mock_detect.return_value = [
             {
                 "path": "/dev/sda1",
@@ -893,8 +875,8 @@ class TestStorageDevicesContract:
 class TestOtaStatusContract:
     """GET /api/v1/ota/status."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/ota/status")
         data = resp.get_json()
         _assert_has_fields(data, {"server", "cameras"})
@@ -913,15 +895,15 @@ class TestOtaStatusContract:
 class TestOtaUsbScanContract:
     """GET /api/v1/ota/usb/scan."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/ota/usb/scan")
         data = resp.get_json()
         _assert_has_fields(data, {"bundles"})
         assert isinstance(data["bundles"], list)
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.get("/api/v1/ota/usb/scan")
         assert resp.status_code == 403
 
@@ -929,19 +911,18 @@ class TestOtaUsbScanContract:
 class TestOtaUsbImportContract:
     """POST /api/v1/ota/usb/import."""
 
-    def test_requires_path(self, app, client):
-        csrf = _login(app, client)
+    def test_requires_path(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.post(
             "/api/v1/ota/usb/import",
             json={},
-            headers={"X-CSRF-Token": csrf},
         )
         assert resp.status_code == 400
         data = resp.get_json()
         _assert_has_fields(data, {"error"})
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/ota/usb/import", json={"path": "/mnt/usb/x.swu"})
         assert resp.status_code == 403
 
@@ -949,8 +930,8 @@ class TestOtaUsbImportContract:
 class TestTailscaleStatusContract:
     """GET /api/v1/system/tailscale."""
 
-    def test_fields(self, app, client):
-        _login(app, client)
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
         resp = client.get("/api/v1/system/tailscale")
         data = resp.get_json()
         _assert_has_fields(
@@ -979,8 +960,8 @@ class TestTailscaleStatusContract:
 class TestTailscaleConnectContract:
     """POST /api/v1/system/tailscale/connect."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/system/tailscale/connect")
         assert resp.status_code == 403
 
@@ -992,8 +973,8 @@ class TestTailscaleConnectContract:
 class TestTailscaleDisconnectContract:
     """POST /api/v1/system/tailscale/disconnect."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/system/tailscale/disconnect")
         assert resp.status_code == 403
 
@@ -1005,8 +986,8 @@ class TestTailscaleDisconnectContract:
 class TestTailscaleEnableContract:
     """POST /api/v1/system/tailscale/enable."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/system/tailscale/enable")
         assert resp.status_code == 403
 
@@ -1018,8 +999,8 @@ class TestTailscaleEnableContract:
 class TestTailscaleDisableContract:
     """POST /api/v1/system/tailscale/disable."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/system/tailscale/disable")
         assert resp.status_code == 403
 
@@ -1031,8 +1012,8 @@ class TestTailscaleDisableContract:
 class TestTailscaleApplyConfigContract:
     """POST /api/v1/system/tailscale/apply-config."""
 
-    def test_requires_admin(self, app, client):
-        _login(app, client, role="viewer")
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/system/tailscale/apply-config")
         assert resp.status_code == 403
 
@@ -1057,9 +1038,9 @@ class TestErrorResponseConsistency:
         assert "error" in data
         assert isinstance(data["error"], str)
 
-    def test_403_has_error_field(self, app, client):
+    def test_403_has_error_field(self, app, logged_in_client):
         """Forbidden requests return {"error": "..."}."""
-        _login(app, client, role="viewer")
+        client = logged_in_client("viewer")
         resp = client.post("/api/v1/users", json={"username": "x", "password": "y"})
         assert resp.status_code == 403
         data = resp.get_json()
@@ -1331,8 +1312,8 @@ class TestHeartbeatContract:
 class TestCameraUpdateRecordingModeContract:
     """PUT /api/v1/cameras/<id> accepts new recording_* fields."""
 
-    def test_put_accepts_schedule_mode(self, app, client):
-        _login(app, client)
+    def test_put_accepts_schedule_mode(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.put(
             "/api/v1/cameras/cam-001",
@@ -1348,14 +1329,14 @@ class TestCameraUpdateRecordingModeContract:
         assert cam.recording_mode == "schedule"
         assert cam.recording_schedule[0]["start"] == "09:00"
 
-    def test_put_rejects_invalid_mode(self, app, client):
-        _login(app, client)
+    def test_put_rejects_invalid_mode(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "nope"})
         assert resp.status_code == 400
 
-    def test_put_rejects_bad_schedule_day(self, app, client):
-        _login(app, client)
+    def test_put_rejects_bad_schedule_day(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.put(
             "/api/v1/cameras/cam-001",
@@ -1368,8 +1349,8 @@ class TestCameraUpdateRecordingModeContract:
         )
         assert resp.status_code == 400
 
-    def test_put_rejects_bad_time_format(self, app, client):
-        _login(app, client)
+    def test_put_rejects_bad_time_format(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.put(
             "/api/v1/cameras/cam-001",
@@ -1380,8 +1361,8 @@ class TestCameraUpdateRecordingModeContract:
         )
         assert resp.status_code == 400
 
-    def test_put_motion_accepted_as_forward_compat(self, app, client):
-        _login(app, client)
+    def test_put_motion_accepted_as_forward_compat(self, app, logged_in_client):
+        client = logged_in_client()
         _add_camera(app)
         resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "motion"})
         assert resp.status_code == 200

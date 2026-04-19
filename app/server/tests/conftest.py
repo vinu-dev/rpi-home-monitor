@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from monitor import create_app
+from monitor.auth import hash_password
 from monitor.models import Camera, Clip, Settings, User
 
 LAYER_MARKERS = {
@@ -83,6 +84,41 @@ def app(data_dir):
 def client(app):
     """Flask test client — use this to make HTTP requests."""
     return app.test_client()
+
+
+@pytest.fixture
+def logged_in_client(app, client):
+    """Factory fixture: returns a callable that logs in and returns the client.
+
+    Usage::
+
+        def test_something(logged_in_client):
+            client = logged_in_client()          # admin, default credentials
+            client = logged_in_client("viewer")  # viewer role
+
+    The client has the CSRF token pre-set in environ_base so all
+    state-changing requests pass CSRF validation automatically.
+    """
+
+    def _login(role="admin", username=None, password="pass"):
+        uname = username if username is not None else role
+        app.store.save_user(
+            User(
+                id=f"user-{uname}",
+                username=uname,
+                password_hash=hash_password(password),
+                role=role,
+                created_at="2026-01-01T00:00:00Z",
+            )
+        )
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": uname, "password": password},
+        )
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = resp.get_json()["csrf_token"]
+        return client
+
+    return _login
 
 
 @pytest.fixture

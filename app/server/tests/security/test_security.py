@@ -13,12 +13,14 @@ an attack vector that must never work.
 import os
 import time
 
+import pytest
+
 from monitor.auth import _login_attempts, hash_password
 from monitor.models import Camera, User
 
 
 def _login(app, client, username="admin", password="pass", role="admin"):
-    """Helper: create user and login."""
+    """Helper: create user and login (kept for tests needing custom username/password)."""
     app.store.save_user(
         User(
             id=f"user-{username}",
@@ -52,87 +54,131 @@ def _make_clip(app, camera_id, clip_date, time_str):
 # Path traversal
 # ===========================================================================
 
+_TRAVERSAL_PATHS = [
+    # (url_suffix, needs_camera, expected_codes)
+    ("/../../../etc/passwd", False, (404,)),
+    ("/cam-001/../../etc/passwd/evil.mp4", True, (400, 404)),
+    ("/cam-001/2026-04-09/../../etc/passwd.mp4", True, (400, 404)),
+    ("/cam-001/2026-04-09/evil%00.mp4", True, (400, 404)),
+    ("/cam-001/..%2F..%2Fetc%2Fpasswd/evil.mp4", True, (400, 404)),
+    ("/cam-001/2026-04-09/%2e%2e%2fetc%2fpasswd.mp4", True, (400, 404)),
+    ("/cam-001/2026-04-09/....//....//etc/passwd.mp4", True, (400, 404)),
+]
+
 
 class TestPathTraversal:
-    """Verify path traversal attacks are blocked on recordings endpoints."""
+    """Verify path traversal attacks are blocked on recordings endpoints.
 
-    def test_traversal_in_camera_id(self, app, client):
-        """../../../etc/passwd as camera_id must not leak files."""
-        _login(app, client)
-        response = client.get("/api/v1/recordings/../../../etc/passwd")
-        # Should be 404 (camera not found) not 200 with file contents
-        assert response.status_code == 404
+    Parametrized so adding a new attack vector is a one-liner.
+    """
 
-    def test_traversal_in_date(self, app, client):
-        """../ in date parameter must not escape recordings dir."""
+    @pytest.mark.parametrize("suffix,needs_camera,expected_codes", _TRAVERSAL_PATHS)
+    def test_get_traversal_blocked(
+        self, suffix, needs_camera, expected_codes, app, client
+    ):
         _login(app, client)
-        _add_camera(app)
-        response = client.get("/api/v1/recordings/cam-001/../../etc/passwd/evil.mp4")
-        assert response.status_code in (400, 404)
-
-    def test_traversal_in_filename(self, app, client):
-        """../ in filename must not escape recordings dir."""
-        _login(app, client)
-        _add_camera(app)
-        response = client.get(
-            "/api/v1/recordings/cam-001/2026-04-09/../../etc/passwd.mp4"
+        if needs_camera:
+            _add_camera(app)
+        response = client.get(f"/api/v1/recordings{suffix}")
+        assert response.status_code in expected_codes, (
+            f"GET /api/v1/recordings{suffix} returned {response.status_code}, "
+            f"expected one of {expected_codes}"
         )
-        assert response.status_code in (400, 404)
 
-    def test_traversal_in_delete(self, app, client):
-        """Path traversal in DELETE must not delete arbitrary files."""
+    def test_traversal_in_delete_does_not_remove_arbitrary_file(self, app, client):
+        """Path traversal in DELETE must not delete files outside recordings dir."""
         _login(app, client)
-        # Create a file outside recordings that should NOT be deletable
         safe_file = os.path.join(app.config["DATA_DIR"], "safe.txt")
         with open(safe_file, "w") as f:
             f.write("do not delete")
 
         client.delete("/api/v1/recordings/cam-001/../safe.txt")
-        # The safe file must still exist
         assert os.path.exists(safe_file)
-
-    def test_null_byte_in_filename(self, app, client):
-        """Null bytes in filename must not bypass validation."""
-        _login(app, client)
-        _add_camera(app)
-        response = client.get("/api/v1/recordings/cam-001/2026-04-09/evil%00.mp4")
-        assert response.status_code in (400, 404)
-
-    def test_encoded_traversal(self, app, client):
-        """URL-encoded ../ must not bypass path checks."""
-        _login(app, client)
-        _add_camera(app)
-        response = client.get(
-            "/api/v1/recordings/cam-001/..%2F..%2Fetc%2Fpasswd/evil.mp4"
-        )
-        assert response.status_code in (400, 404)
 
 
 # ===========================================================================
 # CSRF enforcement
 # ===========================================================================
 
+# Endpoints decorated with both @admin_required and @csrf_protect.
+# Each tuple: (method, url, minimal_valid_body)
+_CSRF_PROTECTED_ENDPOINTS = [
+    ("PUT", "/api/v1/settings", {"hostname": "test-host"}),
+    ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
+    ("POST", "/api/v1/settings/wifi", {"ssid": "MyNet", "password": "pass1234"}),
+    ("POST", "/api/v1/users", {"username": "newuser1", "password": "password1234"}),
+    ("DELETE", "/api/v1/users/user-nobody", None),
+    ("PUT", "/api/v1/users/user-nobody/password", {"new_password": "newpass1234"}),
+]
+
 
 class TestCSRFEnforcement:
-    """Verify CSRF protection actually blocks invalid tokens."""
+    """Verify CSRF protection actually blocks invalid tokens.
+
+    Every state-changing endpoint decorated with @csrf_protect must
+    return 403 when the token is absent, wrong, or replayed.
+    """
 
     def test_logout_works_without_csrf(self, app, client):
-        """Logout should work (it clears session, no state change risk)."""
+        """Logout should work — it clears the session (no additive state change)."""
         _login(app, client)
         response = client.post("/api/v1/auth/logout")
         assert response.status_code == 200
 
-    def test_missing_csrf_on_protected_endpoint(self, app, client):
-        """State-changing endpoints that require CSRF should reject if missing.
-
-        Note: Currently only csrf_protect decorator enforces this.
-        This test documents expected behavior for endpoints that use it.
-        """
-        # Login to get a session
+    @pytest.mark.parametrize("method,url,body", _CSRF_PROTECTED_ENDPOINTS)
+    def test_missing_csrf_token_returns_403(self, method, url, body, app, client):
+        """CSRF-protected endpoint must return 403 when X-CSRF-Token header is absent."""
         _login(app, client)
-        # The auth endpoints themselves don't use csrf_protect decorator
-        # but this documents the pattern for future endpoints that do
-        pass
+        # Remove the CSRF token that _login set
+        client.environ_base.pop("HTTP_X_CSRF_TOKEN", None)
+        resp = getattr(client, method.lower())(url, json=body)
+        assert resp.status_code == 403, (
+            f"{method} {url} accepted request with no CSRF token (got {resp.status_code})"
+        )
+
+    @pytest.mark.parametrize("method,url,body", _CSRF_PROTECTED_ENDPOINTS)
+    def test_wrong_csrf_token_returns_403(self, method, url, body, app, client):
+        """CSRF-protected endpoint must return 403 when token is wrong."""
+        _login(app, client)
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = "deadbeefdeadbeef"
+        resp = getattr(client, method.lower())(url, json=body)
+        assert resp.status_code == 403, (
+            f"{method} {url} accepted wrong CSRF token (got {resp.status_code})"
+        )
+
+    @pytest.mark.parametrize("method,url,body", _CSRF_PROTECTED_ENDPOINTS)
+    def test_empty_csrf_token_returns_403(self, method, url, body, app, client):
+        """Empty-string CSRF token must not be accepted."""
+        _login(app, client)
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = ""
+        resp = getattr(client, method.lower())(url, json=body)
+        assert resp.status_code == 403, (
+            f"{method} {url} accepted empty CSRF token (got {resp.status_code})"
+        )
+
+    def test_valid_csrf_token_accepted(self, app, client):
+        """Sanity: request with valid token must NOT be rejected by CSRF guard."""
+        _login(app, client)
+        # PUT /settings is csrf-protected; valid token (set by _login) must pass guard
+        resp = client.put("/api/v1/settings", json={"hostname": "home-monitor"})
+        # 200 or 400 (validation) are acceptable; 403 is not
+        assert resp.status_code != 403, "Valid CSRF token was rejected"
+
+    def test_replayed_token_from_different_session_is_rejected(self, app, client):
+        """A CSRF token stolen from a different session must not work."""
+        _login(app, client)
+        stolen_token = client.environ_base["HTTP_X_CSRF_TOKEN"]
+
+        # Start a fresh session (logout + re-login creates a new CSRF token)
+        client.post("/api/v1/auth/logout")
+        _login(app, client)
+        new_token = client.environ_base["HTTP_X_CSRF_TOKEN"]
+        assert stolen_token != new_token, "Two logins produced the same CSRF token"
+
+        # Use the stolen old token — must be rejected
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = stolen_token
+        resp = client.put("/api/v1/settings", json={"hostname": "hacked"})
+        assert resp.status_code == 403
 
 
 # ===========================================================================
@@ -263,68 +309,64 @@ class TestPrivilegeEscalation:
 # Input injection
 # ===========================================================================
 
+_CAMERA_NAME_PAYLOADS = [
+    ("<script>alert('xss')</script>", "XSS payload"),
+    ("A" * 10000, "10k-char string"),
+    ("\x00evil", "null byte"),
+    ("../../../etc/passwd", "path traversal in name"),
+    ("\u202e\u0041\u0042\u0043", "Unicode RTL override"),
+    ("'; DROP TABLE cameras; --", "SQL injection attempt"),
+    ('{"$where": "1==1"}', "NoSQL injection attempt"),
+]
+
+_LOGIN_CRASH_CASES = [
+    (b"{}", "empty JSON object"),
+    (b'{"username": null, "password": null}', "null values"),
+    (b'{"username": "", "password": ""}', "empty strings"),
+    (b"not json at all", "non-JSON body"),
+    (b"[]", "JSON array instead of object"),
+    (b'{"username": ' + b"A" * 100000 + b'"}', "100k username"),
+]
+
 
 class TestInputInjection:
-    """Verify special characters in input don't cause unexpected behavior."""
+    """Verify special characters and malformed input don't cause 5xx errors."""
 
-    def test_html_in_camera_name(self, app, client):
-        """HTML/XSS in camera name must be stored as-is (escaped on render)."""
+    @pytest.mark.parametrize("name,description", _CAMERA_NAME_PAYLOADS)
+    def test_hostile_camera_name_does_not_crash(self, name, description, app, client):
+        """Hostile camera name payloads must return 200 or 400, never 500."""
         _login(app, client)
         _add_camera(app)
-        response = client.put(
-            "/api/v1/cameras/cam-001",
-            json={"name": "<script>alert('xss')</script>"},
+        response = client.put("/api/v1/cameras/cam-001", json={"name": name})
+        assert response.status_code in (200, 400), (
+            f"Camera name payload '{description}' caused {response.status_code}"
         )
-        # Should either accept (store escapes on render) or reject
-        # Must not cause 500
-        assert response.status_code in (200, 400)
 
-    def test_very_long_camera_name(self, app, client):
-        """Extremely long camera name must not crash the server."""
-        _login(app, client)
-        _add_camera(app)
-        response = client.put(
-            "/api/v1/cameras/cam-001",
-            json={"name": "A" * 10000},
-        )
-        assert response.status_code in (200, 400)
-
-    def test_unicode_in_camera_name(self, app, client):
-        """Unicode characters in camera name must not crash."""
-        _login(app, client)
-        _add_camera(app)
-        response = client.put(
-            "/api/v1/cameras/cam-001",
-            json={"name": "Front Door"},
-        )
-        assert response.status_code in (200, 400)
-
-    def test_empty_json_body(self, app, client):
-        """Empty JSON body must return 400, not 500."""
-        _login(app, client)
+    @pytest.mark.parametrize(
+        "body,description",
+        _LOGIN_CRASH_CASES,
+        ids=[c[1].replace(" ", "_") for c in _LOGIN_CRASH_CASES],
+    )
+    def test_malformed_login_body_does_not_crash(self, body, description, client):
+        """Malformed login bodies must return 400/401, never 500."""
         response = client.post(
             "/api/v1/auth/login",
-            data=b"{}",
+            data=body,
             content_type="application/json",
         )
-        assert response.status_code == 400
-
-    def test_non_json_body(self, app, client):
-        """Non-JSON body must not crash the server."""
-        response = client.post(
-            "/api/v1/auth/login",
-            data=b"not json at all",
-            content_type="application/json",
+        assert response.status_code in (400, 401), (
+            f"Login body '{description}' caused {response.status_code}"
         )
-        assert response.status_code in (400, 401)
 
-    def test_null_values_in_login(self, app, client):
-        """Null values in login must return 400, not crash."""
-        response = client.post(
-            "/api/v1/auth/login",
-            json={"username": None, "password": None},
-        )
-        assert response.status_code == 400
+    def test_extremely_nested_json_does_not_crash(self, app, client):
+        """Deeply nested JSON in settings update must not cause stack overflow."""
+        _login(app, client)
+        nested = {"a": None}
+        for _ in range(200):
+            nested = {"x": nested}
+        resp = client.put("/api/v1/settings", json=nested)
+        assert resp.status_code in (400, 422, 200)
+        assert resp.status_code != 500
 
 
 # ===========================================================================

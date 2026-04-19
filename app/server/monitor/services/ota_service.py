@@ -543,6 +543,28 @@ class OTAService:
         except OSError as e:
             log.warning("Failed to clean staging: %s", e)
 
+    def schedule_reboot(self, delay_seconds=2.0):
+        """Schedule a system reboot after `delay_seconds`.
+
+        Runs on a daemon thread so the HTTP handler can flush its response
+        before systemd tears down the Flask worker.
+        """
+
+        def _reboot_after_delay():
+            import time as _t
+
+            _t.sleep(delay_seconds)
+            try:
+                subprocess.run(["reboot"], check=False, timeout=15)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                log.error("reboot command failed: %s", exc)
+
+        threading.Thread(
+            target=_reboot_after_delay,
+            daemon=True,
+            name="ota-install-reboot",
+        ).start()
+
     def _log_audit(self, event, user, ip, detail):
         """Log audit event (fail-silent)."""
         if self._audit:

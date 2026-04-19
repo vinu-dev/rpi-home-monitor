@@ -19,7 +19,6 @@ the install layer is identical on both devices.
 
 import os
 import shutil
-import subprocess
 import tempfile
 import threading
 
@@ -203,19 +202,8 @@ def install_server_image():
     # its UI into the "rebooting" state) and schedule the reboot on a
     # background thread with a short delay so systemd has a moment to
     # tear down Flask cleanly.
-    def _reboot_after_delay():
-        import time as _t
-
-        _t.sleep(2.0)
-        try:
-            subprocess.run(["reboot"], check=False, timeout=15)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            current_app.logger.error("reboot command failed: %s", exc)
-
     ota.set_status("server", "rebooting", progress=100, error="")
-    threading.Thread(
-        target=_reboot_after_delay, daemon=True, name="ota-install-reboot"
-    ).start()
+    ota.schedule_reboot()
     return jsonify(
         {"message": "Installation complete — rebooting now", "rebooting": True}
     ), 200

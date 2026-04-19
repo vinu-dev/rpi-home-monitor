@@ -119,3 +119,46 @@ def certs_dir(data_dir):
     (certs / "client.key").write_text("MOCK KEY")
     (certs / "ca.crt").write_text("MOCK CA")
     return certs
+
+
+@pytest.fixture
+def status_session_token():
+    """Create a valid status-server session token, clean up after the test.
+
+    Use this in tests that exercise code paths requiring authentication
+    without going through a real HTTP login.  The token is injected
+    directly into the in-memory session store.
+    """
+    from camera_streamer.status_server import (
+        _create_session,
+        _destroy_session,
+        _session_lock,
+        _sessions,
+    )
+
+    with _session_lock:
+        _sessions.clear()
+    token = _create_session()
+    yield token
+    _destroy_session(token)
+    with _session_lock:
+        _sessions.clear()
+
+
+@pytest.fixture
+def wifi_session_token():
+    """Create a valid wifi-setup-server session token, clean up after the test."""
+    from camera_streamer.wifi_setup import (
+        _create_session,
+        _destroy_session,
+        _session_lock,
+        _sessions,
+    )
+
+    with _session_lock:
+        _sessions.clear()
+    token = _create_session()
+    yield token
+    _destroy_session(token)
+    with _session_lock:
+        _sessions.clear()

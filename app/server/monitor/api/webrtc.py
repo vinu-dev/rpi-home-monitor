@@ -77,7 +77,7 @@ def whep_proxy(path):
     except urllib.error.HTTPError as e:
         resp_data = e.read() if hasattr(e, "read") else b""
         resp = Response(resp_data, status=e.code)
-        content_type = e.headers.get("Content-Type") if hasattr(e, "headers") else None
+        content_type = e.headers.get("Content-Type") if e.headers is not None else None
         if content_type:
             resp.headers["Content-Type"] = content_type
     except (urllib.error.URLError, OSError):
