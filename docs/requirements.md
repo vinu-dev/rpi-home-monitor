@@ -1,7 +1,7 @@
 # RPi Home Monitor - Requirements Specification
 
-Version: 1.0
-Date: 2026-04-13
+Version: 1.2
+Date: 2026-04-19
 
 ---
 

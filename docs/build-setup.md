@@ -1,6 +1,6 @@
 # Build Machine Setup
 
-Version: 1.0
+Version: 1.2
 Date: 2026-04-09
 
 How to set up a fresh machine to build Home Monitor OS images.
@@ -142,10 +142,19 @@ We use a custom distribution instead of the reference `poky` distro. This is ind
 Both boards share `bblayers.conf` and the `home-monitor` distro. Only `local.conf` differs:
 
 ```text
-config/bblayers.conf        shared (identical layers for both)
-config/rpi4b/local.conf     MACHINE="raspberrypi4-64", GPU_MEM=128
-config/zero2w/local.conf    MACHINE="home-monitor-camera", GPU_MEM=64
+config/bblayers.conf                shared (identical layers for both)
+config/rpi4b/local.conf             MACHINE="raspberrypi4-64", GPU_MEM=128
+config/rpi4b/local.conf.prod        require local.conf; SWUPDATE_SIGNING="1"
+config/zero2w/local.conf            MACHINE="home-monitor-camera", GPU_MEM=64
+config/zero2w/local.conf.prod       require local.conf; SWUPDATE_SIGNING="1"
 ```
+
+Prod configs **inherit** the dev config via `require local.conf` and override
+only the signing policy. That way a change to machine/kernel settings in the
+dev `local.conf` propagates to prod automatically — no drift between the two.
+`build.sh server-prod` / `camera-prod` / `all-prod` select the prod layer.
+See [ADR-0014](adr/0014-swupdate-signing-dev-prod.md) for the signing contract
+and [OTA Key Management](ota-key-management.md) for the per-user keypair policy.
 
 The `home-monitor-camera` machine in `meta-home-monitor/conf/machine/`
 extends `raspberrypi0-2w-64` and carries the permanent OV5647 sensor

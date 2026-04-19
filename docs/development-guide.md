@@ -1,7 +1,7 @@
 # RPi Home Monitor - Development Guide
 
-Version: 1.0
-Date: 2026-04-09
+Version: 1.2
+Date: 2026-04-19
 
 **This document defines the rules for all development on this project.**
 Every contributor (human or AI) must follow these rules. They are not

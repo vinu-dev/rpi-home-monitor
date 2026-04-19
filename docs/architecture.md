@@ -1,7 +1,7 @@
 # RPi Home Monitor - Software Architecture
 
-Version: 1.0
-Date: 2026-04-09
+Version: 1.2
+Date: 2026-04-19
 
 ---
 
