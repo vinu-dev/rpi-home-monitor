@@ -737,7 +737,10 @@
                 <template x-for="d in storage.devices" :key="d.path">
                     <div class="usb-device-item">
                         <div>
-                            <div style="font-weight:500;" x-text="d.model"></div>
+                            <div style="font-weight:500;">
+                                <span x-text="d.model"></span>
+                                <span x-show="d.in_use" class="badge badge--ok" style="margin-left:8px;">In use</span>
+                            </div>
                             <div class="text-small text-muted">
                                 <span x-text="d.path"></span> &middot;
                                 <span x-text="d.size"></span> &middot;
@@ -746,7 +749,8 @@
                                 <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
                             </div>
                         </div>
-                        <button x-show="d.supported" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                        <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                        <span x-show="d.in_use" class="text-small text-muted">Active — eject below to switch</span>
                         <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
                     </div>
                 </template>

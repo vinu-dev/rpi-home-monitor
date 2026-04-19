@@ -41,6 +41,11 @@ CAMERA_OFFLINE_RED_SECONDS = 60 * 60  # >= 1 h: red
 ERROR_WINDOW_SECONDS = 60 * 60  # "errors in last hour"
 
 RETENTION_SAMPLE_DAYS = 7  # trailing window for write-rate
+# Cache TTL for the retention estimate. Walking the recordings tree is
+# expensive (O(files)) and retention only drifts on the order of hours
+# with typical write rates; 5 minutes is a safe compromise between
+# freshness and dashboard responsiveness.
+RETENTION_CACHE_TTL_SECONDS = 300
 
 # Audit events treated as error-level for the status strip. Kept narrow so a
 # noisy login-failed storm (expected during a password-spray) doesn't flip
@@ -118,6 +123,13 @@ class SystemSummaryService:
         self._recordings = recordings_service
         # Injected so tests can stub host metrics without touching /proc.
         self._health = health_module
+        # Retention estimate walks the entire recordings tree (rglob +
+        # stat per file). That is ~O(thousands of files) and was firing
+        # on every /system/summary call — which the dashboard polls
+        # every 10 s, so each tab switch stalled on the walk. The
+        # walk's result barely moves minute-to-minute, so cache it for
+        # RETENTION_CACHE_TTL seconds and serve stale for that window.
+        self._retention_cache: tuple[float, float | None] | None = None
 
     # -- public API ---------------------------------------------------------
 
@@ -248,7 +260,21 @@ class SystemSummaryService:
 
         Returns None if there is less than a day of data to average against —
         better to show "—" than a confidently wrong number.
+
+        Cached for RETENTION_CACHE_TTL_SECONDS — the filesystem walk is
+        O(files) and the estimate drifts very slowly in practice.
         """
+        now = time.time()
+        if self._retention_cache is not None:
+            cached_at, cached_value = self._retention_cache
+            if now - cached_at < RETENTION_CACHE_TTL_SECONDS:
+                return cached_value
+
+        value = self._compute_retention_days(stats)
+        self._retention_cache = (now, value)
+        return value
+
+    def _compute_retention_days(self, stats: dict) -> float | None:
         rec_dir = stats.get("recordings_dir")
         free_gb = stats.get("free_gb", 0) or 0
         if not rec_dir or free_gb <= 0:
@@ -273,7 +299,6 @@ class SystemSummaryService:
                 if st.st_mtime < earliest:
                     earliest = st.st_mtime
 
-        # Less than ~24 h of sample → refuse to estimate.
         age_hours = (time.time() - earliest) / 3600
         if bytes_in_window <= 0 or age_hours < 24:
             return None

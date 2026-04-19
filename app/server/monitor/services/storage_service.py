@@ -51,8 +51,39 @@ class StorageService:
         return stats, ""
 
     def list_devices(self) -> list[dict]:
-        """List available USB block devices."""
-        return usb.detect_devices()
+        """List available USB block devices.
+
+        Each device carries an ``in_use`` flag so the UI can render an
+        "In use" state instead of a clickable Use button for whichever
+        device is currently backing recordings. The flag is computed by
+        matching the device's mount point against the storage manager's
+        active recordings directory.
+        """
+        devices = usb.detect_devices()
+        active_mount = self._active_mount_path()
+        for d in devices:
+            d["in_use"] = bool(active_mount) and self._device_backs_mount(d, active_mount)
+        return devices
+
+    def _active_mount_path(self) -> str:
+        if not self._storage_manager:
+            return ""
+        rec_dir = getattr(self._storage_manager, "recordings_dir", "")
+        if not isinstance(rec_dir, str) or not rec_dir:
+            return ""
+        # recordings_dir is "<mount>/recordings" when a USB is active
+        # (see usb.prepare_recordings_dir). Strip the recordings suffix
+        # so the comparison is against the mount point itself.
+        if rec_dir.endswith("/recordings"):
+            return rec_dir[: -len("/recordings")]
+        return rec_dir
+
+    @staticmethod
+    def _device_backs_mount(device: dict, active_mount: str) -> bool:
+        # usb.detect_devices() fills in each device's current mountpoint
+        # from lsblk, so an exact match is enough. Only a single device
+        # can be mounted at a given path, so no ambiguity.
+        return bool(device.get("mountpoint")) and device["mountpoint"] == active_mount
 
     def select_device(
         self, device_path: str, user: str = "", ip: str = ""

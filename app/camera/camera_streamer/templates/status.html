@@ -1057,6 +1057,11 @@ function renderOta(s) {
     var err = (s && s.error) || "";
     var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
     $("btn-ota-upload").disabled = busy;
+    // Also lock the file input while busy so a mid-upload click doesn't
+    // open the browser's file picker. Without this the user could
+    // select a different (or the same) file and race the upload that's
+    // already in flight.
+    $("ota-file").disabled = busy;
     $("btn-ota-reboot").hidden = (state !== "installed");
 
     // Version diff row. Show it once the bundle has been staged —
