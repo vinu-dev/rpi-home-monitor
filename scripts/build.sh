@@ -119,12 +119,22 @@ clone_layer "https://github.com/sbabic/meta-swupdate.git" "$YOCTO_DIR/meta-swupd
 
 build_image() {
     local board=$1 builddir=$2 configdir=$3 image=$4
+    # Optional 5th arg: config filename inside config/$configdir/.
+    # Defaults to local.conf (dev). Prod targets pass local.conf.prod,
+    # which `require`s local.conf and overrides SWUPDATE_SIGNING=1.
+    local conf_file=${5:-local.conf}
+    local src_conf="$YOCTO_DIR/config/$configdir/$conf_file"
+    if [ ! -f "$src_conf" ]; then
+        echo "ERROR: config file not found: $src_conf" >&2
+        exit 1
+    fi
 
     echo ""
     echo "============================================"
     echo " Building: $image"
     echo " Board: $board"
     echo " Build dir: $builddir"
+    echo " Config: $conf_file"
     echo " Cores: $NCPU"
     echo "============================================"
     echo ""
@@ -134,7 +144,15 @@ build_image() {
     source "$YOCTO_DIR/poky/oe-init-build-env" "$builddir"
     set -u
 
-    cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
+    cp "$src_conf" "$builddir/conf/local.conf"
+    # local.conf.prod uses `require local.conf` relative to itself. When
+    # we copy it into build/conf/ under the name local.conf we'd end up
+    # self-referencing. Resolve the `require` against the source dir so
+    # the prod override stays loadable from the build tree.
+    if [ "$conf_file" != "local.conf" ]; then
+        sed -i "s|^require local\\.conf$|require $YOCTO_DIR/config/$configdir/local.conf|" \
+            "$builddir/conf/local.conf"
+    fi
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
     stage_local_ota_cert "$configdir" "$builddir"
 
@@ -177,7 +195,7 @@ case "$TARGET" in
         $BUILD_SWU && package_swu server "$YOCTO_DIR/build" "raspberrypi4-64" "home-monitor-image-dev"
         ;;
     server-prod)
-        build_image "RPi 4B" "$YOCTO_DIR/build" "rpi4b" "home-monitor-image-prod"
+        build_image "RPi 4B" "$YOCTO_DIR/build" "rpi4b" "home-monitor-image-prod" "local.conf.prod"
         $BUILD_SWU && package_swu server "$YOCTO_DIR/build" "raspberrypi4-64" "home-monitor-image-prod"
         ;;
     camera-dev|camera)
@@ -185,7 +203,7 @@ case "$TARGET" in
         $BUILD_SWU && package_swu camera "$YOCTO_DIR/build-zero2w" "home-monitor-camera" "home-camera-image-dev"
         ;;
     camera-prod)
-        build_image "RPi Zero 2W" "$YOCTO_DIR/build-zero2w" "zero2w" "home-camera-image-prod"
+        build_image "RPi Zero 2W" "$YOCTO_DIR/build-zero2w" "zero2w" "home-camera-image-prod" "local.conf.prod"
         $BUILD_SWU && package_swu camera "$YOCTO_DIR/build-zero2w" "home-monitor-camera" "home-camera-image-prod"
         ;;
     all-dev|all)
@@ -197,8 +215,8 @@ case "$TARGET" in
         fi
         ;;
     all-prod)
-        build_image "RPi 4B" "$YOCTO_DIR/build" "rpi4b" "home-monitor-image-prod"
-        build_image "RPi Zero 2W" "$YOCTO_DIR/build-zero2w" "zero2w" "home-camera-image-prod"
+        build_image "RPi 4B" "$YOCTO_DIR/build" "rpi4b" "home-monitor-image-prod" "local.conf.prod"
+        build_image "RPi Zero 2W" "$YOCTO_DIR/build-zero2w" "zero2w" "home-camera-image-prod" "local.conf.prod"
         if $BUILD_SWU; then
             package_swu server "$YOCTO_DIR/build" "raspberrypi4-64" "home-monitor-image-prod"
             package_swu camera "$YOCTO_DIR/build-zero2w" "home-monitor-camera" "home-camera-image-prod"

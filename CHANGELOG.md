@@ -2,30 +2,47 @@
 
 All notable changes to RPi Home Monitor are documented here.
 
-## [v1.0.6-dev] — 2026-04-10
+## [Unreleased]
+
+(Nothing yet — next release will land here.)
+
+## [1.2.0] — 2026-04-19
+
+First commercial release. Bundles the OTA production-hardening work
+(signed bundles, dual-transport install, dashboard performance) with
+a round of release-readiness security fixes.
 
 ### Added
-- **Camera password authentication** — Camera status page now requires login with username/password set during provisioning. PBKDF2-SHA256 hashing (100k iterations, random 16-byte salt). Session-based auth with HttpOnly cookies and 2-hour timeout.
-- **Camera setup collects credentials** — First-boot wizard now asks for admin username and password. These protect the camera's status/settings page.
-- **Camera `.local` URL access** — Cameras are reachable via mDNS at `http://rpi-divinu-cam-XXXX.local` (XXXX = last 4 hex of CPU serial). URL shown on:
-  - Camera status page (top of page after login)
-  - Camera setup wizard (in success message after provisioning)
-  - Server dashboard (clickable "Settings" link on each camera card)
-- **Camera system health display** — Status page shows CPU temperature, memory usage, and uptime with color-coded thresholds.
-- **Camera WiFi change** — Authenticated users can change WiFi network and password from the status page.
-- **Camera password change** — Authenticated users can change the camera admin password.
-- **25 new tests** — 8 for password management, 17 for session management, provisioning, and system helpers.
-
-### Fixed
-- **Server settings WiFi card hidden** — Race condition where `auth.getMe()` async call hadn't completed before settings `init()` checked user role. Fixed by awaiting auth before rendering admin sections.
-- **Server settings uptime "[object Object]"** — API returns `{seconds, display}` object; JS was displaying the raw object. Fixed to use `data.uptime.display`.
-- **Server settings disk "0 B"** — API returns `disk.total_gb`; JS was using `data.disk.total` (undefined). Fixed to use `total_gb`/`used_gb`/`free_gb` with correct units.
+- **Production Yocto build targets** — `scripts/build.sh server-prod` and `camera-prod` now consume `config/<board>/local.conf.prod` which `require`s the dev config and flips `SWUPDATE_SIGNING = "1"` (see ADR-0014). Dev paths unchanged.
+- **Pre-upload `.swu` inspection in both GUIs** — browser reads the CPIO header + sw-description text before sending, rejecting unsigned bundles and cross-target bundles (server .swu dropped on the camera card and vice versa) at selection time.
+- **`/etc/sw-versions` stamped at install time** — `post-update.sh` parses the bundle version and writes it into the new slot so the "Current version" UI line reflects what's running, instead of the Yocto-baked `1.0.0`.
+- **`must_change_password` enforced server-side** — flagged sessions get `403 must_change_password: true` from every protected endpoint; allow-list covers password-change, logout, and `/me`.
+- **`requirements.lock`** — exact-version pin file for deterministic server installs (Flask 3.1.3, bcrypt 5.0.0, Jinja2 3.1.6, zeroconf 0.148.0 + transitive pins).
+- **USB "In use" state** — active backing device shows the badge + eject hint instead of a clickable Use button.
+- **`build-swu.sh` post-substitution check** — aborts if any `@@PLACEHOLDER@@` markers survived sed substitution.
+- **Recordings page supports flat-layout clips** — loop-recorder clips (`<cam>/YYYYMMDD_HHMMSS.mp4`) now listable via `get_dates_with_clips`, `list_clips`, `get_clip_path`.
+- **Signed-OTA validation record** — `docs/exec-plans/ota-signing-validation-2026-04-19.md` captures the 6/6 on-hardware tests.
 
 ### Changed
-- **Camera templates extracted** — Inline HTML (login, status, setup pages) moved from `wifi_setup.py` to separate template files in `templates/` directory. Reduces `wifi_setup.py` from 1573 to 976 lines.
-- Camera unique hostname set during first boot via CPU serial suffix for multi-device mDNS support.
+- **OTA bundle staging is atomic** — `shutil.move` swapped for `os.replace` via a per-request temp path. Concurrent uploads against the same filename no longer risk corruption.
+- **`SECRET_KEY` persistence fails loudly** — if `$CONFIG_DIR/.secret_key` can't be written we raise `RuntimeError` rather than returning an ephemeral key that rotates on restart.
+- **Dashboard tab-switching is instant again** — `<video>` elements in Recent Events only materialise after Play click (`x-if`, not `x-show`); `latest_across_cameras` / `recent_across_cameras` cache `rglob` results for 20 s.
+- **Retention estimate cached 5 min** — `_estimate_retention_days` was walking `/data/recordings` every 10 s from the dashboard poll.
 
-## [Unreleased]
+### Fixed
+- `must_change_password` API-bypass (client-side flag only).
+- `SECRET_KEY` silent reset on write failure.
+- `shutil.move` staging race under concurrent OTA uploads.
+- `build-swu.sh` shipping unresolved `@@NAME@@` placeholders on drift.
+- Recordings tab empty when only flat-layout clips exist.
+- Dashboard → live navigation stall (3-minute delay in field testing).
+- USB Storage "Use" button clickable for active device.
+
+### Security
+- CMS/PKCS7 signed `.swu` bundles accepted by server + camera installers (ADR-0014). Unsigned + tampered bundles rejected before any write.
+- `/etc/swupdate-enforce` marker + `-k cert` in `swupdate -c` give dual-defense; missing cert on a signing-enforced image is a hard fail.
+
+## [1.1.0] — 2026-04-13
 
 ### Added
 - **Dual-transport OTA, end-to-end validated** (ADR-0020) — three install paths now work on hardware:
@@ -64,6 +81,26 @@ All notable changes to RPi Home Monitor are documented here.
 - Server and camera systemd services now depend on `sys-subsystem-net-devices-wlan0.device` to ensure WiFi hardware is ready.
 - Server hotspot service has `TimeoutStartSec=90` to allow for WiFi retry loop.
 - Camera setup page server address field defaults to `homemonitor.local` instead of empty.
+
+## [v1.0.6-dev] — 2026-04-10
+
+### Added
+- **Camera password authentication** — Camera status page now requires login with username/password set during provisioning. PBKDF2-SHA256 hashing (100k iterations, random 16-byte salt). Session-based auth with HttpOnly cookies and 2-hour timeout.
+- **Camera setup collects credentials** — First-boot wizard now asks for admin username and password.
+- **Camera `.local` URL access** — Cameras are reachable via mDNS at `http://rpi-divinu-cam-XXXX.local` (XXXX = last 4 hex of CPU serial).
+- **Camera system health display** — Status page shows CPU temperature, memory usage, and uptime with color-coded thresholds.
+- **Camera WiFi change** — Authenticated users can change WiFi network and password from the status page.
+- **Camera password change** — Authenticated users can change the camera admin password.
+- **25 new tests** — 8 for password management, 17 for session management, provisioning, and system helpers.
+
+### Fixed
+- **Server settings WiFi card hidden** — Race condition where `auth.getMe()` async call hadn't completed before settings `init()` checked user role.
+- **Server settings uptime `[object Object]`** — API returns `{seconds, display}` object; JS was displaying the raw object.
+- **Server settings disk "0 B"** — API returns `disk.total_gb`; JS was using `data.disk.total` (undefined).
+
+### Changed
+- **Camera templates extracted** — Inline HTML moved from `wifi_setup.py` to separate template files in `templates/`.
+- Camera unique hostname set during first boot via CPU serial suffix for multi-device mDNS support.
 
 ---
 
