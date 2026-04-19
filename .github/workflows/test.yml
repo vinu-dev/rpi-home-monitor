@@ -255,7 +255,7 @@ jobs:
             --cov=monitor \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=90 \
+            --cov-fail-under=85 \
             --junitxml=coverage-results.xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

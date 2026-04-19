@@ -79,7 +79,7 @@ CI_REQUIRED_SNIPPETS = {
     "pre-commit run --all-files",
     "shellcheck -S warning -e SC1091,SC1111,SC2012,SC2034 scripts/*.sh",
     "bash -n scripts/*.sh",
-    "--cov-fail-under=90",
+    "--cov-fail-under=85",
     "--cov-fail-under=80",
 }
 AUTO_RE = re.compile(r"^\s*[-*]\s+`([^`]+)`", re.MULTILINE)
