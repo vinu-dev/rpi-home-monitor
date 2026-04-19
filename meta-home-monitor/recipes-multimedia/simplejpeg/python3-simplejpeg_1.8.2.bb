@@ -14,6 +14,6 @@ PYPI_PACKAGE = "simplejpeg"
 
 inherit pypi python_setuptools_build_meta
 
-DEPENDS += "jpeg cython-native"
+DEPENDS += "jpeg python3-cython-native"
 
 RDEPENDS:${PN} = "python3-numpy libjpeg-turbo"
