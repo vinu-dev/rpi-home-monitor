@@ -60,32 +60,34 @@ class StorageService:
         active recordings directory.
         """
         devices = usb.detect_devices()
-        active_mount = self._active_mount_path()
+        rec_dir = self._active_recordings_dir()
         for d in devices:
-            d["in_use"] = bool(active_mount) and self._device_backs_mount(
-                d, active_mount
-            )
+            d["in_use"] = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
         return devices
 
-    def _active_mount_path(self) -> str:
+    def _active_recordings_dir(self) -> str:
         if not self._storage_manager:
             return ""
         rec_dir = getattr(self._storage_manager, "recordings_dir", "")
         if not isinstance(rec_dir, str) or not rec_dir:
             return ""
-        # recordings_dir is "<mount>/recordings" when a USB is active
-        # (see usb.prepare_recordings_dir). Strip the recordings suffix
-        # so the comparison is against the mount point itself.
-        if rec_dir.endswith("/recordings"):
-            return rec_dir[: -len("/recordings")]
         return rec_dir
 
     @staticmethod
-    def _device_backs_mount(device: dict, active_mount: str) -> bool:
-        # usb.detect_devices() fills in each device's current mountpoint
-        # from lsblk, so an exact match is enough. Only a single device
-        # can be mounted at a given path, so no ambiguity.
-        return bool(device.get("mountpoint")) and device["mountpoint"] == active_mount
+    def _device_backs_dir(device: dict, rec_dir: str) -> bool:
+        # A device "backs" the recordings dir when its mountpoint is a
+        # parent of rec_dir (or equal to it). Parent-prefix (not suffix-
+        # strip) is the right check because the on-disk layout under
+        # the mount is free-form — e.g. /mnt/recordings/home-monitor-
+        # recordings, not always /mnt/recordings/recordings. Comparing
+        # only the suffix produced false negatives that left the "Use"
+        # button clickable on the active device.
+        mp = device.get("mountpoint") or ""
+        if not mp:
+            return False
+        if rec_dir == mp:
+            return True
+        return rec_dir.startswith(mp.rstrip("/") + "/")
 
     def select_device(
         self, device_path: str, user: str = "", ip: str = ""
