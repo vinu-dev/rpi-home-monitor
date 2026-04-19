@@ -112,21 +112,28 @@ echo "    Rootfs: $ROOTFS"
 echo "    Target partition: resolved on device via /dev/monitor_standby"
 echo "    Working dir: $WORK_DIR"
 
-# 1. Generate sw-description from template
+# 1. Copy payloads first so we can hash them before stamping
+#    sw-description. SWUpdate built with CONFIG_SIGNED_IMAGES requires
+#    every image and shellscript entry to declare a sha256 that it
+#    verifies on the device against the actual bytes it receives.
+#    Without it the daemon aborts with "Hash not set for rootfs.ext4.gz".
+cp "$SWU_TEMPLATES/post-update.sh" "$WORK_DIR/post-update.sh"
+chmod +x "$WORK_DIR/post-update.sh"
+cp "$ROOTFS" "$WORK_DIR/rootfs.ext4.gz"
+
+ROOTFS_SHA256=$(sha256sum "$WORK_DIR/rootfs.ext4.gz" | awk '{print $1}')
+POST_UPDATE_SHA256=$(sha256sum "$WORK_DIR/post-update.sh" | awk '{print $1}')
+
+# 2. Generate sw-description from template, substituting version + hashes
 sed -e "s|@@VERSION@@|$VERSION|g" \
+    -e "s|@@ROOTFS_SHA256@@|$ROOTFS_SHA256|g" \
+    -e "s|@@POST_UPDATE_SHA256@@|$POST_UPDATE_SHA256|g" \
     "$SW_DESC_TEMPLATE" > "$WORK_DIR/sw-description"
 
 echo ">>> sw-description:"
 cat "$WORK_DIR/sw-description"
 
-# 2. Copy post-update script
-cp "$SWU_TEMPLATES/post-update.sh" "$WORK_DIR/post-update.sh"
-chmod +x "$WORK_DIR/post-update.sh"
-
-# 3. Copy rootfs (renamed to match sw-description)
-cp "$ROOTFS" "$WORK_DIR/rootfs.ext4.gz"
-
-# 4. Sign sw-description if requested (CMS/PKCS7 for SWUpdate)
+# 3. Sign sw-description if requested (CMS/PKCS7 for SWUpdate)
 if [ "$SIGN" = true ]; then
     if [ ! -f "$SIGNING_KEY" ]; then
         echo ">>> Keys not found. Run './scripts/generate-ota-keys.sh' first."
