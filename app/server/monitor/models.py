@@ -100,6 +100,13 @@ class Settings:
     # and stops deleting once free space reaches low + hysteresis.
     loop_low_watermark_percent: int = 10
     loop_hysteresis_percent: int = 5
+    # Motion detection (docs/exec-plans/motion-detection.md §Phase 4).
+    # When recording_mode="motion" on a camera, the RecordingScheduler
+    # keeps the recorder running for this many seconds after the last
+    # motion event ends — so the saved clip includes the tail of the
+    # scene (the person walking out of frame, the gate closing, etc.).
+    # Bump up for "I want 30 s of aftermath"; shrink to trim storage.
+    motion_post_roll_seconds: int = 10
 
 
 @dataclass

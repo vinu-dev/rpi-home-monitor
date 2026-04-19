@@ -198,6 +198,8 @@ def _load_persisted_settings(app, explicit_config_keys=None):
         app.config["STORAGE_THRESHOLD_PERCENT"] = settings.storage_threshold_percent
     if "SESSION_TIMEOUT_MINUTES" not in explicit_config_keys:
         app.config["SESSION_TIMEOUT_MINUTES"] = settings.session_timeout_minutes
+    if "MOTION_POST_ROLL_SECONDS" not in explicit_config_keys:
+        app.config["MOTION_POST_ROLL_SECONDS"] = settings.motion_post_roll_seconds
 
     app.storage_manager.set_threshold_percent(app.config["STORAGE_THRESHOLD_PERCENT"])
 
@@ -325,6 +327,8 @@ def _init_services(app):
         streaming=app.streaming,
         control_client=app.camera_control_client,
         coordinator=app.on_demand_coordinator,
+        motion_event_store=app.motion_event_store,
+        motion_post_roll_seconds=app.config.get("MOTION_POST_ROLL_SECONDS", 10.0),
     )
     app.loop_recorder = LoopRecorder(
         base_dir=app.config["RECORDINGS_DIR"],

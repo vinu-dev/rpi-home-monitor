@@ -20,6 +20,7 @@ import os
 import tempfile
 import threading
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 from monitor.models import MotionEvent
@@ -28,6 +29,17 @@ log = logging.getLogger("monitor.motion_event_store")
 
 MAX_EVENTS = 5000
 COMPACT_DROP_FRACTION = 0.10  # when at cap, drop oldest 10 %
+
+
+def _parse_iso_z(iso: str) -> datetime | None:
+    """Parse an ISO-8601 ``...Z`` timestamp into a UTC-aware datetime."""
+    if not iso:
+        return None
+    try:
+        normalised = iso.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalised).astimezone(UTC)
+    except (ValueError, TypeError):
+        return None
 
 
 class MotionEventStore:
@@ -103,6 +115,53 @@ class MotionEventStore:
     def count(self) -> int:
         with self._lock:
             return len(self._events)
+
+    def is_camera_active(
+        self,
+        camera_id: str,
+        post_roll_seconds: float = 10.0,
+        now: datetime | None = None,
+    ) -> bool:
+        """True iff the camera is currently in a motion window.
+
+        Definition of "in a window":
+          * Any event for this camera with ``ended_at is None`` (the start
+            has arrived but the end hasn't) → in progress.
+          * Any event whose ``ended_at`` is within ``post_roll_seconds`` of
+            ``now`` → still in the post-roll grace period.
+
+        Used by ``RecordingScheduler`` to decide whether motion-mode
+        cameras should have their recorder running this tick. See
+        docs/exec-plans/motion-detection.md §Phase 4.
+
+        Args:
+            camera_id: Which camera to test.
+            post_roll_seconds: How long after the last event end to keep
+                the window open. Lets the recorder keep going for a few
+                seconds after the motion actually stopped, so the saved
+                clip contains the aftermath the user wants to see.
+            now: Injectable clock for tests. Defaults to
+                ``datetime.now(UTC)``.
+        """
+        ref = now or datetime.now(UTC)
+        with self._lock:
+            # Scan tail-first — the most recent event is almost always
+            # the relevant one for "is this camera active now?".
+            for evt in reversed(self._events):
+                if evt.camera_id != camera_id:
+                    continue
+                if evt.ended_at is None or evt.ended_at == "":
+                    # Start-only event with no end yet: in progress.
+                    return True
+                end_dt = _parse_iso_z(evt.ended_at)
+                if end_dt is None:
+                    continue
+                # Events are inserted in chronological order; once we
+                # find an event for this camera whose end is older than
+                # the post-roll window, no earlier event can satisfy the
+                # check either — return directly rather than keep looping.
+                return (ref - end_dt).total_seconds() <= post_roll_seconds
+        return False
 
     # --- Internals --------------------------------------------------------
 

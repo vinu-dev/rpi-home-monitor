@@ -184,6 +184,101 @@ class TestLoadCorruption:
         assert store.count() == 2
 
 
+class TestIsCameraActive:
+    """RecordingScheduler consults this to decide if motion-mode cameras
+    should be recording. Truth table: {no events, in-progress, recent end,
+    old end, other camera}."""
+
+    def _evt(self, store_path, idx, camera_id, ended_at):
+        from monitor.services.motion_event_store import MotionEventStore
+
+        store = MotionEventStore(store_path)
+        evt = _make_event(idx, camera_id=camera_id)
+        evt.ended_at = ended_at
+        store.append(evt)
+        return store
+
+    def test_empty_store_returns_false(self, store_path):
+        from monitor.services.motion_event_store import MotionEventStore
+
+        store = MotionEventStore(store_path)
+        assert store.is_camera_active("cam-001") is False
+
+    def test_in_progress_event_returns_true(self, store_path):
+        """Event with ``ended_at=None`` — start arrived, end not yet."""
+        store = self._evt(store_path, 1, "cam-001", ended_at=None)
+        assert store.is_camera_active("cam-001") is True
+
+    def test_recent_end_within_post_roll_returns_true(self, store_path):
+        from datetime import UTC, datetime, timedelta
+
+        from monitor.services.motion_event_store import MotionEventStore
+
+        # Event ended 5 s ago relative to our injected ``now``.
+        now = datetime(2026, 4, 19, 14, 0, 30, tzinfo=UTC)
+        ended = (now - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        store = MotionEventStore(store_path)
+        evt = _make_event(1, camera_id="cam-001")
+        evt.ended_at = ended
+        store.append(evt)
+
+        assert (
+            store.is_camera_active("cam-001", post_roll_seconds=10.0, now=now) is True
+        )
+
+    def test_old_end_outside_post_roll_returns_false(self, store_path):
+        from datetime import UTC, datetime, timedelta
+
+        from monitor.services.motion_event_store import MotionEventStore
+
+        # Event ended 30 s ago; post-roll is 10 s.
+        now = datetime(2026, 4, 19, 14, 0, 30, tzinfo=UTC)
+        ended = (now - timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        store = MotionEventStore(store_path)
+        evt = _make_event(1, camera_id="cam-001")
+        evt.ended_at = ended
+        store.append(evt)
+
+        assert (
+            store.is_camera_active("cam-001", post_roll_seconds=10.0, now=now) is False
+        )
+
+    def test_different_camera_ignored(self, store_path):
+        """Active event on cam-001 must not make cam-002 look active."""
+        store = self._evt(store_path, 1, "cam-001", ended_at=None)
+        assert store.is_camera_active("cam-002") is False
+
+    def test_malformed_ended_at_is_skipped(self, store_path):
+        """Garbage timestamp must not crash the scheduler tick."""
+        from monitor.services.motion_event_store import MotionEventStore
+
+        store = MotionEventStore(store_path)
+        evt = _make_event(1, camera_id="cam-001")
+        evt.ended_at = "not-a-timestamp"
+        store.append(evt)
+
+        # Unparseable end → treated as "can't confirm active".
+        assert store.is_camera_active("cam-001") is False
+
+    def test_most_recent_event_wins(self, store_path):
+        """Old ended event in store but a newer in-progress one → active."""
+        from monitor.services.motion_event_store import MotionEventStore
+
+        store = MotionEventStore(store_path)
+
+        # Older event: ended long ago.
+        old = _make_event(1, camera_id="cam-001")
+        old.ended_at = "2020-01-01T00:00:00Z"
+        store.append(old)
+
+        # Newer event: still in progress.
+        fresh = _make_event(2, camera_id="cam-001")
+        fresh.ended_at = None
+        store.append(fresh)
+
+        assert store.is_camera_active("cam-001") is True
+
+
 class TestAtomicWrite:
     def test_write_does_not_leave_tempfiles(self, store_path):
         store = MotionEventStore(store_path)
