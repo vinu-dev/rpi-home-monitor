@@ -6,6 +6,24 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.2.1] — 2026-04-19
+
+Quality-and-polish patch. No API changes, no migration needed.
+
+### Fixed
+- **Dashboard Recent events too long** ([#82](https://github.com/vinu-dev/rpi-home-monitor/pull/82)) — the feed rendered 8 rows, filling the viewport and making the dashboard feel like a recordings page in miniature. Dropped to 3 rows; header "All recordings →" link is the path to the full timeline.
+- **Dashboard Recent activity silently empty** ([#82](https://github.com/vinu-dev/rpi-home-monitor/pull/82)) — the x-show gate `auditAdmin && auditEvents.length > 0` collapsed the section during the render tick when `auditEvents` was an empty array (initial state before the async fetch resolved). Gated on `auditAdmin` alone now, with an explicit "No recent activity yet." empty state when the list is genuinely empty.
+- **WHEP proxy `AttributeError` on headerless `HTTPError`** ([#81](https://github.com/vinu-dev/rpi-home-monitor/pull/81)) — `api/webrtc.py` used `hasattr(e, "headers")` which returns True even when `e.headers is None`. Switched to `if e.headers is not None`.
+- **`subprocess` import in `api/ota.py`** ([#81](https://github.com/vinu-dev/rpi-home-monitor/pull/81)) — architecture fitness tests flagged the API layer calling `subprocess.run` directly. Moved reboot scheduling to `OTAService.schedule_reboot()`; same delay, same thread name, same behaviour.
+
+### Added
+- **World-class test suite** ([#81](https://github.com/vinu-dev/rpi-home-monitor/pull/81)) — 1585 server tests + 555 camera tests (was ~1280 server). 86 → 87.8% server coverage. Adds architecture fitness tests (AST rules for CSRF on mutating routes, M2M HMAC, Store-import layering), property-based tests via Hypothesis for auth + crypto, Playwright regression journeys, and mutation testing (gated behind `vars.RUN_SERVER_MUTATION`).
+- **Unified `logged_in_client` fixture** ([#81](https://github.com/vinu-dev/rpi-home-monitor/pull/81)) — replaces 13 duplicate `_login` helpers across the integration suite.
+
+### Known follow-up
+- Schemathesis fuzzing exposed ~33 pre-existing OpenAPI-vs-implementation gaps in the API contract. Reverted fuzzing to `examples` phase for v1.2.1; full fix tracked for a later contract-hardening PR.
+- `browser-e2e-full` job pulled — journey specs written without a live seeded server had guessed selectors. Smoke project still runs.
+
 ## [1.2.0] — 2026-04-19
 
 First commercial release. Bundles the OTA production-hardening work
