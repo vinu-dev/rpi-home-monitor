@@ -267,6 +267,11 @@ jobs:
 
   server-mutation:
     name: Server Mutation
+    # Skipped by default — mutmut runs sequentially and each mutant triggers a
+    # full pytest suite, so even a small paths_to_mutate surface can take
+    # 30–60+ min. Re-enable by setting `vars.RUN_SERVER_MUTATION == 'true'` at
+    # the repo/org level, or running the workflow manually once tooling parallelizes.
+    if: ${{ vars.RUN_SERVER_MUTATION == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
