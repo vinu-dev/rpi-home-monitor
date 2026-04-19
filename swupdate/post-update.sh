@@ -82,6 +82,27 @@ carry_network_state() {
         cp -a /etc/hostname "$MNT/etc/hostname" 2>/dev/null || true
     fi
 
+    # Stamp the new rootfs's /etc/sw-versions with the bundle's
+    # version. Without this the UI's "Current version" line stays
+    # "1.0.0" forever — the Yocto sw-versions recipe bakes that
+    # string at build time and nobody else updates it. SWUpdate
+    # unpacks sw-description to /tmp/sw-description before invoking
+    # handler scripts, so we can parse the `version = "..."` line
+    # from there. Preserve whatever component name the image shipped
+    # with (typically "home-monitor" or "home-monitor-camera") and
+    # rewrite only the version column.
+    NEW_VERSION=""
+    if [ -f /tmp/sw-description ]; then
+        NEW_VERSION=$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
+            /tmp/sw-description 2>/dev/null | head -n 1)
+    fi
+    if [ -n "$NEW_VERSION" ] && [ -f "$MNT/etc/sw-versions" ]; then
+        COMPONENT=$(awk 'NR==1 {print $1; exit}' "$MNT/etc/sw-versions" 2>/dev/null)
+        COMPONENT=${COMPONENT:-home-monitor}
+        printf '%s %s\n' "$COMPONENT" "$NEW_VERSION" > "$MNT/etc/sw-versions"
+        echo "Stamped /etc/sw-versions on new slot: $COMPONENT $NEW_VERSION"
+    fi
+
     # /etc/machine-id is intentionally NOT carried: systemd regenerates
     # it on first boot of a fresh rootfs and carrying it can confuse
     # journald / DHCP client identity.
