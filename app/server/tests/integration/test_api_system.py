@@ -109,7 +109,10 @@ class TestTailscaleEndpoints:
 
     def test_connect_returns_auth_url(self, app, logged_in_client):
         app.tailscale_service = MagicMock()
-        app.tailscale_service.connect.return_value = ("https://login.tailscale.com/a/xxx", None)
+        app.tailscale_service.connect.return_value = (
+            "https://login.tailscale.com/a/xxx",
+            None,
+        )
         client = logged_in_client()
         resp = client.post("/api/v1/system/tailscale/connect")
         assert resp.status_code == 200
@@ -198,7 +201,9 @@ class TestFactoryReset:
     def test_requires_auth(self, client):
         assert client.post("/api/v1/system/factory-reset").status_code == 401
 
-    @patch("monitor.services.factory_reset_service.FactoryResetService._schedule_restart")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
     @patch("monitor.services.factory_reset_service.FactoryResetService._clear_wifi")
     def test_reset_succeeds(self, mock_wifi, mock_restart, app, logged_in_client):
         client = logged_in_client()
@@ -206,10 +211,13 @@ class TestFactoryReset:
         assert resp.status_code == 200
         assert "reset" in resp.get_json()["message"].lower()
 
-    @patch("monitor.services.factory_reset_service.FactoryResetService._schedule_restart")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
     @patch("monitor.services.factory_reset_service.FactoryResetService._clear_wifi")
     def test_keep_recordings_flag(self, mock_wifi, mock_restart, app, logged_in_client):
         import os
+
         rec_dir = app.config["RECORDINGS_DIR"]
         os.makedirs(rec_dir, exist_ok=True)
         marker = os.path.join(rec_dir, "cam-001", "2026-04-01", "08-00-00.mp4")
@@ -218,16 +226,21 @@ class TestFactoryReset:
             f.write("fake")
 
         client = logged_in_client()
-        resp = client.post("/api/v1/system/factory-reset",
-                           json={"keep_recordings": True})
+        resp = client.post(
+            "/api/v1/system/factory-reset", json={"keep_recordings": True}
+        )
         assert resp.status_code == 200
         # Recordings directory must still exist
         assert os.path.isfile(marker)
 
-    @patch("monitor.services.factory_reset_service.FactoryResetService._schedule_restart")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
     @patch("monitor.services.factory_reset_service.FactoryResetService._clear_wifi")
     @patch("monitor.services.factory_reset_service.FactoryResetService._log_audit")
-    def test_factory_reset_logged(self, mock_log, mock_wifi, mock_restart, app, logged_in_client):
+    def test_factory_reset_logged(
+        self, mock_log, mock_wifi, mock_restart, app, logged_in_client
+    ):
         client = logged_in_client()
         resp = client.post("/api/v1/system/factory-reset")
         assert resp.status_code == 200

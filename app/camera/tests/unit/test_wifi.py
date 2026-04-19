@@ -1,12 +1,9 @@
 """Unit tests for camera_streamer.wifi — all nmcli calls are mocked."""
 
 import subprocess
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from camera_streamer.wifi import (
-    HOTSPOT_CONN_NAME,
     HOTSPOT_PASS,
     HOTSPOT_SSID,
     connect_network,
@@ -20,7 +17,6 @@ from camera_streamer.wifi import (
     wait_for_interface,
 )
 
-
 # ===========================================================================
 # scan_networks
 # ===========================================================================
@@ -33,7 +29,9 @@ class TestScanNetworks:
             stdout="HomeWifi:85:WPA2\nCoffeeShop:60:WPA2\nOpenNet:40:\n",
             returncode=0,
         )
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 networks = scan_networks("wlan0")
         assert len(networks) == 3
@@ -47,7 +45,9 @@ class TestScanNetworks:
             stdout="Weak:20:WPA2\nStrong:90:WPA2\nMid:55:WPA2\n",
             returncode=0,
         )
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 networks = scan_networks()
         assert networks[0]["signal"] == 90
@@ -59,7 +59,9 @@ class TestScanNetworks:
             stdout="HomeWifi:85:WPA2\nHomeWifi:80:WPA2\n",
             returncode=0,
         )
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 networks = scan_networks()
         assert len(networks) == 1
@@ -71,13 +73,18 @@ class TestScanNetworks:
             stdout=":85:WPA2\nGoodNet:70:WPA2\n",
             returncode=0,
         )
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 networks = scan_networks()
         assert all(n["ssid"] != "" for n in networks)
 
     def test_returns_empty_list_on_exception(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=Exception("nmcli not found")):
+        with patch(
+            "camera_streamer.wifi.subprocess.run",
+            side_effect=Exception("nmcli not found"),
+        ):
             networks = scan_networks()
         assert networks == []
 
@@ -87,7 +94,9 @@ class TestScanNetworks:
             stdout="Flaky:N/A:WPA2\n",
             returncode=0,
         )
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=[mock_rescan, mock_list]
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 networks = scan_networks()
         assert networks[0]["signal"] == 0
@@ -107,27 +116,38 @@ class TestConnectNetwork:
         assert err == ""
 
     def test_returns_false_on_nonzero_returncode(self):
-        mock_run = MagicMock(returncode=1, stdout="", stderr="Error: No network with SSID 'HomeWifi' found.")
+        mock_run = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="Error: No network with SSID 'HomeWifi' found.",
+        )
         with patch("camera_streamer.wifi.subprocess.run", return_value=mock_run):
             ok, err = connect_network("HomeWifi", "wrong")
         assert ok is False
         assert "No network" in err
 
     def test_returns_false_on_timeout(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=subprocess.TimeoutExpired("nmcli", 30)):
+        with patch(
+            "camera_streamer.wifi.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("nmcli", 30),
+        ):
             ok, err = connect_network("HomeWifi", "pass")
         assert ok is False
         assert "timed out" in err.lower()
 
     def test_returns_false_on_unexpected_exception(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=OSError("no such file")):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=OSError("no such file")
+        ):
             ok, err = connect_network("HomeWifi", "pass")
         assert ok is False
         assert err != ""
 
     def test_passes_interface_to_nmcli(self):
         mock_run = MagicMock(returncode=0, stdout="", stderr="")
-        with patch("camera_streamer.wifi.subprocess.run", return_value=mock_run) as mock:
+        with patch(
+            "camera_streamer.wifi.subprocess.run", return_value=mock_run
+        ) as mock:
             connect_network("Net", "pass", wifi_interface="wlan1")
         cmd = mock.call_args[0][0]
         assert "wlan1" in cmd
@@ -159,13 +179,18 @@ class TestWaitForInterface:
     def test_retries_until_success(self):
         not_ready = MagicMock(stdout="eth0:ethernet\n", returncode=0)
         ready = MagicMock(stdout="wlan0:wifi\n", returncode=0)
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=[not_ready, not_ready, ready]):
+        with patch(
+            "camera_streamer.wifi.subprocess.run",
+            side_effect=[not_ready, not_ready, ready],
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 result = wait_for_interface("wlan0", max_wait=10)
         assert result is True
 
     def test_exception_in_nmcli_does_not_crash(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=Exception("nmcli gone")):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=Exception("nmcli gone")
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 result = wait_for_interface("wlan0", max_wait=2)
         assert result is False
@@ -186,7 +211,9 @@ class TestStartHotspot:
         return [ready, delete, add, up]
 
     def test_returns_true_on_success(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=self._mock_success()):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", side_effect=self._mock_success()
+        ):
             with patch("camera_streamer.wifi.time.sleep"):
                 result = start_hotspot("wlan0")
         assert result is True
@@ -197,7 +224,7 @@ class TestStartHotspot:
         assert result is False
 
     def test_returns_false_on_add_failure(self):
-        ready = MagicMock(stdout="wlan0:wifi\n", returncode=0)
+        MagicMock(stdout="wlan0:wifi\n", returncode=0)
         delete = MagicMock(returncode=0)
         with patch("camera_streamer.wifi.wait_for_interface", return_value=True):
             with patch(
@@ -218,15 +245,17 @@ class TestStartHotspot:
         assert HOTSPOT_PASS in combined
 
     def test_retries_activation_on_failure(self):
-        fail = MagicMock(side_effect=subprocess.CalledProcessError(1, "nmcli", stderr="busy"))
-        success = MagicMock(returncode=0, stdout="", stderr="")
+        MagicMock(side_effect=subprocess.CalledProcessError(1, "nmcli", stderr="busy"))
+        MagicMock(returncode=0, stdout="", stderr="")
         with patch("camera_streamer.wifi.wait_for_interface", return_value=True):
             with patch("camera_streamer.wifi.subprocess.run") as mock_run:
                 # delete, add succeed; up fails once then succeeds
                 mock_run.side_effect = [
                     MagicMock(returncode=0),  # delete
                     MagicMock(returncode=0),  # add
-                    subprocess.CalledProcessError(1, "nmcli", stderr="busy".encode()),  # up fail
+                    subprocess.CalledProcessError(
+                        1, "nmcli", stderr=b"busy"
+                    ),  # up fail
                     MagicMock(returncode=0),  # up success
                 ]
                 with patch("camera_streamer.wifi.time.sleep"):
@@ -317,26 +346,39 @@ class TestGetHostname:
 
 class TestSetHostname:
     def test_returns_true_on_success(self, tmp_path):
-        with patch("camera_streamer.wifi.subprocess.run", return_value=MagicMock(returncode=0)):
+        with patch(
+            "camera_streamer.wifi.subprocess.run", return_value=MagicMock(returncode=0)
+        ):
             with patch("camera_streamer.wifi.os.makedirs"):
-                with patch("builtins.open", MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock()), __exit__=MagicMock(return_value=False)))):
+                with patch(
+                    "builtins.open",
+                    MagicMock(
+                        return_value=MagicMock(
+                            __enter__=MagicMock(return_value=MagicMock()),
+                            __exit__=MagicMock(return_value=False),
+                        )
+                    ),
+                ):
                     result = set_hostname("homecam-new")
         assert result is True
 
     def test_returns_false_on_exception(self):
-        with patch("camera_streamer.wifi.subprocess.run", side_effect=Exception("no hostname binary")):
+        with patch(
+            "camera_streamer.wifi.subprocess.run",
+            side_effect=Exception("no hostname binary"),
+        ):
             result = set_hostname("homecam-new")
         assert result is False
 
     def test_persists_hostname_to_data_dir(self, tmp_path):
         """Hostname is written to /data/config/hostname for reboot persistence."""
-        hostname_file = tmp_path / "config" / "hostname"
+        tmp_path / "config" / "hostname"
 
         def fake_run(cmd, **kwargs):
             return MagicMock(returncode=0)
 
         with patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run):
-            with patch("camera_streamer.wifi.os.makedirs") as mock_makedirs:
+            with patch("camera_streamer.wifi.os.makedirs"):
                 with patch("builtins.open", MagicMock()) as mock_open:
                     set_hostname("test-cam")
         # Verify we tried to open the persistence file path

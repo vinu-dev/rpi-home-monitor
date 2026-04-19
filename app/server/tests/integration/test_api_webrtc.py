@@ -15,9 +15,6 @@ import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-
 # ===========================================================================
 # Auth enforcement
 # ===========================================================================
@@ -43,7 +40,12 @@ class TestAuthEnforcement:
         mock_resp = MagicMock()
         mock_resp.read.return_value = b'{"type":"answer","sdp":"..."}'
         mock_resp.status = 201
-        mock_resp.headers = {"Content-Type": "application/sdp", "ETag": None, "Location": None, "Link": None}
+        mock_resp.headers = {
+            "Content-Type": "application/sdp",
+            "ETag": None,
+            "Location": None,
+            "Link": None,
+        }
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
@@ -95,7 +97,12 @@ class TestCORSPreflight:
 
 def _mock_upstream(status=201, body=b"", headers=None):
     """Build a mock urllib response context manager."""
-    h = {"Content-Type": "application/sdp", "ETag": None, "Location": None, "Link": None}
+    h = {
+        "Content-Type": "application/sdp",
+        "ETag": None,
+        "Location": None,
+        "Link": None,
+    }
     if headers:
         h.update(headers)
     resp = MagicMock()
@@ -116,8 +123,14 @@ class TestProxyForwarding:
             captured.append(req)
             return _mock_upstream()
 
-        with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen):
-            client.post("/api/v1/webrtc/stream/whep", data=b"SDP_OFFER", content_type="application/sdp")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen
+        ):
+            client.post(
+                "/api/v1/webrtc/stream/whep",
+                data=b"SDP_OFFER",
+                content_type="application/sdp",
+            )
 
         assert len(captured) == 1
         assert captured[0].data == b"SDP_OFFER"
@@ -130,8 +143,14 @@ class TestProxyForwarding:
             captured.append(req)
             return _mock_upstream()
 
-        with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen):
-            client.post("/api/v1/webrtc/my-camera/whep", data=b"", content_type="application/sdp")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen
+        ):
+            client.post(
+                "/api/v1/webrtc/my-camera/whep",
+                data=b"",
+                content_type="application/sdp",
+            )
 
         assert "my-camera/whep" in captured[0].full_url
 
@@ -142,17 +161,25 @@ class TestProxyForwarding:
             headers={"Location": "http://127.0.0.1:8889/my-camera/whep/session/abc"},
         )
         with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=upstream):
-            resp = client.post("/api/v1/webrtc/my-camera/whep", data=b"", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/my-camera/whep",
+                data=b"",
+                content_type="application/sdp",
+            )
 
         location = resp.headers.get("Location", "")
-        assert "127.0.0.1:8889" not in location, "Internal MediaMTX URL leaked in Location header"
+        assert "127.0.0.1:8889" not in location, (
+            "Internal MediaMTX URL leaked in Location header"
+        )
         assert location.startswith("/webrtc/"), f"Location not rewritten: {location}"
 
     def test_etag_forwarded(self, logged_in_client):
         client = logged_in_client()
         upstream = _mock_upstream(headers={"ETag": '"abc123"'})
         with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=upstream):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp"
+            )
         assert resp.headers.get("ETag") == '"abc123"'
 
     def test_patch_method_forwarded(self, logged_in_client):
@@ -163,8 +190,14 @@ class TestProxyForwarding:
             captured.append(req)
             return _mock_upstream(status=200)
 
-        with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen):
-            resp = client.patch("/api/v1/webrtc/stream/whep/session/1", data=b"ice", content_type="application/trickle-ice-sdpfrag")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen
+        ):
+            client.patch(
+                "/api/v1/webrtc/stream/whep/session/1",
+                data=b"ice",
+                content_type="application/trickle-ice-sdpfrag",
+            )
 
         assert captured[0].method == "PATCH"
 
@@ -176,8 +209,10 @@ class TestProxyForwarding:
             captured.append(req)
             return _mock_upstream(status=200)
 
-        with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen):
-            resp = client.delete("/api/v1/webrtc/stream/whep/session/1")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", side_effect=fake_urlopen
+        ):
+            client.delete("/api/v1/webrtc/stream/whep/session/1")
 
         assert captured[0].method == "DELETE"
 
@@ -198,7 +233,9 @@ class TestMediaMTXErrorForwarding:
             fp=None,
         )
         with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=err):
-            resp = client.post("/api/v1/webrtc/unknown/whep", data=b"", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/unknown/whep", data=b"", content_type="application/sdp"
+            )
         assert resp.status_code == 404
 
     def test_422_from_mediamtx_forwarded(self, logged_in_client):
@@ -211,7 +248,11 @@ class TestMediaMTXErrorForwarding:
             fp=None,
         )
         with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=err):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"bad sdp", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep",
+                data=b"bad sdp",
+                content_type="application/sdp",
+            )
         assert resp.status_code == 422
 
     def test_mediamtx_unreachable_returns_502(self, logged_in_client):
@@ -220,7 +261,9 @@ class TestMediaMTXErrorForwarding:
             "monitor.api.webrtc.urllib.request.urlopen",
             side_effect=urllib.error.URLError("Connection refused"),
         ):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp"
+            )
         assert resp.status_code == 502
 
     def test_oserror_returns_502(self, logged_in_client):
@@ -229,7 +272,9 @@ class TestMediaMTXErrorForwarding:
             "monitor.api.webrtc.urllib.request.urlopen",
             side_effect=OSError("connection reset"),
         ):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp")
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp"
+            )
         assert resp.status_code == 502
 
     def test_http_error_with_content_type_header_forwarded(self, logged_in_client):
@@ -246,7 +291,9 @@ class TestMediaMTXErrorForwarding:
         )
         with patch("monitor.api.webrtc.urllib.request.urlopen", side_effect=err):
             resp = client.post(
-                "/api/v1/webrtc/stream/whep", data=b"bad", content_type="application/sdp"
+                "/api/v1/webrtc/stream/whep",
+                data=b"bad",
+                content_type="application/sdp",
             )
         assert resp.status_code == 400
         assert resp.content_type.startswith("application/json")
@@ -260,14 +307,22 @@ class TestMediaMTXErrorForwarding:
 class TestCORSOnProxyResponses:
     def test_access_control_allow_origin_present(self, logged_in_client):
         client = logged_in_client()
-        with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=_mock_upstream()):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", return_value=_mock_upstream()
+        ):
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp"
+            )
         assert "Access-Control-Allow-Origin" in resp.headers
 
     def test_expose_headers_present_on_proxy_response(self, logged_in_client):
         client = logged_in_client()
-        with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=_mock_upstream()):
-            resp = client.post("/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp")
+        with patch(
+            "monitor.api.webrtc.urllib.request.urlopen", return_value=_mock_upstream()
+        ):
+            resp = client.post(
+                "/api/v1/webrtc/stream/whep", data=b"", content_type="application/sdp"
+            )
         expose = resp.headers.get("Access-Control-Expose-Headers", "")
         assert "ETag" in expose
         assert "Location" in expose

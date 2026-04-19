@@ -10,7 +10,7 @@ Properties under test:
   - _hkdf_expand: honours requested length.
 """
 
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from camera_streamer.encryption import (

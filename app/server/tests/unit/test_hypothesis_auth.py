@@ -12,9 +12,7 @@ Properties under test:
 """
 
 import time
-from unittest.mock import patch
 
-import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -29,7 +27,6 @@ from monitor.auth import (
     hash_password,
 )
 
-
 # ---------------------------------------------------------------------------
 # Strategies
 # ---------------------------------------------------------------------------
@@ -42,9 +39,7 @@ _passwords = st.text(
 )
 
 # Distinct password pairs: (correct, wrong) where wrong != correct
-_password_pairs = st.tuples(_passwords, _passwords).filter(
-    lambda p: p[0] != p[1]
-)
+_password_pairs = st.tuples(_passwords, _passwords).filter(lambda p: p[0] != p[1])
 
 
 # ---------------------------------------------------------------------------
@@ -54,14 +49,18 @@ _password_pairs = st.tuples(_passwords, _passwords).filter(
 
 class TestPasswordHashing:
     @given(password=_passwords)
-    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @settings(
+        max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    )
     def test_correct_password_always_passes(self, password):
         """hash → check with the same password must always return True."""
         h = hash_password(password)
         assert check_password(password, h) is True
 
     @given(pair=_password_pairs)
-    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @settings(
+        max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    )
     def test_wrong_password_always_fails(self, pair):
         """hash → check with a *different* password must always return False."""
         correct, wrong = pair
@@ -69,7 +68,9 @@ class TestPasswordHashing:
         assert check_password(wrong, h) is False
 
     @given(password=_passwords)
-    @settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @settings(
+        max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    )
     def test_hash_is_unique_each_call(self, password):
         """bcrypt gensalt means two hashes of the same password differ."""
         h1 = hash_password(password)
@@ -77,7 +78,9 @@ class TestPasswordHashing:
         assert h1 != h2
 
     @given(password=_passwords)
-    @settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @settings(
+        max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    )
     def test_hash_always_starts_with_bcrypt_prefix(self, password):
         h = hash_password(password)
         assert h.startswith("$2b$")
@@ -179,7 +182,7 @@ class TestCSRFToken:
             from monitor.auth import generate_csrf_token
 
             with app.test_client() as c:
-                with c.session_transaction() as sess:
+                with c.session_transaction():
                     pass
                 with app.test_request_context():
                     session["user_id"] = "u1"

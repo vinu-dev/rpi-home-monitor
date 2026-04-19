@@ -361,9 +361,7 @@ class TestServerUploadEdgeCases:
             return p, ""
 
         monkeypatch.setattr(app.ota_service, "stage_bundle", _fake_stage)
-        monkeypatch.setattr(
-            app.ota_service, "verify_bundle", lambda path: (True, "")
-        )
+        monkeypatch.setattr(app.ota_service, "verify_bundle", lambda path: (True, ""))
         resp = client.post(
             "/api/v1/ota/server/upload",
             data={"file": (io.BytesIO(b"content"), "update.swu")},
@@ -477,9 +475,7 @@ class TestCameraUploadEdgeCases:
         assert resp.status_code == 400
         assert "filename" in resp.get_json()["error"].lower()
 
-    def test_returns_409_when_update_already_in_progress(
-        self, app, logged_in_client
-    ):
+    def test_returns_409_when_update_already_in_progress(self, app, logged_in_client):
         """While state is 'uploading', a new upload attempt → 409."""
         client = logged_in_client()
         _add_camera(app, "cam-001", "online")
@@ -547,9 +543,7 @@ class TestCameraPushEdgeCases:
         assert resp.status_code == 400
         assert "ip" in resp.get_json()["error"].lower()
 
-    def test_returns_409_when_update_already_in_progress(
-        self, app, logged_in_client
-    ):
+    def test_returns_409_when_update_already_in_progress(self, app, logged_in_client):
         """State already 'uploading' at push time → 409."""
         client = logged_in_client()
         _add_camera(app, "cam-001", "online")
@@ -656,9 +650,7 @@ class TestUSBOperations:
 
     def test_import_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")
-        assert (
-            client.post("/api/v1/ota/usb/import", json={}).status_code == 403
-        )
+        assert client.post("/api/v1/ota/usb/import", json={}).status_code == 403
 
     def test_import_returns_400_when_no_path(self, logged_in_client):
         """JSON body with no 'path' key → 400."""
@@ -715,9 +707,7 @@ class TestUSBOperations:
         assert resp.status_code == 400
         assert "invalid signature" in resp.get_json()["error"]
 
-    def test_import_returns_200_on_success(
-        self, monkeypatch, app, logged_in_client
-    ):
+    def test_import_returns_200_on_success(self, monkeypatch, app, logged_in_client):
         """Full happy path: import + verify succeed → 200 with staged_path."""
         client = logged_in_client()
         import os
@@ -730,9 +720,7 @@ class TestUSBOperations:
             return p, ""
 
         monkeypatch.setattr(app.ota_service, "import_from_usb", _fake_import)
-        monkeypatch.setattr(
-            app.ota_service, "verify_bundle", lambda path: (True, "")
-        )
+        monkeypatch.setattr(app.ota_service, "verify_bundle", lambda path: (True, ""))
         resp = client.post(
             "/api/v1/ota/usb/import", json={"path": "/mnt/usb/update.swu"}
         )

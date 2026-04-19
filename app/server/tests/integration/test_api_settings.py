@@ -180,42 +180,67 @@ class TestTimeEndpoints:
 
     @patch("monitor.services.settings_service.subprocess.run")
     def test_get_time_returns_expected_fields(self, mock_run, logged_in_client):
-        mock_run.return_value = MagicMock(returncode=0, stdout="Timezone=Europe/Dublin\nNTP=yes\nNTPSynchronized=yes\nTimeUSec=2026-01-01\nRTCTimeUSec=2026-01-01\n")
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Timezone=Europe/Dublin\nNTP=yes\nNTPSynchronized=yes\nTimeUSec=2026-01-01\nRTCTimeUSec=2026-01-01\n",
+        )
         client = logged_in_client()
         resp = client.get("/api/v1/settings/time")
         assert resp.status_code == 200
         data = resp.get_json()
-        for key in ("timezone", "ntp_mode", "ntp_active", "ntp_synchronized", "system_time", "rtc_time"):
+        for key in (
+            "timezone",
+            "ntp_mode",
+            "ntp_active",
+            "ntp_synchronized",
+            "system_time",
+            "rtc_time",
+        ):
             assert key in data
 
     def test_set_time_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")
-        assert client.post("/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}).status_code == 403
+        assert (
+            client.post(
+                "/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}
+            ).status_code
+            == 403
+        )
 
     def test_set_time_requires_auth(self, client):
-        assert client.post("/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}).status_code == 401
+        assert (
+            client.post(
+                "/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}
+            ).status_code
+            == 401
+        )
 
     def test_set_time_requires_json_body(self, logged_in_client):
         client = logged_in_client()
         assert client.post("/api/v1/settings/time").status_code == 400
 
     @patch("monitor.services.settings_service.subprocess.run")
-    def test_set_time_rejects_when_ntp_not_manual(self, mock_run, app, logged_in_client):
+    def test_set_time_rejects_when_ntp_not_manual(
+        self, mock_run, app, logged_in_client
+    ):
         # Default ntp_mode is "auto", so manual time set should be rejected
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"})
+        resp = client.post(
+            "/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}
+        )
         assert resp.status_code == 409
         assert "manual" in resp.get_json()["error"].lower()
 
     @patch("monitor.services.settings_service.subprocess.run")
     def test_set_time_succeeds_when_ntp_manual(self, mock_run, app, logged_in_client):
-        from monitor.models import Settings
         settings = app.store.get_settings()
         settings.ntp_mode = "manual"
         app.store.save_settings(settings)
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/time", json={"time": "2026-01-01T12:00:00Z"})
+        resp = client.post(
+            "/api/v1/settings/time", json={"time": "2026-01-01T12:00:00Z"}
+        )
         assert resp.status_code == 200
         assert "updated" in resp.get_json()["message"].lower()
 
@@ -229,13 +254,19 @@ class TestTimeEndpoints:
         assert resp.status_code == 400
 
     @patch("monitor.services.settings_service.subprocess.run")
-    def test_set_time_timedatectl_failure_returns_500(self, mock_run, app, logged_in_client):
+    def test_set_time_timedatectl_failure_returns_500(
+        self, mock_run, app, logged_in_client
+    ):
         settings = app.store.get_settings()
         settings.ntp_mode = "manual"
         app.store.save_settings(settings)
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Permission denied")
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="Permission denied"
+        )
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"})
+        resp = client.post(
+            "/api/v1/settings/time", json={"time": "2026-01-01T12:00:00"}
+        )
         assert resp.status_code == 500
 
 
@@ -260,11 +291,21 @@ class TestWifiEndpoints:
         assert "networks" in data
 
     def test_set_wifi_requires_auth(self, client):
-        assert client.post("/api/v1/settings/wifi", json={"ssid": "x", "password": "y"}).status_code == 401
+        assert (
+            client.post(
+                "/api/v1/settings/wifi", json={"ssid": "x", "password": "y"}
+            ).status_code
+            == 401
+        )
 
     def test_set_wifi_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")
-        assert client.post("/api/v1/settings/wifi", json={"ssid": "x", "password": "y"}).status_code == 403
+        assert (
+            client.post(
+                "/api/v1/settings/wifi", json={"ssid": "x", "password": "y"}
+            ).status_code
+            == 403
+        )
 
     def test_set_wifi_requires_json_body(self, logged_in_client):
         client = logged_in_client()
@@ -273,20 +314,28 @@ class TestWifiEndpoints:
     @patch("monitor.services.settings_service.subprocess.run")
     def test_set_wifi_empty_ssid_rejected(self, mock_run, logged_in_client):
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/wifi", json={"ssid": "", "password": "pass"})
+        resp = client.post(
+            "/api/v1/settings/wifi", json={"ssid": "", "password": "pass"}
+        )
         assert resp.status_code == 400
 
     @patch("monitor.services.settings_service.subprocess.run")
     def test_set_wifi_success(self, mock_run, logged_in_client):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/wifi", json={"ssid": "MyNetwork", "password": "secret123"})
+        resp = client.post(
+            "/api/v1/settings/wifi", json={"ssid": "MyNetwork", "password": "secret123"}
+        )
         assert resp.status_code == 200
         assert "message" in resp.get_json()
 
     @patch("monitor.services.settings_service.subprocess.run")
     def test_set_wifi_nmcli_failure_returns_error(self, mock_run, logged_in_client):
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="No network found")
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="No network found"
+        )
         client = logged_in_client()
-        resp = client.post("/api/v1/settings/wifi", json={"ssid": "BadNet", "password": "pass"})
+        resp = client.post(
+            "/api/v1/settings/wifi", json={"ssid": "BadNet", "password": "pass"}
+        )
         assert resp.status_code != 200

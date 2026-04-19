@@ -5,13 +5,14 @@ from unittest.mock import patch
 
 import pytest
 
-from monitor.models import Camera, User
+from monitor.models import Camera
 
 
 @pytest.fixture(autouse=True)
 def _clear_register_rate_limiter():
     """Reset the module-level register rate-limit dict between tests."""
     import monitor.api.pairing as _pairing_mod
+
     _pairing_mod._register_attempts.clear()
     yield
     _pairing_mod._register_attempts.clear()
@@ -213,7 +214,9 @@ class TestExchangeCerts:
         app.streaming.start_camera.assert_called_once_with("cam-001")
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
-    def test_exchange_skips_streaming_for_on_demand_camera(self, mock_gen, app, logged_in_client):
+    def test_exchange_skips_streaming_for_on_demand_camera(
+        self, mock_gen, app, logged_in_client
+    ):
         """Streaming pipeline does NOT start if recording_mode is on_demand."""
         from unittest.mock import MagicMock
 
@@ -327,12 +330,20 @@ class TestSafePairingError:
     def test_sanitises_ca_key_error(self, app, logged_in_client):
         """CA cert path must not leak to the client."""
         from unittest.mock import patch
+
         with patch(
             "monitor.services.pairing_service.PairingService.initiate_pairing",
-            return_value=(None, "CA key or certificate not found at /data/certs/ca.key", 500),
+            return_value=(
+                None,
+                "CA key or certificate not found at /data/certs/ca.key",
+                500,
+            ),
         ):
             from monitor.models import Camera
-            app.store.save_camera(Camera(id="cam-001", status="pending", ip="192.168.1.1"))
+
+            app.store.save_camera(
+                Camera(id="cam-001", status="pending", ip="192.168.1.1")
+            )
             client = logged_in_client()
             resp = client.post("/api/v1/cameras/cam-001/pair")
         assert resp.status_code == 500
@@ -342,12 +353,16 @@ class TestSafePairingError:
 
     def test_sanitises_openssl_error(self, app, logged_in_client):
         from unittest.mock import patch
+
         with patch(
             "monitor.services.pairing_service.PairingService.initiate_pairing",
             return_value=(None, "OpenSSL error: bad signature", 500),
         ):
             from monitor.models import Camera
-            app.store.save_camera(Camera(id="cam-002", status="pending", ip="192.168.1.2"))
+
+            app.store.save_camera(
+                Camera(id="cam-002", status="pending", ip="192.168.1.2")
+            )
             client = logged_in_client()
             resp = client.post("/api/v1/cameras/cam-002/pair")
         assert resp.status_code == 500
@@ -355,12 +370,16 @@ class TestSafePairingError:
 
     def test_plain_error_passes_through(self, app, logged_in_client):
         from unittest.mock import patch
+
         with patch(
             "monitor.services.pairing_service.PairingService.initiate_pairing",
             return_value=(None, "Camera already online", 400),
         ):
             from monitor.models import Camera
-            app.store.save_camera(Camera(id="cam-003", status="online", ip="192.168.1.3"))
+
+            app.store.save_camera(
+                Camera(id="cam-003", status="online", ip="192.168.1.3")
+            )
             client = logged_in_client()
             resp = client.post("/api/v1/cameras/cam-003/pair")
         assert resp.status_code == 400
@@ -372,12 +391,16 @@ class TestUnpairCameraErrorPath:
 
     def test_unpair_service_error_returned(self, app, logged_in_client):
         from unittest.mock import patch
+
         with patch(
             "monitor.services.pairing_service.PairingService.unpair",
             return_value=("Internal revocation error", 500),
         ):
             from monitor.models import Camera
-            app.store.save_camera(Camera(id="cam-001", status="online", ip="192.168.1.50"))
+
+            app.store.save_camera(
+                Camera(id="cam-001", status="online", ip="192.168.1.50")
+            )
             client = logged_in_client()
             resp = client.post("/api/v1/cameras/cam-001/unpair")
         assert resp.status_code == 500

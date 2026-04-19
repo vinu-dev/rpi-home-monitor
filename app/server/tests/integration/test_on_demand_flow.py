@@ -122,7 +122,10 @@ class TestOnDemandEdgeCases:
 
     def test_start_no_ip_returns_409(self, app):
         from monitor.models import Camera
-        cam = Camera(id="cam-noip", status="online", ip="", desired_stream_state="stopped")
+
+        cam = Camera(
+            id="cam-noip", status="online", ip="", desired_stream_state="stopped"
+        )
         app.store.save_camera(cam)
         fake = FakeControlClient()
         app.camera_control_client = fake
@@ -132,7 +135,13 @@ class TestOnDemandEdgeCases:
 
     def test_start_no_control_client_returns_503(self, app):
         from monitor.models import Camera
-        cam = Camera(id="cam-noctrl", status="online", ip="10.0.0.1", desired_stream_state="stopped")
+
+        cam = Camera(
+            id="cam-noctrl",
+            status="online",
+            ip="10.0.0.1",
+            desired_stream_state="stopped",
+        )
         app.store.save_camera(cam)
         if hasattr(app, "camera_control_client"):
             del app.camera_control_client
@@ -142,8 +151,12 @@ class TestOnDemandEdgeCases:
 
     def test_start_control_error_returns_502(self, app):
         from unittest.mock import MagicMock
+
         from monitor.models import Camera
-        cam = Camera(id="cam-err", status="online", ip="10.0.0.2", desired_stream_state="stopped")
+
+        cam = Camera(
+            id="cam-err", status="online", ip="10.0.0.2", desired_stream_state="stopped"
+        )
         app.store.save_camera(cam)
         ctrl = MagicMock()
         ctrl.start_stream.return_value = (None, "camera refused")
@@ -155,7 +168,10 @@ class TestOnDemandEdgeCases:
     def test_stop_no_control_client_returns_503(self, staged):
         app, _ = staged
         from monitor.models import Camera
-        cam = Camera(id="cam-nc2", status="online", ip="10.0.0.3", desired_stream_state="running")
+
+        cam = Camera(
+            id="cam-nc2", status="online", ip="10.0.0.3", desired_stream_state="running"
+        )
         app.store.save_camera(cam)
         if hasattr(app, "camera_control_client"):
             del app.camera_control_client
@@ -165,8 +181,12 @@ class TestOnDemandEdgeCases:
 
     def test_stop_no_ip_clears_intent(self, app):
         from unittest.mock import MagicMock
+
         from monitor.models import Camera
-        cam = Camera(id="cam-noip2", status="online", ip="", desired_stream_state="running")
+
+        cam = Camera(
+            id="cam-noip2", status="online", ip="", desired_stream_state="running"
+        )
         app.store.save_camera(cam)
         ctrl = MagicMock()
         app.camera_control_client = ctrl
@@ -181,8 +201,15 @@ class TestOnDemandEdgeCases:
     def test_stop_control_error_returns_502(self, staged):
         app, _ = staged
         from unittest.mock import MagicMock
+
         from monitor.models import Camera
-        cam = Camera(id="cam-stopp-err", status="online", ip="10.0.0.9", desired_stream_state="running")
+
+        cam = Camera(
+            id="cam-stopp-err",
+            status="online",
+            ip="10.0.0.9",
+            desired_stream_state="running",
+        )
         app.store.save_camera(cam)
         ctrl = MagicMock()
         ctrl.stop_stream.return_value = (None, "camera offline")
@@ -199,8 +226,9 @@ class TestOnDemandCoordinatorUnit:
 
     def _make_coordinator(self, app, scheduler_needs=False, has_ip=True, ctrl_err=""):
         from unittest.mock import MagicMock
-        from monitor.models import Camera
+
         from monitor.api.on_demand import OnDemandCoordinator
+        from monitor.models import Camera
 
         cam = Camera(
             id="cam-coord",
@@ -227,6 +255,7 @@ class TestOnDemandCoordinatorUnit:
 
     def test_stop_camera_not_found(self, app):
         from monitor.api.on_demand import OnDemandCoordinator
+
         coord = OnDemandCoordinator(app.store, None, None)
         acted, reason = coord.stop("cam-ghost")
         assert not acted
@@ -234,8 +263,10 @@ class TestOnDemandCoordinatorUnit:
 
     def test_stop_already_stopped(self, app):
         from unittest.mock import MagicMock
-        from monitor.models import Camera
+
         from monitor.api.on_demand import OnDemandCoordinator
+        from monitor.models import Camera
+
         cam = Camera(id="cam-stopped", ip="10.0.0.1", desired_stream_state="stopped")
         app.store.save_camera(cam)
         coord = OnDemandCoordinator(app.store, MagicMock(), None)

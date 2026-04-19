@@ -8,7 +8,6 @@ rather than the old route-level import.
 from unittest.mock import MagicMock, patch
 
 
-
 def _make_device(
     path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
 ):

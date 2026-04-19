@@ -298,21 +298,34 @@ class TestErrorHandling:
         svc._safe_rmtree(str(tmp_path / "nonexistent_dir"), errors)
         assert errors == []
 
-    @patch("monitor.services.factory_reset_service.FactoryResetService._schedule_restart")
-    @patch("monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script"
+    )
     @patch("subprocess.run")
-    def test_hotspot_nonzero_returncode_adds_error(self, mock_run, mock_find, mock_restart, tmp_path):
+    def test_hotspot_nonzero_returncode_adds_error(
+        self, mock_run, mock_find, mock_restart, tmp_path
+    ):
         mock_find.return_value = "/opt/monitor/scripts/monitor-hotspot.sh"
         mock_run.return_value = MagicMock(returncode=1, stderr="nmcli failed")
         svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
         msg, status = svc.execute_reset()
         assert status == 200  # reset continues despite WiFi wipe failure
 
-    @patch("monitor.services.factory_reset_service.FactoryResetService._schedule_restart")
-    @patch("monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script")
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._find_hotspot_script"
+    )
     @patch("subprocess.run")
-    def test_hotspot_timeout_adds_error(self, mock_run, mock_find, mock_restart, tmp_path):
+    def test_hotspot_timeout_adds_error(
+        self, mock_run, mock_find, mock_restart, tmp_path
+    ):
         import subprocess
+
         mock_find.return_value = "/opt/monitor/scripts/monitor-hotspot.sh"
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="wipe", timeout=15)
         svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
@@ -346,18 +359,21 @@ class TestErrorHandling:
         assert len(errors) == 1
 
     @patch("subprocess.run")
-    def test_schedule_restart_subprocess_failure_does_not_raise(self, mock_run, tmp_path):
+    def test_schedule_restart_subprocess_failure_does_not_raise(
+        self, mock_run, tmp_path
+    ):
         mock_run.side_effect = FileNotFoundError("systemctl not found")
-        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+        FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
         # _schedule_restart runs in a daemon thread — we invoke it directly
         # to test the exception-swallowing behavior
         import threading
+
         done = threading.Event()
-        original_do_restart = None
 
         def _run_inner():
             try:
                 import subprocess
+
                 subprocess.run(["systemctl", "reboot"], capture_output=True, timeout=30)
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 pass

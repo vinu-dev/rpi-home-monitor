@@ -1,22 +1,19 @@
 """Unit tests for StorageManager — FIFO cleanup, stats, dir-change callback."""
 
-import os
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from monitor.services.storage_manager import StorageManager, create_recording_dirs
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_clip(rec_dir: Path, cam_id: str, date: str, time_str: str, size_bytes: int = 1024) -> Path:
+def _make_clip(
+    rec_dir: Path, cam_id: str, date: str, time_str: str, size_bytes: int = 1024
+) -> Path:
     """Create a fake .mp4 clip file at the expected path."""
     clip_dir = rec_dir / cam_id / date
     clip_dir.mkdir(parents=True, exist_ok=True)
@@ -113,7 +110,9 @@ class TestNeedsCleanup:
 
     def test_false_on_oserror(self, tmp_path):
         mgr, _ = _make_manager(tmp_path)
-        with patch("monitor.services.storage_manager.shutil.disk_usage", side_effect=OSError):
+        with patch(
+            "monitor.services.storage_manager.shutil.disk_usage", side_effect=OSError
+        ):
             assert mgr.needs_cleanup() is False
 
     def test_uses_reserve_mb_when_no_threshold(self, tmp_path):
@@ -249,8 +248,16 @@ class TestGetStorageStats:
     def test_returns_dict_with_required_keys(self, tmp_path):
         mgr, _ = _make_manager(tmp_path)
         stats = mgr.get_storage_stats()
-        for key in ("total_gb", "used_gb", "free_gb", "percent", "camera_count",
-                    "clip_count", "recordings_dir", "is_usb"):
+        for key in (
+            "total_gb",
+            "used_gb",
+            "free_gb",
+            "percent",
+            "camera_count",
+            "clip_count",
+            "recordings_dir",
+            "is_usb",
+        ):
             assert key in stats, f"Missing key: {key}"
 
     def test_counts_clips_per_camera(self, tmp_path):
@@ -266,7 +273,9 @@ class TestGetStorageStats:
 
     def test_returns_zeros_on_oserror(self, tmp_path):
         mgr, _ = _make_manager(tmp_path)
-        with patch("monitor.services.storage_manager.shutil.disk_usage", side_effect=OSError):
+        with patch(
+            "monitor.services.storage_manager.shutil.disk_usage", side_effect=OSError
+        ):
             stats = mgr.get_storage_stats()
         assert stats["total_gb"] == 0
         assert stats["used_gb"] == 0

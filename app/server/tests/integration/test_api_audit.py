@@ -52,10 +52,10 @@ class TestAuditEventsEndpoint:
         app.audit = MagicMock()
         app.audit.get_events.return_value = []
         client = logged_in_client()
-        # Over the max â†’ clamped to 200
+        # Over the max â-> clamped to 200
         client.get("/api/v1/audit/events?limit=9999")
         assert app.audit.get_events.call_args.kwargs["limit"] == 200
-        # Negative / zero â†’ clamped to 1
+        # Negative / zero â-> clamped to 1
         client.get("/api/v1/audit/events?limit=0")
         assert app.audit.get_events.call_args.kwargs["limit"] == 1
 

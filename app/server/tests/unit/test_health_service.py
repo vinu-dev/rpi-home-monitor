@@ -1,10 +1,6 @@
 """Unit tests for monitor.services.health — all platform-specific I/O is mocked."""
 
-import shutil
-from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
-
-import pytest
 
 from monitor.services.health import (
     get_cpu_temperature,
@@ -15,7 +11,6 @@ from monitor.services.health import (
     get_network_info,
     get_uptime,
 )
-
 
 # ===========================================================================
 # get_cpu_temperature
@@ -55,22 +50,30 @@ class TestGetCpuTemperature:
 class TestGetCpuUsage:
     def test_first_call_returns_zero(self):
         import monitor.services.health as h
+
         h._prev_cpu_sample = None
-        with patch("monitor.services.health._read_cpu_times",
-                   return_value=(100.0, 0.0, 50.0, 850.0, 0.0, 0.0, 0.0)):
+        with patch(
+            "monitor.services.health._read_cpu_times",
+            return_value=(100.0, 0.0, 50.0, 850.0, 0.0, 0.0, 0.0),
+        ):
             result = get_cpu_usage()
         assert result == 0.0
 
     def test_second_call_computes_delta(self):
         import monitor.services.health as h
+
         h._prev_cpu_sample = None
         # Prime the baseline
-        with patch("monitor.services.health._read_cpu_times",
-                   return_value=(100.0, 0.0, 50.0, 850.0, 0.0, 0.0, 0.0)):
+        with patch(
+            "monitor.services.health._read_cpu_times",
+            return_value=(100.0, 0.0, 50.0, 850.0, 0.0, 0.0, 0.0),
+        ):
             get_cpu_usage()
         # Second sample: 50 more active ticks, 950 more idle → 5% usage
-        with patch("monitor.services.health._read_cpu_times",
-                   return_value=(150.0, 0.0, 100.0, 1800.0, 0.0, 0.0, 0.0)):
+        with patch(
+            "monitor.services.health._read_cpu_times",
+            return_value=(150.0, 0.0, 100.0, 1800.0, 0.0, 0.0, 0.0),
+        ):
             result = get_cpu_usage()
         # active delta = 100, idle delta = 950, total = 1050
         # usage = (100/1050)*100 ≈ 9.5
@@ -78,6 +81,7 @@ class TestGetCpuUsage:
 
     def test_returns_zero_when_no_proc_stat(self):
         import monitor.services.health as h
+
         h._prev_cpu_sample = None
         with patch("monitor.services.health._read_cpu_times", return_value=None):
             result = get_cpu_usage()
@@ -85,6 +89,7 @@ class TestGetCpuUsage:
 
     def test_returns_zero_on_zero_total_delta(self):
         import monitor.services.health as h
+
         sample = (100.0, 0.0, 50.0, 850.0, 0.0, 0.0, 0.0)
         h._prev_cpu_sample = sample
         with patch("monitor.services.health._read_cpu_times", return_value=sample):
@@ -128,9 +133,9 @@ class TestGetDiskUsage:
     def test_returns_disk_stats(self, tmp_path):
         with patch("monitor.services.health.shutil.disk_usage") as mock_du:
             mock_du.return_value = MagicMock(
-                total=100 * (1024 ** 3),
-                used=40 * (1024 ** 3),
-                free=60 * (1024 ** 3),
+                total=100 * (1024**3),
+                used=40 * (1024**3),
+                free=60 * (1024**3),
             )
             result = get_disk_usage(str(tmp_path))
         assert result["total_gb"] == 100.0
@@ -209,75 +214,127 @@ class TestGetNetworkInfo:
 
 class TestGetHealthSummary:
     def test_healthy_status_no_warnings(self, tmp_path):
-        with patch("monitor.services.health.get_cpu_temperature", return_value=55.0), \
-             patch("monitor.services.health.get_memory_info",
-                   return_value={"total_mb": 4000, "used_mb": 2000,
-                                 "free_mb": 2000, "percent": 50.0}), \
-             patch("monitor.services.health.get_disk_usage",
-                   return_value={"total_gb": 100, "used_gb": 40,
-                                 "free_gb": 60, "percent": 40.0}), \
-             patch("monitor.services.health.get_uptime",
-                   return_value={"seconds": 3600, "display": "1h 0m"}), \
-             patch("monitor.services.health.get_cpu_usage", return_value=30.0), \
-             patch("monitor.services.health.get_network_info", return_value=[]):
+        with (
+            patch("monitor.services.health.get_cpu_temperature", return_value=55.0),
+            patch(
+                "monitor.services.health.get_memory_info",
+                return_value={
+                    "total_mb": 4000,
+                    "used_mb": 2000,
+                    "free_mb": 2000,
+                    "percent": 50.0,
+                },
+            ),
+            patch(
+                "monitor.services.health.get_disk_usage",
+                return_value={
+                    "total_gb": 100,
+                    "used_gb": 40,
+                    "free_gb": 60,
+                    "percent": 40.0,
+                },
+            ),
+            patch(
+                "monitor.services.health.get_uptime",
+                return_value={"seconds": 3600, "display": "1h 0m"},
+            ),
+            patch("monitor.services.health.get_cpu_usage", return_value=30.0),
+            patch("monitor.services.health.get_network_info", return_value=[]),
+        ):
             result = get_health_summary(str(tmp_path))
         assert result["status"] == "healthy"
         assert result["warnings"] == []
         assert result["cpu_temp_c"] == 55.0
 
     def test_high_cpu_temp_produces_warning(self, tmp_path):
-        with patch("monitor.services.health.get_cpu_temperature", return_value=75.0), \
-             patch("monitor.services.health.get_memory_info",
-                   return_value={"percent": 50.0}), \
-             patch("monitor.services.health.get_disk_usage",
-                   return_value={"percent": 40.0}), \
-             patch("monitor.services.health.get_uptime",
-                   return_value={"seconds": 0, "display": "0m"}), \
-             patch("monitor.services.health.get_cpu_usage", return_value=10.0), \
-             patch("monitor.services.health.get_network_info", return_value=[]):
+        with (
+            patch("monitor.services.health.get_cpu_temperature", return_value=75.0),
+            patch(
+                "monitor.services.health.get_memory_info",
+                return_value={"percent": 50.0},
+            ),
+            patch(
+                "monitor.services.health.get_disk_usage", return_value={"percent": 40.0}
+            ),
+            patch(
+                "monitor.services.health.get_uptime",
+                return_value={"seconds": 0, "display": "0m"},
+            ),
+            patch("monitor.services.health.get_cpu_usage", return_value=10.0),
+            patch("monitor.services.health.get_network_info", return_value=[]),
+        ):
             result = get_health_summary(str(tmp_path))
         assert result["status"] == "warning"
         assert any("CPU temperature" in w for w in result["warnings"])
 
     def test_high_disk_usage_produces_warning(self, tmp_path):
-        with patch("monitor.services.health.get_cpu_temperature", return_value=40.0), \
-             patch("monitor.services.health.get_memory_info",
-                   return_value={"percent": 50.0}), \
-             patch("monitor.services.health.get_disk_usage",
-                   return_value={"percent": 90.0}), \
-             patch("monitor.services.health.get_uptime",
-                   return_value={"seconds": 0, "display": "0m"}), \
-             patch("monitor.services.health.get_cpu_usage", return_value=10.0), \
-             patch("monitor.services.health.get_network_info", return_value=[]):
+        with (
+            patch("monitor.services.health.get_cpu_temperature", return_value=40.0),
+            patch(
+                "monitor.services.health.get_memory_info",
+                return_value={"percent": 50.0},
+            ),
+            patch(
+                "monitor.services.health.get_disk_usage", return_value={"percent": 90.0}
+            ),
+            patch(
+                "monitor.services.health.get_uptime",
+                return_value={"seconds": 0, "display": "0m"},
+            ),
+            patch("monitor.services.health.get_cpu_usage", return_value=10.0),
+            patch("monitor.services.health.get_network_info", return_value=[]),
+        ):
             result = get_health_summary(str(tmp_path))
         assert result["status"] == "warning"
         assert any("Disk" in w for w in result["warnings"])
 
     def test_high_ram_usage_produces_warning(self, tmp_path):
-        with patch("monitor.services.health.get_cpu_temperature", return_value=40.0), \
-             patch("monitor.services.health.get_memory_info",
-                   return_value={"percent": 95.0}), \
-             patch("monitor.services.health.get_disk_usage",
-                   return_value={"percent": 40.0}), \
-             patch("monitor.services.health.get_uptime",
-                   return_value={"seconds": 0, "display": "0m"}), \
-             patch("monitor.services.health.get_cpu_usage", return_value=10.0), \
-             patch("monitor.services.health.get_network_info", return_value=[]):
+        with (
+            patch("monitor.services.health.get_cpu_temperature", return_value=40.0),
+            patch(
+                "monitor.services.health.get_memory_info",
+                return_value={"percent": 95.0},
+            ),
+            patch(
+                "monitor.services.health.get_disk_usage", return_value={"percent": 40.0}
+            ),
+            patch(
+                "monitor.services.health.get_uptime",
+                return_value={"seconds": 0, "display": "0m"},
+            ),
+            patch("monitor.services.health.get_cpu_usage", return_value=10.0),
+            patch("monitor.services.health.get_network_info", return_value=[]),
+        ):
             result = get_health_summary(str(tmp_path))
         assert result["status"] == "warning"
         assert any("RAM" in w for w in result["warnings"])
 
     def test_required_keys_present(self, tmp_path):
-        with patch("monitor.services.health.get_cpu_temperature", return_value=40.0), \
-             patch("monitor.services.health.get_memory_info",
-                   return_value={"percent": 50.0}), \
-             patch("monitor.services.health.get_disk_usage",
-                   return_value={"percent": 40.0}), \
-             patch("monitor.services.health.get_uptime",
-                   return_value={"seconds": 0, "display": "0m"}), \
-             patch("monitor.services.health.get_cpu_usage", return_value=0.0), \
-             patch("monitor.services.health.get_network_info", return_value=[]):
+        with (
+            patch("monitor.services.health.get_cpu_temperature", return_value=40.0),
+            patch(
+                "monitor.services.health.get_memory_info",
+                return_value={"percent": 50.0},
+            ),
+            patch(
+                "monitor.services.health.get_disk_usage", return_value={"percent": 40.0}
+            ),
+            patch(
+                "monitor.services.health.get_uptime",
+                return_value={"seconds": 0, "display": "0m"},
+            ),
+            patch("monitor.services.health.get_cpu_usage", return_value=0.0),
+            patch("monitor.services.health.get_network_info", return_value=[]),
+        ):
             result = get_health_summary(str(tmp_path))
-        for key in ("cpu_temp_c", "cpu_usage_percent", "memory", "disk",
-                    "network", "uptime", "warnings", "status"):
+        for key in (
+            "cpu_temp_c",
+            "cpu_usage_percent",
+            "memory",
+            "disk",
+            "network",
+            "uptime",
+            "warnings",
+            "status",
+        ):
             assert key in result, f"Missing key: {key}"

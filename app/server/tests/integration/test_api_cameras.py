@@ -279,8 +279,9 @@ _PAIRING_SECRET = "deadbeef" * 8  # 64 hex chars = 32 bytes
 
 
 def _make_camera_with_secret(app, camera_id="cam-001", status="online"):
-    cam = Camera(id=camera_id, status=status, ip="192.168.1.50",
-                 pairing_secret=_PAIRING_SECRET)
+    cam = Camera(
+        id=camera_id, status=status, ip="192.168.1.50", pairing_secret=_PAIRING_SECRET
+    )
     app.store.save_camera(cam)
     return cam
 
@@ -367,8 +368,7 @@ class TestCameraHMACAuth:
         _make_camera_with_secret(app)
         headers = _hmac_headers("cam-001", b"{}")
         headers["X-Signature"] = "badsignaturevalue" + "0" * 47
-        resp = client.post("/api/v1/cameras/heartbeat", json={},
-                           headers=headers)
+        resp = client.post("/api/v1/cameras/heartbeat", json={}, headers=headers)
         assert resp.status_code == 401
         assert "Invalid signature" in resp.get_json()["error"]
 
@@ -378,14 +378,20 @@ class TestCameraHMACAuth:
         body = b'{"streaming": false}'
         headers = _hmac_headers("cam-001", body)
         # First request succeeds
-        resp1 = client.post("/api/v1/cameras/heartbeat",
-                            data=body, content_type="application/json",
-                            headers=headers)
+        resp1 = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp1.status_code == 200
         # Exact same headers + body → replay
-        resp2 = client.post("/api/v1/cameras/heartbeat",
-                            data=body, content_type="application/json",
-                            headers=headers)
+        resp2 = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp2.status_code == 401
         assert "replay" in resp2.get_json()["error"].lower()
 
@@ -397,9 +403,12 @@ class TestConfigNotifyEndpoint:
         _make_camera_with_secret(app)
         body = b'{"fps": 15}'
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/config-notify",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 200
         assert resp.get_json()["message"] == "Config accepted"
 
@@ -407,18 +416,24 @@ class TestConfigNotifyEndpoint:
         _make_camera_with_secret(app)
         body = b""
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/config-notify",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 400
 
     def test_unknown_param_returns_400(self, app, client):
         _make_camera_with_secret(app)
         body = b'{"bogus_param": 99}'
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/config-notify",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/config-notify",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 400
 
     def test_rejects_unauthenticated(self, app, client):
@@ -436,9 +451,12 @@ class TestCameraHeartbeatEndpoint:
         app.store.save_camera(cam)
         body = b'{"streaming": true, "cpu_temp": 52.5, "memory_percent": 40}'
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/heartbeat",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
         updated = app.store.get_camera("cam-001")
@@ -452,9 +470,12 @@ class TestCameraHeartbeatEndpoint:
         app.store.save_camera(cam)
         body = b'{"streaming": false}'
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/heartbeat",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         assert "pending_config" in data
@@ -464,14 +485,18 @@ class TestCameraHeartbeatEndpoint:
         _make_camera_with_secret(app)
         body = b""
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/heartbeat",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 400
 
     def test_unknown_camera_triggers_discovery(self, app, client):
         """Heartbeat from unknown camera creates a pending entry via discovery."""
         from unittest.mock import MagicMock
+
         app.discovery_service = MagicMock()
         resp = client.post(
             "/api/v1/cameras/heartbeat",
@@ -493,21 +518,28 @@ class TestCameraGoodbyeEndpoint:
         _make_camera_with_secret(app)
         body = b"{}"
         headers = _hmac_headers("cam-001", body)
-        resp = client.post("/api/v1/cameras/goodbye",
-                           data=body, content_type="application/json",
-                           headers=headers)
+        resp = client.post(
+            "/api/v1/cameras/goodbye",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         assert resp.status_code == 200
         assert resp.get_json()["message"] == "Camera unpaired"
 
     def test_stops_streaming_on_goodbye(self, app, client):
         from unittest.mock import MagicMock
+
         _make_camera_with_secret(app)
         app.streaming.stop_camera = MagicMock()
         body = b"{}"
         headers = _hmac_headers("cam-001", body)
-        client.post("/api/v1/cameras/goodbye",
-                    data=body, content_type="application/json",
-                    headers=headers)
+        client.post(
+            "/api/v1/cameras/goodbye",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
         app.streaming.stop_camera.assert_called_once_with("cam-001")
 
     def test_rejects_unauthenticated(self, app, client):

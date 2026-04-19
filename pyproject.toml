@@ -31,7 +31,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["B011", "SIM300"]  # assert True/False, yoda conditions in tests
+# Tests idiomatically use nested patch() stacks, UPPERCASE local "constants",
+# and inline imports near the code that exercises them; these are noise in test files.
+"**/tests/**" = ["B011", "SIM300", "SIM117", "N806", "E402", "F841"]
+"tests/**" = ["B011", "SIM300", "SIM117", "N806", "E402", "F841"]
 "**/conftest.py" = ["F811"]       # fixture redefinitions
 "**/wifi_setup.py" = ["I001"]     # backward compat re-exports need manual import order
 "scripts/testing/**" = ["E402"]   # sys.path manipulation before imports

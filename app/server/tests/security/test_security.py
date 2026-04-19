@@ -73,7 +73,9 @@ class TestPathTraversal:
     """
 
     @pytest.mark.parametrize("suffix,needs_camera,expected_codes", _TRAVERSAL_PATHS)
-    def test_get_traversal_blocked(self, suffix, needs_camera, expected_codes, app, client):
+    def test_get_traversal_blocked(
+        self, suffix, needs_camera, expected_codes, app, client
+    ):
         _login(app, client)
         if needs_camera:
             _add_camera(app)
@@ -314,7 +316,7 @@ _CAMERA_NAME_PAYLOADS = [
     ("../../../etc/passwd", "path traversal in name"),
     ("\u202e\u0041\u0042\u0043", "Unicode RTL override"),
     ("'; DROP TABLE cameras; --", "SQL injection attempt"),
-    ("{\"$where\": \"1==1\"}", "NoSQL injection attempt"),
+    ('{"$where": "1==1"}', "NoSQL injection attempt"),
 ]
 
 _LOGIN_CRASH_CASES = [

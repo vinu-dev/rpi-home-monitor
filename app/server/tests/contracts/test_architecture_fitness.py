@@ -24,7 +24,9 @@ API_ROOT = MONITOR_ROOT / "api"
 
 _MUTATING_METHODS = frozenset({"POST", "PUT", "DELETE", "PATCH"})
 _M2M_ROUTE_NAMES = frozenset({"config_notify", "camera_goodbye", "camera_heartbeat"})
-_SESSION_AUTH_DECORATORS = frozenset({"login_required", "admin_required", "viewer_or_better"})
+_SESSION_AUTH_DECORATORS = frozenset(
+    {"login_required", "admin_required", "viewer_or_better"}
+)
 
 # WHEP is a protocol endpoint (WebRTC signaling), not a form-POST mutation.
 # application/sdp Content-Type forces a CORS preflight on every cross-origin
@@ -97,9 +99,12 @@ class TestNoSubprocessInApiLayer:
                 for alias in node.names:
                     if "subprocess" in alias.name:
                         violations.append(f"line {node.lineno}: import {alias.name}")
-            elif isinstance(node, ast.ImportFrom):
-                if node.module and "subprocess" in node.module:
-                    violations.append(f"line {node.lineno}: from {node.module} import ...")
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and "subprocess" in node.module
+            ):
+                violations.append(f"line {node.lineno}: from {node.module} import ...")
         assert not violations, (
             f"{path.name} imports subprocess.\n"
             "API layer must delegate process execution to service classes.\n"
@@ -203,8 +208,7 @@ class TestModelDataclasses:
             if node.name.startswith("_"):
                 continue
             dec_names = [
-                (d.func if isinstance(d, ast.Call) else d)
-                for d in node.decorator_list
+                (d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list
             ]
             flat = []
             for d in dec_names:
@@ -232,13 +236,16 @@ class TestApiLayerStoreAccess:
         tree = _parse(path)
         violations = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                if node.module and "store" in node.module.lower():
-                    imported = [a.name for a in node.names]
-                    if "Store" in imported:
-                        violations.append(
-                            f"line {node.lineno}: imports Store from {node.module}"
-                        )
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and "store" in node.module.lower()
+            ):
+                imported = [a.name for a in node.names]
+                if "Store" in imported:
+                    violations.append(
+                        f"line {node.lineno}: imports Store from {node.module}"
+                    )
         assert not violations, (
             f"{path.name} imports Store directly.\n"
             "API modules must access the store via current_app.store.\n"
