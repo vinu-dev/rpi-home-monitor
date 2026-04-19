@@ -62,7 +62,9 @@ class StorageService:
         devices = usb.detect_devices()
         active_mount = self._active_mount_path()
         for d in devices:
-            d["in_use"] = bool(active_mount) and self._device_backs_mount(d, active_mount)
+            d["in_use"] = bool(active_mount) and self._device_backs_mount(
+                d, active_mount
+            )
         return devices
 
     def _active_mount_path(self) -> str:
