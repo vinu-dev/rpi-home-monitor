@@ -131,10 +131,26 @@ if [ "$UPGRADE_AVAILABLE" != "1" ]; then
     exit 0
 fi
 
+# Hard overall deadline for the health check. Without this, a degraded
+# service whose socket is half-open (accepts TCP but never responds)
+# would tie up this script for many minutes — every http_alive retry
+# stacks 12 × 5 s internally, and there are four probes. 240 s is
+# enough for a healthy Pi Zero 2W boot (observed ~90 s) with headroom;
+# anything longer should be treated as "this boot isn't coming up"
+# and let U-Boot bootlimit do its job.
+DEADLINE=$(( $(cut -d. -f1 /proc/uptime) + 240 ))
+deadline_expired() {
+    [ "$(cut -d. -f1 /proc/uptime)" -ge "$DEADLINE" ]
+}
+
 # Wait for services to start (up to 60 seconds)
 log "Upgrade pending — waiting for services to start..."
 WAIT=0
 while [ $WAIT -lt 60 ]; do
+    if deadline_expired; then
+        log "Deadline hit while waiting for service to start"
+        exit 1
+    fi
     if systemctl is-active --quiet monitor.service 2>/dev/null || \
        systemctl is-active --quiet camera-streamer.service 2>/dev/null; then
         break
@@ -145,6 +161,11 @@ done
 
 # Give services a moment to fully initialize
 sleep 10
+
+if deadline_expired; then
+    log "Deadline hit before running health checks"
+    exit 1
+fi
 
 if run_health_checks; then
     log "All health checks passed — confirming update"

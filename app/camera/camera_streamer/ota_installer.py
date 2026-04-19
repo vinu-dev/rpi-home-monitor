@@ -33,6 +33,7 @@ Design patterns:
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 
@@ -53,6 +54,14 @@ STATE_INSTALLING = "installing"
 STATE_INSTALLED = "installed"
 STATE_ERROR = "error"
 
+# Bump this when the client↔camera OTA wire contract changes in a way
+# that a mismatched server's push_bundle would get wrong (e.g. the
+# 202-Accepted + poll pattern we shipped in v2 replacing the blocking
+# 200-on-completion in v1). The server logs a warning on mismatch but
+# does not refuse — we want best-effort cross-version operation so a
+# field deployment can be rolled forward without in-lockstep releases.
+OTA_PROTOCOL_VERSION = 2
+
 # Bounded wait for the root installer to report back after we trigger.
 # The actual install can take several minutes; this is just the deadline
 # for the state machine to *start* moving (i.e. path unit fires and
@@ -67,6 +76,72 @@ def bundle_path():
     return os.path.join(STAGING_DIR, BUNDLE_NAME)
 
 
+# --- .swu metadata extraction ----------------------------------------------
+# A .swu is a CPIO newc archive whose first entry is sw-description (a
+# libconfig-ish manifest). We read just the first entry without dragging
+# in the cpio binary or full extraction, so the admin can see the target
+# version ("installing 1.1.0 on top of 1.0.0") before committing.
+
+# CPIO newc ("070701") and newc-CRC ("070702") share the same header
+# layout — only the c_check field differs. The .swu build script
+# (scripts/build-swu.sh) uses newc-CRC, so we accept both.
+_CPIO_NEWC_MAGICS = (b"070701", b"070702")
+_CPIO_HEADER_LEN = 110  # magic (6) + 13 x 8 hex fields (104)
+
+
+def read_first_cpio_entry(swu_path):
+    """Return (name, data) of the first CPIO entry in a .swu bundle.
+
+    Returns (None, None) if the file isn't a CPIO newc archive or the
+    first entry can't be read. Never raises — OTA code paths tolerate
+    "unknown version" gracefully by falling back to "--".
+    """
+    try:
+        with open(swu_path, "rb") as f:
+            magic = f.read(6)
+            if magic not in _CPIO_NEWC_MAGICS:
+                return None, None
+            header = f.read(_CPIO_HEADER_LEN - 6)
+            if len(header) != _CPIO_HEADER_LEN - 6:
+                return None, None
+            # CPIO newc header layout (after the 6-byte magic):
+            #   c_ino(8) c_mode(8) c_uid(8) c_gid(8) c_nlink(8)
+            #   c_mtime(8) c_filesize(8) c_devmajor(8) c_devminor(8)
+            #   c_rdevmajor(8) c_rdevminor(8) c_namesize(8) c_check(8)
+            # → filesize starts at original offset 54 (= header[48:56]),
+            #   namesize starts at original offset 94 (= header[88:96]).
+            file_size = int(header[48:56], 16)
+            name_size = int(header[88:96], 16)
+            name = f.read(name_size)
+            # Pad (header + filename) to 4-byte boundary.
+            pad = (4 - (_CPIO_HEADER_LEN + name_size) % 4) % 4
+            f.read(pad)
+            data = f.read(file_size)
+            if len(data) != file_size:
+                return None, None
+            return name.rstrip(b"\0").decode("utf-8", "replace"), data
+    except (OSError, ValueError):
+        return None, None
+
+
+def extract_bundle_version(swu_path):
+    """Return the ``version`` field from a .swu's sw-description, or
+    empty string if the bundle isn't readable or doesn't carry a
+    version. Callers should treat empty as "unknown" — never block an
+    install on it (older bundles exist in the wild)."""
+    name, data = read_first_cpio_entry(swu_path)
+    if name != "sw-description" or not data:
+        return ""
+    try:
+        text = data.decode("utf-8", "replace")
+    except UnicodeDecodeError:
+        return ""
+    # sw-description is libconfig syntax. We only care about:
+    #   version = "dev-20260418-1957";
+    m = re.search(r'version\s*=\s*"([^"]+)"', text)
+    return m.group(1) if m else ""
+
+
 def read_status():
     """Read the installer's status JSON. Returns a dict with defaults
     if the file is missing/unreadable.
@@ -79,17 +154,24 @@ def read_status():
         data.setdefault("state", STATE_IDLE)
         data.setdefault("progress", 0)
         data.setdefault("error", "")
+        data["protocol_version"] = OTA_PROTOCOL_VERSION
         return data
     except (OSError, ValueError, json.JSONDecodeError):
-        return {"state": STATE_IDLE, "progress": 0, "error": ""}
+        return {
+            "state": STATE_IDLE,
+            "progress": 0,
+            "error": "",
+            "protocol_version": OTA_PROTOCOL_VERSION,
+        }
 
 
-def write_status(state, progress=0, error=""):
+def write_status(state, progress=0, error="", **extra):
     """Write a status transition from the client side (e.g. during the
     'downloading' phase, before the root installer takes over).
 
     Writes atomically via rename so readers never see a half-written
-    JSON document.
+    JSON document. Extra keyword args (e.g. ``target_version``) are
+    merged into the payload so the UI can read them verbatim.
     """
     try:
         os.makedirs(SPOOL_DIR, exist_ok=True)
@@ -101,6 +183,7 @@ def write_status(state, progress=0, error=""):
         "error": error or "",
         "updated_at": int(time.time()),
     }
+    payload.update(extra)
     data = json.dumps(payload).encode()
     try:
         fd, tmp = tempfile.mkstemp(prefix=".status.", suffix=".json", dir=SPOOL_DIR)
@@ -187,7 +270,17 @@ def stage_bundle(src_fileobj, total_bytes, progress_cb=None):
         write_status(STATE_ERROR, error=f"Rename failed: {exc}")
         return False, f"Rename failed: {exc}"
 
-    log.info("Bundle staged at %s (%d bytes)", dst, received)
+    # Surface the target version so the UI can render "1.0.0 → 1.1.0"
+    # alongside the staged bundle. Empty string is acceptable — older
+    # bundles without a version field still install.
+    target_version = extract_bundle_version(dst)
+    write_status(STATE_DOWNLOADING, progress=40, target_version=target_version)
+    log.info(
+        "Bundle staged at %s (%d bytes, version=%s)",
+        dst,
+        received,
+        target_version or "unknown",
+    )
     return True, dst
 
 

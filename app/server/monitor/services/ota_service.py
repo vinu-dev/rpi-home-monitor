@@ -16,6 +16,7 @@ Design patterns:
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -36,6 +37,44 @@ def _human_size(nbytes):
             return f"{nbytes:.1f} {unit}"
         nbytes /= 1024
     return f"{nbytes:.1f} PB"
+
+
+# --- .swu metadata extraction ---------------------------------------------
+# See app/camera/camera_streamer/ota_installer.py for the twin of this
+# helper. A .swu is a CPIO newc / newc-CRC archive whose first entry
+# is sw-description; we read just that entry so the admin can see the
+# target version before triggering an install. Never raises — empty
+# string means "unknown".
+_CPIO_NEWC_MAGICS = (b"070701", b"070702")
+_CPIO_HEADER_LEN = 110  # magic (6) + 13 x 8 hex fields (104)
+
+
+def extract_bundle_version(swu_path):
+    """Return the version string declared inside the bundle's
+    sw-description, or '' if unreadable. Caller handles the empty
+    case — older bundles without a version field exist in the wild
+    and shouldn't block an install."""
+    try:
+        with open(swu_path, "rb") as f:
+            magic = f.read(6)
+            if magic not in _CPIO_NEWC_MAGICS:
+                return ""
+            header = f.read(_CPIO_HEADER_LEN - 6)
+            if len(header) != _CPIO_HEADER_LEN - 6:
+                return ""
+            file_size = int(header[48:56], 16)
+            name_size = int(header[88:96], 16)
+            name = f.read(name_size)
+            pad = (4 - (_CPIO_HEADER_LEN + name_size) % 4) % 4
+            f.read(pad)
+            data = f.read(file_size)
+            if name.rstrip(b"\0") != b"sw-description":
+                return ""
+            text = data.decode("utf-8", "replace")
+            m = re.search(r'version\s*=\s*"([^"]+)"', text)
+            return m.group(1) if m else ""
+    except (OSError, ValueError, UnicodeDecodeError):
+        return ""
 
 
 class OTAService:
@@ -84,7 +123,20 @@ class OTAService:
             if staged:
                 default["state"] = "staged"
                 default["staged_filename"] = staged
+                default["target_version"] = extract_bundle_version(
+                    os.path.join(self.staging_dir, staged)
+                )
         return default
+
+    def is_busy(self, device_id="server"):
+        """True iff an upload or install for this device is in flight.
+
+        Mirrors the camera's ota_installer.is_busy(). Used by the
+        upload and install endpoints to reject concurrent admin
+        actions with HTTP 409 instead of silently clobbering state.
+        """
+        state = self.get_status(device_id).get("state", "idle")
+        return state in ("uploading", "verifying", "installing", "rebooting")
 
     def _find_staged_bundle(self):
         """Return the filename of the newest staged .swu, or '' if none."""
@@ -176,16 +228,44 @@ class OTAService:
         except OSError as e:
             return None, f"Failed to stage file: {e}"
 
-        self.set_status("server", "staged", version="", progress=0, error="")
-        self._log_audit("OTA_STAGED", user, ip, f"Bundle staged: {filename}")
-        log.info("OTA bundle staged: %s (%d bytes)", filename, size)
+        target_version = extract_bundle_version(staged_path)
+        self.set_status(
+            "server",
+            "staged",
+            version="",
+            progress=0,
+            error="",
+            staged_filename=filename,
+            target_version=target_version,
+        )
+        self._log_audit(
+            "OTA_STAGED",
+            user,
+            ip,
+            f"Bundle staged: {filename} (version={target_version or 'unknown'})",
+        )
+        log.info(
+            "OTA bundle staged: %s (%d bytes, version=%s)",
+            filename,
+            size,
+            target_version or "unknown",
+        )
 
         return staged_path, ""
 
     def verify_bundle(self, bundle_path):
         """Verify CMS signature of a .swu bundle.
 
-        Uses openssl to verify the signature embedded in the SWU image.
+        Uses swupdate to verify the signature embedded in the .swu.
+
+        Enforcement contract (per ADR-0014):
+          - If the image was built with SWUPDATE_SIGNING=1, the swupdate
+            bbappend drops `/etc/swupdate-enforce` onto the rootfs as a
+            marker. In that case a missing public cert is a HARD FAIL —
+            we will not install unsigned bundles on a device where the
+            user opted into signing.
+          - If the marker is absent, a missing cert means "dev build,
+            signing was never required" and we accept any bundle.
 
         Args:
             bundle_path: Path to the .swu file.
@@ -197,11 +277,21 @@ class OTAService:
             return False, "Bundle file not found"
 
         if not os.path.isfile(self._public_key_path):
+            if os.path.isfile("/etc/swupdate-enforce"):
+                log.error(
+                    "Signing enforced but cert missing at %s — refusing install",
+                    self._public_key_path,
+                )
+                return False, (
+                    "Signature enforcement is on but the verification "
+                    "certificate is missing from this device. Re-flash "
+                    "an image rebuilt with your current signing key."
+                )
             log.warning(
-                "SWUpdate verification cert not found at %s — skipping verification",
+                "SWUpdate verification cert not found at %s — skipping verification (dev build)",
                 self._public_key_path,
             )
-            return True, ""  # No key = skip verification (dev mode)
+            return True, ""  # No key + no enforcement = dev mode
 
         try:
             result = subprocess.run(

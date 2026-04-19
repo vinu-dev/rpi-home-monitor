@@ -9,12 +9,14 @@ software =
                 type = "raw";
                 device = "/dev/monitor_standby";
                 compressed = "zlib";
+                sha256 = "@@ROOTFS_SHA256@@";
             }
         );
         scripts: (
             {
                 filename = "post-update.sh";
                 type = "shellscript";
+                sha256 = "@@POST_UPDATE_SHA256@@";
             }
         );
     };

@@ -620,13 +620,20 @@ details[open] summary::after { transform: rotate(45deg); }
       automatically rolls back to the previous one.
     </p>
 
+    <div id="ota-version-row" hidden style="font-size:.85rem;margin-bottom:var(--gap-3)">
+      <span class="muted">Installing</span>
+      <span id="ota-current-ver" class="mono">--</span>
+      <span class="muted">→</span>
+      <span id="ota-target-ver" class="mono" style="color:var(--accent-1)">--</span>
+    </div>
+
     <div id="ota-busy" hidden>
       <div class="bar-fill"><div id="ota-fill"></div></div>
       <div class="bar-label" id="ota-label">uploading — 0%</div>
     </div>
 
     <div class="field">
-      <input class="input" type="file" id="ota-file" accept=".swu">
+      <input class="input" type="file" id="ota-file" accept=".swu" onchange="onOtaFileSelected()">
     </div>
     <div class="actions">
       <button class="btn btn--primary" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; install</button>
@@ -721,6 +728,7 @@ function statusSentence(d) {
 // ---- Status (/api/status) ----
 var _streamConfig = null;
 var _hostname = "";
+var _currentFirmware = "";
 function loadStatus() {
     fetch("/api/status").then(function(r){
         if (r.status === 401) { window.location.href = "/login"; return null; }
@@ -747,7 +755,8 @@ function loadStatus() {
             ? (d.server_address || "--")
             : "Not paired";
         $("h-uptime").textContent = friendlyUptime(d.uptime);
-        $("h-firmware").textContent = d.firmware_version || "--";
+        _currentFirmware = d.firmware_version || "";
+        $("h-firmware").textContent = _currentFirmware || "--";
 
         // Chips
         if (typeof d.cpu_temp === "number") {
@@ -1049,6 +1058,18 @@ function renderOta(s) {
     var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
     $("btn-ota-upload").disabled = busy;
     $("btn-ota-reboot").hidden = (state !== "installed");
+
+    // Version diff row. Show it once the bundle has been staged —
+    // during the download the target version isn't known yet.
+    var target = (s && s.target_version) || "";
+    if (target && state !== "idle") {
+        $("ota-current-ver").textContent = _currentFirmware || "--";
+        $("ota-target-ver").textContent = target;
+        $("ota-version-row").hidden = false;
+    } else {
+        $("ota-version-row").hidden = true;
+    }
+
     if (state === "idle") {
         hide("ota-busy");
         return;
@@ -1068,10 +1089,94 @@ function pollOta() {
         }
     }).catch(function(){});
 }
-function uploadOta() {
+// Parse the head of a .swu (CPIO newc) and return
+//   { ok, signed, target, version }
+// by reading the CPIO entry names (to detect sw-description.sig) and
+// the sw-description text (to detect which target this bundle was built
+// for). Server bundles include a `raspberrypi4-64` selector group;
+// camera bundles include `home-monitor-camera`. Reading 64 KB covers
+// the CPIO headers plus the small sw-description payload without
+// streaming the 100+ MB rootfs.
+async function _inspectSwu(file) {
+    try {
+        var buf = await file.slice(0, 65536).arrayBuffer();
+        var v = new Uint8Array(buf);
+        var td = new TextDecoder("ascii");
+        var names = [];
+        var swDescText = "";
+        var pos = 0;
+        while (pos + 110 <= v.length && names.length < 3) {
+            var magic = td.decode(v.subarray(pos, pos + 6));
+            if (magic !== "070701" && magic !== "070702") break;
+            var filesize = parseInt(td.decode(v.subarray(pos + 54, pos + 62)), 16);
+            var namesize = parseInt(td.decode(v.subarray(pos + 94, pos + 102)), 16);
+            if (!isFinite(filesize) || !isFinite(namesize) || namesize < 1) break;
+            var nameStart = pos + 110;
+            if (nameStart + namesize > v.length) break;
+            var name = td.decode(v.subarray(nameStart, nameStart + namesize - 1));
+            if (name === "TRAILER!!!") break;
+            var afterName = ((nameStart + namesize) + 3) & ~3;
+            if (name === "sw-description" && afterName + filesize <= v.length) {
+                swDescText = td.decode(v.subarray(afterName, afterName + filesize));
+            }
+            names.push(name);
+            pos = (afterName + filesize + 3) & ~3;
+        }
+        if (names.length === 0 || names[0] !== "sw-description") {
+            return { ok: false, reason: "Not a valid .swu bundle (sw-description missing)." };
+        }
+        var signed = names.length > 1 && names[1] === "sw-description.sig";
+        var target = "unknown";
+        if (/\braspberrypi4-64\s*=/.test(swDescText)) target = "server";
+        else if (/\bhome-monitor-camera\s*=/.test(swDescText)) target = "camera";
+        var vm = swDescText.match(/version\s*=\s*"([^"]+)"/);
+        var version = vm ? vm[1] : "";
+        return { ok: true, signed: signed, target: target, version: version };
+    } catch (e) {
+        return { ok: false, reason: "Could not read .swu file: " + (e && e.message || e) };
+    }
+}
+
+// Validate at upload time — this is the camera GUI, so only camera
+// bundles are acceptable. Rejects unsigned, wrong-target, and
+// unrecognised bundles with clear messaging.
+async function validateCameraSwu(file) {
+    var info = await _inspectSwu(file);
+    if (!info.ok) return info;
+    if (!info.signed) return { ok: false, reason: "Unsigned bundle — select a signed .swu." };
+    if (info.target !== "camera") {
+        var got = info.target === "unknown" ? "unrecognised" : info.target;
+        return { ok: false, reason: "This is a " + got + " bundle — this device requires a camera bundle." };
+    }
+    return { ok: true, version: info.version };
+}
+
+// Fire the signed-check the moment a file is chosen, so the user sees
+// "Unsigned bundle — select a signed .swu" before clicking Upload.
+async function onOtaFileSelected() {
+    var file = $("ota-file").files[0];
+    $("btn-ota-upload").disabled = false;
+    if (!file) { setMsg("ota-result", "", ""); return; }
+    if (!/\.swu$/i.test(file.name)) {
+        setMsg("ota-result", "err", "File must be a .swu firmware bundle.");
+        $("btn-ota-upload").disabled = true;
+        return;
+    }
+    var check = await validateCameraSwu(file);
+    if (!check.ok) {
+        setMsg("ota-result", "err", check.reason);
+        $("btn-ota-upload").disabled = true;
+    } else {
+        setMsg("ota-result", "ok", "Signed camera bundle" + (check.version ? " (" + check.version + ")" : "") + " — ready to upload.");
+    }
+}
+
+async function uploadOta() {
     var file = $("ota-file").files[0];
     if (!file) return setMsg("ota-result", "err", "Choose a firmware file first.");
     if (!/\.swu$/i.test(file.name)) return setMsg("ota-result", "err", "File must be a .swu firmware bundle.");
+    var check = await validateCameraSwu(file);
+    if (!check.ok) { setMsg("ota-result", "err", check.reason); return; }
     setMsg("ota-result", "warn", "Uploading — do not close this page.");
     renderOta({ state: "uploading", progress: 0 });
     var xhr = new XMLHttpRequest();
@@ -1140,6 +1245,7 @@ window.saveStream = saveStream;
 window.checkResetConfirm = checkResetConfirm;
 window.doReset = doReset;
 window.uploadOta = uploadOta;
+window.onOtaFileSelected = onOtaFileSelected;
 window.rebootCamera = rebootCamera;
 
 // Kickoff

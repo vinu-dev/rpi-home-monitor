@@ -110,12 +110,21 @@ ln -sfn "$STANDBY" /dev/monitor_standby
 log "Standby symlink: /dev/monitor_standby -> $STANDBY (boot_slot=$BOOT_SLOT)"
 
 # Pick verification cert. Prefer /etc shipped key; fall back to /data
-# for dev builds. Absence ⇒ dev/unsigned, allowed by design (ADR-0014).
+# for dev builds. Absence ⇒ dev/unsigned, allowed by design (ADR-0014)
+# UNLESS the image was built with SWUPDATE_SIGNING=1 (bbappend drops
+# /etc/swupdate-enforce as a marker). If enforcement is on but the
+# cert is missing at runtime, refuse to install rather than silently
+# accept anything.
 PUBKEY=""
 if [ -f "$PUBKEY_SYSTEM" ]; then
     PUBKEY="$PUBKEY_SYSTEM"
 elif [ -f "$PUBKEY_DATA" ]; then
     PUBKEY="$PUBKEY_DATA"
+fi
+if [ -z "$PUBKEY" ] && [ -f /etc/swupdate-enforce ]; then
+    write_status "error" 0 "Signature enforcement on but cert missing — re-flash a signed image"
+    log "FAIL: enforce marker present but no public cert found at $PUBKEY_SYSTEM or $PUBKEY_DATA"
+    exit 1
 fi
 
 # Zero the first 16 MB of the standby partition before swupdate

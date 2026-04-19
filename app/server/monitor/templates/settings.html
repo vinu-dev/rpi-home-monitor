@@ -876,6 +876,14 @@
                 <span class="info-row__label">Current version</span>
                 <span class="info-row__value" x-text="ota.server.current_version || '--'"></span>
             </div>
+            <!-- Show the version that's about to be installed once a bundle is
+                 staged — admin should never commit to "install" without
+                 knowing what's in the bundle. -->
+            <div class="info-row" x-show="ota.server.target_version">
+                <span class="info-row__label">After install</span>
+                <span class="info-row__value" style="color:var(--color-accent);"
+                      x-text="ota.server.target_version"></span>
+            </div>
             <div class="info-row" style="border-bottom:none;">
                 <span class="info-row__label">Status</span>
                 <span class="info-row__value">
@@ -929,6 +937,11 @@
                 <div class="info-row">
                     <span class="info-row__label">Current version</span>
                     <span class="info-row__value" x-text="cam.current_version || '--'"></span>
+                </div>
+                <div class="info-row" x-show="cam.target_version">
+                    <span class="info-row__label">After install</span>
+                    <span class="info-row__value" style="color:var(--color-accent);"
+                          x-text="cam.target_version"></span>
                 </div>
                 <div class="info-row" style="border-bottom:none;">
                     <span class="info-row__label">Status</span>
@@ -1604,6 +1617,71 @@ function settingsPage() {
         // upload-progress events (`upload.onprogress`). `onProgress(pct)` is
         // invoked with 0..100 while bytes stream; resolves with the parsed
         // JSON body on 2xx, rejects with Error(message) otherwise.
+        // Parse the head of a .swu (CPIO newc) and return
+        //   { ok, signed, target, version }
+        // by reading both the entry names (to detect `sw-description.sig`)
+        // and the sw-description text (to detect which target this bundle
+        // was built for). Server bundles include a `raspberrypi4-64`
+        // selector group; camera bundles include `home-monitor-camera`.
+        // Reading 64 KB covers the CPIO headers plus the small
+        // sw-description payload without streaming the whole 100-200 MB
+        // rootfs.
+        async _inspectSwu(file) {
+            try {
+                const buf = await file.slice(0, 65536).arrayBuffer();
+                const v = new Uint8Array(buf);
+                const td = new TextDecoder('ascii');
+                const names = [];
+                let swDescText = '';
+                let pos = 0;
+                while (pos + 110 <= v.length && names.length < 3) {
+                    const magic = td.decode(v.subarray(pos, pos + 6));
+                    if (magic !== '070701' && magic !== '070702') break;
+                    const filesize = parseInt(td.decode(v.subarray(pos + 54, pos + 62)), 16);
+                    const namesize = parseInt(td.decode(v.subarray(pos + 94, pos + 102)), 16);
+                    if (!isFinite(filesize) || !isFinite(namesize) || namesize < 1) break;
+                    const nameStart = pos + 110;
+                    if (nameStart + namesize > v.length) break;
+                    const name = td.decode(v.subarray(nameStart, nameStart + namesize - 1));
+                    if (name === 'TRAILER!!!') break;
+                    const afterName = ((nameStart + namesize) + 3) & ~3;
+                    if (name === 'sw-description' && afterName + filesize <= v.length) {
+                        swDescText = td.decode(v.subarray(afterName, afterName + filesize));
+                    }
+                    names.push(name);
+                    pos = (afterName + filesize + 3) & ~3;
+                }
+                if (names.length === 0 || names[0] !== 'sw-description') {
+                    return { ok: false, reason: 'Not a valid .swu bundle (sw-description missing).' };
+                }
+                const signed = names.length > 1 && names[1] === 'sw-description.sig';
+                let target = 'unknown';
+                if (/\braspberrypi4-64\s*=/.test(swDescText)) target = 'server';
+                else if (/\bhome-monitor-camera\s*=/.test(swDescText)) target = 'camera';
+                const vm = swDescText.match(/version\s*=\s*"([^"]+)"/);
+                const version = vm ? vm[1] : '';
+                return { ok: true, signed, target, version };
+            } catch (e) {
+                return { ok: false, reason: 'Could not read .swu file: ' + (e.message || e) };
+            }
+        },
+
+        // Apply the shared bundle-safety policy before any upload: file
+        // must parse, must be signed, and must target `expected`
+        // (server | camera). Returns { ok, reason }.
+        async _validateSwuFor(file, expected) {
+            const info = await this._inspectSwu(file);
+            if (!info.ok) return info;
+            if (!info.signed) {
+                return { ok: false, reason: 'Unsigned bundle — select a signed .swu.' };
+            }
+            if (info.target !== expected) {
+                const got = info.target === 'unknown' ? 'unrecognised' : info.target;
+                return { ok: false, reason: 'This is a ' + got + ' bundle — install requires a ' + expected + ' bundle.' };
+            }
+            return { ok: true, version: info.version };
+        },
+
         _uploadWithCsrf(url, file, onProgress) {
             return new Promise(function(resolve, reject) {
                 var fd = new FormData();
@@ -1637,6 +1715,13 @@ function settingsPage() {
             if (!file) return;
             if (!file.name.toLowerCase().endsWith('.swu')) {
                 window.HM.toast('Only .swu files are accepted', 'error');
+                return;
+            }
+            const check = await this._validateSwuFor(file, 'server');
+            if (!check.ok) {
+                this.ota.server.state = 'error';
+                this.ota.server.error = check.reason;
+                window.HM.toast(check.reason, 'error');
                 return;
             }
             this.ota.server.busy = true;
@@ -1694,6 +1779,13 @@ function settingsPage() {
             if (!file) return;
             if (!file.name.toLowerCase().endsWith('.swu')) {
                 window.HM.toast('Only .swu files are accepted', 'error');
+                return;
+            }
+            const check = await this._validateSwuFor(file, 'camera');
+            if (!check.ok) {
+                cam.state = 'error';
+                cam.error = check.reason;
+                window.HM.toast(check.reason, 'error');
                 return;
             }
             cam.state = 'uploading';

@@ -93,11 +93,15 @@ UNIT
     # --- conf.d: SWUPDATE_ARGS and optional signing cert (ADR-0014) ---
     install -d ${D}${sysconfdir}/swupdate/conf.d
     if [ "${SWUPDATE_SIGNING}" = "1" ]; then
-        # Prod: pass -k so the daemon can verify bundle signatures
+        # Prod (or --sign on dev): pass -k so the daemon can verify
+        # bundle signatures, and drop a marker so the app-layer
+        # verifier in ota_service.py / ota_installer refuses to
+        # silently skip if the cert ever goes missing on the device.
         install -m 0644 ${WORKDIR}/swupdate-args ${D}${sysconfdir}/swupdate/conf.d/00-home-monitor
         install -m 0644 ${WORKDIR}/swupdate-public.crt ${D}${sysconfdir}/swupdate-public.crt
+        touch ${D}${sysconfdir}/swupdate-enforce
     else
-        # Dev: no signing — just set verbosity, no -k needed
+        # Dev: no signing — just set verbosity, no -k needed.
         printf '# Home Monitor OTA args (dev — signing disabled, see ADR-0014)\n' \
             > ${D}${sysconfdir}/swupdate/conf.d/00-home-monitor
         printf 'SWUPDATE_ARGS="-v ${SWUPDATE_EXTRA_ARGS}"\n' \
@@ -120,5 +124,5 @@ FILES:${PN} += " \
     ${sysconfdir}/swupdate/conf.d/00-home-monitor \
     "
 
-# Cert file only packaged when signing is enabled (ADR-0014)
-FILES:${PN}:append = " ${@'${sysconfdir}/swupdate-public.crt' if d.getVar('SWUPDATE_SIGNING') == '1' else ''}"
+# Cert file + enforcement marker only packaged when signing is enabled (ADR-0014)
+FILES:${PN}:append = " ${@'${sysconfdir}/swupdate-public.crt ${sysconfdir}/swupdate-enforce' if d.getVar('SWUPDATE_SIGNING') == '1' else ''}"

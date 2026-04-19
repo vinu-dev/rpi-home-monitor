@@ -34,6 +34,12 @@ OTA_PORT = 8080
 UPLOAD_PATH = "/ota/upload"
 STATUS_PATH = "/ota/status"
 
+# Expected OTA wire protocol version on the camera side. Keep in step
+# with ota_installer.OTA_PROTOCOL_VERSION on the camera. Bump when the
+# HTTP contract (e.g. 202-poll vs. 200-on-complete) changes in a way
+# a stale server wouldn't get right.
+EXPECTED_CAMERA_PROTOCOL_VERSION = 2
+
 # Chunk size for streaming the bundle to the camera. 256 KiB keeps
 # TLS record framing efficient while bounding server-side RAM use.
 CHUNK_SIZE = 256 * 1024
@@ -213,8 +219,24 @@ class CameraOTAClient:
         last_progress = -1
         saw_reachable = False
         announced_rebooting = False
+        protocol_warned = False
         while time.time() < deadline:
             status, err = self.get_status(camera_ip)
+            if status is not None and not protocol_warned:
+                remote_proto = status.get("protocol_version")
+                if (
+                    remote_proto is not None
+                    and remote_proto != EXPECTED_CAMERA_PROTOCOL_VERSION
+                ):
+                    log.warning(
+                        "OTA protocol version mismatch with %s: "
+                        "server expects %s, camera reports %s — continuing "
+                        "best-effort but this combination is unsupported.",
+                        camera_ip,
+                        EXPECTED_CAMERA_PROTOCOL_VERSION,
+                        remote_proto,
+                    )
+                protocol_warned = True
             if status is None:
                 if saw_reachable and not announced_rebooting:
                     # Camera was alive a moment ago and is gone now —

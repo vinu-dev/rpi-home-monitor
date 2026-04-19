@@ -99,6 +99,24 @@ def _get_memory_percent() -> int:
     return 0
 
 
+def _get_firmware_version() -> str:
+    """Read the first version string from ``/etc/sw-versions``.
+
+    The file is written by SWUpdate post-install and lists
+    ``<component> <version>`` pairs. Callers tolerate an empty return
+    (missing file, unreadable, bad format) by reporting ``""``.
+    """
+    try:
+        with open("/etc/sw-versions") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    return parts[1]
+    except OSError:
+        pass
+    return ""
+
+
 def _get_cpu_temp(thermal_path: str | None) -> float:
     """Return CPU temperature in °C."""
     paths = []
@@ -211,6 +229,7 @@ class HeartbeatSender:
             "cpu_temp": _get_cpu_temp(self._thermal_path),
             "memory_percent": _get_memory_percent(),
             "uptime_seconds": _get_uptime_seconds(),
+            "firmware_version": _get_firmware_version(),
             "stream_config": {
                 "width": config.width,
                 "height": config.height,
