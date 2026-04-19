@@ -876,6 +876,14 @@
                 <span class="info-row__label">Current version</span>
                 <span class="info-row__value" x-text="ota.server.current_version || '--'"></span>
             </div>
+            <!-- Show the version that's about to be installed once a bundle is
+                 staged — admin should never commit to "install" without
+                 knowing what's in the bundle. -->
+            <div class="info-row" x-show="ota.server.target_version">
+                <span class="info-row__label">After install</span>
+                <span class="info-row__value" style="color:var(--color-accent);"
+                      x-text="ota.server.target_version"></span>
+            </div>
             <div class="info-row" style="border-bottom:none;">
                 <span class="info-row__label">Status</span>
                 <span class="info-row__value">
@@ -929,6 +937,11 @@
                 <div class="info-row">
                     <span class="info-row__label">Current version</span>
                     <span class="info-row__value" x-text="cam.current_version || '--'"></span>
+                </div>
+                <div class="info-row" x-show="cam.target_version">
+                    <span class="info-row__label">After install</span>
+                    <span class="info-row__value" style="color:var(--color-accent);"
+                          x-text="cam.target_version"></span>
                 </div>
                 <div class="info-row" style="border-bottom:none;">
                     <span class="info-row__label">Status</span>

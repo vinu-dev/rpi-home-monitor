@@ -26,6 +26,7 @@ import threading
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.services import ota_service
 
 ota_bp = Blueprint("ota", __name__)
 
@@ -85,8 +86,13 @@ def get_status():
         # Tell the UI whether a bundle is already staged for this
         # camera so the "Push" button can be enabled without the user
         # needing to re-upload after a page refresh.
-        _, fn = _latest_camera_bundle(ota, cam.id)
+        path, fn = _latest_camera_bundle(ota, cam.id)
         entry["staged_filename"] = fn or ""
+        # Read the target version off the staged bundle (if any). The
+        # admin needs to see what they're about to push, not just the
+        # filename — dev tagging isn't consistent enough to trust.
+        if path and not entry.get("target_version"):
+            entry["target_version"] = ota_service.extract_bundle_version(path)
         result["cameras"].append(entry)
 
     return jsonify(result), 200
@@ -107,6 +113,16 @@ def upload_server_image():
     ota = current_app.ota_service
     user = session.get("username", "")
     ip = request.remote_addr or ""
+
+    # Reject concurrent uploads — two admins racing to upload different
+    # bundles would stage both into the same dir and the install
+    # endpoint would non-deterministically pick one. Camera has had
+    # this guard since the original design; server is catching up.
+    if ota.is_busy("server"):
+        state = ota.get_status("server").get("state")
+        return jsonify(
+            {"error": f"A server update is already in progress ({state})"}
+        ), 409
 
     try:
         os.makedirs(ota.inbox_dir, exist_ok=True)
@@ -129,11 +145,13 @@ def upload_server_image():
         ota.clean_staging()
         return jsonify({"error": f"Verification failed: {verify_err}"}), 400
 
+    staged_status = ota.get_status("server")
     return jsonify(
         {
             "message": "Update image staged and verified",
             "filename": file.filename,
             "staged_path": staged_path,
+            "target_version": staged_status.get("target_version", ""),
         }
     ), 200
 
@@ -146,6 +164,16 @@ def install_server_image():
     ota = current_app.ota_service
     user = session.get("username", "")
     ip = request.remote_addr or ""
+
+    # Same concurrent-install guard as upload. An install-in-progress
+    # state would already block a second install below, but we surface
+    # HTTP 409 up front so the UI doesn't have to parse a mid-install
+    # error.
+    state = ota.get_status("server").get("state", "idle")
+    if state in ("installing", "verifying", "rebooting"):
+        return jsonify(
+            {"error": f"A server update is already in progress ({state})"}
+        ), 409
 
     staging = ota.staging_dir
     if not os.path.isdir(staging):
@@ -258,6 +286,7 @@ def upload_camera_image(camera_id):
             pass
         return jsonify({"error": "Uploaded file is empty"}), 400
 
+    target_version = ota_service.extract_bundle_version(target_path)
     ota.set_status(
         camera_id,
         "staged",
@@ -265,6 +294,7 @@ def upload_camera_image(camera_id):
         progress=0,
         error="",
         filename=file.filename,
+        target_version=target_version,
     )
     audit = getattr(current_app, "audit", None)
     if audit:
@@ -273,7 +303,10 @@ def upload_camera_image(camera_id):
                 "OTA_CAMERA_UPLOAD",
                 user=session.get("username", ""),
                 ip=request.remote_addr or "",
-                detail=f"Uploaded {file.filename} for camera {camera_id}",
+                detail=(
+                    f"Uploaded {file.filename} for camera {camera_id} "
+                    f"(version={target_version or 'unknown'})"
+                ),
             )
         except Exception:
             pass

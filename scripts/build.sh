@@ -54,15 +54,27 @@ stage_local_ota_cert() {
     local configdir=$1
     local config_path="$YOCTO_DIR/config/$configdir/local.conf"
 
-    if ! grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+    # Enforcement comes from two places:
+    #   1. The machine-wide local.conf ("production" target sets it).
+    #   2. The --sign flag on this script (developer opts into signing
+    #      for a dev build to rehearse the production flow).
+    local enforce=0
+    if grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+        enforce=1
+    fi
+    if [ "$SIGN_SWU" = "--sign" ]; then
+        enforce=1
+    fi
+    if [ "$enforce" = "0" ]; then
         return 0
     fi
 
     if [ ! -f "$LOCAL_OTA_CERT" ]; then
         echo ""
-        echo "ERROR: production signing is enabled in $config_path"
+        echo "ERROR: signature verification is enabled for this build."
         echo "Missing local OTA signing certificate: $LOCAL_OTA_CERT"
         echo "Run './scripts/generate-ota-keys.sh' first to generate your own keypair."
+        echo "Each user maintains their own keys — do not share them."
         echo ""
         exit 1
     fi
@@ -72,6 +84,18 @@ stage_local_ota_cert() {
     chmod 0644 "$GENERATED_CERT"
     echo ">>> Staged local OTA verification cert for build:"
     echo "    $GENERATED_CERT"
+
+    # When --sign is used on a dev target, inject SWUPDATE_SIGNING=1
+    # into the build's local.conf so the swupdate recipe actually
+    # compiles in CONFIG_SIGNED_IMAGES + writes the -k flag to the
+    # device's swupdate-args drop-in. Idempotent — remove any prior
+    # injection first so we don't accumulate duplicates across builds.
+    if ! grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+        echo ">>> Injecting SWUPDATE_SIGNING = \"1\" into $config_path (--sign)"
+        # Strip any previous auto-injected line.
+        sed -i '/^SWUPDATE_SIGNING = "1"  # auto-injected by --sign$/d' "$config_path"
+        printf '\nSWUPDATE_SIGNING = "1"  # auto-injected by --sign\n' >> "$config_path"
+    fi
 }
 
 # --- Clone Yocto layers ---

@@ -620,6 +620,13 @@ details[open] summary::after { transform: rotate(45deg); }
       automatically rolls back to the previous one.
     </p>
 
+    <div id="ota-version-row" hidden style="font-size:.85rem;margin-bottom:var(--gap-3)">
+      <span class="muted">Installing</span>
+      <span id="ota-current-ver" class="mono">--</span>
+      <span class="muted">→</span>
+      <span id="ota-target-ver" class="mono" style="color:var(--accent-1)">--</span>
+    </div>
+
     <div id="ota-busy" hidden>
       <div class="bar-fill"><div id="ota-fill"></div></div>
       <div class="bar-label" id="ota-label">uploading — 0%</div>
@@ -721,6 +728,7 @@ function statusSentence(d) {
 // ---- Status (/api/status) ----
 var _streamConfig = null;
 var _hostname = "";
+var _currentFirmware = "";
 function loadStatus() {
     fetch("/api/status").then(function(r){
         if (r.status === 401) { window.location.href = "/login"; return null; }
@@ -747,7 +755,8 @@ function loadStatus() {
             ? (d.server_address || "--")
             : "Not paired";
         $("h-uptime").textContent = friendlyUptime(d.uptime);
-        $("h-firmware").textContent = d.firmware_version || "--";
+        _currentFirmware = d.firmware_version || "";
+        $("h-firmware").textContent = _currentFirmware || "--";
 
         // Chips
         if (typeof d.cpu_temp === "number") {
@@ -1049,6 +1058,18 @@ function renderOta(s) {
     var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
     $("btn-ota-upload").disabled = busy;
     $("btn-ota-reboot").hidden = (state !== "installed");
+
+    // Version diff row. Show it once the bundle has been staged —
+    // during the download the target version isn't known yet.
+    var target = (s && s.target_version) || "";
+    if (target && state !== "idle") {
+        $("ota-current-ver").textContent = _currentFirmware || "--";
+        $("ota-target-ver").textContent = target;
+        $("ota-version-row").hidden = false;
+    } else {
+        $("ota-version-row").hidden = true;
+    }
+
     if (state === "idle") {
         hide("ota-busy");
         return;
