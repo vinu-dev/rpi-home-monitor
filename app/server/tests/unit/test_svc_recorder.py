@@ -145,6 +145,63 @@ class TestGetDatesWithClips:
         assert dates == ["2026-04-07", "2026-04-08", "2026-04-09"]
 
 
+class TestFlatLayoutReads:
+    """Loop-recorder produces <cam>/YYYYMMDD_HHMMSS.mp4 with no date
+    subdir. All read methods must surface those clips — without these
+    the Recordings page shows "No recordings found" even when the disk
+    is full of footage (pre-fix symptom reported 2026-04-19).
+    """
+
+    def _make_flat(self, tmp_path, cam, stem, size=512):
+        cam_dir = tmp_path / cam
+        cam_dir.mkdir(parents=True, exist_ok=True)
+        mp4 = cam_dir / f"{stem}.mp4"
+        mp4.write_bytes(b"x" * size)
+        return mp4
+
+    def test_dates_from_flat_files(self, tmp_path):
+        self._make_flat(tmp_path, "cam-001", "20260417_132730")
+        self._make_flat(tmp_path, "cam-001", "20260417_170727")
+        self._make_flat(tmp_path, "cam-001", "20260419_104351")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        assert svc.get_dates_with_clips("cam-001") == ["2026-04-17", "2026-04-19"]
+
+    def test_dates_merge_flat_and_dated(self, tmp_path):
+        self._make_flat(tmp_path, "cam-001", "20260419_104351")
+        _make_clip(tmp_path, "cam-001", "2026-04-18", "10-00-00")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        assert svc.get_dates_with_clips("cam-001") == ["2026-04-18", "2026-04-19"]
+
+    def test_list_clips_flat(self, tmp_path):
+        self._make_flat(tmp_path, "cam-001", "20260419_104351", size=1024)
+        (tmp_path / "cam-001" / "20260419_104351.thumb.jpg").write_bytes(b"t")
+        self._make_flat(tmp_path, "cam-001", "20260419_104051", size=2048)
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        clips = svc.list_clips("cam-001", "2026-04-19")
+        assert len(clips) == 2
+        assert clips[0].filename == "20260419_104051.mp4"
+        assert clips[0].start_time == "10:40:51"
+        assert clips[0].size_bytes == 2048
+        assert clips[0].thumbnail == ""
+        assert clips[1].filename == "20260419_104351.mp4"
+        assert clips[1].thumbnail == "20260419_104351.thumb.jpg"
+        assert clips[1].date == "2026-04-19"
+
+    def test_list_clips_filters_by_date(self, tmp_path):
+        self._make_flat(tmp_path, "cam-001", "20260417_132730")
+        self._make_flat(tmp_path, "cam-001", "20260419_104351")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        clips = svc.list_clips("cam-001", "2026-04-19")
+        assert len(clips) == 1
+        assert clips[0].start_time == "10:43:51"
+
+    def test_get_clip_path_falls_back_to_flat(self, tmp_path):
+        flat = self._make_flat(tmp_path, "cam-001", "20260419_104351")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        path = svc.get_clip_path("cam-001", "2026-04-19", "20260419_104351.mp4")
+        assert path == flat
+
+
 class TestGetLatestClip:
     """Test latest clip retrieval."""
 
@@ -160,3 +217,16 @@ class TestGetLatestClip:
         clip = svc.get_latest_clip("cam-001")
         assert clip.date == "2026-04-09"
         assert clip.start_time == "15:30:00"
+
+    def test_returns_latest_flat(self, tmp_path):
+        # Flat-layout clips must be returned by get_latest_clip too,
+        # otherwise the dashboard's "Last activity" tile stays blank.
+        cam_dir = tmp_path / "cam-001"
+        cam_dir.mkdir()
+        (cam_dir / "20260419_104051.mp4").write_bytes(b"x")
+        (cam_dir / "20260419_104351.mp4").write_bytes(b"x")
+        svc = RecorderService(str(tmp_path), str(tmp_path / "live"))
+        clip = svc.get_latest_clip("cam-001")
+        assert clip is not None
+        assert clip.date == "2026-04-19"
+        assert clip.start_time == "10:43:51"
