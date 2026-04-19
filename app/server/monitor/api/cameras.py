@@ -413,6 +413,23 @@ def camera_motion_event():
             f"duration={data.get('duration_seconds', 0.0):.1f}s"
         ),
     )
+
+    # Auto-attach clip_ref when the event ends so the dashboard can
+    # know immediately whether a saved clip covers this motion. The
+    # correlator filters on finalised .mp4 (ignoring .mp4.part), so it
+    # returns None if the segment is still being written — in that
+    # case the dashboard's click handler will fall back to Live.
+    try:
+        correlator = getattr(current_app, "motion_clip_correlator", None)
+        if correlator is not None:
+            current = store.get(event_id)
+            if current is not None and not current.clip_ref:
+                clip_ref = correlator.find_clip(camera_id, current.started_at)
+                if clip_ref is not None:
+                    store.attach_clip(event_id, clip_ref)
+    except Exception:
+        # Correlator is a side-effect; never fail the response on its account.
+        pass
     return jsonify({"message": "Event closed", "event_id": event_id}), 200
 
 

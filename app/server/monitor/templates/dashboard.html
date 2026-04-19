@@ -72,29 +72,36 @@
 -->
 <div class="section-header" x-show="recentEvents.length > 0">
     Recent events
-    <a class="text-small" style="float:right;" href="/recordings">All recordings &rarr;</a>
+    <a class="text-small" style="float:right;" href="/events">All events &rarr;</a>
 </div>
 <div class="events-feed" x-show="recentEvents.length > 0">
-    <template x-for="ev in recentEvents" :key="ev.camera_id + '/' + ev.date + '/' + ev.filename">
-        <div class="event-row" :class="{ 'event-row--active': playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename) }">
-            <button class="event-row__trigger" @click="playEvent(ev)">
-                <span class="event-row__time" x-text="_relativeTime(_clipIso(ev))"></span>
-                <span class="event-row__camera" x-text="ev.camera_name || ev.camera_id"></span>
-                <span class="event-row__duration" x-text="_durationLabel(ev.duration_seconds)"></span>
-                <span class="event-row__chevron" x-text="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename) ? '\u25BC' : '\u25B6'"></span>
-            </button>
-            <!-- x-if (not x-show) so the <video> element only exists
-                 after the user clicks Play. preload="none" on a hidden
-                 <video src=...> still triggers a range-request on many
-                 browsers, saturating the per-origin HTTP connection pool
-                 and queuing navigation clicks behind the preloads —
-                 that's what caused the dashboard→live delay.
-            -->
-            <template x-if="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename)">
+    <!-- Unified feed: recording clips AND motion events, sorted newest first.
+         Each row carries `_type` ('clip' or 'motion') and the UI branches:
+           clip  → inline video playback (unchanged)
+           motion → opens the click-through router at /events/<id> which
+                    redirects to Recordings (if a clip covers it) or Live
+                    (if no clip yet / recording was off).
+    -->
+    <!-- Motion detections + (future) other operator-notable events.
+         Click plays the saved clip inline if one is attached; otherwise
+         falls back to Live for the camera (motion-detection.md
+         click-through rule). -->
+    <template x-for="ev in recentEvents" :key="ev._key">
+        <div class="event-row" :class="{ 'event-row--active': playingKey === ev._key }">
+            <template x-if="ev._type === 'motion'">
+                <button class="event-row__trigger" @click="playMotionEvent(ev)">
+                    <span class="event-row__type event-row__type--motion">Motion detected</span>
+                    <span class="event-row__time" x-text="_relativeTime(ev.started_at)"></span>
+                    <span class="event-row__camera" x-text="ev._camera_name || ev.camera_id"></span>
+                    <span class="event-row__duration" x-text="_motionLabel(ev)"></span>
+                    <span class="event-row__chevron" x-text="(ev.clip_ref ? (playingKey === ev._key ? '\u25BC' : '\u25B6') : '\u25B6')"></span>
+                </button>
+            </template>
+            <template x-if="ev._type === 'motion' && ev.clip_ref && playingKey === ev._key">
                 <div class="event-row__player" x-transition>
                     <video x-ref="player"
                            controls autoplay preload="metadata"
-                           :src="'/api/v1/recordings/' + encodeURIComponent(ev.camera_id) + '/' + encodeURIComponent(ev.date) + '/' + encodeURIComponent(ev.filename)"></video>
+                           :src="'/api/v1/recordings/' + encodeURIComponent(ev.clip_ref.camera_id) + '/' + encodeURIComponent(ev.clip_ref.date) + '/' + encodeURIComponent(ev.clip_ref.filename) + '#t=' + (ev.clip_ref.offset_seconds || 0)"></video>
                 </div>
             </template>
         </div>
@@ -117,7 +124,7 @@
      returned data fine. -->
 <div class="section-header" x-show="auditAdmin">
     Recent activity
-    <a class="text-small" style="float:right;" href="/settings#security">Full log &rarr;</a>
+    <a class="text-small" style="float:right;" href="/logs">Full log &rarr;</a>
 </div>
 <div class="log-teaser" x-show="auditAdmin">
     <template x-if="auditEvents.length === 0">
@@ -500,11 +507,28 @@ function dashboardPage() {
             } catch(e) {
                 this.latestClip = null;
             }
-            // Tier-3 recent events feed. Keep this tight (top 3) so the
-            // dashboard stays a glance-surface — the "All recordings →"
-            // link on the section header is the path to everything else.
+            // Tier-3 recent events feed — MOTION events (and future
+            // operator-notable types: CAMERA_OFFLINE, CAMERA_PAIRED, OTA,
+            // etc.). Continuous recording clips are deliberately NOT in
+            // this feed — they would swamp actual events at 3-min cadence
+            // and turn the glance surface into noise. Clip browsing lives
+            // at /recordings; "Last activity" tile above covers recorder
+            // liveness.
             try {
-                this.recentEvents = await window.HM.api.get('/api/v1/recordings/recent?limit=3');
+                var motions = await window.HM.api.get('/api/v1/motion-events?limit=5');
+                motions = Array.isArray(motions) ? motions : [];
+                var camNameByid = {};
+                (this.cameras || []).forEach(function(c) { camNameByid[c.id] = c.name; });
+                motions.forEach(function(m) {
+                    m._type = 'motion';
+                    m._key = 'motion/' + m.id;
+                    m._iso = m.started_at;
+                    m._camera_name = camNameByid[m.camera_id];
+                });
+                motions.sort(function(a, b) {
+                    return (b._iso || '').localeCompare(a._iso || '');
+                });
+                this.recentEvents = motions.slice(0, 5);
             } catch(e) {
                 this.recentEvents = [];
             }
@@ -512,8 +536,16 @@ function dashboardPage() {
             // Viewers get a 403 here which we silently suppress so the
             // dashboard still renders cleanly.
             try {
-                var resp = await window.HM.api.get('/api/v1/audit/events?limit=5');
-                this.auditEvents = (resp && resp.events) || [];
+                // Fetch more than 5 so we have headroom after filtering
+                // motion events out — those live in the Recent events
+                // feed above; duplicating them in the security-oriented
+                // audit teaser would drown the low-frequency events
+                // operators actually need to notice.
+                var resp = await window.HM.api.get('/api/v1/audit/events?limit=25');
+                var raw = (resp && resp.events) || [];
+                this.auditEvents = raw.filter(function(e) {
+                    return e.event !== 'MOTION_DETECTED' && e.event !== 'MOTION_ENDED';
+                }).slice(0, 5);
                 this.auditAdmin = true;
             } catch(e) {
                 this.auditEvents = [];
@@ -541,6 +573,8 @@ function dashboardPage() {
                 OTA_COMPLETED: 'OTA completed',
                 OTA_FAILED: 'OTA failed',
                 FACTORY_RESET: 'Factory reset',
+                MOTION_DETECTED: 'Motion detected',
+                MOTION_ENDED: 'Motion ended',
             };
             return map[code] || code.toLowerCase().replace(/_/g, ' ');
         },
@@ -552,8 +586,36 @@ function dashboardPage() {
             return '';
         },
 
+        playMotionEvent(ev) {
+            // If a clip is attached, toggle inline playback like a clip
+            // row. Otherwise fall back to Live view for the camera.
+            if (ev.clip_ref) {
+                if (this.playingKey === ev._key) {
+                    this.playingKey = '';
+                    return;
+                }
+                this.playingKey = ev._key;
+                this.$nextTick(() => {
+                    var active = document.querySelector('.event-row--active video');
+                    if (active) {
+                        try { active.load(); } catch (_) { /* noop */ }
+                        var p = active.play();
+                        if (p && typeof p.catch === 'function') {
+                            p.catch(() => { /* user can press the ▶ control */ });
+                        }
+                    }
+                });
+                return;
+            }
+            // No clip on disk yet → go to Live for this camera.
+            window.location.href = '/live?cam=' + encodeURIComponent(ev.camera_id);
+        },
+
         playEvent(ev) {
-            var key = ev.camera_id + '/' + ev.date + '/' + ev.filename;
+            // Use the same composite key the template renders (ev._key)
+            // so playingKey comparisons match both ways. Fallback for any
+            // caller that still passes a raw clip object.
+            var key = ev._key || ('clip/' + ev.camera_id + '/' + ev.date + '/' + ev.filename);
             // Toggle — click the same row again to collapse.
             if (this.playingKey === key) {
                 this.playingKey = '';
@@ -585,6 +647,23 @@ function dashboardPage() {
             var m = Math.floor(secs / 60);
             var s = secs % 60;
             return m + 'm' + (s ? ' ' + s + 's' : '');
+        },
+
+        _motionLabel(ev) {
+            // Motion event row copy — ongoing events show "ongoing",
+            // finished events show their duration, all include the peak
+            // score as a rough "how much moved" indicator.
+            var bits = [];
+            if (ev.ended_at) {
+                var d = this._durationLabel(Math.round(ev.duration_seconds || 0));
+                if (d) bits.push(d);
+            } else {
+                bits.push('ongoing');
+            }
+            if (typeof ev.peak_score === 'number') {
+                bits.push(Math.round(ev.peak_score * 100) + '%');
+            }
+            return bits.join(' \u00B7 ');
         },
 
         async loadCameras() {

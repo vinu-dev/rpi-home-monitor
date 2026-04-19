@@ -301,9 +301,14 @@ def _init_services(app):
         data_dir=app.config["DATA_DIR"],
     )
 
-    # Connect storage manager → streaming service for dir change notifications
+    # Connect storage manager → streaming service for dir change notifications.
+    # Also keep the motion_clip_correlator in sync so clip_ref lookups don't
+    # quietly fail against a stale /data/recordings path after the operator
+    # selects a USB device.
     def _on_recording_dir_change(new_dir):
         app.streaming.update_recordings_dir(new_dir)
+        if getattr(app, "motion_clip_correlator", None) is not None:
+            app.motion_clip_correlator.set_recordings_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -368,10 +373,14 @@ def _startup(app):
     _ensure_default_admin(app.store)
     log.debug("Default admin user ensured")
 
-    # Auto-mount USB if previously configured
+    # Auto-mount USB if previously configured. Keep the motion clip
+    # correlator aligned with the effective recordings path so it
+    # searches the right tree.
     recordings_dir = _auto_mount_usb(app, app.config["RECORDINGS_DIR"])
     if recordings_dir != app.config["RECORDINGS_DIR"]:
         app.streaming.update_recordings_dir(recordings_dir)
+        if getattr(app, "motion_clip_correlator", None) is not None:
+            app.motion_clip_correlator.set_recordings_dir(recordings_dir)
 
     app.streaming.start()
     app.storage_manager.start()

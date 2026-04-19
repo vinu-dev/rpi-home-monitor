@@ -36,6 +36,12 @@ def list_events():
     Query params:
         cam  — optional camera_id filter
         limit — max records (default 100, clamped to [1, 500])
+
+    Side effect: any event missing a clip_ref is correlated against the
+    recordings directory on-the-fly. This backfills events that were
+    stored before the phase=end auto-attach hook landed, and also covers
+    events whose clip was still being written (`.mp4.part`) at end time
+    but has since been finalised.
     """
     store = current_app.motion_event_store
     cam = request.args.get("cam", "").strip()
@@ -46,6 +52,20 @@ def list_events():
     limit = max(1, min(limit, 500))
 
     events = store.list_events(camera_id=cam, limit=limit)
+
+    correlator = getattr(current_app, "motion_clip_correlator", None)
+    if correlator is not None:
+        for evt in events:
+            if evt.clip_ref:
+                continue
+            try:
+                ref = correlator.find_clip(evt.camera_id, evt.started_at)
+            except Exception:
+                ref = None
+            if ref is not None:
+                store.attach_clip(evt.id, ref)
+                evt.clip_ref = ref
+
     return jsonify([asdict(e) for e in events]), 200
 
 

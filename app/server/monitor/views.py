@@ -91,6 +91,32 @@ def recordings():
     return render_template("recordings.html")
 
 
+@views_bp.route("/events")
+def events():
+    """Events feed — motion detections (and future operator-notable
+    event types). Continuous recording clips live in /recordings, not
+    here, so this surface stays signal-not-noise. Linked from the
+    dashboard's "All events →" escape hatch and the Events nav item."""
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    if not _is_authenticated():
+        return redirect(url_for("views.login"))
+    return render_template("events.html")
+
+
+@views_bp.route("/logs")
+def logs():
+    """Full activity log — security/ops audit events with filters.
+    Admin-only (the template surfaces a permission-denied card when a
+    viewer-scope session somehow lands here; the underlying API also
+    returns 403). Linked from the dashboard's "Full log →" escape hatch."""
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    if not _is_authenticated():
+        return redirect(url_for("views.login"))
+    return render_template("logs.html")
+
+
 @views_bp.route("/settings")
 def settings():
     """System settings and user management."""

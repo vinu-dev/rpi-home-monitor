@@ -86,6 +86,22 @@ class MotionClipCorrelator:
         self._recordings_dir = Path(recordings_dir)
         self._clip_duration = max(1, int(clip_duration_seconds))
 
+    def set_recordings_dir(self, new_dir: str | Path) -> None:
+        """Update the recordings root at runtime.
+
+        Called when the user selects a USB device for storage — the
+        StreamingService moves recorder output to the new path; the
+        correlator must follow or it'll keep looking in the stale
+        /data/recordings default and produce `clip_ref: null` for every
+        event (which silently falls the UI through to Live, losing
+        saved-clip playback).
+        """
+        self._recordings_dir = Path(new_dir)
+
+    def set_clip_duration(self, new_duration: int) -> None:
+        """Keep the correlator's window in sync with the recorder."""
+        self._clip_duration = max(1, int(new_duration))
+
     def find_clip(self, camera_id: str, event_started_at: str) -> dict | None:
         """Return a clip_ref for the clip covering the event, or None.
 

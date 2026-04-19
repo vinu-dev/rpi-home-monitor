@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Events - Home Monitor{% endblock %}
+
+{% block content %}
+<div x-data="eventsPage()" x-init="init()">
+
+<h1 class="page-title">Events</h1>
+
+<!--
+  Filters. Type-chip row + camera + date range. Chips are the primary
+  filter (matches how people actually ask: "show me motion events"),
+  camera is a secondary narrow-down, date bounds the query. Keep the
+  control surface flat on one card — deeper filtering (zones, score
+  thresholds) goes in a detail drawer in a later slice.
+-->
+<div class="card mb-16">
+    <div class="chip-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <template x-for="opt in typeOptions" :key="opt.value">
+            <button type="button"
+                    class="chip"
+                    :class="type === opt.value ? 'chip--active' : ''"
+                    @click="type = opt.value; load()"
+                    x-text="opt.label"></button>
+        </template>
+    </div>
+    <div class="inline-form__row">
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="ev-camera-select">Camera</label>
+            <select id="ev-camera-select" class="form-input" x-model="cameraId" @change="load()">
+                <option value="">All cameras</option>
+                <template x-for="cam in cameras" :key="cam.id">
+                    <option :value="cam.id" x-text="cam.name || cam.id"></option>
+                </template>
+            </select>
+        </div>
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="ev-from">From</label>
+            <input type="date" id="ev-from" class="form-input" x-model="fromDate" @change="load()">
+        </div>
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="ev-to">To</label>
+            <input type="date" id="ev-to" class="form-input" x-model="toDate" @change="load()">
+        </div>
+    </div>
+</div>
+
+<!-- Result count + refresh hint -->
+<div class="section-header">
+    <span x-text="headerLabel()"></span>
+    <button class="text-small" style="float:right; background:none; border:none; color:var(--color-accent); cursor:pointer;"
+            @click="load()" :disabled="loading">
+        <span x-show="!loading">Refresh</span>
+        <span x-show="loading">Loading...</span>
+    </button>
+</div>
+
+<!-- Empty / error states -->
+<div class="card mb-16" x-show="!loading && events.length === 0 && !error">
+    <p class="text-muted" style="margin:0;">
+        No events match the current filters.
+    </p>
+</div>
+<div class="card mb-16" x-show="error">
+    <p class="text-muted" style="margin:0;" x-text="error"></p>
+</div>
+
+<!-- Event list — same row vocabulary as the dashboard's Recent events
+     so the two surfaces read the same. Clicking a row toggles inline
+     playback when a saved clip covers the moment; otherwise it falls
+     back to Live for that camera (motion-detection.md click-through
+     rule). -->
+<div class="events-feed" x-show="events.length > 0">
+    <template x-for="ev in events" :key="ev._key">
+        <div class="event-row" :class="{ 'event-row--active': playingKey === ev._key }">
+            <template x-if="ev._type === 'motion'">
+                <button class="event-row__trigger" @click="playMotion(ev)">
+                    <span class="event-row__type event-row__type--motion">Motion detected</span>
+                    <span class="event-row__time" x-text="_relativeTime(ev.started_at)"></span>
+                    <span class="event-row__camera" x-text="cameraName(ev.camera_id)"></span>
+                    <span class="event-row__duration" x-text="_motionLabel(ev)"></span>
+                    <span class="event-row__chevron" x-text="playingKey === ev._key ? '\u25BC' : '\u25B6'"></span>
+                </button>
+            </template>
+            <template x-if="ev._type === 'motion' && ev.clip_ref && playingKey === ev._key">
+                <div class="event-row__player" x-transition>
+                    <video controls autoplay preload="metadata"
+                           :src="'/api/v1/recordings/' + encodeURIComponent(ev.clip_ref.camera_id) + '/' + encodeURIComponent(ev.clip_ref.date) + '/' + encodeURIComponent(ev.clip_ref.filename) + '#t=' + (ev.clip_ref.offset_seconds || 0)"></video>
+                </div>
+            </template>
+        </div>
+    </template>
+</div>
+
+<!-- Paging — clean "load more" rather than numbered pages. The event
+     store is capped (5000 globally) so infinite scroll isn't a concern. -->
+<div class="mb-16" style="text-align:center;" x-show="events.length > 0 && events.length >= limit">
+    <button type="button" class="btn btn--secondary btn--small"
+            @click="limit = limit + 50; load()" :disabled="loading">
+        Load more
+    </button>
+</div>
+
+</div>
+
+<script>
+function eventsPage() {
+    return {
+        // Filter state
+        type: 'all',       // all | motion | clip
+        cameraId: '',
+        fromDate: '',      // YYYY-MM-DD, inclusive
+        toDate: '',        // YYYY-MM-DD, inclusive
+        limit: 50,
+
+        typeOptions: [
+            // Events is a signal surface. Continuous-recording clips are
+            // intentionally NOT here — /recordings is the exhaustive
+            // clip browser. New chip values (camera_offline, pairing,
+            // ota) will be added alongside 'motion' as those event types
+            // get wired into the feed API.
+            { value: 'all',    label: 'All' },
+            { value: 'motion', label: 'Motion' },
+        ],
+
+        // Data state
+        cameras: [],
+        events: [],
+        loading: false,
+        error: '',
+        playingKey: '',
+
+        async init() {
+            // Default to last 7 days so the page isn't a firehose on
+            // first load. Operators can clear the dates to see all.
+            var today = new Date();
+            var weekAgo = new Date(today.getTime() - 7 * 86400000);
+            this.fromDate = this._ymd(weekAgo);
+            this.toDate = this._ymd(today);
+            await this._loadCameras();
+            await this.load();
+        },
+
+        async _loadCameras() {
+            try {
+                this.cameras = await window.HM.api.get('/api/v1/cameras');
+            } catch (e) {
+                this.cameras = [];
+            }
+        },
+
+        cameraName(id) {
+            var c = this.cameras.find(function(c) { return c.id === id; });
+            return (c && c.name) || id;
+        },
+
+        async load() {
+            this.loading = true;
+            this.error = '';
+            try {
+                // Only motion events today — other event types will be
+                // unioned here as they come online.
+                var motions = [];
+                if (this.type === 'all' || this.type === 'motion') {
+                    motions = await this._fetchMotion();
+                }
+                motions.sort(function(a, b) {
+                    return (b._iso || '').localeCompare(a._iso || '');
+                });
+                this.events = motions.slice(0, this.limit);
+            } catch (e) {
+                this.events = [];
+                this.error = 'Failed to load events. Please refresh.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async _fetchMotion() {
+            var q = '/api/v1/motion-events?limit=' + this.limit;
+            if (this.cameraId) q += '&cam=' + encodeURIComponent(this.cameraId);
+            var events = await window.HM.api.get(q);
+            events = Array.isArray(events) ? events : [];
+            var from = this.fromDate ? this._toIsoStart(this.fromDate) : '';
+            var to = this.toDate ? this._toIsoEnd(this.toDate) : '';
+            var out = [];
+            events.forEach(function(m) {
+                if (from && m.started_at < from) return;
+                if (to && m.started_at > to) return;
+                m._type = 'motion';
+                m._iso = m.started_at;
+                m._key = 'motion/' + m.id;
+                out.push(m);
+            });
+            return out;
+        },
+
+        headerLabel() {
+            var n = this.events.length;
+            if (this.loading) return 'Loading events...';
+            if (n === 0) return 'No events';
+            var suffix = n === 1 ? '' : 's';
+            return n + ' event' + suffix;
+        },
+
+        playMotion(ev) {
+            if (ev.clip_ref) {
+                if (this.playingKey === ev._key) { this.playingKey = ''; return; }
+                this.playingKey = ev._key;
+                return;
+            }
+            // No saved clip for this event — only useful target is Live.
+            window.location.href = '/live?cam=' + encodeURIComponent(ev.camera_id);
+        },
+
+        _relativeTime(iso) {
+            if (!iso) return '';
+            var secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+            if (secs < 5) return 'just now';
+            if (secs < 60) return secs + 's ago';
+            if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+            if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+            return Math.floor(secs / 86400) + 'd ago';
+        },
+
+        _durationLabel(secs) {
+            if (!secs || secs <= 0) return '';
+            if (secs < 60) return secs + 's';
+            var m = Math.floor(secs / 60);
+            var s = secs % 60;
+            return m + 'm' + (s ? ' ' + s + 's' : '');
+        },
+
+        _motionLabel(ev) {
+            var bits = [];
+            if (ev.ended_at) {
+                var d = this._durationLabel(Math.round(ev.duration_seconds || 0));
+                if (d) bits.push(d);
+            } else {
+                bits.push('ongoing');
+            }
+            if (typeof ev.peak_score === 'number') {
+                bits.push(Math.round(ev.peak_score * 100) + '%');
+            }
+            return bits.join(' \u00B7 ');
+        },
+
+        _ymd(d) {
+            var m = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            return d.getFullYear() + '-' + m + '-' + day;
+        },
+
+        _toIsoStart(ymd) { return ymd + 'T00:00:00Z'; },
+        _toIsoEnd(ymd) { return ymd + 'T23:59:59Z'; },
+    };
+}
+</script>
+{% endblock %}
