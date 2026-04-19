@@ -19,12 +19,14 @@ the install layer is identical on both devices.
 
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.services import ota_service
 
 ota_bp = Blueprint("ota", __name__)
 
@@ -84,8 +86,13 @@ def get_status():
         # Tell the UI whether a bundle is already staged for this
         # camera so the "Push" button can be enabled without the user
         # needing to re-upload after a page refresh.
-        _, fn = _latest_camera_bundle(ota, cam.id)
+        path, fn = _latest_camera_bundle(ota, cam.id)
         entry["staged_filename"] = fn or ""
+        # Read the target version off the staged bundle (if any). The
+        # admin needs to see what they're about to push, not just the
+        # filename — dev tagging isn't consistent enough to trust.
+        if path and not entry.get("target_version"):
+            entry["target_version"] = ota_service.extract_bundle_version(path)
         result["cameras"].append(entry)
 
     return jsonify(result), 200
@@ -106,6 +113,16 @@ def upload_server_image():
     ota = current_app.ota_service
     user = session.get("username", "")
     ip = request.remote_addr or ""
+
+    # Reject concurrent uploads — two admins racing to upload different
+    # bundles would stage both into the same dir and the install
+    # endpoint would non-deterministically pick one. Camera has had
+    # this guard since the original design; server is catching up.
+    if ota.is_busy("server"):
+        state = ota.get_status("server").get("state")
+        return jsonify(
+            {"error": f"A server update is already in progress ({state})"}
+        ), 409
 
     try:
         os.makedirs(ota.inbox_dir, exist_ok=True)
@@ -128,11 +145,13 @@ def upload_server_image():
         ota.clean_staging()
         return jsonify({"error": f"Verification failed: {verify_err}"}), 400
 
+    staged_status = ota.get_status("server")
     return jsonify(
         {
             "message": "Update image staged and verified",
             "filename": file.filename,
             "staged_path": staged_path,
+            "target_version": staged_status.get("target_version", ""),
         }
     ), 200
 
@@ -145,6 +164,16 @@ def install_server_image():
     ota = current_app.ota_service
     user = session.get("username", "")
     ip = request.remote_addr or ""
+
+    # Same concurrent-install guard as upload. An install-in-progress
+    # state would already block a second install below, but we surface
+    # HTTP 409 up front so the UI doesn't have to parse a mid-install
+    # error.
+    state = ota.get_status("server").get("state", "idle")
+    if state in ("installing", "verifying", "rebooting"):
+        return jsonify(
+            {"error": f"A server update is already in progress ({state})"}
+        ), 409
 
     staging = ota.staging_dir
     if not os.path.isdir(staging):
@@ -169,7 +198,27 @@ def install_server_image():
     if not ok:
         return jsonify({"error": err}), 500
 
-    return jsonify({"message": "Installation complete — reboot required"}), 200
+    # The button says "Install & Reboot", so actually reboot. We flush
+    # the HTTP response first (the client needs the 200 to transition
+    # its UI into the "rebooting" state) and schedule the reboot on a
+    # background thread with a short delay so systemd has a moment to
+    # tear down Flask cleanly.
+    def _reboot_after_delay():
+        import time as _t
+
+        _t.sleep(2.0)
+        try:
+            subprocess.run(["reboot"], check=False, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            current_app.logger.error("reboot command failed: %s", exc)
+
+    ota.set_status("server", "rebooting", progress=100, error="")
+    threading.Thread(
+        target=_reboot_after_delay, daemon=True, name="ota-install-reboot"
+    ).start()
+    return jsonify(
+        {"message": "Installation complete — rebooting now", "rebooting": True}
+    ), 200
 
 
 @ota_bp.route("/camera/<camera_id>/upload", methods=["POST"])
@@ -237,6 +286,7 @@ def upload_camera_image(camera_id):
             pass
         return jsonify({"error": "Uploaded file is empty"}), 400
 
+    target_version = ota_service.extract_bundle_version(target_path)
     ota.set_status(
         camera_id,
         "staged",
@@ -244,6 +294,7 @@ def upload_camera_image(camera_id):
         progress=0,
         error="",
         filename=file.filename,
+        target_version=target_version,
     )
     audit = getattr(current_app, "audit", None)
     if audit:
@@ -252,7 +303,10 @@ def upload_camera_image(camera_id):
                 "OTA_CAMERA_UPLOAD",
                 user=session.get("username", ""),
                 ip=request.remote_addr or "",
-                detail=f"Uploaded {file.filename} for camera {camera_id}",
+                detail=(
+                    f"Uploaded {file.filename} for camera {camera_id} "
+                    f"(version={target_version or 'unknown'})"
+                ),
             )
         except Exception:
             pass
@@ -279,10 +333,9 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
         audit = getattr(app, "audit", None)
 
         def _progress(sent, total):
-            # Map bytes-sent → 0..50 %. The second 50 % is reserved
-            # for verify+install on the camera side (OTAAgent emits
-            # its own 0..100 range; we surface it via the separate
-            # "live" camera status poll from the UI).
+            # Map bytes-sent → 0..50 %. Used only for the byte-level
+            # track within the "uploading" phase; high-level state
+            # transitions are driven by _status below.
             if total > 0:
                 pct = int((sent / total) * 50)
             else:
@@ -291,9 +344,18 @@ def _run_camera_push(app, camera_id, camera_ip, bundle_path, user, ip):
                 camera_id, "uploading", progress=pct, error="", bytes_sent=sent
             )
 
+        def _status(state, progress, error=""):
+            # push_bundle's high-level state updates (installing,
+            # rebooting, installed, error). Overwrites whatever
+            # _progress last wrote so the UI reflects the real phase.
+            kwargs = {"progress": progress, "error": error or ""}
+            ota.set_status(camera_id, state, **kwargs)
+
         ota.set_status(camera_id, "uploading", progress=0, error="")
         try:
-            ok, msg = client.push_bundle(camera_ip, bundle_path, progress_cb=_progress)
+            ok, msg = client.push_bundle(
+                camera_ip, bundle_path, progress_cb=_progress, status_cb=_status
+            )
         except Exception as exc:  # defensive — never leak out of the thread
             ok, msg = False, f"Unexpected error: {exc}"
 

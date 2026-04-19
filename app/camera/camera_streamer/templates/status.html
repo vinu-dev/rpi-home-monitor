@@ -2,866 +2,1263 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0a0a1a">
-<title>Camera Status</title>
+<title>Camera · {{CAMERA_ID}}</title>
 <style>
 :root {
-    --color-bg: #0a0a1a;
-    --color-surface: #1a1a2e;
-    --color-surface-alt: #16213e;
-    --color-border: #2a2a3e;
-    --color-text: #eee;
-    --color-text-muted: #999;
-    --color-text-dim: #666;
-    --color-accent: #e94560;
-    --color-accent-hover: #c73a52;
-    --color-success: #2ecc71;
-    --color-warning: #f39c12;
-    --color-danger: #e74c3c;
-    --color-info: #3498db;
-    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
-    --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --transition-base: 0.2s ease;
+    /* Layered dark — near-black base, lift to slate for surfaces,
+       violet-leaning tint on the deepest backgrounds. */
+    --bg: #08081a;
+    --bg-2: #0d0d24;
+    --surface: #15152a;
+    --surface-2: #1c1c38;
+    --surface-3: #242445;
+    --border: #2c2c4c;
+    --border-soft: rgba(255,255,255,0.06);
+    --text: #eff0fa;
+    --muted: #9698b8;
+    --dim: #6a6c8c;
+    /* Accent gradient — coral → violet. Used for CTAs and hero glow.
+       Single named stops so buttons can reuse. */
+    --accent-1: #ff5c7c;
+    --accent-2: #b06bf8;
+    --accent: #ff5c7c;
+    --accent-grad: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 100%);
+    /* Status colors — slightly desaturated for dark-mode comfort. */
+    --ok: #45d684;
+    --warn: #f7b94a;
+    --err: #ef5b4a;
+    --ok-glow:   rgba(69,214,132,0.22);
+    --warn-glow: rgba(247,185,74,0.22);
+    --err-glow:  rgba(239,91,74,0.22);
+    --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px;
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+    --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 24px rgba(0,0,0,0.25);
+    --shadow-lift: 0 10px 28px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 16px; }
 body {
-    font-family: var(--font-sans);
-    background: var(--color-bg);
-    color: var(--color-text);
+    font-family: var(--font);
+    color: var(--text);
     line-height: 1.5;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    /* Layered background: deep navy + two soft radial glows in the
+       accent colors, anchored top-left and top-right. Cheap (pure
+       CSS), gives the page a subtle gradient hero without images. */
+    background:
+        radial-gradient(900px 600px at -10% -20%, rgba(255,92,124,0.18), transparent 60%),
+        radial-gradient(800px 500px at 110% -10%, rgba(176,107,248,0.15), transparent 60%),
+        var(--bg);
+    background-attachment: fixed;
 }
+::selection { background: rgba(255,92,124,0.35); color: #fff; }
 
-/* --- Top Bar --- */
-.top-bar {
-    position: fixed; top: 0; left: 0; right: 0; height: 50px;
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
+/* Top bar */
+.bar {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(8,8,26,0.72);
+    backdrop-filter: saturate(1.2) blur(14px);
+    -webkit-backdrop-filter: saturate(1.2) blur(14px);
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: var(--gap-2);
+}
+.bar__inner {
+    max-width: 720px; margin: 0 auto;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0 var(--space-4); z-index: 100;
+    padding: 14px var(--gap-4);
 }
-.top-bar__left { display: flex; align-items: center; gap: var(--space-2); }
-.top-bar__title { font-size: 1.1rem; font-weight: 700; color: var(--color-accent); }
-.top-bar__right { display: flex; align-items: center; gap: var(--space-3); }
-.top-bar__id { font-size: 0.8rem; color: var(--color-text-muted); }
-.top-bar__logout {
-    background: none; border: 1px solid var(--color-border); color: var(--color-text-muted);
-    padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm);
-    cursor: pointer; font-size: 0.8rem; transition: border-color var(--transition-base), color var(--transition-base);
+.bar__brand { display: flex; align-items: center; gap: 10px; }
+.bar__logo {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--accent-grad);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(255,92,124,0.35);
+    flex: 0 0 auto;
 }
-.top-bar__logout:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.bar__logo svg { stroke: #fff; }
+.bar__title { font-weight: 700; font-size: 1.02rem; letter-spacing: .01em; }
+.bar__title span { color: var(--muted); font-weight: 400; margin-left: var(--gap-2); font-size: .82rem; }
+.bar__logout {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 12px; border-radius: var(--r-sm); font-size: .8rem;
+    text-decoration: none;
+    transition: border-color .15s, color .15s, background .15s;
+}
+.bar__logout:hover { border-color: var(--accent-1); color: var(--text); background: rgba(255,92,124,0.08); }
 
-/* --- Content --- */
-.content { padding: 62px var(--space-4) var(--space-6); max-width: 480px; margin: 0 auto; }
+/* TOC — pill tab strip */
+.toc {
+    max-width: 720px; margin: 0 auto;
+    display: flex; gap: var(--gap-1);
+    padding: 2px var(--gap-4) 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.toc::-webkit-scrollbar { display: none; }
+.toc a {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.03);
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .85rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    transition: color .15s, border-color .15s, background .15s, transform .15s;
+}
+.toc a svg { width: 14px; height: 14px; stroke-width: 2; opacity: .85; }
+.toc a:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.toc a.active {
+    color: #fff;
+    background: var(--accent-grad);
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(255,92,124,0.35);
+}
+.toc a.active svg { opacity: 1; stroke: #fff; }
 
-/* --- Cards --- */
+/* Content */
+.wrap { max-width: 720px; margin: 0 auto; padding: var(--gap-4) var(--gap-4) var(--gap-6); }
+/* True tab behaviour — only the active section is visible. TOC pills
+ * act as the tab strip. No scroll-spy; hash sync is optional. */
+section { display: none; animation: fadeIn .25s ease; }
+section.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+h2 {
+    font-size: .78rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .1em;
+    margin: 0 2px var(--gap-3);
+    display: flex; align-items: center; gap: 8px;
+}
+h2 svg { width: 14px; height: 14px; stroke-width: 2; color: var(--accent-1); }
+
+/* Hero — the statement-of-status card. Gradient border + soft tint
+   so it stands apart from the ordinary cards below. */
+.hero {
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(255,92,124,0.04) 0%, transparent 70%),
+        var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: var(--gap-5);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+.hero::before {
+    /* accent-colored gradient stripe at the top — subtle premium cue */
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: var(--accent-grad);
+    opacity: .7;
+}
+.hero__dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    vertical-align: middle; margin-right: 12px;
+    background: var(--muted);
+    position: relative;
+}
+.hero__dot.ok,
+.hero__dot.warn,
+.hero__dot.err { animation: pulse 2s ease-in-out infinite; }
+.hero__dot.ok   { background: var(--ok);   box-shadow: 0 0 0 4px var(--ok-glow); }
+.hero__dot.warn { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-glow); }
+.hero__dot.err  { background: var(--err);  box-shadow: 0 0 0 4px var(--err-glow); }
+@keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 4px rgba(255,255,255,0.06); }
+    50%    { box-shadow: 0 0 0 7px rgba(255,255,255,0.01); }
+}
+.hero__dot.ok   { animation-name: pulseOk; }
+.hero__dot.warn { animation-name: pulseWarn; }
+.hero__dot.err  { animation-name: pulseErr; }
+@keyframes pulseOk   { 0%,100% { box-shadow: 0 0 0 4px var(--ok-glow);   }   50% { box-shadow: 0 0 0 9px rgba(69,214,132,0.04); } }
+@keyframes pulseWarn { 0%,100% { box-shadow: 0 0 0 4px var(--warn-glow); }   50% { box-shadow: 0 0 0 9px rgba(247,185,74,0.04); } }
+@keyframes pulseErr  { 0%,100% { box-shadow: 0 0 0 4px var(--err-glow);  }   50% { box-shadow: 0 0 0 9px rgba(239,91,74,0.04); } }
+.hero__line {
+    display: inline-block; font-size: 1.08rem; font-weight: 500;
+    vertical-align: middle;
+    letter-spacing: -.005em;
+}
+.hero__sub {
+    margin-top: var(--gap-5);
+    display: grid; grid-template-columns: max-content 1fr; gap: 10px var(--gap-5);
+    font-size: .88rem;
+    padding-top: var(--gap-4);
+    border-top: 1px solid var(--border-soft);
+}
+.hero__sub dt { color: var(--muted); font-weight: 500; }
+.hero__sub dd { color: var(--text); word-break: break-word; }
+
+/* Chips row */
+.chips {
+    margin-top: var(--gap-4);
+    display: flex; flex-wrap: wrap; gap: var(--gap-2);
+}
+.chip {
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: .78rem;
+    color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.chip b { color: var(--text); font-weight: 600; }
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-1); }
+
+/* Cards for settings + updates */
 .card {
-    background: var(--color-surface); border-radius: var(--radius-md);
-    padding: var(--space-4); border: 1px solid var(--color-border);
-    margin-bottom: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
 }
-.card__title {
-    font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);
-    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--space-3);
-}
+.card + .card { margin-top: var(--gap-3); }
 
-/* --- Info Rows --- */
-.info-row {
-    display: flex; justify-content: space-between; padding: 10px 0;
-    border-bottom: 1px solid var(--color-border); font-size: 0.9rem;
+/* Details rows — dressed like cards with a soft hover */
+details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+    transition: border-color .15s, background .15s;
 }
-.info-row:last-child { border-bottom: none; }
-.info-row__label { color: var(--color-text-muted); }
-.info-row__value { font-weight: 500; }
-.status-ok { color: var(--color-success); }
-.status-err { color: var(--color-danger); }
-.status-warn { color: var(--color-warning); }
+details + details { margin-top: var(--gap-3); }
+details[open] { border-color: var(--surface-3); }
+summary {
+    padding: 16px var(--gap-4);
+    cursor: pointer;
+    font-weight: 500;
+    display: flex; align-items: center; justify-content: space-between;
+    list-style: none;
+    user-select: none;
+    transition: color .15s;
+}
+summary:hover { color: var(--accent-1); }
+summary::-webkit-details-marker { display: none; }
+summary::after {
+    content: "";
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform .2s;
+    margin-right: 4px;
+}
+details[open] summary::after { transform: rotate(45deg); }
+.details-body { padding: var(--gap-4); border-top: 1px solid var(--border-soft); }
 
-/* --- Buttons --- */
+/* Forms */
+.field { margin-bottom: var(--gap-4); }
+.field:last-child { margin-bottom: 0; }
+.field > label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+.input, select.input {
+    width: 100%;
+    padding: 11px 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text);
+    font-size: .95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+    -webkit-appearance: none; appearance: none;
+}
+.input:hover { border-color: var(--surface-3); }
+.input:focus {
+    border-color: var(--accent-1);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px rgba(255,92,124,0.15);
+}
+.input--pin {
+    font-size: 1.5rem; text-align: center; letter-spacing: .4em;
+    font-variant-numeric: tabular-nums;
+    padding-left: 0; padding-right: 0;
+}
+.hint { font-size: .78rem; color: var(--dim); margin-top: 6px; }
+
+/* Buttons — gradient primary, outline secondary, subtle lift on hover */
 .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 10px var(--space-5); border: none; border-radius: var(--radius-sm);
-    font-size: 0.9rem; font-weight: 600; cursor: pointer;
-    transition: background var(--transition-base), opacity var(--transition-base);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 20px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    font-size: .9rem; font-weight: 600;
+    cursor: pointer;
+    transition: transform .12s, background .15s, border-color .15s, box-shadow .15s, opacity .15s;
+    font-family: inherit;
+    letter-spacing: .005em;
+    position: relative;
 }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; stroke-width: 2; }
+.btn--primary  {
+    background: var(--accent-grad);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(255,92,124,0.3);
+}
+.btn--primary:hover:not(:disabled) {
+    box-shadow: 0 10px 28px rgba(255,92,124,0.45);
+    transform: translateY(-1px);
+}
+.btn--outline  {
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    border-color: var(--border);
+}
+.btn--outline:hover:not(:disabled) {
+    border-color: var(--surface-3);
+    background: rgba(255,255,255,0.07);
+}
+.btn--danger   {
+    background: linear-gradient(135deg, #ef5b4a 0%, #c0392b 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(239,91,74,0.3);
+}
+.btn--danger:hover:not(:disabled) {
+    box-shadow: 0 10px 28px rgba(239,91,74,0.45);
+    transform: translateY(-1px);
+}
 .btn--full { width: 100%; }
-.btn--primary { background: var(--color-accent); color: #fff; }
-.btn--primary:hover:not(:disabled) { background: var(--color-accent-hover); }
-.btn--secondary { background: var(--color-border); color: var(--color-text); }
-.btn--secondary:hover:not(:disabled) { background: #3a3a4e; }
-.btn--danger { background: var(--color-danger); color: #fff; }
-.btn--danger:hover:not(:disabled) { background: #c0392b; }
-.btn--small { padding: var(--space-2) var(--space-3); font-size: 0.8rem; }
+.btn--sm   { padding: 7px 12px; font-size: .8rem; }
 
-/* --- Forms --- */
-.form-group { margin-bottom: var(--space-3); }
-.form-group label { display: block; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: var(--space-1); }
-.form-input {
-    width: 100%; padding: 10px var(--space-3);
-    background: var(--color-surface-alt); border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm); color: var(--color-text); font-size: 0.95rem;
-    outline: none; transition: border-color var(--transition-base);
+/* Action row */
+.actions { display: flex; gap: var(--gap-2); flex-wrap: wrap; }
+.actions .btn { flex: 1 1 auto; }
+
+/* Messages */
+.msg {
+    margin-top: var(--gap-3);
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    font-size: .85rem;
+    border: 1px solid transparent;
 }
-.form-input:focus { border-color: var(--color-accent); }
+.msg--ok   { background: rgba(62,197,122,.12); border-color: rgba(62,197,122,.3); color: var(--ok); }
+.msg--warn { background: rgba(246,173,60,.12); border-color: rgba(246,173,60,.3); color: var(--warn); }
+.msg--err  { background: rgba(231,76,60,.12); border-color: rgba(231,76,60,.3); color: var(--err); }
 
-/* --- Messages --- */
-.msg { padding: 10px var(--space-3); border-radius: var(--radius-sm); font-size: 0.85rem; margin: var(--space-2) 0; }
-.msg--ok { background: rgba(46, 204, 113, 0.15); border: 1px solid var(--color-success); color: var(--color-success); }
-.msg--err { background: rgba(231, 76, 60, 0.15); border: 1px solid var(--color-danger); color: var(--color-danger); }
-.msg--warn { background: #78350f; color: #fde68a; }
-
-/* --- Network List --- */
-.network-list { max-height: 200px; overflow-y: auto; margin: var(--space-2) 0; }
+/* Network list */
+.netlist {
+    max-height: 220px; overflow-y: auto; margin: var(--gap-3) 0;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--bg-2);
+}
 .net {
-    padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-surface-alt);
-    cursor: pointer; display: flex; justify-content: space-between; align-items: center;
-    transition: background 0.15s;
+    padding: 11px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-soft);
+    transition: background .12s, color .12s;
 }
-.net:hover { background: rgba(233, 69, 96, 0.1); }
-.net__signal { color: var(--color-success); font-size: 0.85em; }
+.net:last-child { border-bottom: none; }
+.net:hover { background: rgba(255,92,124,0.06); color: var(--accent-1); }
+.net__signal { color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
 
-/* --- Collapsible Sections --- */
-.section-toggle { margin-top: var(--space-3); }
-.section-body { display: none; }
-.section-body.visible { display: block; }
+/* OTA progress — gradient bar fill, subtle shimmer while active */
+.bar-fill {
+    position: relative;
+    height: 8px; background: var(--bg-2); border-radius: 4px;
+    overflow: hidden; margin: var(--gap-3) 0 8px;
+    border: 1px solid var(--border-soft);
+}
+.bar-fill > div {
+    height: 100%;
+    background: var(--accent-grad);
+    width: 0%;
+    transition: width .4s ease;
+    box-shadow: 0 0 12px rgba(255,92,124,0.45);
+}
+.bar-label { font-size: .85rem; color: var(--muted); font-weight: 500; }
 
-/* --- Factory Reset --- */
-.reset-confirm { margin-top: var(--space-2); }
-.reset-confirm p { color: var(--color-danger); font-weight: 600; margin-bottom: var(--space-2); font-size: 0.9rem; }
-.reset-actions { display: flex; gap: var(--space-2); }
+/* Danger section */
+.danger {
+    border: 1px solid rgba(239,91,74,0.35);
+    border-radius: var(--r-lg);
+    background:
+        linear-gradient(180deg, rgba(239,91,74,0.06) 0%, transparent 60%),
+        var(--surface);
+    padding: var(--gap-5);
+    box-shadow: var(--shadow-card);
+    position: relative;
+    overflow: hidden;
+}
+.danger::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--err) 50%, transparent 100%);
+    opacity: .5;
+}
+.danger > p { font-size: .9rem; color: var(--muted); margin-bottom: var(--gap-4); line-height: 1.6; }
+
+/* Small helpers */
+.muted { color: var(--muted); }
+.mono  { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+.inline-code {
+    background: var(--surface-2); padding: 2px 6px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+    color: var(--text);
+}
+[hidden] { display: none !important; }
+
+/* Tight mobile */
+@media (max-width: 420px) {
+    .hero__sub { grid-template-columns: 1fr; gap: 6px; }
+    .hero__sub dt { color: var(--dim); font-size: .75rem; }
+    .hero__sub dd { margin-bottom: 4px; }
+    .bar__inner, .toc, .wrap { padding-left: var(--gap-3); padding-right: var(--gap-3); }
+}
 </style>
 </head>
 <body>
 
-<header class="top-bar">
-    <div class="top-bar__left">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#e94560" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-            <circle cx="12" cy="13" r="4"/>
+<div class="bar">
+  <div class="bar__inner">
+    <div class="bar__brand">
+      <span class="bar__logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
         </svg>
-        <span class="top-bar__title">Camera</span>
+      </span>
+      <div class="bar__title">Camera <span id="bar-host">{{CAMERA_ID}}</span></div>
     </div>
-    <div class="top-bar__right">
-        <span class="top-bar__id">{{CAMERA_ID}}</span>
-        <a href="/logout" class="top-bar__logout">Logout</a>
+    <a href="/logout" class="bar__logout">Sign out</a>
+  </div>
+  <nav class="toc" aria-label="Page sections">
+    <a href="#status" data-toc class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      Status
+    </a>
+    <a href="#settings" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.46.1.87.38 1.15.76.28.38.42.84.4 1.31"/></svg>
+      Settings
+    </a>
+    <a href="#updates" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Updates
+    </a>
+    <a href="#danger" data-toc>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Reset
+    </a>
+  </nav>
+</div>
+
+<main class="wrap">
+
+<!-- ============ STATUS ============ -->
+<section id="status">
+  <div class="hero">
+    <div><span id="hero-dot" class="hero__dot"></span><span id="hero-line" class="hero__line">Loading status…</span></div>
+    <dl class="hero__sub">
+      <dt>Network</dt><dd><span id="h-host" class="mono">--</span> · <span id="h-ip" class="mono">--</span></dd>
+      <dt>WiFi</dt><dd id="h-wifi">--</dd>
+      <dt>Server</dt><dd id="h-server">--</dd>
+      <dt>Running for</dt><dd id="h-uptime">--</dd>
+      <dt>Firmware</dt><dd id="h-firmware" class="mono">--</dd>
+    </dl>
+    <div class="chips">
+      <span class="chip"><b>CPU</b><span id="h-cpu">--</span></span>
+      <span class="chip"><b>Memory</b><span id="h-mem">--</span></span>
+      <span class="chip"><b>Stream</b><span id="h-stream">--</span></span>
     </div>
-</header>
+  </div>
 
-<main class="content">
-
-    <!-- Device Info -->
-    <div class="card">
-        <div class="card__title">Device Info</div>
-        <div class="info-row">
-            <span class="info-row__label">Hostname</span>
-            <span class="info-row__value" id="s-hostname">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">IP Address</span>
-            <span class="info-row__value" id="s-ip">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">WiFi Network</span>
-            <span class="info-row__value" id="s-wifi">--</span>
-        </div>
+  <!-- Pairing call-to-action (only when not paired) -->
+  <div id="pair-cta" class="card" hidden style="margin-top:var(--gap-3);padding:var(--gap-4)">
+    <h2 style="margin-top:0">Pair with a home server</h2>
+    <p class="muted" style="font-size:.88rem;margin-bottom:var(--gap-3)">
+      Enter the 6-digit PIN shown on your Home Monitor server's dashboard.
+      The camera and server will exchange certificates so future streams
+      are encrypted.
+    </p>
+    <div class="field">
+      <label>Server address</label>
+      <input type="text" id="pair-server" class="input" placeholder="rpi-divinu.local">
+      <div class="hint">Usually autodetected — change only if you have multiple servers.</div>
     </div>
-
-    <!-- Connection Status -->
-    <div class="card">
-        <div class="card__title">Connection</div>
-        <div class="info-row">
-            <span class="info-row__label">Server</span>
-            <span class="info-row__value" id="s-server">--</span>
-        </div>
-        <div class="info-row">
-            <span class="info-row__label">Stream</span>
-            <span class="info-row__value" id="s-stream">--</span>
-        </div>
+    <div class="field">
+      <label>Pairing PIN</label>
+      <input type="text" id="pair-pin" class="input input--pin"
+             maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
+             placeholder="000000">
     </div>
+    <button class="btn btn--primary btn--full" id="btn-pair" onclick="doPair()">Pair camera</button>
+    <div id="pair-result"></div>
+  </div>
+</section>
 
-    <!-- Server Pairing -->
-    <div class="card" id="pairing-card">
-        <div class="card__title">Server Pairing</div>
-        <div id="pair-status-row" class="info-row">
-            <span class="info-row__label">Status</span>
-            <span class="info-row__value" id="s-paired">--</span>
-        </div>
-        <div id="pair-server-row" class="info-row">
-            <span class="info-row__label">Server</span>
-            <span class="info-row__value" id="s-pair-server">--</span>
-        </div>
+<!-- ============ SETTINGS ============ -->
+<section id="settings">
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.46.1.87.38 1.15.76.28.38.42.84.4 1.31"/></svg>
+    Settings
+  </h2>
 
-        <!-- Not paired: show PIN entry form -->
-        <div id="pair-form" style="display:none;margin-top:var(--space-3)">
-            <div class="form-group">
-                <label>Server Address</label>
-                <input type="text" id="pair-server-url" class="form-input" placeholder="rpi-divinu.local">
-                <div style="font-size:0.75rem;color:var(--color-text-dim);margin-top:var(--space-1)">
-                    Uses your configured server address. Change only if needed.
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Pairing PIN</label>
-                <input type="text" id="pair-pin" class="form-input" placeholder="6-digit PIN from server dashboard"
-                       maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
-                       style="font-size:1.5rem;text-align:center;letter-spacing:0.3em">
-            </div>
-            <button class="btn btn--primary btn--full" id="btn-pair" onclick="doPair()">Pair with Server</button>
-            <div id="pair-result"></div>
-        </div>
-
-        <!-- Paired: show success state with edit button -->
-        <div id="pair-done" style="display:none;margin-top:var(--space-3)">
-            <div class="msg msg--ok" style="display:flex;justify-content:space-between;align-items:center">
-                <span>Paired and authenticated</span>
-                <button class="btn btn--secondary btn--small" onclick="showPairForm()">Re-pair</button>
-            </div>
-        </div>
+  <details>
+    <summary>Change WiFi network</summary>
+    <div class="details-body">
+      <div class="msg msg--warn" style="margin-top:0">Changing WiFi will briefly disconnect this page. If the new network is wrong, connect to the camera's setup hotspot to fix it.</div>
+      <div class="actions" style="margin-top:var(--gap-3)">
+        <button class="btn btn--outline btn--sm" id="btn-scan" onclick="scanNetworks()">Scan for networks</button>
+      </div>
+      <div id="netlist" class="netlist" hidden></div>
+      <div class="field"><label>Network name (SSID)</label><input class="input" id="wifi-ssid" placeholder="WiFi name"></div>
+      <div class="field"><label>Password</label><input class="input" id="wifi-pass" type="password" placeholder="WiFi password"></div>
+      <button class="btn btn--primary btn--full" id="btn-wifi" onclick="doWifi()">Connect</button>
+      <div id="wifi-result"></div>
     </div>
+  </details>
 
-    <!-- Stream Settings -->
-    <div class="card">
-        <div class="card__title" style="display:flex;justify-content:space-between;align-items:center">
-            Stream Settings
-            <button class="btn btn--secondary btn--small" id="btn-stream-edit" onclick="toggleStreamEdit()">Edit</button>
-        </div>
-        <!-- Read-only view -->
-        <div id="stream-view">
-            <div class="info-row">
-                <span class="info-row__label">Resolution</span>
-                <span class="info-row__value" id="s-resolution">--</span>
-            </div>
-            <div class="info-row">
-                <span class="info-row__label">Framerate</span>
-                <span class="info-row__value" id="s-fps">--</span>
-            </div>
-            <div class="info-row">
-                <span class="info-row__label">Bitrate</span>
-                <span class="info-row__value" id="s-bitrate">--</span>
-            </div>
-            <div class="info-row">
-                <span class="info-row__label">H.264 Profile</span>
-                <span class="info-row__value" id="s-profile">--</span>
-            </div>
-            <div class="info-row">
-                <span class="info-row__label">Orientation</span>
-                <span class="info-row__value" id="s-orientation">--</span>
-            </div>
-        </div>
-        <!-- Edit form -->
-        <div id="stream-edit" style="display:none">
-            <div class="form-group">
-                <label class="form-label">Resolution</label>
-                <select class="form-input" id="se-resolution" onchange="onResChange()">
-                    <option value="640x480">640x480 (max 58 fps)</option>
-                    <option value="1296x972">1296x972 (max 43 fps)</option>
-                    <option value="1920x1080">1920x1080 (max 30 fps)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">FPS</label>
-                <input class="form-input" type="number" id="se-fps" min="1" max="58">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Bitrate (Mbps)</label>
-                <input class="form-input" type="number" id="se-bitrate" min="0.5" max="8" step="0.5">
-            </div>
-            <div class="form-group">
-                <label class="form-label">H.264 Profile</label>
-                <select class="form-input" id="se-profile">
-                    <option value="baseline">Baseline</option>
-                    <option value="main">Main</option>
-                    <option value="high">High</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Keyframe Interval</label>
-                <input class="form-input" type="number" id="se-keyframe" min="1" max="120">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Rotation</label>
-                <select class="form-input" id="se-rotation">
-                    <option value="0">0 (Normal)</option>
-                    <option value="180">180</option>
-                </select>
-            </div>
-            <div class="form-group" style="display:flex;gap:var(--space-4)">
-                <label style="display:flex;align-items:center;gap:var(--space-1)">
-                    <input type="checkbox" id="se-hflip"> H-Flip
-                </label>
-                <label style="display:flex;align-items:center;gap:var(--space-1)">
-                    <input type="checkbox" id="se-vflip"> V-Flip
-                </label>
-            </div>
-            <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
-                <button class="btn btn--primary" id="btn-stream-save" onclick="saveStreamConfig()">Save</button>
-                <button class="btn btn--secondary" onclick="toggleStreamEdit()">Cancel</button>
-            </div>
-            <div id="stream-result"></div>
-        </div>
+  <details>
+    <summary>Change password</summary>
+    <div class="details-body">
+      <div class="field"><label>Current password</label><input class="input" id="pw-cur" type="password"></div>
+      <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 4 characters"></div>
+      <button class="btn btn--primary btn--full" id="btn-pw" onclick="doPassword()">Save password</button>
+      <div id="pw-result"></div>
     </div>
+  </details>
 
-    <!-- System Health -->
-    <div class="card">
-        <div class="card__title">System Health</div>
-        <div class="info-row">
-            <span class="info-row__label">CPU Temp</span>
-            <span class="info-row__value" id="s-cpu">--</span>
+  <details>
+    <summary>Stream settings</summary>
+    <div class="details-body">
+      <div id="stream-view" class="hero__sub" style="margin-top:0">
+        <dt>Resolution</dt><dd><span id="sc-res">--</span></dd>
+        <dt>Framerate</dt><dd><span id="sc-fps">--</span></dd>
+        <dt>Bitrate</dt><dd><span id="sc-br">--</span></dd>
+        <dt>H.264 profile</dt><dd><span id="sc-prof">--</span></dd>
+        <dt>Orientation</dt><dd><span id="sc-ori">--</span></dd>
+      </div>
+      <div class="actions" style="margin-top:var(--gap-3)">
+        <button class="btn btn--outline btn--sm" id="btn-stream-edit" onclick="toggleStreamEdit()">Edit</button>
+      </div>
+
+      <div id="stream-edit" hidden style="margin-top:var(--gap-3)">
+        <div class="field">
+          <label>Resolution</label>
+          <select class="input" id="se-res" onchange="onResChange()">
+            <option value="640x480">640 × 480 (up to 58 fps)</option>
+            <option value="1296x972">1296 × 972 (up to 43 fps)</option>
+            <option value="1920x1080">1920 × 1080 (up to 30 fps)</option>
+          </select>
         </div>
-        <div class="info-row">
-            <span class="info-row__label">Memory</span>
-            <span class="info-row__value" id="s-mem">--</span>
+        <div class="field"><label>Framerate</label><input class="input" id="se-fps" type="number" min="1" max="58"></div>
+        <div class="field"><label>Bitrate (Mbps)</label><input class="input" id="se-br" type="number" min="0.5" max="8" step="0.5"></div>
+        <div class="field">
+          <label>H.264 profile</label>
+          <select class="input" id="se-prof">
+            <option value="baseline">Baseline</option>
+            <option value="main">Main</option>
+            <option value="high">High</option>
+          </select>
         </div>
-        <div class="info-row">
-            <span class="info-row__label">Uptime</span>
-            <span class="info-row__value" id="s-uptime">--</span>
+        <div class="field"><label>Keyframe interval (frames)</label><input class="input" id="se-key" type="number" min="1" max="120"></div>
+        <div class="field">
+          <label>Rotation</label>
+          <select class="input" id="se-rot"><option value="0">Normal</option><option value="180">180°</option></select>
         </div>
+        <div class="field">
+          <label style="margin-right:var(--gap-4)"><input type="checkbox" id="se-hflip"> Flip horizontal</label>
+          <label><input type="checkbox" id="se-vflip"> Flip vertical</label>
+        </div>
+        <div class="actions">
+          <button class="btn btn--primary" id="btn-stream-save" onclick="saveStream()">Save</button>
+          <button class="btn btn--outline" onclick="toggleStreamEdit()">Cancel</button>
+        </div>
+        <div id="stream-result"></div>
+      </div>
     </div>
+  </details>
 
-    <!-- Change WiFi -->
-    <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('wifi-section')">Change WiFi</button>
-    <div id="wifi-section" class="section-body">
-        <div class="card" style="margin-top:var(--space-2)">
-            <div class="card__title">Change WiFi Network</div>
-            <div class="msg msg--warn">Changing WiFi will briefly disconnect the camera.</div>
-            <div id="net-list" class="network-list"></div>
-            <button class="btn btn--secondary btn--small" onclick="scanNetworks()" id="btn-scan" style="margin-bottom:var(--space-2)">Scan Networks</button>
-            <div class="form-group">
-                <label>WiFi Name (SSID)</label>
-                <input type="text" id="in-ssid" class="form-input" placeholder="Network name">
-            </div>
-            <div class="form-group">
-                <label>WiFi Password</label>
-                <input type="password" id="in-pass" class="form-input" placeholder="Password">
-            </div>
-            <button class="btn btn--primary btn--full" id="btn-connect" onclick="doConnect()">Connect</button>
-            <div id="wifi-result"></div>
-        </div>
+  <details id="unpair-details" hidden>
+    <summary>Pair with a different server · Unpair</summary>
+    <div class="details-body">
+      <p class="muted" style="font-size:.88rem;margin-bottom:var(--gap-3)">
+        Paste a PIN from another server's dashboard to move this camera
+        over — no need to unpair first. Or use Unpair below to clear the
+        server link without re-pairing.
+      </p>
+      <div class="field">
+        <label>Server address</label>
+        <input type="text" id="repair-server" class="input" placeholder="rpi-divinu.local">
+      </div>
+      <div class="field">
+        <label>Pairing PIN</label>
+        <input type="text" id="repair-pin" class="input input--pin"
+               maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
+               placeholder="000000">
+      </div>
+      <div class="actions">
+        <button class="btn btn--primary" id="btn-repair" onclick="doRepair()">Re-pair</button>
+        <button class="btn btn--danger" id="btn-unpair" onclick="doUnpair()">Unpair</button>
+      </div>
+      <div id="unpair-result"></div>
     </div>
+  </details>
+</section>
 
-    <!-- Change Password -->
-    <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('pw-section')">Change Password</button>
-    <div id="pw-section" class="section-body">
-        <div class="card" style="margin-top:var(--space-2)">
-            <div class="card__title">Change Camera Password</div>
-            <div class="form-group">
-                <label>Current Password</label>
-                <input type="password" id="pw-current" class="form-input" placeholder="Current password">
-            </div>
-            <div class="form-group">
-                <label>New Password</label>
-                <input type="password" id="pw-new" class="form-input" placeholder="New password (min 4 chars)">
-            </div>
-            <button class="btn btn--primary btn--full" id="btn-pw" onclick="changePw()">Change Password</button>
-            <div id="pw-result"></div>
-        </div>
+<!-- ============ UPDATES ============ -->
+<section id="updates">
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Firmware update
+  </h2>
+  <div class="card" style="padding:var(--gap-4)">
+    <p class="muted" style="font-size:.88rem;margin-bottom:var(--gap-3)">
+      Upload a firmware file. The camera installs it in the background and
+      prompts you to reboot. If the new version fails to start, the camera
+      automatically rolls back to the previous one.
+    </p>
+
+    <div id="ota-version-row" hidden style="font-size:.85rem;margin-bottom:var(--gap-3)">
+      <span class="muted">Installing</span>
+      <span id="ota-current-ver" class="mono">--</span>
+      <span class="muted">→</span>
+      <span id="ota-target-ver" class="mono" style="color:var(--accent-1)">--</span>
     </div>
 
-    <!-- System Updates -->
-    <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('ota-section')">System Updates</button>
-    <div id="ota-section" class="section-body">
-        <div class="card" style="margin-top:var(--space-2)">
-            <div class="card__title">System Updates</div>
-            <div class="info-row">
-                <span class="info-row__label">State</span>
-                <span class="info-row__value" id="ota-state">idle</span>
-            </div>
-            <div class="info-row">
-                <span class="info-row__label">Progress</span>
-                <span class="info-row__value" id="ota-progress">--</span>
-            </div>
-            <div class="info-row" id="ota-error-row" style="display:none">
-                <span class="info-row__label">Error</span>
-                <span class="info-row__value status-err" id="ota-error">--</span>
-            </div>
-            <p style="font-size:0.8rem;color:var(--color-text-muted);margin:var(--space-3) 0">
-                Upload a signed .swu bundle to install an update directly on this
-                camera. The camera will apply the update to the standby slot and
-                reboot when you confirm.
-            </p>
-            <div class="form-group">
-                <input type="file" id="ota-file" class="form-input" accept=".swu">
-            </div>
-            <button class="btn btn--primary btn--full" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; Install</button>
-            <button class="btn btn--danger btn--full" id="btn-ota-reboot" style="display:none;margin-top:var(--space-2)" onclick="rebootCamera()">Reboot to apply</button>
-            <div id="ota-result"></div>
-        </div>
+    <div id="ota-busy" hidden>
+      <div class="bar-fill"><div id="ota-fill"></div></div>
+      <div class="bar-label" id="ota-label">uploading — 0%</div>
     </div>
 
-    <!-- Factory Reset -->
-    <button class="btn btn--secondary btn--full section-toggle" onclick="toggle('reset-section')">Factory Reset</button>
-    <div id="reset-section" class="section-body">
-        <div class="card" style="margin-top:var(--space-2)">
-            <div class="card__title">Factory Reset</div>
-            <p style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom:var(--space-3);">
-                Wipe all configuration, certificates, and pairing data. The camera will restart in setup mode.
-            </p>
-            <div id="reset-step1">
-                <button class="btn btn--danger btn--full" onclick="showResetConfirm()">Factory Reset</button>
-            </div>
-            <div id="reset-step2" style="display:none" class="reset-confirm">
-                <p>This cannot be undone. Are you sure?</p>
-                <div class="reset-actions">
-                    <button class="btn btn--danger" onclick="doReset()">Yes, Reset</button>
-                    <button class="btn btn--secondary" onclick="cancelReset()">Cancel</button>
-                </div>
-            </div>
-            <div id="reset-result"></div>
-        </div>
+    <div class="field">
+      <input class="input" type="file" id="ota-file" accept=".swu" onchange="onOtaFileSelected()">
     </div>
+    <div class="actions">
+      <button class="btn btn--primary" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; install</button>
+      <button class="btn btn--outline" id="btn-ota-reboot" hidden onclick="rebootCamera()">Reboot to apply</button>
+    </div>
+    <div id="ota-result"></div>
+  </div>
+</section>
+
+<!-- ============ DANGER ============ -->
+<section id="danger">
+  <h2 style="color:var(--err)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    Danger zone
+  </h2>
+  <div class="danger">
+    <p>
+      Factory reset erases WiFi settings, pairing certificates, and the
+      admin password. The camera reboots into setup mode with its own
+      hotspot called <span id="reset-ssid" class="inline-code">HomeCam-Setup</span>.
+      You'll need to redo the first-boot wizard.
+    </p>
+    <details>
+      <summary style="padding-left:0;padding-right:0;color:var(--err)">Factory reset this camera</summary>
+      <div class="details-body" style="border-top-color:rgba(231,76,60,.3)">
+        <div class="field">
+          <label>Type <span id="reset-host-target" class="inline-code mono">--</span> to confirm</label>
+          <input class="input mono" id="reset-confirm" autocomplete="off" oninput="checkResetConfirm()">
+        </div>
+        <button class="btn btn--danger" id="btn-reset" disabled onclick="doReset()">Factory reset</button>
+        <div id="reset-result"></div>
+      </div>
+    </details>
+  </div>
+</section>
 
 </main>
 
 <script>
+(function(){
+"use strict";
+
 function $(id) { return document.getElementById(id); }
+function esc(s) { var d = document.createElement("div"); d.textContent = String(s == null ? "" : s); return d.innerHTML; }
+function show(id) { $(id).hidden = false; }
+function hide(id) { $(id).hidden = true; }
 
-function toggle(id) {
-    var el = $(id);
-    el.classList.toggle('visible');
+// ---- Tab switcher ----
+// Proper tabs: one section visible at a time. Clicking a pill hides
+// the others. Deep links via #hash still work (opening the page at
+// e.g. /status.html#updates lands on Updates). window.scrollTo(0,0)
+// after a switch so the active section starts at the top every time
+// — no residual scroll from the previous tab.
+var tocLinks = document.querySelectorAll("[data-toc]");
+var sections = ["status","settings","updates","danger"].map($).filter(Boolean);
+var VALID_IDS = sections.map(function(s){ return s.id; });
+
+function activateTab(id) {
+    if (VALID_IDS.indexOf(id) === -1) id = "status";
+    sections.forEach(function(s){ s.classList.toggle("active", s.id === id); });
+    tocLinks.forEach(function(a){
+        a.classList.toggle("active", a.getAttribute("href") === "#" + id);
+    });
+    if (history.replaceState) {
+        history.replaceState(null, "", "#" + id);
+    }
+    window.scrollTo(0, 0);
 }
 
+tocLinks.forEach(function(a){
+    a.addEventListener("click", function(e){
+        e.preventDefault();
+        activateTab(a.getAttribute("href").slice(1));
+    });
+});
+
+// Respect the hash on first load (e.g. /?#updates deep-links).
+activateTab((location.hash || "#status").slice(1));
+window.addEventListener("hashchange", function(){
+    activateTab((location.hash || "#status").slice(1));
+});
+
+// ---- Plain-English status sentence ----
+function statusSentence(d) {
+    // dot-class, sentence
+    if (!d.paired) return ["warn", "Not paired yet — enter a PIN below to connect the camera to a home server."];
+    if (!d.server_connected) return ["err", "Paired, but can't reach the home server right now."];
+    if (d.streaming) return ["ok", "Connected to home server and streaming live."];
+    return ["ok", "Connected to home server. Stream starts when a viewer requests it."];
+}
+
+// ---- Status (/api/status) ----
+var _streamConfig = null;
+var _hostname = "";
+var _currentFirmware = "";
 function loadStatus() {
-    fetch('/api/status')
-        .then(function(r) {
-            if (r.status === 401) { window.location.href = '/login'; return null; }
-            return r.json();
-        })
-        .then(function(d) {
-            if (!d) return;
-            $('s-hostname').textContent = d.hostname || '--';
-            $('s-ip').textContent = d.ip_address || '--';
-            $('s-wifi').textContent = d.wifi_ssid || 'Not connected';
+    fetch("/api/status").then(function(r){
+        if (r.status === 401) { window.location.href = "/login"; return null; }
+        return r.json();
+    }).then(function(d){
+        if (!d) return;
+        _hostname = d.hostname || "";
+        _streamConfig = d.stream_config || null;
 
-            var serverEl = $('s-server');
-            if (d.server_connected) {
-                serverEl.textContent = d.server_address + ' (connected)';
-                serverEl.className = 'info-row__value status-ok';
-            } else {
-                serverEl.textContent = d.server_address + ' (disconnected)';
-                serverEl.className = 'info-row__value status-err';
-            }
+        // Top bar + reset-confirm target
+        $("bar-host").textContent = _hostname || d.camera_id || "";
+        $("reset-host-target").textContent = _hostname || "camera";
 
-            var streamEl = $('s-stream');
-            if (d.streaming) {
-                streamEl.textContent = 'Streaming';
-                streamEl.className = 'info-row__value status-ok';
-            } else {
-                streamEl.textContent = 'Not streaming';
-                streamEl.className = 'info-row__value status-err';
-            }
+        // Hero status line
+        var pair = statusSentence(d);
+        $("hero-dot").className = "hero__dot " + pair[0];
+        $("hero-line").textContent = pair[1];
 
-            var cpuEl = $('s-cpu');
-            cpuEl.textContent = d.cpu_temp + '\u00B0C';
-            cpuEl.className = 'info-row__value' + (d.cpu_temp > 70 ? ' status-err' : d.cpu_temp > 60 ? ' status-warn' : ' status-ok');
+        // Hero sub-facts
+        $("h-host").textContent = _hostname || "--";
+        $("h-ip").textContent = d.ip_address || "--";
+        $("h-wifi").textContent = d.wifi_ssid || "Not connected";
+        $("h-server").textContent = d.paired
+            ? (d.server_address || "--")
+            : "Not paired";
+        $("h-uptime").textContent = friendlyUptime(d.uptime);
+        _currentFirmware = d.firmware_version || "";
+        $("h-firmware").textContent = _currentFirmware || "--";
 
-            var memPct = d.memory_total_mb > 0 ? Math.round(d.memory_used_mb / d.memory_total_mb * 100) : 0;
-            $('s-mem').textContent = d.memory_used_mb + ' / ' + d.memory_total_mb + ' MB (' + memPct + '%)';
-            $('s-uptime').textContent = d.uptime || '--';
-
-            // Update stream settings
-            if (d.stream_config) {
-                _streamConfig = d.stream_config;
-                var sc = d.stream_config;
-                $('s-resolution').textContent = sc.width + 'x' + sc.height;
-                $('s-fps').textContent = sc.fps + ' fps';
-                var brMbps = (sc.bitrate / 1000000).toFixed(1);
-                $('s-bitrate').textContent = brMbps + ' Mbps';
-                $('s-profile').textContent = sc.h264_profile || '--';
-                var orient = [];
-                if (sc.rotation === 180) orient.push('180\u00B0');
-                if (sc.hflip) orient.push('H-Flip');
-                if (sc.vflip) orient.push('V-Flip');
-                $('s-orientation').textContent = orient.length > 0 ? orient.join(', ') : 'Normal';
-            }
-
-            // Update pairing section
-            updatePairingUI(d);
-        })
-        .catch(function() {});
-}
-
-function updatePairingUI(d) {
-    var pairedEl = $('s-paired');
-    var serverEl = $('s-pair-server');
-
-    serverEl.textContent = d.server_address || '--';
-
-    // Pre-fill server URL for pairing form
-    if (!$('pair-server-url').value && d.server_address) {
-        $('pair-server-url').value = d.server_address;
-    }
-
-    if (d.paired) {
-        pairedEl.textContent = 'Paired';
-        pairedEl.className = 'info-row__value status-ok';
-        $('pair-form').style.display = 'none';
-        $('pair-done').style.display = 'block';
-    } else {
-        pairedEl.textContent = 'Not paired';
-        pairedEl.className = 'info-row__value status-warn';
-        // Only show form if not already showing the done state
-        if ($('pair-done').style.display !== 'block') {
-            $('pair-form').style.display = 'block';
+        // Chips
+        if (typeof d.cpu_temp === "number") {
+            $("h-cpu").textContent = d.cpu_temp.toFixed(1) + "°C";
         }
-    }
-}
+        if (d.memory_total_mb > 0) {
+            var p = Math.round(d.memory_used_mb / d.memory_total_mb * 100);
+            $("h-mem").textContent = p + "%";
+        }
+        if (_streamConfig) {
+            var sc = _streamConfig;
+            var mbps = (sc.bitrate / 1000000).toFixed(1);
+            $("h-stream").textContent = sc.width + "×" + sc.height + " · " + sc.fps + " fps";
+            // Stream settings card
+            $("sc-res").textContent = sc.width + " × " + sc.height;
+            $("sc-fps").textContent = sc.fps + " fps";
+            $("sc-br").textContent = mbps + " Mbps";
+            $("sc-prof").textContent = sc.h264_profile || "--";
+            var ori = [];
+            if (sc.rotation === 180) ori.push("180°");
+            if (sc.hflip) ori.push("H-flip");
+            if (sc.vflip) ori.push("V-flip");
+            $("sc-ori").textContent = ori.length ? ori.join(", ") : "Normal";
+        }
 
-function showPairForm() {
-    $('pair-done').style.display = 'none';
-    $('pair-form').style.display = 'block';
-    $('pair-pin').value = '';
-    $('pair-result').innerHTML = '';
-}
-
-function doPair() {
-    var pin = $('pair-pin').value.trim();
-    var serverAddr = $('pair-server-url').value.trim();
-
-    if (!pin || pin.length !== 6) { alert('Enter the 6-digit PIN from the server dashboard'); return; }
-    if (!serverAddr) { alert('Enter the server address'); return; }
-
-    // Build server URL — add https:// if no scheme
-    var serverUrl = serverAddr;
-    if (serverUrl.indexOf('://') === -1) {
-        serverUrl = 'https://' + serverUrl;
-    }
-
-    $('btn-pair').disabled = true;
-    $('btn-pair').textContent = 'Pairing...';
-    $('pair-result').innerHTML = '';
-
-    fetch('/api/pair', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pin, server_url: serverUrl })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        $('btn-pair').disabled = false;
-        $('btn-pair').textContent = 'Pair with Server';
-        if (d.error) {
-            $('pair-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
+        // Pairing UI branching
+        if (d.paired) {
+            hide("pair-cta");
+            show("unpair-details");
+            if (!$("repair-server").value && d.server_address) {
+                $("repair-server").value = d.server_address;
+            }
         } else {
-            $('pair-result').innerHTML = '<div class="msg msg--ok">' + esc(d.message || 'Paired!') + '</div>';
-            // Refresh status to update pairing UI
-            setTimeout(loadStatus, 1000);
+            show("pair-cta");
+            hide("unpair-details");
+            if (!$("pair-server").value && d.server_address) {
+                $("pair-server").value = d.server_address;
+            }
         }
-    })
-    .catch(function() {
-        $('btn-pair').disabled = false;
-        $('btn-pair').textContent = 'Pair with Server';
-        $('pair-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
+    }).catch(function(){});
+}
+function friendlyUptime(s) {
+    // Server already formats as "3d 4h 12m" — just humanise zero/one.
+    if (!s) return "--";
+    if (s === "0m") return "Less than a minute";
+    return s;
+}
+
+// ---- Pairing ----
+function doPair() {
+    var pin = $("pair-pin").value.trim();
+    var addr = $("pair-server").value.trim();
+    if (pin.length !== 6) return setMsg("pair-result", "err", "Enter the 6-digit PIN.");
+    if (!addr) return setMsg("pair-result", "err", "Enter the server address.");
+    var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
+    setBusy("btn-pair", true, "Pairing…");
+    setMsg("pair-result", "", "");
+    fetch("/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pin, server_url: url })
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-pair", false, "Pair camera");
+        if (d.error) setMsg("pair-result", "err", d.error);
+        else {
+            setMsg("pair-result", "ok", d.message || "Paired — restarting.");
+            setTimeout(loadStatus, 1500);
+        }
+    }).catch(function(){
+        setBusy("btn-pair", false, "Pair camera");
+        setMsg("pair-result", "err", "Request failed.");
     });
 }
 
-function scanNetworks() {
-    var btn = $('btn-scan');
-    btn.disabled = true;
-    btn.textContent = 'Scanning...';
-    $('net-list').innerHTML = '';
+function doRepair() {
+    // Re-pair with a (possibly different) server without unpair-then-
+    // pair. The server-side /api/pair handler already calls
+    // pairing_manager.reset_local_state() when is_paired is true, so
+    // we can reuse it unchanged.
+    var pin = $("repair-pin").value.trim();
+    var addr = $("repair-server").value.trim();
+    if (pin.length !== 6) return setMsg("unpair-result", "err", "Enter the 6-digit PIN.");
+    if (!addr) return setMsg("unpair-result", "err", "Enter the server address.");
+    if (!confirm("Move this camera to server " + addr + "?\nThe current pairing will be replaced.")) return;
+    var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
+    setBusy("btn-repair", true, "Re-pairing…");
+    setMsg("unpair-result", "", "");
+    fetch("/api/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pin, server_url: url })
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-repair", false, "Re-pair");
+        if (d.error) setMsg("unpair-result", "err", d.error);
+        else {
+            setMsg("unpair-result", "warn", "Re-pair accepted — camera restarting. Page will reload.");
+            setTimeout(function(){ window.location.reload(); }, 6000);
+        }
+    }).catch(function(){
+        setBusy("btn-repair", false, "Re-pair");
+        setMsg("unpair-result", "err", "Request failed.");
+    });
+}
 
-    fetch('/api/networks')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            var nets = d.networks || [];
-            var html = '';
-            nets.forEach(function(n) {
-                html += '<div class="net" onclick="pickNet(\'' + esc(n.ssid) + '\')"><span>' + esc(n.ssid) + '</span><span class="net__signal">' + n.signal + '%</span></div>';
-            });
-            $('net-list').innerHTML = html || '<div style="padding:8px;color:var(--color-text-muted);text-align:center">No networks found</div>';
-            btn.disabled = false;
-            btn.textContent = 'Scan Networks';
-        })
-        .catch(function() {
-            btn.disabled = false;
-            btn.textContent = 'Scan Networks';
-            $('net-list').innerHTML = '<div class="msg msg--err">Scan failed</div>';
+function doUnpair() {
+    if (!confirm("Forget the current server?\nStreams stop immediately.")) return;
+    setBusy("btn-unpair", true, "Unpairing…");
+    setMsg("unpair-result", "", "");
+    fetch("/api/unpair", { method: "POST", headers: { "Content-Type": "application/json" } })
+        .then(function(r){ return r.json(); }).then(function(d){
+            if (d.error) {
+                setBusy("btn-unpair", false, "Unpair");
+                setMsg("unpair-result", "err", d.error);
+            } else {
+                setMsg("unpair-result", "warn", "Unpaired. Camera is restarting — this page will reload.");
+                setTimeout(function(){ window.location.reload(); }, 6000);
+            }
+        }).catch(function(){
+            setBusy("btn-unpair", false, "Unpair");
+            setMsg("unpair-result", "err", "Request failed.");
         });
 }
 
-function pickNet(ssid) {
-    $('in-ssid').value = ssid;
-    $('in-pass').focus();
+// ---- WiFi ----
+function scanNetworks() {
+    var btn = $("btn-scan");
+    btn.disabled = true; btn.textContent = "Scanning…";
+    fetch("/api/networks").then(function(r){ return r.json(); }).then(function(d){
+        var nets = (d.networks || []).slice().sort(function(a,b){ return (b.signal||0) - (a.signal||0); });
+        var list = $("netlist");
+        if (!nets.length) {
+            list.innerHTML = '<div style="padding:10px;color:var(--muted);text-align:center">No networks found</div>';
+        } else {
+            list.innerHTML = nets.map(function(n){
+                return '<div class="net" data-ssid="' + esc(n.ssid) + '">' +
+                       '<span>' + esc(n.ssid) + '</span>' +
+                       '<span class="net__signal">' + (n.signal || 0) + '%</span></div>';
+            }).join("");
+            // wire clicks via delegation
+            list.querySelectorAll(".net").forEach(function(el){
+                el.onclick = function(){
+                    $("wifi-ssid").value = el.getAttribute("data-ssid");
+                    $("wifi-pass").focus();
+                };
+            });
+        }
+        list.hidden = false;
+        btn.disabled = false; btn.textContent = "Scan for networks";
+    }).catch(function(){
+        btn.disabled = false; btn.textContent = "Scan for networks";
+        setMsg("wifi-result", "err", "Scan failed.");
+    });
 }
-
-function doConnect() {
-    var ssid = $('in-ssid').value.trim();
-    var pass = $('in-pass').value;
-    if (!ssid) { alert('Enter WiFi name'); return; }
-    if (!pass) { alert('Enter WiFi password'); return; }
-
-    $('btn-connect').disabled = true;
-    $('btn-connect').textContent = 'Connecting...';
-    $('wifi-result').innerHTML = '';
-
-    fetch('/api/wifi', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+function doWifi() {
+    var ssid = $("wifi-ssid").value.trim();
+    var pass = $("wifi-pass").value;
+    if (!ssid) return setMsg("wifi-result", "err", "Enter the WiFi name.");
+    if (!pass) return setMsg("wifi-result", "err", "Enter the WiFi password.");
+    setBusy("btn-wifi", true, "Connecting…");
+    setMsg("wifi-result", "", "");
+    fetch("/api/wifi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ssid: ssid, password: pass })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        $('btn-connect').disabled = false;
-        $('btn-connect').textContent = 'Connect';
-        if (d.error) {
-            $('wifi-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
-        } else {
-            $('wifi-result').innerHTML = '<div class="msg msg--ok">' + esc(d.message || 'Connected!') + '</div>';
-            setTimeout(loadStatus, 2000);
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-wifi", false, "Connect");
+        if (d.error) setMsg("wifi-result", "err", d.error);
+        else {
+            setMsg("wifi-result", "ok", d.message || "Connected.");
+            setTimeout(loadStatus, 2500);
         }
-    })
-    .catch(function() {
-        $('btn-connect').disabled = false;
-        $('btn-connect').textContent = 'Connect';
-        $('wifi-result').innerHTML = '<div class="msg msg--err">Request failed. Camera may have changed networks.</div>';
+    }).catch(function(){
+        setBusy("btn-wifi", false, "Connect");
+        setMsg("wifi-result", "err", "Request failed. The camera may have moved to a different network.");
     });
 }
 
-function changePw() {
-    var current = $('pw-current').value;
-    var newPw = $('pw-new').value;
-    if (!current) { alert('Enter current password'); return; }
-    if (!newPw || newPw.length < 4) { alert('New password must be at least 4 characters'); return; }
-
-    $('btn-pw').disabled = true;
-    $('btn-pw').textContent = 'Saving...';
-    $('pw-result').innerHTML = '';
-
-    fetch('/api/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_password: current, new_password: newPw })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        $('btn-pw').disabled = false;
-        $('btn-pw').textContent = 'Change Password';
-        if (d.error) {
-            $('pw-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
-        } else {
-            $('pw-result').innerHTML = '<div class="msg msg--ok">' + esc(d.message || 'Password changed!') + '</div>';
-            $('pw-current').value = '';
-            $('pw-new').value = '';
+// ---- Password ----
+function doPassword() {
+    var cur = $("pw-cur").value, nw = $("pw-new").value;
+    if (!cur) return setMsg("pw-result", "err", "Enter your current password.");
+    if (!nw || nw.length < 4) return setMsg("pw-result", "err", "New password must be at least 4 characters.");
+    setBusy("btn-pw", true, "Saving…");
+    setMsg("pw-result", "", "");
+    fetch("/api/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: cur, new_password: nw })
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-pw", false, "Save password");
+        if (d.error) setMsg("pw-result", "err", d.error);
+        else {
+            setMsg("pw-result", "ok", "Password changed.");
+            $("pw-cur").value = ""; $("pw-new").value = "";
         }
-    })
-    .catch(function() {
-        $('btn-pw').disabled = false;
-        $('btn-pw').textContent = 'Change Password';
-        $('pw-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
+    }).catch(function(){
+        setBusy("btn-pw", false, "Save password");
+        setMsg("pw-result", "err", "Request failed.");
     });
 }
 
-function showResetConfirm() {
-    $('reset-step1').style.display = 'none';
-    $('reset-step2').style.display = 'block';
-}
-
-function cancelReset() {
-    $('reset-step1').style.display = 'block';
-    $('reset-step2').style.display = 'none';
-}
-
-function doReset() {
-    $('reset-result').innerHTML = '<div class="msg msg--warn">Resetting...</div>';
-    fetch('/api/factory-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        if (d.error) {
-            $('reset-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
-            cancelReset();
-        } else {
-            $('reset-result').innerHTML = '<div class="msg msg--ok">Factory reset complete. Restarting...</div>';
-            setTimeout(function() { window.location.href = '/login'; }, 5000);
-        }
-    })
-    .catch(function() {
-        $('reset-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
-        cancelReset();
-    });
-}
-
-var _resMaxFps = {'640x480': 58, '1296x972': 43, '1920x1080': 30};
-var _streamConfig = null;
-
+// ---- Stream settings ----
+var _maxFps = {"640x480": 58, "1296x972": 43, "1920x1080": 30};
 function toggleStreamEdit() {
-    var view = $('stream-view');
-    var edit = $('stream-edit');
-    var btn = $('btn-stream-edit');
-    if (edit.style.display === 'none') {
-        // Populate form from current config
+    var editing = !$("stream-edit").hidden;
+    if (editing) {
+        $("stream-edit").hidden = true;
+        $("stream-view").style.display = "";
+        $("btn-stream-edit").textContent = "Edit";
+    } else {
         if (_streamConfig) {
             var sc = _streamConfig;
-            $('se-resolution').value = sc.width + 'x' + sc.height;
-            $('se-fps').value = sc.fps;
-            $('se-bitrate').value = (sc.bitrate / 1000000).toFixed(1);
-            $('se-profile').value = sc.h264_profile || 'high';
-            $('se-keyframe').value = sc.keyframe_interval || 30;
-            $('se-rotation').value = String(sc.rotation || 0);
-            $('se-hflip').checked = !!sc.hflip;
-            $('se-vflip').checked = !!sc.vflip;
+            $("se-res").value = sc.width + "x" + sc.height;
+            $("se-fps").value = sc.fps;
+            $("se-br").value = (sc.bitrate / 1000000).toFixed(1);
+            $("se-prof").value = sc.h264_profile || "high";
+            $("se-key").value = sc.keyframe_interval || 30;
+            $("se-rot").value = String(sc.rotation || 0);
+            $("se-hflip").checked = !!sc.hflip;
+            $("se-vflip").checked = !!sc.vflip;
             onResChange();
         }
-        view.style.display = 'none';
-        edit.style.display = 'block';
-        btn.style.display = 'none';
-        $('stream-result').innerHTML = '';
-    } else {
-        view.style.display = 'block';
-        edit.style.display = 'none';
-        btn.style.display = '';
+        $("stream-edit").hidden = false;
+        $("stream-view").style.display = "none";
+        $("btn-stream-edit").textContent = "Done";
     }
 }
-
 function onResChange() {
-    var res = $('se-resolution').value;
-    var maxFps = _resMaxFps[res] || 30;
-    var fpsInput = $('se-fps');
-    fpsInput.max = maxFps;
-    if (parseInt(fpsInput.value) > maxFps) {
-        fpsInput.value = maxFps;
-    }
+    var max = _maxFps[$("se-res").value] || 30;
+    $("se-fps").max = max;
+    if (parseInt($("se-fps").value, 10) > max) $("se-fps").value = max;
 }
-
-function saveStreamConfig() {
-    var res = $('se-resolution').value.split('x');
+function saveStream() {
+    var parts = $("se-res").value.split("x");
     var payload = {
-        width: parseInt(res[0]),
-        height: parseInt(res[1]),
-        fps: parseInt($('se-fps').value),
-        bitrate: Math.round(parseFloat($('se-bitrate').value) * 1000000),
-        h264_profile: $('se-profile').value,
-        keyframe_interval: parseInt($('se-keyframe').value),
-        rotation: parseInt($('se-rotation').value),
-        hflip: $('se-hflip').checked,
-        vflip: $('se-vflip').checked
+        width: parseInt(parts[0], 10),
+        height: parseInt(parts[1], 10),
+        fps: parseInt($("se-fps").value, 10),
+        bitrate: Math.round(parseFloat($("se-br").value) * 1000000),
+        h264_profile: $("se-prof").value,
+        keyframe_interval: parseInt($("se-key").value, 10),
+        rotation: parseInt($("se-rot").value, 10),
+        hflip: $("se-hflip").checked,
+        vflip: $("se-vflip").checked
     };
-
-    $('btn-stream-save').disabled = true;
-    $('btn-stream-save').textContent = 'Saving...';
-    $('stream-result').innerHTML = '';
-
-    fetch('/api/stream-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+    setBusy("btn-stream-save", true, "Saving…");
+    setMsg("stream-result", "", "");
+    fetch("/api/stream-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-        $('btn-stream-save').disabled = false;
-        $('btn-stream-save').textContent = 'Save';
-        if (d.error) {
-            $('stream-result').innerHTML = '<div class="msg msg--err">' + esc(d.error) + '</div>';
-        } else {
-            $('stream-result').innerHTML = '<div class="msg msg--ok">Settings applied. Stream restarting...</div>';
-            setTimeout(function() {
-                toggleStreamEdit();
-                loadStatus();
-            }, 1500);
+    }).then(function(r){ return r.json(); }).then(function(d){
+        setBusy("btn-stream-save", false, "Save");
+        if (d.error) setMsg("stream-result", "err", d.error);
+        else {
+            setMsg("stream-result", "ok", "Applied. Restarting the camera stream…");
+            setTimeout(function(){ toggleStreamEdit(); loadStatus(); }, 1500);
         }
-    })
-    .catch(function() {
-        $('btn-stream-save').disabled = false;
-        $('btn-stream-save').textContent = 'Save';
-        $('stream-result').innerHTML = '<div class="msg msg--err">Request failed</div>';
+    }).catch(function(){
+        setBusy("btn-stream-save", false, "Save");
+        setMsg("stream-result", "err", "Request failed.");
     });
 }
 
-function esc(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML.replace(/'/g, "\\'");
+// ---- Factory reset ----
+function checkResetConfirm() {
+    var match = $("reset-confirm").value.trim() === (_hostname || "");
+    $("btn-reset").disabled = !match;
+}
+function doReset() {
+    if (!confirm("This wipes WiFi, pairing, and the admin password. The camera restarts in setup mode. Continue?")) return;
+    setMsg("reset-result", "warn", "Resetting…");
+    fetch("/api/factory-reset", { method: "POST", headers: { "Content-Type": "application/json" } })
+        .then(function(r){ return r.json(); }).then(function(d){
+            if (d.error) setMsg("reset-result", "err", d.error);
+            else {
+                setMsg("reset-result", "ok", "Factory reset done. Camera restarting — this page will reload.");
+                setTimeout(function(){ window.location.href = "/login"; }, 6000);
+            }
+        }).catch(function(){
+            setMsg("reset-result", "err", "Request failed.");
+        });
 }
 
-// --- System Updates (OTA) ---
-var _otaTimer = null;
+// ---- OTA update ----
+var _otaPoll = null;
+var OTA_TEXT = {
+    uploading:  "Uploading to the camera",
+    downloading:"Receiving on the camera",
+    verifying:  "Verifying the update",
+    installing: "Installing to the standby slot",
+    installed:  "Install complete — reboot to apply",
+    error:      "Install failed"
+};
+function renderOta(s) {
+    var state = (s && s.state) || "idle";
+    var progress = (s && typeof s.progress === "number") ? s.progress : 0;
+    var err = (s && s.error) || "";
+    var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
+    $("btn-ota-upload").disabled = busy;
+    // Also lock the file input while busy so a mid-upload click doesn't
+    // open the browser's file picker. Without this the user could
+    // select a different (or the same) file and race the upload that's
+    // already in flight.
+    $("ota-file").disabled = busy;
+    $("btn-ota-reboot").hidden = (state !== "installed");
 
-function renderOtaStatus(s) {
-    var state = (s && s.state) || 'idle';
-    var progress = (s && typeof s.progress === 'number') ? s.progress : 0;
-    var error = (s && s.error) || '';
-    $('ota-state').textContent = state;
-    $('ota-progress').textContent = state === 'idle' ? '--' : (progress + '%');
-    if (error) {
-        $('ota-error').textContent = error;
-        $('ota-error-row').style.display = 'flex';
+    // Version diff row. Show it once the bundle has been staged —
+    // during the download the target version isn't known yet.
+    var target = (s && s.target_version) || "";
+    if (target && state !== "idle") {
+        $("ota-current-ver").textContent = _currentFirmware || "--";
+        $("ota-target-ver").textContent = target;
+        $("ota-version-row").hidden = false;
     } else {
-        $('ota-error-row').style.display = 'none';
+        $("ota-version-row").hidden = true;
     }
-    $('btn-ota-reboot').style.display = (state === 'installed') ? 'inline-flex' : 'none';
-    $('btn-ota-upload').disabled = (state === 'downloading' || state === 'verifying' || state === 'installing');
-}
 
-function pollOtaStatus() {
-    fetch('/api/ota/status').then(function(r) { return r.json(); }).then(function(s) {
-        renderOtaStatus(s);
-        if (s.state === 'downloading' || s.state === 'verifying' || s.state === 'installing') {
-            _otaTimer = setTimeout(pollOtaStatus, 2000);
+    if (state === "idle") {
+        hide("ota-busy");
+        return;
+    }
+    show("ota-busy");
+    $("ota-fill").style.width = progress + "%";
+    var label = (OTA_TEXT[state] || state) + " — " + progress + "%";
+    if (err) label = OTA_TEXT[state] + ": " + err;
+    $("ota-label").textContent = label;
+    if (state === "error") setMsg("ota-result", "err", err || "Install failed.");
+}
+function pollOta() {
+    fetch("/api/ota/status").then(function(r){ return r.json(); }).then(function(s){
+        renderOta(s);
+        if (s.state === "downloading" || s.state === "verifying" || s.state === "installing") {
+            _otaPoll = setTimeout(pollOta, 2000);
         }
-    }).catch(function() {});
+    }).catch(function(){});
+}
+// Parse the head of a .swu (CPIO newc) and return
+//   { ok, signed, target, version }
+// by reading the CPIO entry names (to detect sw-description.sig) and
+// the sw-description text (to detect which target this bundle was built
+// for). Server bundles include a `raspberrypi4-64` selector group;
+// camera bundles include `home-monitor-camera`. Reading 64 KB covers
+// the CPIO headers plus the small sw-description payload without
+// streaming the 100+ MB rootfs.
+async function _inspectSwu(file) {
+    try {
+        var buf = await file.slice(0, 65536).arrayBuffer();
+        var v = new Uint8Array(buf);
+        var td = new TextDecoder("ascii");
+        var names = [];
+        var swDescText = "";
+        var pos = 0;
+        while (pos + 110 <= v.length && names.length < 3) {
+            var magic = td.decode(v.subarray(pos, pos + 6));
+            if (magic !== "070701" && magic !== "070702") break;
+            var filesize = parseInt(td.decode(v.subarray(pos + 54, pos + 62)), 16);
+            var namesize = parseInt(td.decode(v.subarray(pos + 94, pos + 102)), 16);
+            if (!isFinite(filesize) || !isFinite(namesize) || namesize < 1) break;
+            var nameStart = pos + 110;
+            if (nameStart + namesize > v.length) break;
+            var name = td.decode(v.subarray(nameStart, nameStart + namesize - 1));
+            if (name === "TRAILER!!!") break;
+            var afterName = ((nameStart + namesize) + 3) & ~3;
+            if (name === "sw-description" && afterName + filesize <= v.length) {
+                swDescText = td.decode(v.subarray(afterName, afterName + filesize));
+            }
+            names.push(name);
+            pos = (afterName + filesize + 3) & ~3;
+        }
+        if (names.length === 0 || names[0] !== "sw-description") {
+            return { ok: false, reason: "Not a valid .swu bundle (sw-description missing)." };
+        }
+        var signed = names.length > 1 && names[1] === "sw-description.sig";
+        var target = "unknown";
+        if (/\braspberrypi4-64\s*=/.test(swDescText)) target = "server";
+        else if (/\bhome-monitor-camera\s*=/.test(swDescText)) target = "camera";
+        var vm = swDescText.match(/version\s*=\s*"([^"]+)"/);
+        var version = vm ? vm[1] : "";
+        return { ok: true, signed: signed, target: target, version: version };
+    } catch (e) {
+        return { ok: false, reason: "Could not read .swu file: " + (e && e.message || e) };
+    }
 }
 
-function uploadOta() {
-    var file = $('ota-file').files[0];
-    if (!file) { $('ota-result').innerHTML = '<div class="msg msg--err">Choose a .swu file first</div>'; return; }
-    if (!/\.swu$/i.test(file.name)) { $('ota-result').innerHTML = '<div class="msg msg--err">File must be a .swu bundle</div>'; return; }
+// Validate at upload time — this is the camera GUI, so only camera
+// bundles are acceptable. Rejects unsigned, wrong-target, and
+// unrecognised bundles with clear messaging.
+async function validateCameraSwu(file) {
+    var info = await _inspectSwu(file);
+    if (!info.ok) return info;
+    if (!info.signed) return { ok: false, reason: "Unsigned bundle — select a signed .swu." };
+    if (info.target !== "camera") {
+        var got = info.target === "unknown" ? "unrecognised" : info.target;
+        return { ok: false, reason: "This is a " + got + " bundle — this device requires a camera bundle." };
+    }
+    return { ok: true, version: info.version };
+}
 
-    $('btn-ota-upload').disabled = true;
-    $('ota-result').innerHTML = '<div class="msg msg--warn">Uploading — do not close this page…</div>';
-    renderOtaStatus({state: 'downloading', progress: 0, error: ''});
+// Fire the signed-check the moment a file is chosen, so the user sees
+// "Unsigned bundle — select a signed .swu" before clicking Upload.
+async function onOtaFileSelected() {
+    var file = $("ota-file").files[0];
+    $("btn-ota-upload").disabled = false;
+    if (!file) { setMsg("ota-result", "", ""); return; }
+    if (!/\.swu$/i.test(file.name)) {
+        setMsg("ota-result", "err", "File must be a .swu firmware bundle.");
+        $("btn-ota-upload").disabled = true;
+        return;
+    }
+    var check = await validateCameraSwu(file);
+    if (!check.ok) {
+        setMsg("ota-result", "err", check.reason);
+        $("btn-ota-upload").disabled = true;
+    } else {
+        setMsg("ota-result", "ok", "Signed camera bundle" + (check.version ? " (" + check.version + ")" : "") + " — ready to upload.");
+    }
+}
 
+async function uploadOta() {
+    var file = $("ota-file").files[0];
+    if (!file) return setMsg("ota-result", "err", "Choose a firmware file first.");
+    if (!/\.swu$/i.test(file.name)) return setMsg("ota-result", "err", "File must be a .swu firmware bundle.");
+    var check = await validateCameraSwu(file);
+    if (!check.ok) { setMsg("ota-result", "err", check.reason); return; }
+    setMsg("ota-result", "warn", "Uploading — do not close this page.");
+    renderOta({ state: "uploading", progress: 0 });
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/ota/upload');
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.setRequestHeader('X-OTA-Filename', file.name);
-    xhr.upload.onprogress = function(e) {
+    xhr.open("POST", "/api/ota/upload");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("X-OTA-Filename", file.name);
+    xhr.upload.onprogress = function(e){
         if (e.lengthComputable) {
-            var pct = Math.round((e.loaded / e.total) * 40);
-            renderOtaStatus({state: 'downloading', progress: pct, error: ''});
+            // browser upload occupies 0..50%; install the rest.
+            var pct = Math.round((e.loaded / e.total) * 50);
+            renderOta({ state: "uploading", progress: pct });
         }
     };
-    xhr.onload = function() {
+    xhr.onload = function(){
         if (xhr.status === 200) {
-            $('ota-result').innerHTML = '<div class="msg msg--warn">Upload complete — installing…</div>';
-            pollOtaStatus();
+            setMsg("ota-result", "warn", "Upload complete — installing…");
+            pollOta();
         } else {
-            var msg = 'Upload failed (' + xhr.status + ')';
-            try { var e = JSON.parse(xhr.responseText); if (e.error) msg = e.error; } catch (_) {}
-            $('ota-result').innerHTML = '<div class="msg msg--err">' + esc(msg) + '</div>';
-            $('btn-ota-upload').disabled = false;
+            var msg = "Upload failed (" + xhr.status + ")";
+            try { var j = JSON.parse(xhr.responseText); if (j.error) msg = j.error; } catch (_) {}
+            setMsg("ota-result", "err", msg);
+            renderOta({ state: "idle" });
         }
     };
-    xhr.onerror = function() {
-        $('ota-result').innerHTML = '<div class="msg msg--err">Network error during upload</div>';
-        $('btn-ota-upload').disabled = false;
+    xhr.onerror = function(){
+        setMsg("ota-result", "err", "Network error during upload.");
+        renderOta({ state: "idle" });
     };
     xhr.send(file);
 }
-
 function rebootCamera() {
-    if (!confirm('Reboot the camera now to apply the update?')) return;
-    $('btn-ota-reboot').disabled = true;
-    fetch('/api/ota/reboot', {method: 'POST'})
-        .then(function(r) { return r.json(); })
-        .then(function() {
-            $('ota-result').innerHTML = '<div class="msg msg--warn">Rebooting — reconnect in about a minute.</div>';
-        })
-        .catch(function() {
-            $('ota-result').innerHTML = '<div class="msg msg--err">Reboot request failed — try SSH/power cycle.</div>';
-            $('btn-ota-reboot').disabled = false;
+    if (!confirm("Reboot the camera now to apply the update?")) return;
+    $("btn-ota-reboot").disabled = true;
+    fetch("/api/ota/reboot", { method: "POST" })
+        .then(function(r){ return r.json(); }).then(function(){
+            setMsg("ota-result", "warn", "Rebooting — reconnect in about a minute.");
+        }).catch(function(){
+            $("btn-ota-reboot").disabled = false;
+            setMsg("ota-result", "err", "Reboot request failed — try SSH or power-cycle.");
         });
 }
 
-pollOtaStatus();
+// ---- Small helpers ----
+function setBusy(id, busy, label) {
+    var b = $(id);
+    b.disabled = busy;
+    if (label) b.textContent = label;
+}
+function setMsg(id, kind, text) {
+    var el = $(id);
+    if (!text) { el.innerHTML = ""; return; }
+    var cls = kind ? ("msg msg--" + kind) : "msg";
+    el.innerHTML = '<div class="' + cls + '">' + esc(text) + '</div>';
+}
 
+// expose for inline onclick handlers
+window.doPair = doPair;
+window.doRepair = doRepair;
+window.doUnpair = doUnpair;
+window.scanNetworks = scanNetworks;
+window.doWifi = doWifi;
+window.doPassword = doPassword;
+window.toggleStreamEdit = toggleStreamEdit;
+window.onResChange = onResChange;
+window.saveStream = saveStream;
+window.checkResetConfirm = checkResetConfirm;
+window.doReset = doReset;
+window.uploadOta = uploadOta;
+window.onOtaFileSelected = onOtaFileSelected;
+window.rebootCamera = rebootCamera;
+
+// Kickoff
 loadStatus();
+pollOta();
 setInterval(loadStatus, 10000);
+updateToc();
+})();
 </script>
 </body>
 </html>

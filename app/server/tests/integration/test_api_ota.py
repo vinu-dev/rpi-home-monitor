@@ -122,10 +122,12 @@ class TestCameraPush:
         # Stub the background push so the test doesn't hit network.
         calls = []
 
-        def _fake_push(ip, path, progress_cb=None):
+        def _fake_push(ip, path, progress_cb=None, status_cb=None):
             calls.append((ip, path))
             if progress_cb:
                 progress_cb(1, 1)
+            if status_cb:
+                status_cb("installed", 100)
             return True, "Installed"
 
         monkeypatch.setattr(app.camera_ota_client, "push_bundle", _fake_push)

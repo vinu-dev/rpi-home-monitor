@@ -83,11 +83,20 @@
                 <span class="event-row__duration" x-text="_durationLabel(ev.duration_seconds)"></span>
                 <span class="event-row__chevron" x-text="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename) ? '\u25BC' : '\u25B6'"></span>
             </button>
-            <div class="event-row__player" x-show="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename)" x-transition>
-                <video x-ref="player"
-                       controls autoplay preload="none"
-                       :src="'/api/v1/recordings/' + encodeURIComponent(ev.camera_id) + '/' + encodeURIComponent(ev.date) + '/' + encodeURIComponent(ev.filename)"></video>
-            </div>
+            <!-- x-if (not x-show) so the <video> element only exists
+                 after the user clicks Play. preload="none" on a hidden
+                 <video src=...> still triggers a range-request on many
+                 browsers, saturating the per-origin HTTP connection pool
+                 and queuing navigation clicks behind the preloads —
+                 that's what caused the dashboard→live delay.
+            -->
+            <template x-if="playingKey === (ev.camera_id + '/' + ev.date + '/' + ev.filename)">
+                <div class="event-row__player" x-transition>
+                    <video x-ref="player"
+                           controls autoplay preload="metadata"
+                           :src="'/api/v1/recordings/' + encodeURIComponent(ev.camera_id) + '/' + encodeURIComponent(ev.date) + '/' + encodeURIComponent(ev.filename)"></video>
+                </div>
+            </template>
         </div>
     </template>
 </div>

@@ -52,17 +52,31 @@ echo ">>> Target: $TARGET"
 
 stage_local_ota_cert() {
     local configdir=$1
+    local builddir=$2
     local config_path="$YOCTO_DIR/config/$configdir/local.conf"
+    local build_conf="$builddir/conf/local.conf"
 
-    if ! grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+    # Enforcement comes from two places:
+    #   1. The machine-wide local.conf ("production" target sets it).
+    #   2. The --sign flag on this script (developer opts into signing
+    #      for a dev build to rehearse the production flow).
+    local enforce=0
+    if grep -q 'SWUPDATE_SIGNING.*=.*"1"' "$config_path" 2>/dev/null; then
+        enforce=1
+    fi
+    if [ "$SIGN_SWU" = "--sign" ]; then
+        enforce=1
+    fi
+    if [ "$enforce" = "0" ]; then
         return 0
     fi
 
     if [ ! -f "$LOCAL_OTA_CERT" ]; then
         echo ""
-        echo "ERROR: production signing is enabled in $config_path"
+        echo "ERROR: signature verification is enabled for this build."
         echo "Missing local OTA signing certificate: $LOCAL_OTA_CERT"
         echo "Run './scripts/generate-ota-keys.sh' first to generate your own keypair."
+        echo "Each user maintains their own keys — do not share them."
         echo ""
         exit 1
     fi
@@ -72,6 +86,18 @@ stage_local_ota_cert() {
     chmod 0644 "$GENERATED_CERT"
     echo ">>> Staged local OTA verification cert for build:"
     echo "    $GENERATED_CERT"
+
+    # Flip SWUPDATE_SIGNING on in the BUILD dir's local.conf — that's
+    # the one bitbake reads. build_image already copied the template
+    # from config/$configdir/local.conf into $builddir/conf/local.conf
+    # before calling us; overwrite its SWUPDATE_SIGNING line (or append
+    # if absent). Idempotent — we both remove any previous override and
+    # rewrite the current value.
+    if [ -n "$build_conf" ] && [ -f "$build_conf" ]; then
+        echo ">>> Setting SWUPDATE_SIGNING = \"1\" in $build_conf"
+        sed -i '/^SWUPDATE_SIGNING\s*=/d' "$build_conf"
+        printf '\nSWUPDATE_SIGNING = "1"\n' >> "$build_conf"
+    fi
 }
 
 # --- Clone Yocto layers ---
@@ -110,7 +136,7 @@ build_image() {
 
     cp "$YOCTO_DIR/config/$configdir/local.conf" "$builddir/conf/local.conf"
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
-    stage_local_ota_cert "$configdir"
+    stage_local_ota_cert "$configdir" "$builddir"
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"

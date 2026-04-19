@@ -737,7 +737,10 @@
                 <template x-for="d in storage.devices" :key="d.path">
                     <div class="usb-device-item">
                         <div>
-                            <div style="font-weight:500;" x-text="d.model"></div>
+                            <div style="font-weight:500;">
+                                <span x-text="d.model"></span>
+                                <span x-show="d.in_use" class="badge badge--ok" style="margin-left:8px;">In use</span>
+                            </div>
                             <div class="text-small text-muted">
                                 <span x-text="d.path"></span> &middot;
                                 <span x-text="d.size"></span> &middot;
@@ -746,7 +749,8 @@
                                 <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
                             </div>
                         </div>
-                        <button x-show="d.supported" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                        <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                        <span x-show="d.in_use" class="text-small text-muted">Active — eject below to switch</span>
                         <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
                     </div>
                 </template>
@@ -876,6 +880,14 @@
                 <span class="info-row__label">Current version</span>
                 <span class="info-row__value" x-text="ota.server.current_version || '--'"></span>
             </div>
+            <!-- Show the version that's about to be installed once a bundle is
+                 staged — admin should never commit to "install" without
+                 knowing what's in the bundle. -->
+            <div class="info-row" x-show="ota.server.target_version">
+                <span class="info-row__label">After install</span>
+                <span class="info-row__value" style="color:var(--color-accent);"
+                      x-text="ota.server.target_version"></span>
+            </div>
             <div class="info-row" style="border-bottom:none;">
                 <span class="info-row__label">Status</span>
                 <span class="info-row__value">
@@ -903,9 +915,10 @@
                      x-text="ota.server.state + ' — ' + (ota.server.progress || 0) + '%'"></div>
             </div>
             <div class="text-small text-muted" style="margin-top:var(--space-3);">
-                The server validates the .swu signature, stages it to
-                <code>/data/ota/staging</code>, and installs via SWUpdate to
-                the standby partition. A reboot is required after install.
+                Upload a firmware file, then click Install &amp; Reboot. The
+                server installs the update safely in the background and
+                restarts itself — if the new version fails to start, it
+                automatically rolls back to the previous one.
             </div>
         </div>
     </div>
@@ -928,6 +941,11 @@
                 <div class="info-row">
                     <span class="info-row__label">Current version</span>
                     <span class="info-row__value" x-text="cam.current_version || '--'"></span>
+                </div>
+                <div class="info-row" x-show="cam.target_version">
+                    <span class="info-row__label">After install</span>
+                    <span class="info-row__value" style="color:var(--color-accent);"
+                          x-text="cam.target_version"></span>
                 </div>
                 <div class="info-row" style="border-bottom:none;">
                     <span class="info-row__label">Status</span>
@@ -958,9 +976,11 @@
             </div>
         </template>
         <div class="text-small text-muted">
-            Camera updates are streamed from the server to the camera over mTLS (ADR-0020).
-            The camera verifies the signature and installs via SWUpdate — the same engine
-            used for server updates. A successful install reboots the camera onto the new slot.
+            Upload a firmware file for each camera, then click Push &amp;
+            Install. The server sends the update to the camera over a
+            secure paired connection, installs it, and reboots the
+            camera onto the new version. If the new version fails to
+            start, the camera automatically rolls back.
         </div>
     </div>
 </div>
@@ -1533,23 +1553,55 @@ function settingsPage() {
         /* --- Software Updates (ADR-0020) --- */
         cameraBusy(cam) {
             var s = cam && cam.state;
-            return s === 'uploading' || s === 'downloading' || s === 'verifying' || s === 'installing';
+            return (
+                s === 'uploading' || s === 'downloading' ||
+                s === 'verifying' || s === 'installing' ||
+                s === 'rebooting'
+            );
         },
 
         _serverBusy(state) {
-            return state === 'uploading' || state === 'installing' || state === 'verifying';
+            return (
+                state === 'uploading' || state === 'installing' ||
+                state === 'verifying' || state === 'rebooting'
+            );
         },
 
         async loadOtaStatus() {
             try {
                 var data = await window.HM.api.get('/api/v1/ota/status');
+
+                // Guard only the window when a *client-side* browser upload
+                // is actively streaming bytes — that's the only case where
+                // server status honestly says "idle" (Flask multipart parser
+                // hasn't handed off yet). Once the client upload resolves,
+                // or whenever the server-side push/install is the one
+                // driving progress, we accept the server's updates.
                 var prev = this.ota.server;
-                this.ota.server = Object.assign({ busy: this._serverBusy(data.server && data.server.state) }, prev, data.server || {});
-                this.ota.server.busy = this._serverBusy(this.ota.server.state);
-                if (!this.ota.server.staged_filename) {
-                    this.ota.server.staged_filename = prev.staged_filename || '';
+                if (!prev._clientUploading) {
+                    this.ota.server = Object.assign(
+                        { busy: this._serverBusy(data.server && data.server.state) },
+                        prev,
+                        data.server || {}
+                    );
+                    this.ota.server.busy = this._serverBusy(this.ota.server.state);
+                    if (!this.ota.server.staged_filename) {
+                        this.ota.server.staged_filename = prev.staged_filename || '';
+                    }
                 }
+
+                var existing = {};
+                (this.ota.cameras || []).forEach(function(c) { existing[c.id] = c; });
                 this.ota.cameras = (data.cameras || []).map(function(c) {
+                    var local = existing[c.id];
+                    // Only the client-side upload owns the card; the server-
+                    // side push populates progress via polling like any
+                    // other long-running action.
+                    if (local && local._clientUploading) {
+                        return local;
+                    }
+                    // Preserve client-side _clientUploading flag if somehow
+                    // set without local state surviving (shouldn't happen).
                     return Object.assign({ progress: 0, error: '', state: 'idle' }, c);
                 });
                 this._scheduleOtaPoll();
@@ -1565,20 +1617,102 @@ function settingsPage() {
             this._otaPollTimer = setTimeout(function() { self.loadOtaStatus(); }, delay);
         },
 
-        async _uploadWithCsrf(url, file) {
-            var fd = new FormData();
-            fd.append('file', file);
-            var resp = await fetch(url, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'X-CSRF-Token': window.HM.auth.getCsrfToken() },
-                body: fd,
-            });
-            var data = await resp.json().catch(function() { return {}; });
-            if (!resp.ok) {
-                throw new Error(data.error || data.message || ('HTTP ' + resp.status));
+        // Upload via XHR, not fetch — XHR is the only way to get reliable
+        // upload-progress events (`upload.onprogress`). `onProgress(pct)` is
+        // invoked with 0..100 while bytes stream; resolves with the parsed
+        // JSON body on 2xx, rejects with Error(message) otherwise.
+        // Parse the head of a .swu (CPIO newc) and return
+        //   { ok, signed, target, version }
+        // by reading both the entry names (to detect `sw-description.sig`)
+        // and the sw-description text (to detect which target this bundle
+        // was built for). Server bundles include a `raspberrypi4-64`
+        // selector group; camera bundles include `home-monitor-camera`.
+        // Reading 64 KB covers the CPIO headers plus the small
+        // sw-description payload without streaming the whole 100-200 MB
+        // rootfs.
+        async _inspectSwu(file) {
+            try {
+                const buf = await file.slice(0, 65536).arrayBuffer();
+                const v = new Uint8Array(buf);
+                const td = new TextDecoder('ascii');
+                const names = [];
+                let swDescText = '';
+                let pos = 0;
+                while (pos + 110 <= v.length && names.length < 3) {
+                    const magic = td.decode(v.subarray(pos, pos + 6));
+                    if (magic !== '070701' && magic !== '070702') break;
+                    const filesize = parseInt(td.decode(v.subarray(pos + 54, pos + 62)), 16);
+                    const namesize = parseInt(td.decode(v.subarray(pos + 94, pos + 102)), 16);
+                    if (!isFinite(filesize) || !isFinite(namesize) || namesize < 1) break;
+                    const nameStart = pos + 110;
+                    if (nameStart + namesize > v.length) break;
+                    const name = td.decode(v.subarray(nameStart, nameStart + namesize - 1));
+                    if (name === 'TRAILER!!!') break;
+                    const afterName = ((nameStart + namesize) + 3) & ~3;
+                    if (name === 'sw-description' && afterName + filesize <= v.length) {
+                        swDescText = td.decode(v.subarray(afterName, afterName + filesize));
+                    }
+                    names.push(name);
+                    pos = (afterName + filesize + 3) & ~3;
+                }
+                if (names.length === 0 || names[0] !== 'sw-description') {
+                    return { ok: false, reason: 'Not a valid .swu bundle (sw-description missing).' };
+                }
+                const signed = names.length > 1 && names[1] === 'sw-description.sig';
+                let target = 'unknown';
+                if (/\braspberrypi4-64\s*=/.test(swDescText)) target = 'server';
+                else if (/\bhome-monitor-camera\s*=/.test(swDescText)) target = 'camera';
+                const vm = swDescText.match(/version\s*=\s*"([^"]+)"/);
+                const version = vm ? vm[1] : '';
+                return { ok: true, signed, target, version };
+            } catch (e) {
+                return { ok: false, reason: 'Could not read .swu file: ' + (e.message || e) };
             }
-            return data;
+        },
+
+        // Apply the shared bundle-safety policy before any upload: file
+        // must parse, must be signed, and must target `expected`
+        // (server | camera). Returns { ok, reason }.
+        async _validateSwuFor(file, expected) {
+            const info = await this._inspectSwu(file);
+            if (!info.ok) return info;
+            if (!info.signed) {
+                return { ok: false, reason: 'Unsigned bundle — select a signed .swu.' };
+            }
+            if (info.target !== expected) {
+                const got = info.target === 'unknown' ? 'unrecognised' : info.target;
+                return { ok: false, reason: 'This is a ' + got + ' bundle — install requires a ' + expected + ' bundle.' };
+            }
+            return { ok: true, version: info.version };
+        },
+
+        _uploadWithCsrf(url, file, onProgress) {
+            return new Promise(function(resolve, reject) {
+                var fd = new FormData();
+                fd.append('file', file);
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
+                xhr.withCredentials = true;
+                xhr.setRequestHeader('X-CSRF-Token', window.HM.auth.getCsrfToken());
+                xhr.upload.onprogress = function(e) {
+                    if (onProgress && e.lengthComputable) {
+                        onProgress(Math.round((e.loaded / e.total) * 100));
+                    }
+                };
+                xhr.onload = function() {
+                    var body = xhr.responseText || '';
+                    var data = {};
+                    try { data = body ? JSON.parse(body) : {}; } catch (_) { /* non-JSON body */ }
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.error || data.message || ('HTTP ' + xhr.status)));
+                    }
+                };
+                xhr.onerror = function() { reject(new Error('Network error')); };
+                xhr.onabort = function() { reject(new Error('Upload aborted')); };
+                xhr.send(fd);
+            });
         },
 
         async uploadServerBundle(file) {
@@ -1587,12 +1721,25 @@ function settingsPage() {
                 window.HM.toast('Only .swu files are accepted', 'error');
                 return;
             }
+            const check = await this._validateSwuFor(file, 'server');
+            if (!check.ok) {
+                this.ota.server.state = 'error';
+                this.ota.server.error = check.reason;
+                window.HM.toast(check.reason, 'error');
+                return;
+            }
             this.ota.server.busy = true;
             this.ota.server.state = 'uploading';
             this.ota.server.progress = 0;
             this.ota.server.error = '';
+            this.ota.server._clientUploading = true;
+            var self = this;
             try {
-                var data = await this._uploadWithCsrf('/api/v1/ota/server/upload', file);
+                var data = await this._uploadWithCsrf(
+                    '/api/v1/ota/server/upload',
+                    file,
+                    function(pct) { self.ota.server.progress = pct; }
+                );
                 this.ota.server.staged_filename = data.filename || file.name;
                 this.ota.server.state = 'staged';
                 this.ota.server.busy = false;
@@ -1603,6 +1750,7 @@ function settingsPage() {
                 this.ota.server.busy = false;
                 window.HM.toast(this.ota.server.error, 'error');
             }
+            this.ota.server._clientUploading = false;
             this.loadOtaStatus();
         },
 
@@ -1610,14 +1758,18 @@ function settingsPage() {
             if (!confirm('Install this update? The server will reboot into the new partition.')) return;
             this.ota.server.busy = true;
             this.ota.server.state = 'installing';
-            this.ota.server.progress = 50;
+            this.ota.server.progress = 0;
             this.ota.server.error = '';
             try {
                 var data = await window.HM.api.post('/api/v1/ota/server/install', {});
-                this.ota.server.state = 'installed';
+                // The install endpoint reboots the server after a 2s
+                // delay. Move the card into "rebooting" state so the
+                // user sees we're waiting on the box to come back,
+                // rather than letting the status poller flip to idle.
+                this.ota.server.state = 'rebooting';
                 this.ota.server.progress = 100;
-                this.ota.server.busy = false;
-                window.HM.toast(data.message || 'Installed — reboot required', 'success');
+                this.ota.server.busy = true;
+                window.HM.toast(data.message || 'Rebooting…', 'success');
             } catch(e) {
                 this.ota.server.state = 'error';
                 this.ota.server.error = e.message || 'Install failed';
@@ -1633,13 +1785,22 @@ function settingsPage() {
                 window.HM.toast('Only .swu files are accepted', 'error');
                 return;
             }
+            const check = await this._validateSwuFor(file, 'camera');
+            if (!check.ok) {
+                cam.state = 'error';
+                cam.error = check.reason;
+                window.HM.toast(check.reason, 'error');
+                return;
+            }
             cam.state = 'uploading';
             cam.progress = 0;
             cam.error = '';
+            cam._clientUploading = true;
             try {
                 var data = await this._uploadWithCsrf(
                     '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/upload',
-                    file
+                    file,
+                    function(pct) { cam.progress = pct; }
                 );
                 cam.staged_filename = data.filename || file.name;
                 cam.state = 'staged';
@@ -1649,6 +1810,7 @@ function settingsPage() {
                 cam.error = e.message || 'Upload failed';
                 window.HM.toast(cam.error, 'error');
             }
+            cam._clientUploading = false;
             this.loadOtaStatus();
         },
 

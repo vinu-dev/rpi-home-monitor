@@ -247,6 +247,30 @@ class RecordingsService:
         out["started_at"] = clip.started_at
         return out, None, 200
 
+    # Dashboard "Last activity" and "Recent events" both walk the
+    # recordings tree with rglob("*.mp4"). The dashboard polls them on
+    # a 10 s interval, so without caching each poll re-scans every
+    # camera's full directory. Cache for CROSS_CAMERA_CACHE_TTL_SECONDS
+    # — new clips land at most every ~30 s (segment duration), and
+    # staleness < cache TTL is invisible to the user since the tile
+    # renders relative time ("3 min ago") not absolute.
+    _CROSS_CAMERA_CACHE_TTL_SECONDS = 20
+
+    def _cross_cached(self, slot: str, builder):
+        now = time.time()
+        cache = getattr(self, "_cross_cache", None)
+        if cache is None:
+            cache = {}
+            self._cross_cache = cache
+        hit = cache.get(slot)
+        if hit is not None:
+            cached_at, cached = hit
+            if now - cached_at < self._CROSS_CAMERA_CACHE_TTL_SECONDS:
+                return cached
+        value = builder()
+        cache[slot] = (now, value)
+        return value
+
     def latest_across_cameras(self):
         """Return the newest clip across every camera (or orphaned archive).
 
@@ -258,6 +282,9 @@ class RecordingsService:
             (dict, None, 200)  — newest clip, including ``camera_name``.
             (None, msg, 404)   — no clips anywhere.
         """
+        return self._cross_cached("latest", self._compute_latest_across_cameras)
+
+    def _compute_latest_across_cameras(self):
         root = self._recordings_root()
         if not root.is_dir():
             return None, "No recordings found", 404
@@ -338,6 +365,13 @@ class RecordingsService:
         except (TypeError, ValueError):
             limit = 10
         limit = max(1, min(limit, 50))
+
+        slot = f"recent:{limit}"
+        return self._cross_cached(
+            slot, lambda: self._compute_recent_across_cameras(limit)
+        )
+
+    def _compute_recent_across_cameras(self, limit: int):
 
         root = self._recordings_root()
         if not root.is_dir():

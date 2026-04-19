@@ -51,8 +51,43 @@ class StorageService:
         return stats, ""
 
     def list_devices(self) -> list[dict]:
-        """List available USB block devices."""
-        return usb.detect_devices()
+        """List available USB block devices.
+
+        Each device carries an ``in_use`` flag so the UI can render an
+        "In use" state instead of a clickable Use button for whichever
+        device is currently backing recordings. The flag is computed by
+        matching the device's mount point against the storage manager's
+        active recordings directory.
+        """
+        devices = usb.detect_devices()
+        rec_dir = self._active_recordings_dir()
+        for d in devices:
+            d["in_use"] = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
+        return devices
+
+    def _active_recordings_dir(self) -> str:
+        if not self._storage_manager:
+            return ""
+        rec_dir = getattr(self._storage_manager, "recordings_dir", "")
+        if not isinstance(rec_dir, str) or not rec_dir:
+            return ""
+        return rec_dir
+
+    @staticmethod
+    def _device_backs_dir(device: dict, rec_dir: str) -> bool:
+        # A device "backs" the recordings dir when its mountpoint is a
+        # parent of rec_dir (or equal to it). Parent-prefix (not suffix-
+        # strip) is the right check because the on-disk layout under
+        # the mount is free-form — e.g. /mnt/recordings/home-monitor-
+        # recordings, not always /mnt/recordings/recordings. Comparing
+        # only the suffix produced false negatives that left the "Use"
+        # button clickable on the active device.
+        mp = device.get("mountpoint") or ""
+        if not mp:
+            return False
+        if rec_dir == mp:
+            return True
+        return rec_dir.startswith(mp.rstrip("/") + "/")
 
     def select_device(
         self, device_path: str, user: str = "", ip: str = ""

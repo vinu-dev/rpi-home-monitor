@@ -345,6 +345,14 @@ class CameraService:
                 camera.uptime_seconds = int(data["uptime_seconds"])
             except (TypeError, ValueError):
                 pass
+        # Pick up the camera's post-OTA firmware version the first time
+        # it reports in after a reboot. Heartbeat is the most reliable
+        # channel — avahi TXT records refresh with noticeable lag and
+        # the control /status endpoint needs mTLS that might not be up
+        # for a few seconds after boot.
+        fw = data.get("firmware_version")
+        if fw and isinstance(fw, str):
+            camera.firmware_version = fw
 
         # Capture sync state before touching stream params.
         # If config_sync is "pending" the server has unsent changes — keep them
