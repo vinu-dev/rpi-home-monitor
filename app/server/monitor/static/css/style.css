@@ -475,7 +475,18 @@ select.form-input {
 .video-container {
     position: relative;
     width: 100%;
-    padding-bottom: 56.25%; /* 16:9 */
+    /* Use `aspect-ratio` (not the padding-bottom hack) so a viewport
+       height cap can actually constrain the box. On a typical laptop
+       (1440×900, sidebar + top nav + camera selector + controls row +
+       bottom nav consume ~270 px), an uncapped 16:9 at full content
+       width is taller than what's left — forcing the user to scroll
+       or enter fullscreen to see the whole frame. 70vh keeps the
+       player inside the viewport on laptops without compromising big
+       desktop monitors. Margin:auto centres the shrunken-by-height
+       player so the page doesn't look lopsided. */
+    aspect-ratio: 16 / 9;
+    max-height: 70vh;
+    margin: 0 auto;
     background: #000;
     border-radius: var(--radius-md);
     overflow: hidden;
