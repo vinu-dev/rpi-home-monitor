@@ -298,3 +298,68 @@ class TestAtomicWrite:
         content = json.loads(store_path.read_text(encoding="utf-8"))
         assert isinstance(content, list)
         assert len(content) == 1
+
+
+class TestAutoCloseOnNewStart:
+    """A new "start" from camera X auto-closes any orphan open event
+    for that same camera — recovers cleanly from camera restarts /
+    crashes / network blips that dropped the matching "end" POST."""
+
+    def _start(self, idx, camera_id, ts):
+        return MotionEvent(
+            id=f"mot-{idx:06d}-{camera_id}",
+            camera_id=camera_id,
+            started_at=ts,
+            ended_at=None,  # in-progress
+            peak_score=0.1,
+            peak_pixels_changed=100,
+            duration_seconds=0.0,
+        )
+
+    def test_new_start_closes_prior_orphan_same_camera(self, store_path):
+        store = MotionEventStore(store_path)
+        store.append(self._start(1, "cam-A", "2026-04-20T06:50:00Z"))
+        # Two minutes later, a fresh start arrives without the first
+        # event having sent an "end". The store should force-close #1.
+        store.append(self._start(2, "cam-A", "2026-04-20T06:52:00Z"))
+
+        events = store.list_events()
+        # Newest first: the new start is still open; the prior one is closed.
+        assert events[0].id.endswith("000002-cam-A")
+        assert events[0].ended_at is None
+
+        assert events[1].id.endswith("000001-cam-A")
+        assert events[1].ended_at == "2026-04-20T06:52:00Z"
+        assert events[1].duration_seconds == 120.0
+
+    def test_new_start_does_not_touch_other_camera_orphans(self, store_path):
+        store = MotionEventStore(store_path)
+        store.append(self._start(1, "cam-A", "2026-04-20T06:50:00Z"))
+        store.append(self._start(2, "cam-B", "2026-04-20T06:52:00Z"))
+
+        events = {e.id: e for e in store.list_events()}
+        # cam-A's event is still open — the new start was for a different camera.
+        assert events["mot-000001-cam-A"].ended_at is None
+        assert events["mot-000002-cam-B"].ended_at is None
+
+    def test_reap_stale_closes_old_open_events(self, store_path):
+        from datetime import datetime, timezone
+
+        store = MotionEventStore(store_path)
+        store.append(self._start(1, "cam-A", "2026-04-20T06:00:00Z"))
+        # "Now" is 11 minutes later — past the 10-min default threshold.
+        now = datetime(2026, 4, 20, 6, 11, 0, tzinfo=timezone.utc)
+        closed = store.reap_stale(now=now, max_age_seconds=600.0)
+        assert closed == 1
+        e = store.list_events()[0]
+        assert e.ended_at == "2026-04-20T06:00:00Z"
+        assert e.duration_seconds == 0.0
+
+    def test_reap_stale_skips_fresh_open_events(self, store_path):
+        from datetime import datetime, timezone
+
+        store = MotionEventStore(store_path)
+        store.append(self._start(1, "cam-A", "2026-04-20T06:00:00Z"))
+        now = datetime(2026, 4, 20, 6, 0, 30, tzinfo=timezone.utc)  # 30 s later
+        assert store.reap_stale(now=now, max_age_seconds=600.0) == 0
+        assert store.list_events()[0].ended_at is None

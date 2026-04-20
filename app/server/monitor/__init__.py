@@ -473,10 +473,24 @@ def _start_staleness_checker(app):
     def _run():
         import time
 
+        reap_counter = 0
         while True:
             try:
                 with app.app_context():
                     app.discovery_service.check_offline()
+                    # Every ~60s (6 ticks at 10s), sweep for orphaned motion
+                    # events — a camera started one and went dark before
+                    # sending "end". Closes anything open > 10 min so the UI
+                    # stops showing "ongoing" forever.
+                    reap_counter += 1
+                    if reap_counter >= 6:
+                        reap_counter = 0
+                        store = getattr(app, "motion_event_store", None)
+                        if store is not None:
+                            try:
+                                store.reap_stale()
+                            except Exception as exc:  # pragma: no cover
+                                log.warning("motion event reaper error: %s", exc)
             except Exception as exc:
                 log.warning("Staleness checker error: %s", exc)
             time.sleep(staleness_check_interval)
