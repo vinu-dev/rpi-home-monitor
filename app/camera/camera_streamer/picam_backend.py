@@ -87,9 +87,13 @@ class PicameraH264Backend:
             self._start_picam()
             self._start_ffmpeg()
             self._start_encoder()
+            # Flip the running flag BEFORE spawning the lores thread — the
+            # thread's loop guards on self._running and would otherwise race
+            # into an immediate exit if it reaches the while-check before
+            # we flip the flag.
+            self._running = True
             if self._motion_enabled and self._frame_cb is not None:
                 self._start_lores_thread()
-            self._running = True
             log.info("PicameraH264Backend started (motion=%s)", self._motion_enabled)
             return True
         except Exception:
