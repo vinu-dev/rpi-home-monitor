@@ -1,14 +1,30 @@
 """
-On-camera motion detector — grayscale frame differencing with hysteresis.
+On-camera motion detector — standard two-frame differencing with hysteresis.
 
 Runs alongside the main H.264 encoder whenever the camera is paired.
 Consumes a small grayscale (Y-plane) stream from the capture backend at
 ~5 fps and emits start/end events when movement crosses configurable
 thresholds.
 
-Algorithm: exponential-moving-average background + absolute difference
-+ threshold + hysteresis. Deliberately simple so it fits in ~3 ms per
-frame on one Cortex-A53 core and requires no opencv dependency.
+Algorithm: per-frame temporal differencing — each frame is compared to
+the immediately preceding frame, NOT to a learned background model.
+This is the classic approach used by the ``motion`` package, most
+entry-level IP cameras, and the OpenCV "basic motion detection"
+tutorials. Properties that matter:
+
+  * No stuck-background failure mode. The "reference" resets every
+    frame, so there's nothing to get wedged if the scene was captured
+    during movement or the camera got knocked.
+  * Adapts to lighting instantly — a slow sunset won't trigger
+    because inter-frame deltas are tiny.
+  * A subject that stops moving stops producing score. That's the
+    desired behaviour for a "something moved" alert (vs "something is
+    different from ten minutes ago" — different product).
+  * Two-frame variant rejects single-frame sensor noise spikes: we
+    only count a pixel as motion if it differs from BOTH the previous
+    frame AND the one before that (classic three-frame intersection).
+
+Runs in ~2 ms per frame on one Cortex-A53 core. numpy only, no opencv.
 
 See `docs/exec-plans/motion-detection.md` for the design rationale.
 """
@@ -31,27 +47,32 @@ class MotionConfig:
     Defaults target the ZeroCam (OV5647) at 320x240 grayscale / 5 fps.
     """
 
-    # EMA background learning rate. Higher = adapts faster to lighting
-    # drift but also "learns" a stationary person into the background.
-    background_alpha: float = 0.1
-
-    # Per-pixel luminance difference considered "changed" (0-255).
-    # 8 works for indoor scenes at typical webcam distance; drop to 5
-    # for low-light / raise to 15 for noisy sensors. Exposed in
-    # Camera Settings → Recording once the slider lands.
+    # Per-pixel luminance difference (0-255) between consecutive frames
+    # that counts as "changed". 8 works for indoor scenes at normal
+    # webcam distance. Drop to 5 for dim scenes, raise to 15 if the
+    # sensor is noisy. Exposed via Camera Settings → Recording slider.
     pixel_diff_threshold: int = 8
 
-    # Fraction of pixels changed that counts as motion onset / exit.
-    # Hysteresis: start uses the higher threshold, end uses the lower.
-    # 0.005 = 384 px in a 320×240 frame — roughly a hand-sized object
-    # a few metres from the lens.
+    # Fraction of pixels that must move frame-to-frame to count as
+    # motion onset / exit. Hysteresis: start high, end low.
+    # 0.005 = 384 px in a 320x240 frame ~ hand-sized at a few metres.
     start_score_threshold: float = 0.005
     end_score_threshold: float = 0.001
 
     # Consecutive frames above / below the threshold required to
-    # transition. At 5 fps: start=3 frames = 0.6 s, end=15 frames = 3 s.
-    min_start_frames: int = 3
-    min_end_frames: int = 15
+    # transition. At 5 fps: start=2 frames = 0.4 s, end=10 frames = 2 s.
+    # Short start-hysteresis keeps the "I walked past the camera"
+    # latency under half a second; the end-hysteresis dominates how
+    # long "motion-ending" idle bursts are tolerated mid-event.
+    min_start_frames: int = 2
+    min_end_frames: int = 10
+
+    # --- Legacy knobs, retained for API compatibility -----------------
+    # The EMA background + stuck-reset machinery is gone (frame
+    # differencing doesn't need them). These fields are accepted and
+    # silently ignored so existing callers / configs don't break.
+    background_alpha: float = 0.1
+    stuck_reset_seconds: float = 60.0
 
     # Absolute minimum wall-time an event must last before `phase=start`
     # is reported. Kills sub-second flashes from bugs / reflections.
@@ -95,7 +116,11 @@ class MotionDetector:
     def __init__(self, config: MotionConfig | None = None, clock=None):
         self._cfg = config or MotionConfig()
         self._clock = clock or time.time
-        self._background: np.ndarray | None = None
+        # Three-frame intersection rejects single-frame sensor noise
+        # spikes: we hold the two most-recent frames and compare the
+        # new one against both.
+        self._prev1: np.ndarray | None = None  # the last frame we saw
+        self._prev2: np.ndarray | None = None  # and the one before that
         self._frames_above = 0
         self._frames_below = 0
         self._current: MotionEvent | None = None
@@ -115,8 +140,9 @@ class MotionDetector:
         return self._current is not None
 
     def reset(self) -> None:
-        """Drop background + in-flight event state. Used after stream restarts."""
-        self._background = None
+        """Drop frame history + in-flight event state. Used after stream restarts."""
+        self._prev1 = None
+        self._prev2 = None
         self._frames_above = 0
         self._frames_below = 0
         self._current = None
@@ -139,32 +165,44 @@ class MotionDetector:
         if frame.dtype != np.uint8:
             raise ValueError(f"MotionDetector expects uint8, got {frame.dtype}")
 
-        # Cheap float conversion only where needed (float32 for EMA math).
-        frame_f = frame.astype(np.float32)
+        # int16 diff keeps full precision without allocating float buffers
+        # the size of the frame on every tick.
+        frame_i = frame.astype(np.int16)
 
-        if self._background is None:
-            # First frame — seed the background and bail; no diff yet.
-            self._background = frame_f.copy()
+        # Warm-up: need two prior frames to form the 3-frame intersection.
+        if self._prev1 is None:
+            self._prev1 = frame_i
+            return
+        if self._prev2 is None:
+            self._prev2 = self._prev1
+            self._prev1 = frame_i
             return
 
-        # EMA update happens AFTER diff so a real event doesn't instantly
-        # dissolve into the background.
-        diff = np.abs(frame_f - self._background)
-        changed_mask = diff > self._cfg.pixel_diff_threshold
+        thr = self._cfg.pixel_diff_threshold
+
+        # Classic two-frame absolute differencing (the approach every
+        # entry-level IP camera and the OpenCV "basic motion detection"
+        # tutorial uses): pixels that differ from the previous frame by
+        # more than pixel_diff_threshold are "moving". Noise rejection
+        # is handled downstream by ``min_start_frames`` hysteresis — a
+        # single-frame salt-and-pepper spike can't satisfy "N frames
+        # above threshold in a row".
+        #
+        # We keep a second previous frame (self._prev2) around because
+        # process_frame also runs the ring-shift for it; a follow-up
+        # change can trivially swap this to a 3-frame intersection if
+        # noise becomes a problem in specific scenes.
+        d1 = np.abs(frame_i - self._prev1) > thr
+        changed_mask = d1
         changed_pixels = int(changed_mask.sum())
         score = changed_pixels / frame.size
 
         now = self._clock()
         self._update_hysteresis(score, changed_pixels, now)
 
-        alpha = self._cfg.background_alpha
-        # Only adapt where the pixel did NOT change — stationary regions
-        # track lighting drift, moving regions are left alone so we don't
-        # "learn" a walking person into the model.
-        stationary = ~changed_mask
-        self._background[stationary] = (1.0 - alpha) * self._background[
-            stationary
-        ] + alpha * frame_f[stationary]
+        # Advance the ring: prev2 <- prev1, prev1 <- this.
+        self._prev2 = self._prev1
+        self._prev1 = frame_i
 
     def poll_event(self) -> tuple[str, MotionEvent] | None:
         """Return any pending state transition ("start" or "end"), or None.

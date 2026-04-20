@@ -27,9 +27,12 @@ def _blank(level=128):
     return np.full((240, 320), level, dtype=np.uint8)
 
 
-def _moving(level=128, block_level=255, block_size=80):
+def _moving(x: int, level=128, block_level=255, block_size=80):
+    """Block at column x. Three-frame differencing only fires on
+    inter-frame motion, so tests must advance x between calls."""
     frame = np.full((240, 320), level, dtype=np.uint8)
-    frame[10 : 10 + block_size, 10 : 10 + block_size] = block_level
+    x0 = max(0, min(320 - block_size, x))
+    frame[10 : 10 + block_size, x0 : x0 + block_size] = block_level
     return frame
 
 
@@ -68,7 +71,7 @@ class TestEmission:
         poster = _FakePoster()
         frames = (
             [_blank() for _ in range(5)]
-            + [_moving() for _ in range(10)]
+            + [_moving(40 + i * 10) for i in range(10)]
             + [_blank() for _ in range(10)]
         )
 
@@ -124,7 +127,11 @@ class TestEmission:
 
     def test_event_id_shape(self):
         poster = _FakePoster()
-        frames = [_blank()] * 5 + [_moving()] * 10 + [_blank()] * 10
+        frames = (
+            [_blank()] * 5
+            + [_moving(40 + i * 10) for i in range(10)]
+            + [_blank()] * 10
+        )
 
         def reader():
             yield from frames
@@ -178,13 +185,14 @@ class TestFdReadPath:
         # Write 5 blank frames then 10 motion frames then 10 blank,
         # all via the write fd, then close it so reader gets EOF.
         blank_bytes = _blank().tobytes()
-        move_bytes = _moving().tobytes()
         assert len(blank_bytes) == FRAME_BYTES
 
         for _ in range(5):
             os.write(write_fd, blank_bytes)
-        for _ in range(10):
-            os.write(write_fd, move_bytes)
+        # Three-frame differencing needs the block to MOVE between frames,
+        # so use a column-advancing position per frame.
+        for i in range(10):
+            os.write(write_fd, _moving(40 + i * 10).tobytes())
         for _ in range(10):
             os.write(write_fd, blank_bytes)
         os.close(write_fd)

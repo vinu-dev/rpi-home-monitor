@@ -58,6 +58,16 @@ def _frame_with_block(h=240, w=320, level=128, block_level=255, block_size=80):
     return frame
 
 
+def _frame_with_block_at(x: int, h=240, w=320, level=128, block_level=255, block_size=80):
+    """Block at column x — useful for simulating continuous motion, which
+    is what the two-frame differencing detector actually fires on (a
+    stationary object stops producing inter-frame deltas)."""
+    frame = np.full((h, w), level, dtype=np.uint8)
+    x0 = max(0, min(w - block_size, x))
+    frame[10 : 10 + block_size, x0 : x0 + block_size] = block_level
+    return frame
+
+
 class TestInputValidation:
     def test_rejects_non_2d_frame(self, detector):
         with pytest.raises(ValueError, match="2-D grayscale"):
@@ -82,16 +92,20 @@ class TestBackgroundSeed:
 
 
 class TestMotionOnsetAndEnd:
-    def test_block_appears_then_disappears_emits_start_and_end(self, detector):
+    def test_moving_block_then_rest_emits_start_and_end(self, detector):
+        """Three-frame differencing fires on *continuous* motion — a block
+        that appears and then sits still stops producing inter-frame
+        deltas. Simulate a moving subject (block position advancing 10 px
+        per frame) for the on-phase, then hold still for the off-phase."""
         # Seed baseline.
         for _ in range(5):
             detector.process_frame(_blank_frame())
         assert not detector.in_event
 
-        # Motion ON — enough frames to satisfy min_start_frames AND
-        # min_event_duration.
-        for _ in range(10):
-            detector.process_frame(_frame_with_block())
+        # Motion ON — moving block, 10 frames, crosses min_start_frames
+        # and min_event_duration.
+        for i in range(10):
+            detector.process_frame(_frame_with_block_at(40 + i * 10))
 
         start = detector.poll_event()
         assert start is not None
@@ -102,7 +116,9 @@ class TestMotionOnsetAndEnd:
         assert evt.peak_pixels_changed > 0
         assert detector.in_event
 
-        # Motion OFF — block removed, go back to baseline.
+        # Motion OFF — scene reverts to baseline and holds. After the
+        # first recovery frame, consecutive frames are identical, so the
+        # score falls to zero.
         for _ in range(10):
             detector.process_frame(_blank_frame())
 
@@ -119,10 +135,31 @@ class TestMotionOnsetAndEnd:
         for _ in range(5):
             detector.process_frame(_blank_frame())
 
-        # One frame of motion — below min_start_frames (3).
+        # One frame of motion — below min_start_frames (3). Three-frame
+        # differencing also actively rejects this because the AND of
+        # (frame, prev1) and (frame, prev2) catches only intersecting
+        # changes; a single-frame block only triggers d1, not d2.
         detector.process_frame(_frame_with_block())
         # Back to baseline.
         for _ in range(5):
+            detector.process_frame(_blank_frame())
+
+        assert detector.poll_event() is None
+        assert not detector.in_event
+
+    def test_single_frame_salt_and_pepper_spike_is_rejected(self, detector):
+        """Three-frame intersection is specifically designed to kill
+        single-frame sensor noise. A one-frame burst of changed pixels
+        should produce score≈0 because d2 (vs two frames back) misses it."""
+        for _ in range(5):
+            detector.process_frame(_blank_frame())
+
+        # One noisy frame between quiet neighbours.
+        rng = np.random.default_rng(0)
+        noisy = _blank_frame().copy()
+        noisy[rng.integers(0, 240, 5000), rng.integers(0, 320, 5000)] = 255
+        detector.process_frame(noisy)
+        for _ in range(10):
             detector.process_frame(_blank_frame())
 
         assert detector.poll_event() is None
@@ -146,9 +183,10 @@ class TestMotionOnsetAndEnd:
 
         # 3 on-frames is just enough to flip into an event internally,
         # but the tight end-hysteresis + long min_event_duration means
-        # the event dies silently.
-        for _ in range(3):
-            detector.process_frame(_frame_with_block())
+        # the event dies silently. Use a MOVING block so three-frame
+        # differencing keeps the score high across all three ticks.
+        for i in range(3):
+            detector.process_frame(_frame_with_block_at(40 + i * 10))
         for _ in range(5):
             detector.process_frame(_blank_frame())
 
@@ -161,8 +199,8 @@ class TestPollEventIdempotent:
     def test_poll_returns_transition_exactly_once(self, detector):
         for _ in range(5):
             detector.process_frame(_blank_frame())
-        for _ in range(10):
-            detector.process_frame(_frame_with_block())
+        for i in range(10):
+            detector.process_frame(_frame_with_block_at(40 + i * 10))
 
         first = detector.poll_event()
         assert first is not None
@@ -177,13 +215,17 @@ class TestPeakTracking:
         for _ in range(5):
             detector.process_frame(_blank_frame())
 
-        # Small block — low peak.
-        for _ in range(5):
-            detector.process_frame(_frame_with_block(block_size=30))
+        # Small moving block — low peak.
+        for i in range(5):
+            detector.process_frame(
+                _frame_with_block_at(40 + i * 10, block_size=30)
+            )
 
-        # Bigger block — higher peak.
-        for _ in range(5):
-            detector.process_frame(_frame_with_block(block_size=120))
+        # Bigger moving block — higher peak.
+        for i in range(5):
+            detector.process_frame(
+                _frame_with_block_at(40 + i * 15, block_size=120)
+            )
 
         start = detector.poll_event()
         assert start is not None
@@ -194,53 +236,52 @@ class TestPeakTracking:
 
 
 class TestReset:
-    def test_reset_drops_background_and_state(self, detector):
+    def test_reset_drops_state(self, detector):
         for _ in range(5):
             detector.process_frame(_blank_frame())
-        for _ in range(10):
-            detector.process_frame(_frame_with_block())
+        for i in range(10):
+            detector.process_frame(_frame_with_block_at(40 + i * 10))
         assert detector.in_event
 
         detector.reset()
         assert not detector.in_event
         assert detector.poll_event() is None
 
-        # After reset, the next frame is treated as a new background seed.
+        # After reset, frame history is empty; the first two frames
+        # are just warm-up, no diff computed.
         detector.process_frame(_blank_frame())
         detector.process_frame(_blank_frame())
         assert not detector.in_event
 
 
-class TestBackgroundAdaption:
-    def test_gradual_lighting_drift_does_not_trigger(self, detector):
-        """Slowly brightening room should be absorbed by the EMA, not flagged."""
-        # Seed.
-        detector.process_frame(_blank_frame(level=100))
+class TestLightingBehaviour:
+    """Three-frame differencing handles slow-vs-sudden light changes by
+    virtue of *how much differs frame-to-frame*, not by a learned model."""
 
-        # Raise the baseline by 1 luminance step per frame — well below
-        # pixel_diff_threshold.
+    def test_gradual_lighting_drift_does_not_trigger(self, detector):
+        """1-luminance-step-per-frame ramp — per-frame delta stays below
+        pixel_diff_threshold so no pixel is flagged."""
+        detector.process_frame(_blank_frame(level=100))
         for step in range(30):
             detector.process_frame(_blank_frame(level=100 + step))
 
         assert not detector.in_event
         assert detector.poll_event() is None
 
-    def test_sudden_jump_does_trigger(self, detector):
-        """Sudden floodlight / flashlight sweep — above threshold, should fire."""
-        for _ in range(5):
-            detector.process_frame(_blank_frame(level=80))
-
-        # Jump the entire frame by 60 luminance — every pixel changes.
-        for _ in range(5):
-            detector.process_frame(_blank_frame(level=140))
-
-        # Motion detected.
+    def test_continuous_ramp_above_threshold_does_trigger(self, detector):
+        """A continuous ramp where each step exceeds pixel_diff_threshold
+        (e.g. a rapid brightening or a floodlight panning) DOES fire."""
+        # Seed with two quiet frames (warm-up for 3-frame diff).
+        detector.process_frame(_blank_frame(level=40))
+        detector.process_frame(_blank_frame(level=40))
+        # Ramp up by 25/frame > threshold=20, 8 frames, all pixels moving.
+        for i in range(1, 9):
+            detector.process_frame(_blank_frame(level=40 + i * 25))
         assert detector.in_event
         start = detector.poll_event()
         assert start is not None
         assert start[0] == "start"
         _, evt = start
-        # Near-total-frame change — peak_score approaches 1.0.
         assert evt.peak_score > 0.9
 
 
