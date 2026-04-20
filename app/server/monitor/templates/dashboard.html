@@ -338,6 +338,29 @@
                         <input type="checkbox" x-model="editForm.vflip"> Vertical Flip
                     </label>
                 </div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:baseline; justify-content:space-between;">
+                        <span>Motion sensitivity</span>
+                        <span class="text-small" style="font-weight:600;"
+                              x-text="motionSensitivityLabel(editForm.motion_sensitivity)"></span>
+                    </label>
+                    <input type="range" class="form-input" style="padding:0;"
+                           x-model.number="editForm.motion_sensitivity"
+                           min="1" max="10" step="1" list="motion-sens-ticks">
+                    <datalist id="motion-sens-ticks">
+                        <option value="1"></option>
+                        <option value="3"></option>
+                        <option value="5"></option>
+                        <option value="7"></option>
+                        <option value="10"></option>
+                    </datalist>
+                    <div class="text-small text-muted" style="display:flex; justify-content:space-between; margin-top:4px;">
+                        <span>Outdoor / wind-tolerant</span>
+                        <span style="text-align:right">Indoor / catches tiny motion</span>
+                    </div>
+                    <div class="text-small text-muted" style="margin-top:6px;"
+                         x-text="motionSensitivityHint(editForm.motion_sensitivity)"></div>
+                </div>
                 <div style="display:flex;gap:8px;margin-top:12px;">
                     <button class="btn btn--primary" @click="saveStreamSettings()" :disabled="savingStream">
                         <span x-text="savingStream ? 'Saving...' : 'Save & Apply'"></span>
@@ -374,7 +397,7 @@ function dashboardPage() {
         pairingCameraId: '',
         scanning: false,
         editCam: null,
-        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, maxFps: 30 },
+        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, motion_sensitivity: 5, maxFps: 30 },
         savingStream: false,
         streamSaveMsg: '',
         streamSaveOk: false,
@@ -738,9 +761,28 @@ function dashboardPage() {
                 rotation: cam.rotation || 0,
                 hflip: cam.hflip || false,
                 vflip: cam.vflip || false,
+                // Motion sensitivity defaults to 5 (Medium) if the camera
+                // hasn't reported it yet — matches Camera model + camera
+                // /data/config default (ADR-0021).
+                motion_sensitivity: (typeof cam.motion_sensitivity === 'number')
+                    ? cam.motion_sensitivity : 5,
                 maxFps: this._resMaxFps[resKey] || 30,
             };
             this.streamSaveMsg = '';
+        },
+
+        motionSensitivityLabel(v) {
+            v = Math.max(1, Math.min(10, Number(v) || 5));
+            if (v <= 3) return 'Low (' + v + ')';
+            if (v <= 6) return 'Medium (' + v + ')';
+            return 'High (' + v + ')';
+        },
+
+        motionSensitivityHint(v) {
+            v = Math.max(1, Math.min(10, Number(v) || 5));
+            if (v <= 3) return 'Ignores rain, wind-moved leaves, and small animals. Good for outdoor cameras.';
+            if (v <= 6) return 'Catches hand-sized motion at a few metres. Default for indoor cameras.';
+            return 'Picks up distant or subtle motion. May false-fire on fans, screens, or busy scenes.';
         },
 
         onResolutionChange() {
@@ -765,6 +807,8 @@ function dashboardPage() {
                 rotation: parseInt(this.editForm.rotation),
                 hflip: this.editForm.hflip,
                 vflip: this.editForm.vflip,
+                motion_sensitivity: Math.max(1, Math.min(10,
+                    parseInt(this.editForm.motion_sensitivity) || 5)),
             };
             try {
                 await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(this.editCam.id), payload);

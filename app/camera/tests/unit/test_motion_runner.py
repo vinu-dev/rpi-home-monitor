@@ -128,9 +128,7 @@ class TestEmission:
     def test_event_id_shape(self):
         poster = _FakePoster()
         frames = (
-            [_blank()] * 5
-            + [_moving(40 + i * 10) for i in range(10)]
-            + [_blank()] * 10
+            [_blank()] * 5 + [_moving(40 + i * 10) for i in range(10)] + [_blank()] * 10
         )
 
         def reader():
@@ -262,3 +260,44 @@ class TestPosterSignatureHeaders:
         assert body["phase"] == "start"
         assert body["event_id"] == "mot-test-001"
         assert body["peak_score"] == 0.12
+
+
+class TestSensitivityMapping:
+    """The 1-10 sensitivity dial maps to MotionConfig thresholds.
+    Monotonic + clamped + sensible anchor at 5 (shipping default)."""
+
+    def test_mapping_is_monotonic_in_sensitivity(self):
+        from camera_streamer.motion_runner import motion_config_from_sensitivity
+
+        prev = None
+        for s in range(1, 11):
+            cfg = motion_config_from_sensitivity(s)
+            # Higher sensitivity => lower start threshold (easier to fire).
+            if prev is not None:
+                assert cfg.start_score_threshold <= prev.start_score_threshold
+                assert cfg.pixel_diff_threshold <= prev.pixel_diff_threshold
+            # end < start (hysteresis always maintained).
+            assert cfg.end_score_threshold < cfg.start_score_threshold
+            prev = cfg
+
+    def test_default_is_sensitivity_5(self):
+        from camera_streamer.motion_runner import motion_config_from_sensitivity
+
+        # Medium (5) should match the shipping MotionConfig defaults so a
+        # brand-new camera with no override sees the same behaviour this
+        # test suite is tuned for.
+        cfg = motion_config_from_sensitivity(5)
+        assert cfg.pixel_diff_threshold == 8
+        assert cfg.start_score_threshold == 0.006
+
+    def test_values_outside_1_10_are_clamped(self):
+        from camera_streamer.motion_runner import motion_config_from_sensitivity
+
+        assert (
+            motion_config_from_sensitivity(0).start_score_threshold
+            == motion_config_from_sensitivity(1).start_score_threshold
+        )
+        assert (
+            motion_config_from_sensitivity(99).start_score_threshold
+            == motion_config_from_sensitivity(10).start_score_threshold
+        )

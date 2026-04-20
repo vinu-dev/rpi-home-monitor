@@ -32,7 +32,7 @@ import os
 import subprocess
 import threading
 import time
-from typing import Callable
+from collections.abc import Callable
 
 log = logging.getLogger("camera-streamer.picam_backend")
 
@@ -40,7 +40,7 @@ MAIN_FORMAT = "YUV420"
 LORES_FORMAT = "YUV420"
 
 # Lores analysis geometry / cadence — matches the motion detector's
-# expectations (320×240 grayscale, ~5 fps). If you change these, also
+# expectations (320x240 grayscale, ~5 fps). If you change these, also
 # update ``camera_streamer/motion.py`` defaults or inject a new
 # ``MotionConfig``.
 LORES_WIDTH = 320
@@ -145,9 +145,7 @@ class PicameraH264Backend:
             return False
         if self._ffmpeg is None or self._ffmpeg.poll() is not None:
             return False
-        if self._picam2 is None:
-            return False
-        return True
+        return self._picam2 is not None
 
     # --- Internals ------------------------------------------------------
 
@@ -189,7 +187,6 @@ class PicameraH264Backend:
 
     def _start_ffmpeg(self) -> None:
         """Spawn ffmpeg reading H.264 on stdin, pushing RTSPS out."""
-        cfg = self._config
         tls_flags = self._tls_flags()
         stream_url = self._stream_url()
 

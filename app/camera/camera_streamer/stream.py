@@ -185,10 +185,17 @@ class StreamManager:
             self._cleanup_motion_pipe()
             return
         try:
+            from camera_streamer.motion_runner import (
+                motion_config_from_sensitivity,
+            )
+
             self._motion_runner = MotionRunner(
                 config=self._config,
                 pairing_manager=self._pairing_manager,
                 frame_fd=self._motion_read_fd,
+                motion_config=motion_config_from_sensitivity(
+                    self._config.motion_sensitivity
+                ),
             )
             # MotionRunner now owns the read fd; clear our ref so we don't
             # double-close it on pipeline teardown.
@@ -483,10 +490,17 @@ class StreamManager:
                 )
                 motion_enabled = False
             else:
+                from camera_streamer.motion_runner import (
+                    motion_config_from_sensitivity,
+                )
+
                 self._motion_runner = MotionRunner(
                     config=self._config,
                     pairing_manager=self._pairing_manager,
                     passive=True,
+                    motion_config=motion_config_from_sensitivity(
+                        self._config.motion_sensitivity
+                    ),
                 )
                 self._motion_runner.start()
                 frame_cb = self._motion_runner.process_frame

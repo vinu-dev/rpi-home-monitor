@@ -58,7 +58,9 @@ def _frame_with_block(h=240, w=320, level=128, block_level=255, block_size=80):
     return frame
 
 
-def _frame_with_block_at(x: int, h=240, w=320, level=128, block_level=255, block_size=80):
+def _frame_with_block_at(
+    x: int, h=240, w=320, level=128, block_level=255, block_size=80
+):
     """Block at column x — useful for simulating continuous motion, which
     is what the two-frame differencing detector actually fires on (a
     stationary object stops producing inter-frame deltas)."""
@@ -217,15 +219,11 @@ class TestPeakTracking:
 
         # Small moving block — low peak.
         for i in range(5):
-            detector.process_frame(
-                _frame_with_block_at(40 + i * 10, block_size=30)
-            )
+            detector.process_frame(_frame_with_block_at(40 + i * 10, block_size=30))
 
         # Bigger moving block — higher peak.
         for i in range(5):
-            detector.process_frame(
-                _frame_with_block_at(40 + i * 15, block_size=120)
-            )
+            detector.process_frame(_frame_with_block_at(40 + i * 15, block_size=120))
 
         start = detector.poll_event()
         assert start is not None

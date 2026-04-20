@@ -46,6 +46,12 @@ class Camera:
     rotation: int = 0
     hflip: bool = False
     vflip: bool = False
+    # Motion detection sensitivity (ADR-0021): 1 (lowest) … 10 (highest).
+    # 5 = Medium is the shipping default; it catches hand-sized motion at
+    # a few metres while rejecting typical indoor sensor noise. Operators
+    # tune this per camera from Camera Settings; the server pushes changes
+    # over the existing control channel (ADR-0015).
+    motion_sensitivity: int = 5
     config_sync: str = "unknown"  # synced | pending | error | unknown
     # Live status fields — populated by heartbeat (ADR-0016)
     streaming: bool = False  # is camera actively streaming RTSP?

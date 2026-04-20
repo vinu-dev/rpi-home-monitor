@@ -54,6 +54,10 @@ PARAM_SCHEMA = {
     "rotation": {"type": int, "allowed": [0, 180]},
     "hflip": {"type": bool},
     "vflip": {"type": bool},
+    # Motion sensitivity — 1 (least) to 10 (most). Mapped to MotionDetector
+    # thresholds at motion-pipeline start. See config.motion_sensitivity
+    # + motion_runner.motion_config_from_sensitivity.
+    "motion_sensitivity": {"type": int, "min": 1, "max": 10},
 }
 
 # Rate limit: minimum seconds between config changes
@@ -203,6 +207,7 @@ class ControlHandler:
                 "rotation": {"type": "int", "allowed": [0, 180]},
                 "hflip": {"type": "bool"},
                 "vflip": {"type": "bool"},
+                "motion_sensitivity": {"type": "int", "min": 1, "max": 10},
             },
         }
 
@@ -218,6 +223,7 @@ class ControlHandler:
             "rotation": self._config.rotation,
             "hflip": self._config.hflip,
             "vflip": self._config.vflip,
+            "motion_sensitivity": self._config.motion_sensitivity,
         }
 
     def set_config(self, params, request_id=0, origin="server"):

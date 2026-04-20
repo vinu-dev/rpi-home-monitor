@@ -20,7 +20,7 @@ import os
 import tempfile
 import threading
 from dataclasses import asdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from monitor.models import MotionEvent
@@ -84,9 +84,8 @@ class MotionEventStore:
             if event.ended_at is None or event.ended_at == "":
                 closed = 0
                 for i, existing in enumerate(self._events):
-                    if (
-                        existing.camera_id == event.camera_id
-                        and (existing.ended_at is None or existing.ended_at == "")
+                    if existing.camera_id == event.camera_id and (
+                        existing.ended_at is None or existing.ended_at == ""
                     ):
                         existing.ended_at = event.started_at
                         # Duration from the original start to the forced close.
@@ -112,7 +111,9 @@ class MotionEventStore:
                 log.info("motion_event_store compacted: dropped %d oldest events", drop)
             self._persist()
 
-    def reap_stale(self, now: datetime | None = None, max_age_seconds: float = 600.0) -> int:
+    def reap_stale(
+        self, now: datetime | None = None, max_age_seconds: float = 600.0
+    ) -> int:
         """Close any open event older than ``max_age_seconds``.
 
         Fallback for the case where a camera starts a motion event and
@@ -124,7 +125,7 @@ class MotionEventStore:
         Returns the number of events closed.
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
         closed = 0
         with self._lock:
             for i, evt in enumerate(self._events):

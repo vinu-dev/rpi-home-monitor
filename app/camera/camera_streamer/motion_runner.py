@@ -46,6 +46,53 @@ LORES_WIDTH = 320
 LORES_HEIGHT = 240
 FRAME_BYTES = LORES_WIDTH * LORES_HEIGHT  # gray8
 
+
+def motion_config_from_sensitivity(sensitivity: int) -> MotionConfig:
+    """Map the operator-facing 1-10 sensitivity dial to detector thresholds.
+
+    Sensitivity is a single knob because operators shouldn't have to
+    reason about per-pixel deltas or score fractions. The mapping is
+    monotonic and roughly log-linear around the shipped default (5).
+
+    Anchors chosen from on-device tuning on the OV5647 at indoor light:
+
+    - **1-3 "Low":** reject ambient noise + small movement. Good outdoor
+      default — ignores rain, fine wind sway, flies.
+    - **4-6 "Medium" (default 5):** catches hand-sized motion at a few
+      metres, rejects typical indoor sensor noise.
+    - **7-10 "High":** picks up distant / slow motion. Will false-fire
+      on fans, monitor flicker, and similar ambient scene noise.
+    """
+    s = max(1, min(10, int(sensitivity)))
+
+    # pixel_diff_threshold: per-pixel 0-255 delta that counts as "changed".
+    # Higher sensitivity => lower threshold => more pixels flagged.
+    pixel_diff = {1: 20, 2: 15, 3: 12, 4: 10, 5: 8, 6: 6, 7: 5, 8: 4, 9: 3, 10: 3}[s]
+
+    # Start / end score (fraction-of-frame). Hysteresis gap widens at lower
+    # sensitivity for outdoor stability; narrows at higher sensitivity for
+    # responsiveness.
+    start = {
+        1: 0.020,
+        2: 0.015,
+        3: 0.010,
+        4: 0.008,
+        5: 0.006,
+        6: 0.004,
+        7: 0.003,
+        8: 0.002,
+        9: 0.0015,
+        10: 0.001,
+    }[s]
+    end = start / 3.0
+
+    return MotionConfig(
+        pixel_diff_threshold=pixel_diff,
+        start_score_threshold=start,
+        end_score_threshold=end,
+    )
+
+
 # HTTP post timeout (seconds). Motion events are time-sensitive but we
 # should not block the detector thread forever.
 POST_TIMEOUT = 10
@@ -223,7 +270,7 @@ class MotionRunner:
         )
         return True
 
-    def process_frame(self, y_plane: "np.ndarray") -> None:
+    def process_frame(self, y_plane: np.ndarray) -> None:
         """Feed a single lores grayscale frame (passive mode).
 
         Safe to call from any thread; the detector + event emission

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 
 import pytest
 
@@ -343,12 +344,12 @@ class TestAutoCloseOnNewStart:
         assert events["mot-000002-cam-B"].ended_at is None
 
     def test_reap_stale_closes_old_open_events(self, store_path):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         store = MotionEventStore(store_path)
         store.append(self._start(1, "cam-A", "2026-04-20T06:00:00Z"))
         # "Now" is 11 minutes later — past the 10-min default threshold.
-        now = datetime(2026, 4, 20, 6, 11, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 20, 6, 11, 0, tzinfo=UTC)
         closed = store.reap_stale(now=now, max_age_seconds=600.0)
         assert closed == 1
         e = store.list_events()[0]
@@ -356,10 +357,10 @@ class TestAutoCloseOnNewStart:
         assert e.duration_seconds == 0.0
 
     def test_reap_stale_skips_fresh_open_events(self, store_path):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         store = MotionEventStore(store_path)
         store.append(self._start(1, "cam-A", "2026-04-20T06:00:00Z"))
-        now = datetime(2026, 4, 20, 6, 0, 30, tzinfo=timezone.utc)  # 30 s later
+        now = datetime(2026, 4, 20, 6, 0, 30, tzinfo=UTC)  # 30 s later
         assert store.reap_stale(now=now, max_age_seconds=600.0) == 0
         assert store.list_events()[0].ended_at is None

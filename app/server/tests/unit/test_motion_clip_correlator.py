@@ -99,7 +99,7 @@ class TestNonClipFilesIgnored:
     def test_non_clip_filenames_are_skipped(self, recordings_dir):
         cam = recordings_dir / "cam-001"
         _make_clip(cam, "20260419_143000.mp4")  # real clip
-        _make_clip(cam, "notes.mp4")            # junk — no timestamp pattern
+        _make_clip(cam, "notes.mp4")  # junk — no timestamp pattern
         corr = MotionClipCorrelator(recordings_dir)
 
         ref = corr.find_clip("cam-001", "2026-04-19T14:30:30Z")

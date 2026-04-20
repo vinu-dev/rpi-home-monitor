@@ -40,6 +40,7 @@ STREAM_PARAMS = {
     "rotation",
     "hflip",
     "vflip",
+    "motion_sensitivity",
 }
 
 
@@ -168,6 +169,10 @@ class CameraService:
                 "rotation": c.rotation,
                 "hflip": c.hflip,
                 "vflip": c.vflip,
+                # getattr default = 5 (Medium) so cameras persisted before
+                # the motion_sensitivity field was added continue to load
+                # with the shipping default.
+                "motion_sensitivity": getattr(c, "motion_sensitivity", 5),
                 "config_sync": c.config_sync,
                 "streaming": streaming_now,
                 # ADR-0017 recording-mode fields
@@ -211,6 +216,7 @@ class CameraService:
             "rotation": camera.rotation,
             "hflip": camera.hflip,
             "vflip": camera.vflip,
+            "motion_sensitivity": getattr(camera, "motion_sensitivity", 5),
             "config_sync": camera.config_sync,
         }, ""
 
@@ -471,6 +477,7 @@ class CameraService:
             "rotation",
             "hflip",
             "vflip",
+            "motion_sensitivity",
         }
         unknown = set(data.keys()) - allowed
         if unknown:
@@ -533,6 +540,11 @@ class CameraService:
 
         if "vflip" in data and not isinstance(data["vflip"], bool):
             return "vflip must be a boolean"
+
+        if "motion_sensitivity" in data:
+            ms = data["motion_sensitivity"]
+            if not isinstance(ms, int) or ms < 1 or ms > 10:
+                return "motion_sensitivity must be an integer between 1 and 10"
 
         if "recording_schedule" in data:
             err = _validate_schedule(data["recording_schedule"])

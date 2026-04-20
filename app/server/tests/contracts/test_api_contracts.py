@@ -143,6 +143,8 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "recording_schedule",
     "recording_motion_enabled",
     "desired_stream_state",
+    # ADR-0021: per-camera motion detection sensitivity (1-10)
+    "motion_sensitivity",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
