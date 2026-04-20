@@ -299,6 +299,44 @@ a:hover { text-decoration: underline; }
     display: flex;
     gap: var(--space-1);
 }
+
+/* Collapsible "Details" panel under each camera card (issue #110).
+   Collapsed by default so the card stays compact; expands to show
+   recording mode, motion detection state, firmware, bitrate, and
+   (admin-only) live health. */
+.camera-card__details {
+    margin-top: var(--space-2);
+    font-size: var(--text-xs);
+}
+.camera-card__details summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 0;
+    color: var(--color-text-muted);
+    /* Full 44×... tap area with padding below; visible "Details" label
+       stays compact. */
+    min-height: 28px;
+}
+.camera-card__details summary::marker { color: var(--color-text-muted); }
+.camera-card__details-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    margin: 4px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-alt);
+    line-height: 1.4;
+}
+.camera-card__details-grid dt {
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+.camera-card__details-grid dd {
+    margin: 0;
+    color: var(--color-text);
+}
 .camera-card__actions {
     display: flex;
     flex-direction: column;

@@ -602,3 +602,69 @@ class RecordingsService:
             detail=f"deleted all {count} clips for {camera_id}",
         )
         return {"message": f"Deleted {count} clips", "count": count}, None, 200
+
+    def delete_all_recordings(
+        self,
+        requesting_user: str = "",
+        requesting_ip: str = "",
+    ):
+        """Nuke every clip across every camera. Admin danger-zone op.
+
+        Issue #106. Walks every camera sub-directory of the recordings
+        root and removes it. The currently-writing segment (if any) is
+        deleted alongside — the recorder ffmpeg will recreate on its
+        next segment tick so recording isn't disabled, just zeroed out.
+
+        Returns: ``({cameras, clips, bytes_freed, message}, None, 200)``.
+        """
+        root = self._recordings_root()
+        if not root.is_dir():
+            return (
+                {
+                    "message": "No recordings directory",
+                    "cameras": 0,
+                    "clips": 0,
+                    "bytes_freed": 0,
+                },
+                None,
+                200,
+            )
+
+        total_clips = 0
+        total_bytes = 0
+        cameras_touched = 0
+        for cam_dir in list(root.iterdir()):
+            if not cam_dir.is_dir():
+                continue
+            # Only directories shaped like a camera id — skip any stray
+            # files or admin scratchpads that might sit in the root.
+            if not self._valid_camera_id(cam_dir.name):
+                continue
+            cameras_touched += 1
+            for mp4 in cam_dir.rglob("*.mp4"):
+                try:
+                    total_bytes += mp4.stat().st_size
+                except OSError:
+                    pass
+                total_clips += 1
+            shutil.rmtree(cam_dir, ignore_errors=True)
+
+        self._log_audit(
+            "RECORDINGS_DELETED_ALL",
+            user=requesting_user,
+            ip=requesting_ip,
+            detail=(
+                f"bulk delete: {total_clips} clips across {cameras_touched} "
+                f"cameras, {total_bytes} bytes freed"
+            ),
+        )
+        return (
+            {
+                "message": f"Deleted {total_clips} clips across {cameras_touched} cameras",
+                "cameras": cameras_touched,
+                "clips": total_clips,
+                "bytes_freed": total_bytes,
+            },
+            None,
+            200,
+        )

@@ -748,6 +748,49 @@
             </div>
         </template>
     </div>
+
+    <!-- Danger zone: bulk-delete all recordings across all cameras.
+         Mirrors the Factory Reset two-step confirm pattern. Issue #106. -->
+    <div class="settings-section">
+        <div class="settings-section__title" style="color: var(--color-danger);">
+            Danger Zone
+        </div>
+        <div class="card">
+            <p style="font-size:var(--text-sm); color:var(--color-text-muted); margin-bottom:var(--space-3);">
+                Permanently delete every saved clip across every camera.
+                Recording itself is not disabled — new motion + continuous
+                clips start accumulating immediately. This action cannot be
+                undone.
+            </p>
+            <template x-if="!deleteAllRecordingsConfirm">
+                <button class="btn btn--danger"
+                        @click="deleteAllRecordingsConfirm = true"
+                        :disabled="deletingAllRecordings">
+                    Delete all recordings
+                </button>
+            </template>
+            <template x-if="deleteAllRecordingsConfirm">
+                <div>
+                    <p style="color:var(--color-danger); font-weight:600; margin-bottom:var(--space-2);">
+                        This will permanently delete every recording on this
+                        server. Continue?
+                    </p>
+                    <div style="display:flex; gap:var(--space-2);">
+                        <button class="btn btn--danger"
+                                @click="doDeleteAllRecordings()"
+                                :disabled="deletingAllRecordings">
+                            <span x-text="deletingAllRecordings ? 'Deleting…' : 'Yes, delete every clip'"></span>
+                        </button>
+                        <button class="btn btn--secondary"
+                                @click="deleteAllRecordingsConfirm = false"
+                                :disabled="deletingAllRecordings">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -1086,6 +1129,10 @@ function settingsPage() {
 
         resetConfirm: false,
         resetKeepRecordings: false,
+        // Danger-zone delete-all state (issue #106). Two-step confirm
+        // mirrors the factory reset flow so the pattern is familiar.
+        deleteAllRecordingsConfirm: false,
+        deletingAllRecordings: false,
 
         // OTA state (ADR-0020 dual-transport updates)
         ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
@@ -1297,6 +1344,25 @@ function settingsPage() {
             } catch(e) {
                 window.HM.toast(e.message || 'Factory reset failed', 'error');
                 this.resetConfirm = false;
+            }
+        },
+
+        async doDeleteAllRecordings() {
+            // Bulk delete across every camera (issue #106). Server endpoint
+            // writes a single RECORDINGS_DELETED_ALL audit event with the
+            // deleted-clip count and bytes freed.
+            this.deletingAllRecordings = true;
+            try {
+                var res = await window.HM.api.del('/api/v1/recordings');
+                window.HM.toast(
+                    'Deleted ' + (res.clips || 0) + ' clips across ' +
+                    (res.cameras || 0) + ' cameras', 'success'
+                );
+                this.deleteAllRecordingsConfirm = false;
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to delete recordings', 'error');
+            } finally {
+                this.deletingAllRecordings = false;
             }
         },
 
