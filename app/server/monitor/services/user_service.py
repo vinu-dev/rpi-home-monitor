@@ -134,14 +134,29 @@ class UserService:
         requesting_user_id: str = "",
         requesting_user: str = "",
         requesting_ip: str = "",
+        force_change_next_login: bool = False,
     ) -> tuple[str, int]:
         """Change a user's password. Admin can change any, users change own.
+
+        Args:
+            force_change_next_login: When True, leave ``must_change_password``
+                set so the target user is forced to rotate their password on
+                next login. Intended for the admin-resets-another-user path
+                (issue #99 slice 1) — the admin never needs to know the final
+                password. Refused on self-reset so an admin can't loop
+                themselves.
 
         Returns (message, status_code).
         """
         # Authorization check
         if requesting_role != "admin" and requesting_user_id != user_id:
             return "Cannot change another user's password", 403
+
+        is_admin_reset = (
+            requesting_role == "admin"
+            and requesting_user_id != user_id
+            and force_change_next_login
+        )
 
         pw_error = validate_password(new_password)
         if pw_error:
@@ -151,16 +166,33 @@ class UserService:
         if not user:
             return "User not found", 404
 
+        # Safety rail: don't leave the only admin trapped in a must-change
+        # loop if the flag gets set on them by accident. The existing
+        # "can't demote the last admin" guard in update_user has the same
+        # spirit — extend it here.
+        if is_admin_reset and user.role == "admin":
+            admins = [u for u in self._store.list_users() if u.role == "admin"]
+            if len(admins) <= 1:
+                return "Cannot force-change the only admin", 400
+
         user.password_hash = hash_password(new_password)
-        user.must_change_password = False
+        user.must_change_password = bool(is_admin_reset)
         self._store.save_user(user)
 
-        self._log_audit(
-            "PASSWORD_CHANGED",
-            requesting_user,
-            requesting_ip,
-            f"password changed for user {user_id}",
-        )
+        if is_admin_reset:
+            self._log_audit(
+                "PASSWORD_RESET_BY_ADMIN",
+                requesting_user,
+                requesting_ip,
+                f"admin reset password for user {user_id}; must_change_password=true",
+            )
+        else:
+            self._log_audit(
+                "PASSWORD_CHANGED",
+                requesting_user,
+                requesting_ip,
+                f"password changed for user {user_id}",
+            )
 
         return "Password updated", 200
 

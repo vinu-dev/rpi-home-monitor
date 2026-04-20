@@ -71,6 +71,10 @@ def change_password(user_id):
     if not data:
         return jsonify({"error": "JSON body required"}), 400
 
+    # ``force_change`` is the admin-reset handshake (issue #99 slice 1):
+    # when true + admin + target != self, the target's must_change_password
+    # flag stays set so they have to rotate on next login. Accepted but
+    # silently ignored on self-change — enforced in user_service.
     msg, status = current_app.user_service.change_password(
         user_id=user_id,
         new_password=data.get("new_password", ""),
@@ -78,6 +82,7 @@ def change_password(user_id):
         requesting_user_id=session.get("user_id", ""),
         requesting_user=session.get("username", ""),
         requesting_ip=request.remote_addr or "",
+        force_change_next_login=bool(data.get("force_change", False)),
     )
     if status != 200:
         return jsonify({"error": msg}), status

@@ -353,6 +353,85 @@ class TestChangePassword:
 
 
 # ---------------------------------------------------------------------------
+# Admin-reset-another-user path (issue #99 slice 1)
+# ---------------------------------------------------------------------------
+class TestAdminResetAnotherUser:
+    @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
+    def test_force_change_sets_must_change_flag(self, mock_hash, svc, store):
+        target = _make_user(id="user-002", role="viewer")
+        target.must_change_password = False
+        store.get_user.return_value = target
+        msg, status = svc.change_password(
+            "user-002",
+            "temppassword123",
+            requesting_role="admin",
+            requesting_user_id="user-001",
+            requesting_user="admin",
+            requesting_ip="10.0.0.1",
+            force_change_next_login=True,
+        )
+        assert status == 200
+        saved = store.save_user.call_args[0][0]
+        assert saved.must_change_password is True
+        assert saved.password_hash == "$2b$12$h"
+
+    @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
+    def test_admin_reset_logs_specific_audit_event(self, mock_hash, svc, store, audit):
+        store.get_user.return_value = _make_user(id="user-002", role="viewer")
+        svc.change_password(
+            "user-002",
+            "temppassword123",
+            requesting_role="admin",
+            requesting_user_id="user-001",
+            requesting_user="admin",
+            requesting_ip="10.0.0.1",
+            force_change_next_login=True,
+        )
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "PASSWORD_RESET_BY_ADMIN"
+
+    @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
+    def test_self_change_never_sets_must_change_flag(self, mock_hash, svc, store):
+        """Defence in depth: even if a self-change somehow carries
+        force_change_next_login=True, the flag stays False so the user
+        can't lock themselves into an infinite must-change loop."""
+        target = _make_user(id="user-001")
+        target.must_change_password = False
+        store.get_user.return_value = target
+        svc.change_password(
+            "user-001",
+            "newpassword12",
+            requesting_role="admin",
+            requesting_user_id="user-001",  # same as target — self-change
+            requesting_user="admin",
+            requesting_ip="10.0.0.1",
+            force_change_next_login=True,
+        )
+        saved = store.save_user.call_args[0][0]
+        assert saved.must_change_password is False
+
+    @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
+    def test_refuses_to_force_change_the_only_admin(self, mock_hash, svc, store):
+        """Safety rail: an admin-reset against the sole admin is refused
+        so that admin can't be trapped in a must-change loop."""
+        sole_admin = _make_user(id="user-001", role="admin")
+        store.get_user.return_value = sole_admin
+        store.list_users.return_value = [sole_admin]
+        msg, status = svc.change_password(
+            "user-001",
+            "newpassword12",
+            requesting_role="admin",
+            requesting_user_id="user-002",  # another admin trying to reset
+            requesting_user="other-admin",
+            requesting_ip="10.0.0.1",
+            force_change_next_login=True,
+        )
+        assert status == 400
+        assert "only admin" in msg.lower()
+        store.save_user.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # _log_audit (fail-silent behavior)
 # ---------------------------------------------------------------------------
 class TestAuditLogging:

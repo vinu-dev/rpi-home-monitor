@@ -25,6 +25,21 @@
             <button type="submit" class="btn btn--primary btn--full" id="btn-login">
                 Sign In
             </button>
+            <!-- "Forgot password?" hint (issue #99 slice 1). No email or
+                 cloud reset flow exists (single-LAN device); the right
+                 paths are out-of-band. -->
+            <details class="forgot-password">
+                <summary>Forgot password?</summary>
+                <div class="forgot-password__body">
+                    <p><strong>Ask your admin</strong> to reset it for you from
+                    <em>Settings &rsaquo; Users &rsaquo; Reset password</em>.</p>
+                    <p>If <em>you</em> are the admin and have no other admin account,
+                    run this on the device over SSH or a keyboard/monitor:</p>
+                    <pre>sudo /opt/monitor/scripts/reset-admin-password.py \
+    --username admin --password 'temp-pass-12345'</pre>
+                    <p>You will be forced to change it on first login.</p>
+                </div>
+            </details>
         </form>
     </div>
 </div>
