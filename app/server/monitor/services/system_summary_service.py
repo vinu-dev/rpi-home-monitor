@@ -353,7 +353,26 @@ class SystemSummaryService:
             log.warning("summary: audit.get_events failed: %s", exc)
             return "green", 0, "/logs"
 
+        # Effective cutoff = max(1h-window, this-user's-last-seen).
+        # The per-user "I've read the log" timestamp is stored on the
+        # Flask session and stamped when they visit /logs — without it,
+        # an event could show "1 recent system event" for up to an hour
+        # even though the user has already reviewed the log.
         cutoff = datetime.now(UTC) - timedelta(seconds=ERROR_WINDOW_SECONDS)
+        try:
+            # Late import + optional — the summary service must not crash
+            # outside a request context (e.g. startup self-tests).
+            from flask import has_request_context, session
+
+            if has_request_context():
+                seen_iso = session.get("audit_seen_at")
+                if seen_iso:
+                    seen_dt = _parse_ts(seen_iso)
+                    if seen_dt is not None and seen_dt > cutoff:
+                        cutoff = seen_dt
+        except Exception:
+            pass
+
         errors = 0
         warnings = 0
         for ev in events:
