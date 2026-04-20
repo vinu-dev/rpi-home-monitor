@@ -169,9 +169,11 @@ class UserService:
         # Safety rail: don't leave the only admin trapped in a must-change
         # loop if the flag gets set on them by accident. The existing
         # "can't demote the last admin" guard in update_user has the same
-        # spirit — extend it here.
+        # spirit — extend it here. Issue #117: prior revision called
+        # ``self._store.list_users()`` which doesn't exist on the real
+        # Store class (the concrete method is ``get_users()``).
         if is_admin_reset and user.role == "admin":
-            admins = [u for u in self._store.list_users() if u.role == "admin"]
+            admins = [u for u in self._store.get_users() if u.role == "admin"]
             if len(admins) <= 1:
                 return "Cannot force-change the only admin", 400
 
