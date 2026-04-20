@@ -473,11 +473,21 @@ class StreamingService:
             except OSError:
                 pass
 
+            # Force UTC for ffmpeg's -strftime so recorder segment
+            # filenames (YYYYMMDD_HHMMSS.mp4) encode UTC wall-clock
+            # time. The motion-clip correlator + recordings API treat
+            # filename stems as UTC — a server in a non-UTC timezone
+            # would otherwise see a constant offset between motion
+            # event timestamps (always UTC) and clip names, and
+            # silently fail to match them.
+            env = dict(os.environ)
+            env["TZ"] = "UTC"
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=stderr_dest,
                 preexec_fn=os.setsid if hasattr(os, "setsid") else None,
+                env=env,
             )
             proc._log_file = log_file  # type: ignore[attr-defined]
             return proc
