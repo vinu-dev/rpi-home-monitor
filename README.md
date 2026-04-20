@@ -14,6 +14,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
 - **OTA with rollback, validated end-to-end.** A/B SWUpdate with bootlimit rollback, signed bundles, dual-transport (admin GUI and server-pushed), and a camera-side privilege-separated installer. All three install paths have been exercised on real Pi 4B + Pi Zero 2W hardware.
 - **Tapo-style recording.** Continuous 3-minute MP4 clips organized by camera and date, with timeline playback.
+- **On-camera motion detection.** Two-frame differencing + hysteresis runs at 5 fps on the camera's ISP lores stream, posts HMAC-signed events to the server, and clicking an event on the dashboard seeks straight into the recording at that timestamp. Three recording modes — off / continuous / schedule / motion-only — share the same event feed (ADR-0021).
 - **Fully open source.** Inspect every line, from the OS image to the web dashboard. AGPL-3.0 licensed.
 
 ## Architecture
@@ -67,7 +68,8 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Feature | Details |
 |---------|---------|
 | Live View | WebRTC (sub-second latency) with HLS fallback in any mobile browser |
-| Recording | Continuous 3-minute MP4 clips, organized by camera/date |
+| Recording | Continuous 3-minute MP4 clips, organized by camera/date. Four modes: off / continuous / schedule / motion-only |
+| Motion Detection | On-camera two-frame differencing at 5 fps on the Picamera2 lores stream. HMAC-signed events posted to the server, listed on the dashboard with wall-clock time, and click-through seeks into the recording at the motion timestamp. Motion-only recording mode records just the event windows + 10 s post-roll. See ADR-0021 |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
 | User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
@@ -147,9 +149,9 @@ Results and coverage reports are available in the [CI workflow](https://github.c
 
 ## Roadmap
 
-- **Phase 1** (current): Single camera, live view, clip recording, web dashboard, authentication, security hardening, mTLS camera pairing, OTA updates, factory reset
-- **Phase 2**: Multi-camera support, motion detection, push notifications, audio
-- **Phase 3**: Cloud relay, mobile app, AI/ML object detection, activity zones, clip protection, smart home integration
+- **Phase 1** (shipped): Single camera, live view, clip recording, web dashboard, authentication, security hardening, mTLS camera pairing, OTA updates, factory reset
+- **Phase 2** (current): Multi-camera support, **motion detection** (ADR-0021, shipped), **motion-only recording mode**, dashboard events feed. Remaining: per-camera sensitivity slider, motion zones (draw-on-snapshot), push notifications, audio
+- **Phase 3**: Cloud relay, mobile app, AI/ML object detection (MOG2 on server or Pi 5 hardware refresh), activity zones, clip protection, smart home integration
 
 ## Contributing
 

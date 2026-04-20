@@ -1,13 +1,14 @@
 # Exec Plan — Camera-Side Motion Detection
 
-**Status:** Proposal (not yet implemented)
-**Date:** 2026-04-19
+**Status:** Shipped (Phase 2). See [ADR-0021](../adr/0021-camera-side-motion-detection.md) for the formal decision record.
+**Date:** 2026-04-19 (proposal) → 2026-04-20 (shipped)
 **Owner:** vinu-dev
 
-> This is a design proposal. Nothing here is shipped. Please review the
-> "Decision Points" section and sign off (or amend) before implementation
-> begins. An ADR (`docs/adr/0021-camera-side-motion-detection.md`) will be
-> drafted once the decisions below are accepted.
+> Shipped on branch `feat/motion-events-ui`. The sections below are the
+> design as implemented; the "Rejected alternatives" and "Decision
+> points" notes are preserved for future maintainers.
+> Open items beyond this plan (per-camera sensitivity slider, motion
+> zones, server-side MOG2) are tracked in ADR-0021 §Open items.
 
 ---
 

@@ -85,9 +85,12 @@ They are separate codebases because they run on different hardware with differen
            │              │  │                           │ │
            │              │  │  • RecorderService        │ │
            │              │  │  • StreamingService       │ │
-           │              │  │  • StorageService         │ │
-           │              │  │  • CameraService          │ │
-           │              │  │  • PairingService         │ │
+           │              │  │  • RecordingScheduler     │ │  ← evaluates
+           │              │  │  • MotionEventStore       │ │    per-camera
+           │              │  │  • MotionClipCorrelator   │ │    recording mode
+           │              │  │  • StorageService         │ │    (off/continuous/
+           │              │  │  • CameraService          │ │     schedule/motion)
+           │              │  │  • PairingService         │ │    every 10 s
            │              │  │  • CertService            │ │
            │              │  │  • OtaService             │ │
            │              │  │  • HealthMonitor          │ │
@@ -130,13 +133,21 @@ They are separate codebases because they run on different hardware with differen
 │  ┌────────────────────────────────────────────┐  │
 │  │        camera-streamer (Python)             │  │
 │  │                                            │  │
-│  │  ┌──────────┐    ┌─────────────────────┐  │  │
-│  │  │ Capture  │    │ StreamManager       │  │  │
-│  │  │ Manager  │───>│ ffmpeg pipeline     │  │  │
-│  │  │ v4l2     │    │ RTSP push output    │──┼──┼──> Server (:8554)
-│  │  │ /dev/    │    │ auto-reconnect      │  │  │
-│  │  │ video0   │    │ backoff retry       │  │  │
-│  │  └──────────┘    └─────────────────────┘  │  │
+│  │  ┌────────────────────────────────────────┐│  │
+│  │  │ Picamera2 dual-stream (ADR-0021)       ││  │
+│  │  │                                        ││  │
+│  │  │  sensor ──► ISP ──┬── main 1920×1080  ─┼┼──┼──> H264Encoder ─► ffmpeg -c copy
+│  │  │                   │                    ││  │      │                     │
+│  │  │                   └── lores 320×240   ─┼┤  │      │    RTSPS push ──────┼──> Server (:8322)
+│  │  │                       (5 fps YUV Y)    ││  │      │
+│  │  │                              │         ││  │      │
+│  │  │                              ▼         ││  │      │
+│  │  │              MotionDetector (2-frame   ││  │      │
+│  │  │              diff + hysteresis, ADR-0021)│  │      │
+│  │  │                              │         ││  │      │
+│  │  │                              ▼         ││  │      │
+│  │  │              MotionEventPoster ────────┼┼──┼──> HMAC POST /motion-event
+│  │  └────────────────────────────────────────┘│  │
 │  │                                            │  │
 │  │  ┌──────────────────────────────────────┐  │  │
 │  │  │ WiFi Setup (first boot, port 80)     │  │  │
@@ -951,7 +962,7 @@ scheduler interprets them as follows:
 | `off`       | Scheduler never starts the recorder. Stream runs only while a viewer is active. |
 | `continuous`| Recorder runs whenever the camera is paired; stream stays up. |
 | `schedule`  | Recorder runs inside user-defined `{days, start, end}` windows. Overnight windows (`end < start`) are split into two halves. |
-| `motion`    | Accepted for forward-compat; treated as `off` until the motion-detection ADR lands. |
+| `motion`    | Scheduler calls `MotionEventStore.is_camera_active()` (ADR-0021) every 10 s. Recorder runs while any motion event is open OR within a 10 s post-roll of its end. |
 
 `LoopRecorder` (60 s tick) scans the recording mount and deletes oldest
 segments when free space falls below the low-watermark (default 10 %)

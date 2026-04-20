@@ -57,3 +57,4 @@ meta-home-monitor/recipes-support/swupdate/files/generated/
 .DS_Store
 Thumbs.db
 ota-staging/
+app/camera/MagicMock/
