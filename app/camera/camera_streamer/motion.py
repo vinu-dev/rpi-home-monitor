@@ -56,8 +56,8 @@ class MotionConfig:
     # Fraction of pixels that must move frame-to-frame to count as
     # motion onset / exit. Hysteresis: start high, end low.
     # 0.005 = 384 px in a 320x240 frame ~ hand-sized at a few metres.
-    start_score_threshold: float = 0.004
-    end_score_threshold: float = 0.0015
+    start_score_threshold: float = 0.006
+    end_score_threshold: float = 0.002
 
     # Consecutive frames above / below the threshold required to
     # transition. At 5 fps: start=2 frames = 0.4 s, end=10 frames = 2 s.
