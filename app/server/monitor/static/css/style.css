@@ -648,9 +648,17 @@ select.form-input {
     flex-shrink: 0;
 }
 .clip-card__checkbox {
+    /* WCAG 2.5.5 minimum tap target is 24×24 px; Apple HIG says 44×44.
+       The visible checkbox stays at 18 px; padding expands the hit
+       area to 44 px so the label is tappable without pixel-precision
+       on mobile (issue #104). Negative margin collapses the extra
+       whitespace in the card's flex row. */
     display: flex;
     align-items: center;
-    margin-right: var(--space-2);
+    justify-content: center;
+    margin-right: var(--space-1);
+    margin-left: calc(-1 * var(--space-2));
+    padding: 13px;
     cursor: pointer;
 }
 .clip-card__checkbox input {
@@ -761,13 +769,9 @@ select.form-input {
 .inline-player__placeholder {
     width: 100%;
     aspect-ratio: 16 / 9;
-    /* Cap the player at ~45 % of the viewport so the clip list below
-       always has at least half the screen to scroll through — important
-       on short viewports (Echo Show, small tablets, narrow browser
-       windows). Without this cap a full-width 16:9 player eats the
-       entire visible area under the top nav on compact displays
-       (issue #95). object-fit contain keeps the frame aspect-correct
-       when the cap kicks in (letterbox instead of distort). */
+    /* Desktop cap — see issue #95. 45vh leaves ≥50% for the clip list
+       on typical monitors. object-fit contain keeps the frame aspect-
+       correct when the cap kicks in (letterbox instead of distort). */
     max-height: 45vh;
     object-fit: contain;
     border-radius: var(--radius-md);
@@ -1167,7 +1171,33 @@ select.form-input {
 }
 .inline-form__row .form-group {
     flex: 1;
-    min-width: 140px;
+    /* 120 px keeps two fields on one row on a 375 px viewport (iPhone SE)
+       with the --space-3 gap (issue #104). 140 would wrap to stacked. */
+    min-width: 120px;
+}
+
+/* Mobile-specific recordings layout (issue #104) — taller list, smaller
+   player cap on a phone (45vh still too much on a 430×932 screen). The
+   desktop @media (min-width: 1024px) rule gives the list its own scroll
+   region; below that we're single-column so the player's own cap is
+   what decides how much the list gets. */
+@media (max-width: 1023px) {
+    .inline-player video,
+    .inline-player__placeholder {
+        max-height: 38vh;
+    }
+}
+
+/* Date + datetime-local inputs need more horizontal room than bare
+   text inputs — iOS Safari renders "20 Apr 2026" as a formatted
+   value ~170 px wide; containers sized at 140 px cause clipping
+   (issue #105). */
+input[type="date"].form-input,
+input[type="datetime-local"].form-input {
+    min-width: 170px;
+    /* Keep the field from growing absurdly wide on desktop — 260 px
+       fits even the "20 Apr 2026, 17:22" datetime-local string. */
+    max-width: 260px;
 }
 
 /* --- Warnings list --- */
