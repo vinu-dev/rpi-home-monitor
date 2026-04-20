@@ -372,6 +372,66 @@ class TestDeleteCameraRecordings:
         assert result["count"] == 1
 
 
+class TestDeleteAllRecordings:
+    """Bulk delete every clip across every camera (issue #106)."""
+
+    def test_returns_counts_and_wipes_every_camera(self, svc, storage_manager, audit):
+        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "14-00-00")
+        _create_clip_file(storage_manager, "cam-001", "2026-04-10", "09-00-00")
+        _create_clip_file(storage_manager, "cam-002", "2026-04-09", "12-30-00")
+
+        result, error, status = svc.delete_all_recordings(
+            requesting_user="admin",
+            requesting_ip="127.0.0.1",
+        )
+
+        assert error is None and status == 200
+        assert result["clips"] == 3
+        assert result["cameras"] == 2
+        assert result["bytes_freed"] >= 0
+
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        assert not (root / "cam-001").exists()
+        assert not (root / "cam-002").exists()
+
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "RECORDINGS_DELETED_ALL"
+
+    def test_no_recordings_dir_returns_zero_counts(self, svc, storage_manager, audit):
+        import shutil
+        from pathlib import Path
+
+        shutil.rmtree(Path(storage_manager.recordings_dir), ignore_errors=True)
+
+        result, error, status = svc.delete_all_recordings()
+
+        assert error is None and status == 200
+        assert result["clips"] == 0
+        assert result["cameras"] == 0
+        # No audit event when there's nothing to delete — stays clean.
+        audit.log_event.assert_not_called()
+
+    def test_skips_invalid_camera_id_directories(self, svc, storage_manager):
+        """Stray directories that don't match the camera-id regex
+        shouldn't be touched — protects against a sibling tool or test
+        fixture that drops a scratch folder next to the camera trees."""
+        from pathlib import Path
+
+        root = Path(storage_manager.recordings_dir)
+        # Name that fails _CAMERA_ID_RE (contains a ``.`` which the
+        # regex doesn't allow) but is valid as a Windows/Linux path.
+        stray = root / "stray.tmp"
+        stray.mkdir(parents=True, exist_ok=True)
+        (stray / "keep.txt").write_text("x")
+        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "14-00-00")
+
+        result, _, _ = svc.delete_all_recordings()
+        assert result["cameras"] == 1
+        assert stray.exists()
+
+
 class TestFallbackRecordingsDir:
     """Test fallback when storage_manager is None."""
 

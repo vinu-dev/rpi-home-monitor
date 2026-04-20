@@ -279,6 +279,57 @@
                     <span class="text-small text-muted" x-text="cam.cpu_temp ? cam.cpu_temp.toFixed(1) + '\u00B0C' : ''"></span>
                     <span class="text-small text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
                 </div>
+                <!-- Collapsible details panel (issue #110). All data already
+                     comes back from /api/v1/cameras — we were just not
+                     rendering most of it. Click "Details" (doesn't bubble to
+                     the outer "go to Live" handler — see @click.stop). -->
+                <details class="camera-card__details" x-show="cam.status !== 'pending'"
+                         @click.stop>
+                    <summary class="text-small text-muted">Details</summary>
+                    <dl class="camera-card__details-grid">
+                        <dt>Recording</dt>
+                        <dd x-text="_recordingModeLabel(cam)"></dd>
+
+                        <dt>Motion detect</dt>
+                        <dd>
+                            <span x-text="cam.recording_motion_enabled ? 'On' : 'Off'"
+                                  :class="cam.recording_motion_enabled ? 'text-success' : 'text-muted'"></span>
+                            <span class="text-small text-muted"
+                                  x-show="cam.recording_motion_enabled && cam.motion_sensitivity"
+                                  x-text="' \u00B7 sensitivity ' + cam.motion_sensitivity + '/10'"></span>
+                        </dd>
+
+                        <dt>Firmware</dt>
+                        <dd x-text="cam.firmware_version || '—'"></dd>
+
+                        <dt>Bitrate</dt>
+                        <dd>
+                            <span x-text="cam.bitrate ? (cam.bitrate / 1000000).toFixed(1) + ' Mbps' : '—'"></span>
+                            <span class="text-small text-muted"
+                                  x-show="cam.h264_profile"
+                                  x-text="' \u00B7 ' + (cam.h264_profile || 'high').toUpperCase()"></span>
+                            <span class="text-small text-muted"
+                                  x-show="cam.keyframe_interval"
+                                  x-text="' \u00B7 keyframe ' + cam.keyframe_interval"></span>
+                        </dd>
+
+                        <template x-if="isAdmin && cam.status === 'online' && (cam.cpu_temp || cam.memory_percent || cam.uptime_seconds)">
+                            <template x-for="(val, key) in {}">
+                                <span></span>
+                            </template>
+                        </template>
+                        <template x-if="isAdmin && cam.status === 'online'">
+                            <dt>Health</dt>
+                        </template>
+                        <template x-if="isAdmin && cam.status === 'online'">
+                            <dd>
+                                <span x-show="cam.cpu_temp" x-text="cam.cpu_temp.toFixed(1) + '\u00B0C'"></span>
+                                <span class="text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
+                                <span class="text-muted" x-show="cam.uptime_seconds" x-text="' \u00B7 up ' + _uptimeLabel(cam.uptime_seconds)"></span>
+                            </dd>
+                        </template>
+                    </dl>
+                </details>
             </div>
             <div class="camera-card__actions">
                 <span class="badge" :class="{
@@ -361,6 +412,22 @@
                     </label>
                 </div>
                 <div class="form-group">
+                    <!-- Motion detection on/off (issue #110). Backend field
+                         is recording_motion_enabled; server validates + stores
+                         + pushes over the control channel. Sensitivity slider
+                         below only matters when this is on, so gate its
+                         interactivity on the toggle. -->
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" x-model="editForm.recording_motion_enabled">
+                        <span>Motion detection</span>
+                    </label>
+                    <div class="text-small text-muted" style="margin-top:4px;">
+                        Camera-side motion events trigger
+                        <em>recording_mode=motion</em> recordings and the dashboard's
+                        Recent Events feed (ADR-0021).
+                    </div>
+                </div>
+                <div class="form-group" :style="editForm.recording_motion_enabled ? '' : 'opacity:0.45; pointer-events:none;'">
                     <label style="display:flex; align-items:baseline; justify-content:space-between;">
                         <span>Motion sensitivity</span>
                         <span class="text-small" style="font-weight:600;"
@@ -425,7 +492,7 @@ function dashboardPage() {
         pairingCameraId: '',
         scanning: false,
         editCam: null,
-        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, motion_sensitivity: 5, maxFps: 30 },
+        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, recording_motion_enabled: false, motion_sensitivity: 5, maxFps: 30 },
         savingStream: false,
         streamSaveMsg: '',
         streamSaveOk: false,
@@ -808,6 +875,12 @@ function dashboardPage() {
                 rotation: cam.rotation || 0,
                 hflip: cam.hflip || false,
                 vflip: cam.vflip || false,
+                // Motion detection toggle (issue #110) — backend field
+                // recording_motion_enabled. Defaults to false on new
+                // cameras. Pulled and saved alongside the existing stream
+                // params in the same modal so operators don't have to
+                // hunt for the setting.
+                recording_motion_enabled: Boolean(cam.recording_motion_enabled),
                 // Motion sensitivity defaults to 5 (Medium) if the camera
                 // hasn't reported it yet — matches Camera model + camera
                 // /data/config default (ADR-0021).
@@ -855,6 +928,7 @@ function dashboardPage() {
                 rotation: parseInt(this.editForm.rotation),
                 hflip: this.editForm.hflip,
                 vflip: this.editForm.vflip,
+                recording_motion_enabled: Boolean(this.editForm.recording_motion_enabled),
                 motion_sensitivity: Math.max(1, Math.min(10,
                     parseInt(this.editForm.motion_sensitivity) || 5)),
             };
@@ -877,6 +951,29 @@ function dashboardPage() {
         _staleSeconds(cam) {
             if (!cam.last_seen) return 0;
             return Math.round((Date.now() - new Date(cam.last_seen).getTime()) / 1000);
+        },
+
+        // Friendly label for the recording_mode enum.
+        _recordingModeLabel(cam) {
+            var m = (cam && cam.recording_mode) || 'off';
+            if (m === 'off') return 'Off';
+            if (m === 'continuous') return 'Continuous';
+            if (m === 'schedule') return 'Schedule';
+            if (m === 'motion') return 'Motion-triggered';
+            return m;
+        },
+
+        // "2d 4h" / "3h 12m" / "7m" from an uptime seconds count. Used in
+        // the camera details panel (issue #110).
+        _uptimeLabel(seconds) {
+            seconds = parseInt(seconds) || 0;
+            if (seconds < 60) return seconds + 's';
+            var mins = Math.floor(seconds / 60);
+            if (mins < 60) return mins + 'm';
+            var hours = Math.floor(mins / 60);
+            if (hours < 24) return hours + 'h ' + (mins % 60) + 'm';
+            var days = Math.floor(hours / 24);
+            return days + 'd ' + (hours % 24) + 'h';
         },
 
         _relativeTime(iso) {

@@ -168,3 +168,22 @@ def delete_camera_recordings(camera_id):
     if error:
         return jsonify({"error": error}), status
     return jsonify(result), status
+
+
+@recordings_bp.route("", methods=["DELETE"])
+@admin_required
+@csrf_protect
+def delete_all_recordings():
+    """Nuke every clip across every camera. Danger-zone op (issue #106).
+
+    Gated by admin_required + csrf_protect like every other destructive
+    operation. Emits a single ``RECORDINGS_DELETED_ALL`` audit event
+    with the clip count and bytes freed for post-hoc review.
+    """
+    result, error, status = _svc().delete_all_recordings(
+        requesting_user=session.get("username", ""),
+        requesting_ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
