@@ -114,6 +114,14 @@ def logs():
         return redirect(url_for("views.setup"))
     if not _is_authenticated():
         return redirect(url_for("views.login"))
+    # "I've seen the log" ack — clears the dashboard status strip's
+    # "N recent system event…" callout without waiting the full hour
+    # for events to age out of the error window. Per-session so each
+    # admin clears their own view. Stamped at the instant the page
+    # is rendered; any event written after this is a fresh alert.
+    from datetime import UTC, datetime
+
+    session["audit_seen_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return render_template("logs.html")
 
 
