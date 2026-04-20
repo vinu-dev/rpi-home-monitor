@@ -157,6 +157,31 @@ class RecordingScheduler:
             except Exception as exc:
                 log.warning("Scheduler reconcile failed for %s: %s", cam.id, exc)
 
+    def nudge(self, camera_id: str) -> None:
+        """Reconcile a single camera *right now*, bypassing the tick loop.
+
+        The periodic tick is 60 s by default (fine for continuous /
+        schedule modes where recording windows are minutes long). For
+        motion mode, typical events are 3-10 s so a 60 s poll misses
+        the window entirely — by the time the scheduler notices, both
+        motion and its post-roll are over. Call this when a new motion
+        event arrives to start the recorder without waiting for the
+        next tick. Safe from any thread; best-effort.
+        """
+        try:
+            camera = self._store.get_camera(camera_id)
+        except Exception as exc:
+            log.debug(
+                "Scheduler nudge: store.get_camera(%s) failed: %s", camera_id, exc
+            )
+            return
+        if camera is None:
+            return
+        try:
+            self._reconcile_camera(camera, datetime.now())
+        except Exception as exc:
+            log.warning("Scheduler nudge reconcile failed for %s: %s", camera_id, exc)
+
     @staticmethod
     def evaluate(
         camera,

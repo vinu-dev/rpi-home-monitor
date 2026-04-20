@@ -82,9 +82,21 @@ class MotionClipCorrelator:
         self,
         recordings_dir: str | Path,
         clip_duration_seconds: int = DEFAULT_CLIP_DURATION_SECONDS,
+        pre_event_tolerance_seconds: int = 30,
     ):
         self._recordings_dir = Path(recordings_dir)
         self._clip_duration = max(1, int(clip_duration_seconds))
+        # How far BEFORE a clip's start we still accept an event. In
+        # motion-recording mode the RecordingScheduler ticks every 10 s,
+        # so the recorder ffmpeg spawns several seconds after the motion
+        # event's ``started_at`` — the clip filename timestamp is always
+        # strictly later than the event. Without this tolerance those
+        # events never match and the /events/<id> router falls back to
+        # /live. 30 s comfortably covers the 10 s scheduler tick + a few
+        # seconds of ffmpeg / camera start latency. An event matched via
+        # this window lands at offset_seconds=0 (start of clip) because
+        # the recorder didn't capture anything before its own spawn.
+        self._pre_tol = max(0, int(pre_event_tolerance_seconds))
 
     def set_recordings_dir(self, new_dir: str | Path) -> None:
         """Update the recordings root at runtime.
@@ -199,11 +211,23 @@ class MotionClipCorrelator:
         date_str: str,
     ) -> dict | None:
         delta = (event_dt - clip_start).total_seconds()
+        # In-window: event falls inside the clip's time range.
         if 0 <= delta < self._clip_duration:
             return {
                 "camera_id": camera_id,
                 "date": date_str,
                 "filename": mp4.name,
                 "offset_seconds": int(delta),
+            }
+        # Pre-window: event fired shortly BEFORE the clip started. This is
+        # the normal motion-mode case (see _pre_tol docstring in __init__).
+        # Seek to the start of the clip — the event's leading edge wasn't
+        # captured because the recorder spawned in response to the event.
+        if -self._pre_tol <= delta < 0:
+            return {
+                "camera_id": camera_id,
+                "date": date_str,
+                "filename": mp4.name,
+                "offset_seconds": 0,
             }
         return None

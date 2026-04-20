@@ -33,13 +33,28 @@ class TestFlatLayout:
         assert ref["filename"] == "20260419_143000.mp4"
         assert ref["offset_seconds"] == 75
 
-    def test_no_match_before_clip_start(self, recordings_dir):
+    def test_match_just_before_clip_start_seeks_to_zero(self, recordings_dir):
+        """Motion-mode recorders spawn a few seconds after the event fires
+        (10 s scheduler tick), so events whose timestamp is just before
+        the clip's start should still match — with ``offset_seconds=0``
+        because the recorder didn't capture anything earlier."""
         cam = recordings_dir / "cam-001"
         _make_clip(cam, "20260419_143000.mp4")
         corr = MotionClipCorrelator(recordings_dir)
 
-        # Event 1 s before the clip started.
         ref = corr.find_clip("cam-001", "2026-04-19T14:29:59Z")
+        assert ref is not None
+        assert ref["offset_seconds"] == 0
+        assert ref["filename"] == "20260419_143000.mp4"
+
+    def test_no_match_far_before_clip_start(self, recordings_dir):
+        """Beyond the pre-event tolerance (default 30 s) we still reject."""
+        cam = recordings_dir / "cam-001"
+        _make_clip(cam, "20260419_143000.mp4")
+        corr = MotionClipCorrelator(recordings_dir, pre_event_tolerance_seconds=30)
+
+        # Event 31 s before the clip started — outside tolerance.
+        ref = corr.find_clip("cam-001", "2026-04-19T14:29:29Z")
         assert ref is None
 
     def test_no_match_after_clip_ends(self, recordings_dir):
