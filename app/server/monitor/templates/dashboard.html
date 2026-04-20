@@ -607,8 +607,11 @@ function dashboardPage() {
                 });
                 return;
             }
-            // No clip on disk yet → go to Live for this camera.
-            window.location.href = '/live?cam=' + encodeURIComponent(ev.camera_id);
+            // No clip_ref cached on the event — let the server try an
+            // on-demand correlation via /events/<id>. That router will
+            // 302 to /recordings?...&seek=<offset> if a continuous clip
+            // covers this timestamp, or fall back to /live otherwise.
+            window.location.href = '/events/' + encodeURIComponent(ev.id);
         },
 
         playEvent(ev) {

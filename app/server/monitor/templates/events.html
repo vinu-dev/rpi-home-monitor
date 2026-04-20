@@ -209,8 +209,10 @@ function eventsPage() {
                 this.playingKey = ev._key;
                 return;
             }
-            // No saved clip for this event — only useful target is Live.
-            window.location.href = '/live?cam=' + encodeURIComponent(ev.camera_id);
+            // No clip_ref cached — let /events/<id> attempt on-demand
+            // correlation. It 302s to /recordings?...&seek=<offset> if
+            // a continuous recording covers this timestamp, else /live.
+            window.location.href = '/events/' + encodeURIComponent(ev.id);
         },
 
         _relativeTime(iso) {
