@@ -10,10 +10,10 @@
 Three related gaps in the current auth story, surfaced as issues #99 / #100 / #101:
 
 1. **Locked-out user** — an admin has no in-app way to reset another user's password. Today the admin deletes + recreates the account, losing the user's audit trail.
-2. **Locked-out admin** — if the *only* admin forgets their password, there is no recovery path short of a full factory reset (wipes cameras, pairings, settings). Disproportionate.
+2. **Locked-out admin** — if the *only* admin forgets their password, recovery is intentionally a hardware reset / reflash. The earlier software-recovery idea was rejected as a backdoor.
 3. **Stolen SD card** — everything on `/data/config/` is plain text: Flask secret key, pairing secrets, mTLS private keys. Physical access = full compromise.
 
-The first two are urgent usability bugs. The third is an architectural layer (LUKS / TPM / secret wrapping) that needs its own ADR and hardware work.
+The first is an urgent usability bug. The second is a deliberate product constraint after review. The third is an architectural layer (LUKS / TPM / secret wrapping) that needs its own ADR and hardware work.
 
 ## Design principles
 
@@ -28,7 +28,7 @@ The first two are urgent usability bugs. The third is an architectural layer (LU
 |-----------------------------------|-------------------------|-----------------------------------|-----------------------------------------------|-------|
 | User forgets password             | Admin (helping user)    | Admin is logged in                | **Admin reset** via Settings → Users          | #99 s1 |
 | Admin self-service change         | Admin                   | Admin is logged in                | (already shipped) Settings → Change Password  | –     |
-| **All admins locked out**         | Device operator         | Nobody                            | **CLI recovery script** over SSH              | #100  |
+| **All admins locked out**         | Device operator         | Nobody                            | **Hardware factory reset / reflash**          | #100  |
 | User forgot, no admin available   | Admin issues OTP        | Admin is logged in *once*         | **One-shot reset token** (slice 2 — later)    | #99 s2 |
 | SD card stolen                    | Threat actor            | N/A — physical theft              | **Secrets at rest** — LUKS + wrapped keys (separate ADR) | #101 |
 
@@ -71,7 +71,7 @@ Token design (to be revisited):
   - Stored hashed in `users.json` (`reset_token_hash`, `reset_token_expires_at`).
   - Separate audit events `PASSWORD_RESET_TOKEN_ISSUED` / `_USED`.
 
-Deferred because slice 1 solves the immediate pain (all the failure cases today are "user forgot + admin available" or "admin forgot + can ssh"). Slice 2 is for multi-user households where admin isn't always online; we can ship after some real usage data.
+Deferred because slice 1 solves the immediate pain: "user forgot + admin available." Slice 2 is for multi-user households where the admin is not always present; we can ship after some real usage data.
 
 ## Slice 3 — secrets at rest (#101)
 
@@ -85,15 +85,14 @@ Tracked in #101. Not gated by this plan; doesn't change the flows designed here.
 
 ## Rollout
 
-1. Ship slice 1 as a single PR touching `user_service.py`, `users.py` API, `settings.html` Users tab, and the new CLI script.
+1. Ship slice 1 as a single PR touching `user_service.py`, `users.py` API, `settings.html` Users tab, and login-page copy.
 2. Tests:
    - Unit: `force_change_next_login` toggles `must_change_password`.
    - Integration: admin resetting another user sets the flag; that user's next request returns 403 + `must_change_password: true`; password change completes the unlock.
-   - CLI: dry-run + actual rewrite against a tmp `users.json`; audit log line present.
-3. Manual on-device test: lock self out, run the script over SSH, confirm login requires rotation.
-4. Update `docs/hardware-setup.md` and `docs/requirements.md` (SR-SRV-xx for recovery).
+3. Manual on-device test: reset another user from Settings, confirm their next request returns `403 { must_change_password: true }`, then confirm a successful password change clears the lock.
+4. Documentation: keep `docs/admin-recovery.md`, the login page, and this plan aligned on "no software recovery for sole-admin lockout."
+5. Update `docs/hardware-setup.md` and `docs/requirements.md` (SR-SRV-xx for recovery).
 
 ## Open questions
 
-- **Should the CLI script write the new temp password to stdout only, not to `audit.log`?** Leaning yes — the audit event records the *fact* of reset, not the temporary value. Currently drafted to match.
 - **Should admin's own password reset also set `must_change_password=true`?** No — an admin changing their own password is deliberate and already went through auth; forcing another change would be an infinite loop.

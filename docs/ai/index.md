@@ -28,8 +28,9 @@ point back here instead of duplicating the whole handbook.
 2. [`repo-map.md`](repo-map.md)
 3. [`working-agreement.md`](working-agreement.md)
 4. [`engineering-standards.md`](engineering-standards.md)
-5. [`design-standards.md`](design-standards.md)
-6. [`validation-and-release.md`](validation-and-release.md)
+5. [`execution-rules.md`](execution-rules.md)
+6. [`design-standards.md`](design-standards.md)
+7. [`validation-and-release.md`](validation-and-release.md)
 
 ## Existing System References
 
@@ -39,6 +40,8 @@ point back here instead of duplicating the whole handbook.
 - [`../build-setup.md`](../build-setup.md)
 - [`../hardware-setup.md`](../hardware-setup.md)
 - [`../requirements.md`](../requirements.md)
+- [`../releases/`](../releases/)
+- [`../specs/`](../specs/)
 - [`../adr/`](../adr/)
 
 ## Adapter Rule
