@@ -70,6 +70,26 @@ def _record_and_check_replay(camera_id: str, timestamp_str: str, sig: str) -> bo
 cameras_bp = Blueprint("cameras", __name__)
 
 
+def _nudge_scheduler(camera_id: str) -> None:
+    """Best-effort: wake the RecordingScheduler for ``camera_id`` now.
+
+    Motion events are typically 3-10 s long. The scheduler's periodic
+    tick is 60 s — far too coarse to catch a motion window via polling
+    alone. The motion-event POST handler calls this on both start and
+    end so the recorder spawns and tears down promptly without waiting
+    for the next tick. Never raises; a scheduler that's absent or in a
+    bad state just falls through to the periodic tick, which is still
+    correct for continuous / schedule modes.
+    """
+    scheduler = getattr(current_app, "recording_scheduler", None)
+    if scheduler is None:
+        return
+    try:
+        scheduler.nudge(camera_id)
+    except Exception:
+        pass
+
+
 def _verify_camera_hmac(request) -> tuple[str, str | None]:
     """Verify HMAC-signed camera request. Shared by heartbeat + config-notify.
 
@@ -369,6 +389,11 @@ def camera_motion_event():
             duration_seconds=0.0,
         )
         store.append(evt)
+        # Event-driven scheduler nudge. The periodic tick is 60 s which
+        # is far too slow for motion events (typical event length 3-10 s);
+        # without this, the recorder never spawns during motion-mode
+        # recording. See ADR-0021 + recording_scheduler.nudge().
+        _nudge_scheduler(camera_id)
         current_app.audit.log_event(
             event="MOTION_DETECTED",
             user="camera",
@@ -403,6 +428,11 @@ def camera_motion_event():
         )
         existing.duration_seconds = float(data.get("duration_seconds") or 0.0)
         store.append(existing)
+
+    # Nudge the scheduler again on "end" so motion-mode recordings
+    # cleanly enter post-roll and stop the recorder when the window
+    # closes, without waiting for the 60 s tick.
+    _nudge_scheduler(camera_id)
 
     current_app.audit.log_event(
         event="MOTION_ENDED",
