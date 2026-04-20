@@ -169,6 +169,10 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/setup.py" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/requirements.txt" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
+    # Ship recovery CLIs referenced by the UI (e.g. the
+    # "Forgot password?" disclosure on /login points at
+    # /opt/monitor/scripts/reset-admin-password.py — issue #100).
+    copy_file "$REPO_ROOT/scripts/reset-admin-password.py" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -185,6 +189,13 @@ deploy_server() {
         find /opt/monitor/monitor -type d -exec chmod 755 {} \;
         find /opt/monitor/monitor -type f -exec chmod 644 {} \;
         chmod 0644 /opt/monitor/setup.py /opt/monitor/requirements.txt
+        # Recovery CLI: executable, owned by root, in /opt/monitor/scripts/.
+        mkdir -p /opt/monitor/scripts
+        if [ -f '$SERVER_STAGE/reset-admin-password.py' ]; then
+            cp '$SERVER_STAGE/reset-admin-password.py' /opt/monitor/scripts/reset-admin-password.py
+            chown root:root /opt/monitor/scripts/reset-admin-password.py
+            chmod 0755 /opt/monitor/scripts/reset-admin-password.py
+        fi
         # Install/upgrade Python dependencies (e.g. zeroconf for mDNS browsing)
         pip3 install -q -r /opt/monitor/requirements.txt
         # Pre-compile bytecode so first-request import is instant
