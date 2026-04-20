@@ -144,7 +144,10 @@
 <!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
 <div id="cameras-section" class="section-header">
     Cameras
-    <span style="float:right;margin-top:-4px;display:flex;gap:8px;">
+    <!-- Scan + Add Camera are admin-only (backend enforces via @admin_required
+         on the underlying /api/v1/cameras POST + /api/v1/cameras/<id>/scan).
+         Issue #86. -->
+    <span x-show="isAdmin" style="float:right;margin-top:-4px;display:flex;gap:8px;">
         <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
             <span x-show="!scanning">&#x1F50D; Scan</span>
             <span x-show="scanning">Scanning...</span>
@@ -225,8 +228,11 @@
             <div class="camera-card__actions">
                 <span class="badge badge--pending">discovered</span>
                 <div class="camera-card__btns">
-                    <button class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
-                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                    <!-- Pair is admin-only (backend requires admin to confirm);
+                         Delete likewise. Viewers get a read-only card. -->
+                    <button x-show="isAdmin" class="btn btn--primary btn--small" @click.stop="initPairing(cam.id)">Pair</button>
+                    <button x-show="isAdmin" class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)"
+                            aria-label="Remove camera">&#x2715;</button>
                 </div>
             </div>
         </div>
@@ -254,6 +260,17 @@
                         'text-muted': cam.config_sync === 'unknown'
                     }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
                 </div>
+                <!-- Surface the camera's IP for admins — a necessary fallback
+                     when mDNS/.local resolution fails on the operator's
+                     network (issue #90). Click-to-copy eases typing into
+                     the browser URL bar without having to hand-edit. -->
+                <div class="camera-card__ip text-small text-muted"
+                     x-show="isAdmin && cam.ip"
+                     @click.stop="navigator.clipboard && navigator.clipboard.writeText(cam.ip)"
+                     :title="'IP: ' + cam.ip + ' (click to copy)'"
+                     style="cursor:copy; font-family:var(--font-mono, monospace);">
+                    <span x-text="cam.ip"></span>
+                </div>
                 <div class="camera-card__last-seen" x-show="cam.last_seen">
                     <span :class="{'text-danger': _staleSeconds(cam) > 45, 'text-warning': _staleSeconds(cam) > 30 && _staleSeconds(cam) <= 45}"
                           x-text="'Last seen: ' + _relativeTime(cam.last_seen)"></span>
@@ -279,8 +296,13 @@
                 }" :aria-label="((cam.stream_state === 'running') || cam.streaming) ? 'live' : 'idle'"
                    x-text="((cam.stream_state === 'running') || cam.streaming) ? '\u25CF live' : '\u25CB idle'"></span>
                 <div class="camera-card__btns">
-                    <button class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
-                    <button class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)">&#x2715;</button>
+                    <!-- Settings + Delete are admin-only (backend enforces via
+                         @admin_required on PUT/DELETE /api/v1/cameras/<id>).
+                         Hide for viewers so they don't see the controls only
+                         to be rejected with a 403 on click. -->
+                    <button x-show="isAdmin" class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
+                    <button x-show="isAdmin" class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)"
+                            aria-label="Remove camera">&#x2715;</button>
                 </div>
             </div>
         </div>
@@ -388,6 +410,12 @@ function dashboardPage() {
         health: { uptime: '' },
         auditEvents: [],      // Slice 3 log teaser
         auditAdmin: true,     // becomes false if /audit 403s (viewer role)
+        // Mirrors settings.html's isAdmin — resolved from /api/v1/auth/me
+        // on load and used to gate destructive UI controls (issue #86).
+        // Defaults to false (safe-by-default): UI hides Settings/Delete
+        // until the role check comes back "admin".
+        currentUser: null,
+        isAdmin: false,
 
         // --- Existing camera-list state (Tier-3 roll-call stub) ---
         cameras: [],
@@ -736,7 +764,26 @@ function dashboardPage() {
             }
         },
 
+        async loadCurrentUser() {
+            // Resolve role so destructive UI controls (Settings, Delete)
+            // are hidden for viewers. Defence in depth: the backend
+            // (@admin_required in auth.py) also rejects these calls.
+            try {
+                // /api/v1/auth/me returns {user: {id, username, role}, csrf_token}.
+                var resp = await window.HM.api.get('/api/v1/auth/me');
+                var user = resp && resp.user ? resp.user : resp;
+                this.currentUser = user;
+                this.isAdmin = !!(user && user.role === 'admin');
+            } catch (e) {
+                this.currentUser = null;
+                this.isAdmin = false;
+            }
+        },
+
         async deleteCamera(camId) {
+            // Defence in depth — UI hides the button for viewers, but
+            // double-guard the handler in case of DOM manipulation.
+            if (!this.isAdmin) return;
             if (!confirm('Remove this camera?')) return;
             try {
                 await window.HM.api.del('/api/v1/cameras/' + encodeURIComponent(camId));
@@ -793,6 +840,7 @@ function dashboardPage() {
         },
 
         async saveStreamSettings() {
+            if (!this.isAdmin) return;  // defence-in-depth alongside backend 403
             if (!this.editCam) return;
             this.savingStream = true;
             this.streamSaveMsg = '';
@@ -870,6 +918,7 @@ function dashboardPage() {
         },
 
         init() {
+            this.loadCurrentUser();
             this.loadSummary();
             this.loadCameras();
             // Summary: 10s (matches the existing health cadence; ADR-0018

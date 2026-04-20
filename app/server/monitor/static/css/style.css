@@ -537,13 +537,14 @@ select.form-input {
 
 .recordings-player-col {
     min-width: 0;
-}
-@media (min-width: 1024px) {
-    .recordings-player-col {
-        position: sticky;
-        /* 60px top nav + breathing room; stays below the fixed navbar. */
-        top: calc(60px + var(--space-3));
-    }
+    /* Player is sticky on every breakpoint — on mobile it pins the video
+       to the top as the user scrolls through the (single-column) clip
+       list; on desktop it pins the left column while the right-hand list
+       scrolls. Issue #88. */
+    position: sticky;
+    top: calc(60px + var(--space-3));
+    z-index: 2;
+    background: var(--color-bg);
 }
 
 .recordings-list-col {
@@ -554,8 +555,9 @@ select.form-input {
 }
 @media (min-width: 1024px) {
     .recordings-list-col {
-        /* Independent scroll: viewport minus top nav (60), bottom nav (70)
-           and a little gutter on each side. */
+        /* Independent scroll on desktop: viewport minus top nav (60),
+           bottom nav (70) and a little gutter. On mobile the whole page
+           scrolls — the sticky player pins the video regardless. */
         max-height: calc(100vh - 60px - 70px - var(--space-4) * 2);
         overflow-y: auto;
         padding-right: var(--space-1);
@@ -807,9 +809,17 @@ select.form-input {
     background: var(--color-surface-alt);
     border-radius: var(--radius-md);
     overflow-x: auto;
+    /* Momentum scroll on iOS when the tab row overflows the viewport. */
+    -webkit-overflow-scrolling: touch;
+    /* Hide the scrollbar chrome — tabs are discoverable by swipe. */
+    scrollbar-width: thin;
 }
 .settings-tab {
-    flex: 1;
+    /* Each tab keeps its natural content width — the row overflows
+       horizontally and ``.settings-tabs``'s ``overflow-x: auto`` scrolls
+       it. Previously ``flex: 1`` squashed 7 tabs into one 375 px-wide
+       mobile viewport, overlapping the labels (issue #87). */
+    flex: 0 0 auto;
     padding: var(--space-2) var(--space-4);
     border: none;
     border-radius: var(--radius-sm);
@@ -820,7 +830,6 @@ select.form-input {
     cursor: pointer;
     transition: background var(--transition-base), color var(--transition-base);
     white-space: nowrap;
-    min-width: 0;
 }
 .settings-tab:hover { color: var(--color-text); }
 .settings-tab.active {
