@@ -27,7 +27,7 @@ inherit pypi python_setuptools_build_meta
 # symbols collapse to None if the module is absent — calling the
 # features will AttributeError, but our motion pipeline never does.
 # We use capture_array + H264Encoder + FileOutput only.
-python do_unpack_append() {
+python do_unpack:append() {
     import os, re
     s = d.getVar('S')
     req_path = os.path.join(s, 'picamera2', 'request.py')
