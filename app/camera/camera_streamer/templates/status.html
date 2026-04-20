@@ -104,7 +104,13 @@ body {
 .toc a {
     flex: 0 0 auto;
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px;
+    /* padding gives a 44×44 tap area (WCAG 2.5.5 / Apple HIG). Prior
+       8×14 produced ~30×85, which needed pixel-precise taps — and
+       combined with the 300 ms iOS tap delay the tabs felt dead
+       (issue #109). min-height locks the 44 px even when the glyph
+       and label would fit in less. */
+    padding: 12px 16px;
+    min-height: 44px;
     border-radius: 999px;
     background: rgba(255,255,255,0.03);
     color: var(--muted);
@@ -112,6 +118,14 @@ body {
     font-size: .85rem;
     font-weight: 500;
     border: 1px solid transparent;
+    /* iOS Safari waits 300 ms on any anchor tap to detect double-tap
+       zoom. ``touch-action: manipulation`` opts out of that detection
+       — tap fires immediately. Biggest single win for "why are the
+       tabs slow on my iPhone" (issue #109). */
+    touch-action: manipulation;
+    /* Matches the tap-highlight colour on the tab bar to the accent
+       instead of the browser's default blue box. */
+    -webkit-tap-highlight-color: rgba(255,92,124,0.25);
     transition: color .15s, border-color .15s, background .15s, transform .15s;
 }
 .toc a svg { width: 14px; height: 14px; stroke-width: 2; opacity: .85; }
