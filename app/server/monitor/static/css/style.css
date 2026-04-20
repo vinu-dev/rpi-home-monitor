@@ -796,6 +796,36 @@ select.form-input {
     align-items: center;
     flex-wrap: wrap;
 }
+
+/* Forgot-password disclosure on /login (issue #99 slice 1). Collapsed by
+   default so it doesn't clutter the typical success flow; opens inline
+   so the user doesn't leave the page. */
+.forgot-password {
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+}
+.forgot-password summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 0;
+}
+.forgot-password__body {
+    margin-top: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+}
+.forgot-password__body p { margin: 0 0 var(--space-2); }
+.forgot-password__body pre {
+    background: var(--color-surface-alt);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: var(--text-xs);
+    margin: var(--space-2) 0;
+}
 .inline-player__bar {
     display: flex;
     align-items: center;

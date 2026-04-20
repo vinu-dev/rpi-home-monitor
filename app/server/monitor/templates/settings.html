@@ -534,10 +534,24 @@
                                 </td>
                                 <td><span class="badge" :class="u.role === 'admin' ? 'badge--pending' : 'badge--offline'" x-text="u.role"></span></td>
                                 <td class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
-                                <td>
+                                <td style="display:flex; gap:6px; align-items:center;">
+                                    <!-- Reset password — admin-only, and
+                                         hidden for the admin's own row (they
+                                         use Settings → Change Password). Sets
+                                         must_change_password on the target so
+                                         the user has to rotate on next login
+                                         without the admin ever knowing the
+                                         final password (issue #99 slice 1). -->
+                                    <button x-show="currentUser && currentUser.id !== u.id"
+                                            class="btn btn--secondary btn--small"
+                                            @click="openResetPassword(u)"
+                                            title="Reset this user's password">
+                                        Reset password
+                                    </button>
                                     <button x-show="!currentUser || currentUser.id !== u.id"
                                             class="btn btn--danger btn--icon"
-                                            @click="deleteUser(u.id, u.username)">
+                                            @click="deleteUser(u.id, u.username)"
+                                            title="Delete user">
                                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     </button>
                                 </td>
@@ -545,6 +559,38 @@
                         </template>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Password modal (admin resets another user's password).
+         Shown only when resetTarget is set. Same dark-theme dialog
+         pattern as the Stream Settings modal. Issue #99 slice 1. -->
+    <div x-show="resetTarget" x-cloak
+         style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:50;"
+         @click.self="closeResetPassword()">
+        <div class="card" style="max-width:420px; width:90%;">
+            <div class="settings-section__title">
+                Reset password for <span x-text="resetTarget && resetTarget.username"></span>
+            </div>
+            <div class="text-small text-muted" style="margin-bottom:12px; line-height:1.4;">
+                Pick a temporary password. <span x-text="resetTarget && resetTarget.username"></span>
+                will be forced to change it on their next login — you don't need to know the
+                final password they pick.
+            </div>
+            <div class="form-group">
+                <label>Temporary password</label>
+                <input type="text" class="form-input"
+                       x-model="resetTempPassword"
+                       placeholder="Minimum 12 characters"
+                       autocomplete="new-password">
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn btn--secondary" @click="closeResetPassword()">Cancel</button>
+                <button class="btn btn--primary" @click="submitResetPassword()"
+                        :disabled="!resetTempPassword || resetTempPassword.length < 12">
+                    Reset &amp; force change
+                </button>
             </div>
         </div>
     </div>
@@ -1025,6 +1071,9 @@ function settingsPage() {
         },
         users: [],
         newUser: { username: '', password: '', role: 'viewer' },
+        // Admin reset-password modal state (issue #99 slice 1).
+        resetTarget: null,       // user object whose password is being reset
+        resetTempPassword: '',   // admin-picked temporary password (>=12 chars)
         pw: { newPassword: '', confirmPassword: '' },
 
         wifi: { currentSsid: '', networks: [], selectedSsid: '', password: '', scanning: false },
@@ -1342,6 +1391,39 @@ function settingsPage() {
                 window.HM.toast('User deleted', 'success');
                 this.loadUsers();
             } catch(e) { window.HM.toast(e.message || 'Failed to delete user', 'error'); }
+        },
+
+        // Admin-reset flow (issue #99 slice 1). Admin picks a temporary
+        // password; backend rotates the hash AND sets must_change_password=true
+        // so the user is forced to rotate on first login.
+        openResetPassword(user) {
+            this.resetTarget = user;
+            this.resetTempPassword = '';
+        },
+        closeResetPassword() {
+            this.resetTarget = null;
+            this.resetTempPassword = '';
+        },
+        async submitResetPassword() {
+            if (!this.resetTarget) return;
+            if (!this.resetTempPassword || this.resetTempPassword.length < 12) {
+                window.HM.toast('Temporary password must be at least 12 characters', 'error');
+                return;
+            }
+            try {
+                await window.HM.api.put(
+                    '/api/v1/users/' + encodeURIComponent(this.resetTarget.id) + '/password',
+                    { new_password: this.resetTempPassword, force_change: true }
+                );
+                window.HM.toast(
+                    'Password reset — ' + this.resetTarget.username +
+                    ' must change it on next login', 'success'
+                );
+                this.closeResetPassword();
+                this.loadUsers();
+            } catch (e) {
+                window.HM.toast(e.message || 'Failed to reset password', 'error');
+            }
         },
 
         async changePassword() {
