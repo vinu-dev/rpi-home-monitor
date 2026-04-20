@@ -28,11 +28,8 @@ inherit pypi python_setuptools_build_meta
 # features will AttributeError, but our motion pipeline never does.
 # We use capture_array + H264Encoder + FileOutput only.
 python do_unpack:append() {
-    import os, re
+    import os
     s = d.getVar('S')
-    req_path = os.path.join(s, 'picamera2', 'request.py')
-    enc_init = os.path.join(s, 'picamera2', 'encoders', '__init__.py')
-    jpg_enc  = os.path.join(s, 'picamera2', 'encoders', 'jpeg_encoder.py')
 
     def wrap(path, mappings):
         """Replace each raw import line with a try/except that soft-sets
@@ -52,21 +49,33 @@ python do_unpack:append() {
         with open(path, 'w') as f:
             f.write(src)
 
-    wrap(req_path, [
-        ("import piexif",                       ["piexif"]),
-        ("import simplejpeg",                   ["simplejpeg"]),
-        ("from pidng.camdefs import Picamera2Camera", ["Picamera2Camera"]),
-        ("from pidng.core import PICAM2DNG",    ["PICAM2DNG"]),
-        ("from PIL import Image",               ["Image"]),
+    # request.py — JPEG / DNG / EXIF helpers we don't use.
+    wrap(os.path.join(s, 'picamera2', 'request.py'), [
+        ("import piexif",                               ["piexif"]),
+        ("import simplejpeg",                           ["simplejpeg"]),
+        ("from pidng.camdefs import Picamera2Camera",   ["Picamera2Camera"]),
+        ("from pidng.core import PICAM2DNG",            ["PICAM2DNG"]),
     ])
-    wrap(enc_init, [
-        ("import videodev2",                         ["videodev2"]),
-        ("from .jpeg_encoder import JpegEncoder",    ["JpegEncoder"]),
-        ("from .libav_h264_encoder import LibavH264Encoder", ["LibavH264Encoder"]),
-        ("from .libav_mjpeg_encoder import LibavMjpegEncoder", ["LibavMjpegEncoder"]),
+    # encoders/__init__.py — software encoders (PyAV) + JpegEncoder.
+    # NOTE: videodev2 is NOT wrapped here — H264Encoder hard-requires
+    # its V4L2_* constants. videodev2 is in RDEPENDS.
+    wrap(os.path.join(s, 'picamera2', 'encoders', '__init__.py'), [
+        ("from .jpeg_encoder import JpegEncoder",               ["JpegEncoder"]),
+        ("from .libav_h264_encoder import LibavH264Encoder",    ["LibavH264Encoder"]),
+        ("from .libav_mjpeg_encoder import LibavMjpegEncoder",  ["LibavMjpegEncoder"]),
     ])
-    wrap(jpg_enc, [
+    wrap(os.path.join(s, 'picamera2', 'encoders', 'jpeg_encoder.py'), [
         ("import simplejpeg", ["simplejpeg"]),
+    ])
+    # outputs/__init__.py — FfmpegOutput + PyavOutput both need PyAV.
+    wrap(os.path.join(s, 'picamera2', 'outputs', '__init__.py'), [
+        ("from .ffmpegoutput import FfmpegOutput",  ["FfmpegOutput"]),
+        ("from .pyavoutput import PyavOutput",      ["PyavOutput"]),
+    ])
+    # previews/__init__.py — GUI previews (DRM/Qt) we never run headless.
+    wrap(os.path.join(s, 'picamera2', 'previews', '__init__.py'), [
+        ("from .drm_preview import DrmPreview",                ["DrmPreview"]),
+        ("from .qt_previews import QtGlPreview, QtPreview",    ["QtGlPreview", "QtPreview"]),
     ])
 }
 
@@ -76,4 +85,6 @@ RDEPENDS:${PN} = " \
     python3-numpy \
     python3-prctl \
     python3-jsonschema \
+    python3-videodev2 \
+    python3-pillow \
 "

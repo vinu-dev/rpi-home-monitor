@@ -34,5 +34,7 @@ RDEPENDS:${PN} = " \
     libcamera-apps \
     libcamera-pycamera \
     python3-picamera2 \
+    python3-videodev2 \
+    python3-pillow \
     python3-numpy \
     "
