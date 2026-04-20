@@ -97,12 +97,20 @@ class RecordingScheduler:
         control_client,
         coordinator=None,
         tick_seconds: int = TICK_INTERVAL_SECONDS,
+        motion_event_store=None,
+        motion_post_roll_seconds: float = 10.0,
     ):
         self._store = store
         self._streaming = streaming
         self._control = control_client
         self._coordinator = coordinator  # may be None in tests
         self._tick = tick_seconds
+        # Optional motion wiring — when present, recording_mode="motion"
+        # evaluates to True while a motion event is in progress or within
+        # the post-roll grace window. Absent (e.g., tests that only care
+        # about continuous/schedule), motion mode is a silent no-op.
+        self._motion_event_store = motion_event_store
+        self._motion_post_roll_seconds = float(motion_post_roll_seconds)
         self._running = False
         self._thread: threading.Thread | None = None
         # Track cameras we currently think need the stream for recording.
@@ -150,17 +158,45 @@ class RecordingScheduler:
                 log.warning("Scheduler reconcile failed for %s: %s", cam.id, exc)
 
     @staticmethod
-    def evaluate(camera, now: datetime) -> bool:
+    def evaluate(
+        camera,
+        now: datetime,
+        motion_event_store=None,
+        motion_post_roll_seconds: float = 10.0,
+    ) -> bool:
         """Pure function — is recording wanted for this camera at `now`?
 
         Exposed for unit tests; no side-effects.
+
+        For ``recording_mode = "motion"``, a ``motion_event_store`` must be
+        provided (otherwise motion silently evaluates to False, the
+        pre-Phase-4 behaviour). The store's ``is_camera_active`` is the
+        single source of truth — a motion event is "active" while it's
+        in progress or within ``motion_post_roll_seconds`` of its end.
         """
         mode = getattr(camera, "recording_mode", "off")
         if mode == "continuous":
             return True
         if mode == "schedule":
             return now_in_window(getattr(camera, "recording_schedule", []) or [], now)
-        # "off" and "motion" both map to False for MVP.
+        if mode == "motion":
+            if motion_event_store is None:
+                return False
+            try:
+                return bool(
+                    motion_event_store.is_camera_active(
+                        camera.id,
+                        post_roll_seconds=motion_post_roll_seconds,
+                    )
+                )
+            except Exception as exc:
+                log.warning(
+                    "motion evaluate failed for %s: %s — treating as inactive",
+                    camera.id,
+                    exc,
+                )
+                return False
+        # "off" → False.
         return False
 
     # --- Internals --------------------------------------------------------
@@ -174,7 +210,12 @@ class RecordingScheduler:
                 time.sleep(0.1)
 
     def _reconcile_camera(self, camera, now: datetime) -> None:
-        wanted = self.evaluate(camera, now)
+        wanted = self.evaluate(
+            camera,
+            now,
+            motion_event_store=self._motion_event_store,
+            motion_post_roll_seconds=self._motion_post_roll_seconds,
+        )
         cam_id = camera.id
 
         is_recording = False

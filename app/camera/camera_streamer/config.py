@@ -38,6 +38,17 @@ DEFAULTS = {
     "CAMERA_ID": "",
     "ADMIN_USERNAME": "admin",  # default username
     "ADMIN_PASSWORD": "",  # salt:hash (PBKDF2-SHA256)
+    # Motion detection (docs/exec-plans/motion-detection.md). When true,
+    # the streaming ffmpeg tees a downsampled grayscale stream to a FIFO
+    # and MotionRunner drives the detector off it. Events are POSTed to
+    # the paired server via HMAC. Requires numpy on-device.
+    "MOTION_DETECTION": "false",
+    # Motion sensitivity on a 1 (least) - 10 (most) scale. The camera
+    # maps this into concrete MotionDetector thresholds in motion_runner;
+    # 5 = current shipping defaults. Changed via the control-channel
+    # ``motion_sensitivity`` param so operators can tune per-camera from
+    # the server's Settings UI without editing camera.conf by hand.
+    "MOTION_SENSITIVITY": "5",
 }
 
 
@@ -97,6 +108,24 @@ class ConfigManager:
     @property
     def vflip(self):
         return self._values["VFLIP"].lower() == "true"
+
+    @property
+    def motion_detection(self):
+        """True if the motion-detection pipeline should run (numpy required)."""
+        return str(self._values.get("MOTION_DETECTION", "false")).lower() == "true"
+
+    @property
+    def motion_sensitivity(self) -> int:
+        """Per-camera motion sensitivity, 1 (lowest) … 10 (highest).
+
+        Mapped to concrete MotionDetector thresholds at start_recording
+        time — see ``motion_runner.motion_config_from_sensitivity``.
+        """
+        try:
+            v = int(self._values.get("MOTION_SENSITIVITY", 5))
+        except (TypeError, ValueError):
+            v = 5
+        return max(1, min(10, v))
 
     @property
     def camera_id(self):

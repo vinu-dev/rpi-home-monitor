@@ -1,2 +1,7 @@
 # Camera streamer has minimal Python dependencies.
 # ffmpeg and avahi are system packages installed via Yocto.
+#
+# numpy is required for the motion detector (grayscale frame diff on a
+# 320x240 lores YUV stream). Must also be present in the Yocto image —
+# `python3-numpy` in meta-home-monitor/recipes-camera/*.
+numpy>=1.24

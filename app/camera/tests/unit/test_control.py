@@ -57,6 +57,8 @@ class TestGetCapabilities:
             "rotation",
             "hflip",
             "vflip",
+            # ADR-0021: per-camera motion sensitivity dial (1-10)
+            "motion_sensitivity",
         }
         assert set(params.keys()) == expected
 
@@ -84,6 +86,8 @@ class TestGetConfig:
             "rotation",
             "hflip",
             "vflip",
+            # ADR-0021: per-camera motion sensitivity dial (1-10)
+            "motion_sensitivity",
         }
         assert set(cfg.keys()) == expected
 

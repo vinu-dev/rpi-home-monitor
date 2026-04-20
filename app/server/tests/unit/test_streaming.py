@@ -109,7 +109,18 @@ class TestRecorderPipeline:
         cmd = mock_popen.call_args[0][0]
         assert "-c" in cmd and "copy" in cmd
         assert "-f" in cmd and "segment" in cmd
+        # ffmpeg writes .mp4 directly — the segment muxer refuses
+        # ``.mp4.part`` (see streaming_service.py). Fragmented-mp4
+        # movflags make each in-progress segment playable as it grows
+        # so a motion event whose timestamp falls in the current clip
+        # can be seeked into immediately.
         assert any(arg.endswith(".mp4") for arg in cmd)
+        assert not any(arg.endswith(".mp4.part") for arg in cmd)
+        assert "-segment_format_options" in cmd
+        fmt_opts = cmd[cmd.index("-segment_format_options") + 1]
+        assert "frag_keyframe" in fmt_opts
+        assert "empty_moov" in fmt_opts
+        assert "-segment_list" in cmd
         svc.stop()
 
     @patch("subprocess.Popen")

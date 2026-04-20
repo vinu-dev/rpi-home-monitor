@@ -28,6 +28,55 @@ SNAPSHOT_INTERVAL = 30  # seconds between snapshot updates
 CLIP_DURATION = 180  # default segment duration if caller doesn't override
 FFMPEG_LOG_DIR = Path("/data/logs/ffmpeg")
 
+
+def finalize_completed_segments(
+    cam_rec_dir: Path, segments_log: Path, last_offset: int
+) -> int:
+    """Legacy no-op kept for callers/tests.
+
+    Historical: used to rename ``.mp4.part → .mp4`` after ffmpeg closed
+    a segment. ffmpeg 6.1.4's segment muxer rejects ``.mp4.part`` as an
+    output filename, so we now write ``.mp4`` directly. "Safe to read"
+    is instead determined by membership in ``segments_log`` — see
+    ``completed_segment_names``.
+
+    Args / returns: unchanged so existing call sites keep compiling.
+    Offset is tracked to match the historical contract even though we
+    no longer do anything with the lines.
+    """
+    if not segments_log.exists():
+        return last_offset
+    try:
+        size = segments_log.stat().st_size
+    except OSError:
+        return last_offset
+    return max(last_offset, size)
+
+
+def completed_segment_names(segments_log: Path) -> set[str]:
+    """Return the basenames of every segment ffmpeg has closed so far.
+
+    A name appears in ``segments_log`` only after ffmpeg has flushed
+    and closed the corresponding file, so this set is the strict
+    "safe to read" view over the recording directory. The currently-
+    being-written clip exists on disk but is not yet in the log.
+    """
+    names: set[str] = set()
+    if not segments_log.exists():
+        return names
+    try:
+        with open(segments_log, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return names
+    for line in raw.splitlines():
+        name = line.decode("utf-8", errors="replace").strip()
+        if not name:
+            continue
+        names.add(Path(name).name)
+    return names
+
+
 # Legacy constants kept for backwards-compat with import sites that still
 # reference them. HLS is no longer used server-side for live view.
 HLS_SEGMENT_DURATION = 2
@@ -216,6 +265,13 @@ class StreamingService:
 
         Idempotent: if a recorder is already alive, this is a no-op.
         Segment directory structure: <recordings_dir>/<cam_id>/YYYYMMDD_HHMMSS.mp4
+
+        Partial-write discipline (docs/exec-plans/motion-detection.md):
+        ffmpeg writes each segment as ``<stem>.mp4.part`` and appends the
+        finished filename to ``.segments.log`` on clean close. A finaliser
+        thread (started per cam on first use) tails that log and renames
+        ``.mp4.part → .mp4`` — so downstream code (recordings list,
+        motion clip correlator) only ever sees fully-written clips.
         """
         with self._lock:
             existing = self._rec_procs.get(cam_id)
@@ -225,6 +281,7 @@ class StreamingService:
 
         cam_rec_dir = self._recordings_dir / cam_id
         cam_rec_dir.mkdir(parents=True, exist_ok=True)
+        segments_log = cam_rec_dir / ".segments.log"
 
         cmd = [
             "ffmpeg",
@@ -243,19 +300,96 @@ class StreamingService:
             str(self._clip_duration),
             "-segment_format",
             "mp4",
+            # Fragmented-mp4 flags on each segment: moov fragments written
+            # as the segment grows (empty_moov + frag_keyframe) rather than
+            # appended at close. Means clicking a motion event whose
+            # timestamp falls inside the *currently* open clip plays back
+            # immediately instead of hitting a "moov not found" error.
+            "-segment_format_options",
+            "movflags=+frag_keyframe+empty_moov+default_base_moof",
             "-reset_timestamps",
             "1",
             "-strftime",
             "1",
+            # Append one line per completed segment. Segment muxer writes
+            # the line only after closing the file, so "in the log" == "safe
+            # to rename" is a strict invariant.
+            "-segment_list",
+            str(segments_log),
+            "-segment_list_flags",
+            "+live",
+            "-segment_list_type",
+            "flat",
+            # ffmpeg 6.1.4's segment muxer refuses the ``.mp4.part``
+            # extension with "Output file does not contain any stream"
+            # even when ``-segment_format mp4`` is passed — the format
+            # auto-detection inspects the filename too. Write ``.mp4``
+            # directly; "safe to read" is derived from presence in
+            # ``.segments.log`` (ffmpeg appends that line only after
+            # closing the file). In-progress clips are filtered by the
+            # recordings listing + correlator, not by filename suffix.
             str(cam_rec_dir / "%Y%m%d_%H%M%S.mp4"),
         ]
         proc = self._launch_ffmpeg(cmd, f"rec-{cam_id}")
         if proc:
             with self._lock:
                 self._rec_procs[cam_id] = proc
+            self._start_finalizer(cam_id, cam_rec_dir, segments_log)
             log.info("Recorder started for %s (PID %d)", cam_id, proc.pid)
             return True
         return False
+
+    # --- Recorder finalizer (rename .mp4.part → .mp4 on segment close) ----
+
+    def _start_finalizer(self, cam_id, cam_rec_dir, segments_log):
+        """Spawn (idempotently) the thread that renames completed segments.
+
+        The thread polls the segment manifest at a short interval and
+        renames each listed `.mp4.part` file to `.mp4`. Exits when the
+        recorder stops OR the service is shut down.
+        """
+        with self._lock:
+            existing = (
+                self._finalizer_threads.get(cam_id)
+                if hasattr(self, "_finalizer_threads")
+                else None
+            )
+            if existing and existing.is_alive():
+                return
+            if not hasattr(self, "_finalizer_threads"):
+                self._finalizer_threads = {}
+
+        def _loop():
+            last_offset = 0
+            while self._running:
+                try:
+                    last_offset = finalize_completed_segments(
+                        cam_rec_dir, segments_log, last_offset
+                    )
+                except Exception as exc:  # pragma: no cover — defensive
+                    log.warning("Finalizer error for %s: %s", cam_id, exc)
+                # Exit cleanly when the recorder has been stopped.
+                with self._lock:
+                    if self._recorder_intent.get(cam_id) == "stopped":
+                        proc = self._rec_procs.get(cam_id)
+                        if proc is None or proc.poll() is not None:
+                            # One last sweep so we don't lose the final segment.
+                            try:
+                                finalize_completed_segments(
+                                    cam_rec_dir, segments_log, last_offset
+                                )
+                            except Exception:  # pragma: no cover
+                                pass
+                            return
+                for _ in range(10):
+                    if not self._running:
+                        return
+                    time.sleep(0.1)
+
+        t = threading.Thread(target=_loop, daemon=True, name=f"rec-finalizer-{cam_id}")
+        with self._lock:
+            self._finalizer_threads[cam_id] = t
+        t.start()
 
     def stop_recorder(self, cam_id):
         """Deliberately stop the recorder for a camera."""
@@ -339,11 +473,21 @@ class StreamingService:
             except OSError:
                 pass
 
+            # Force UTC for ffmpeg's -strftime so recorder segment
+            # filenames (YYYYMMDD_HHMMSS.mp4) encode UTC wall-clock
+            # time. The motion-clip correlator + recordings API treat
+            # filename stems as UTC — a server in a non-UTC timezone
+            # would otherwise see a constant offset between motion
+            # event timestamps (always UTC) and clip names, and
+            # silently fail to match them.
+            env = dict(os.environ)
+            env["TZ"] = "UTC"
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=stderr_dest,
                 preexec_fn=os.setsid if hasattr(os, "setsid") else None,
+                env=env,
             )
             proc._log_file = log_file  # type: ignore[attr-defined]
             return proc

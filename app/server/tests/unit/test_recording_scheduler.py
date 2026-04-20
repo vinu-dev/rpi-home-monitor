@@ -25,6 +25,21 @@ def _cam(mode="off", schedule=None, ip="192.0.2.5", desired="stopped", streaming
     )
 
 
+class _FakeMotionStore:
+    """Test stand-in for MotionEventStore — the scheduler only uses
+    ``is_camera_active``; everything else on the real store would be
+    noise here. Captures the last post_roll value so we can assert the
+    scheduler forwards its config correctly."""
+
+    def __init__(self, active=False):
+        self.active = active
+        self.last_post_roll = None
+
+    def is_camera_active(self, camera_id, post_roll_seconds=None, now=None):
+        self.last_post_roll = post_roll_seconds
+        return self.active
+
+
 class TestEvaluatePure:
     def test_off_never_records(self):
         cam = _cam("off")
@@ -34,9 +49,74 @@ class TestEvaluatePure:
         cam = _cam("continuous")
         assert RecordingScheduler.evaluate(cam, datetime(2026, 4, 17, 3, 0)) is True
 
-    def test_motion_treated_as_off(self):
+    def test_motion_without_store_treated_as_off(self):
+        """Back-compat: no motion_event_store wired → motion is still off.
+
+        Matches the pre-Phase-4 behaviour so upgrading a deployment with
+        existing recording_mode="motion" cameras can't suddenly start
+        recording if the store isn't provisioned yet.
+        """
         cam = _cam("motion")
         assert RecordingScheduler.evaluate(cam, datetime(2026, 4, 17, 10, 0)) is False
+
+    def test_motion_active_store_returns_true(self):
+        cam = _cam("motion")
+        store = _FakeMotionStore(active=True)
+        assert (
+            RecordingScheduler.evaluate(
+                cam, datetime(2026, 4, 17, 10, 0), motion_event_store=store
+            )
+            is True
+        )
+
+    def test_motion_inactive_store_returns_false(self):
+        cam = _cam("motion")
+        store = _FakeMotionStore(active=False)
+        assert (
+            RecordingScheduler.evaluate(
+                cam, datetime(2026, 4, 17, 10, 0), motion_event_store=store
+            )
+            is False
+        )
+
+    def test_motion_post_roll_passed_through(self):
+        """Scheduler forwards post_roll to the store — the store is the
+        authoritative timekeeper, the scheduler is just a router."""
+        cam = _cam("motion")
+        store = _FakeMotionStore(active=True)
+        RecordingScheduler.evaluate(
+            cam,
+            datetime(2026, 4, 17, 10, 0),
+            motion_event_store=store,
+            motion_post_roll_seconds=42.0,
+        )
+        assert store.last_post_roll == 42.0
+
+    def test_motion_store_exception_falls_back_to_inactive(self):
+        """A broken store must not break the whole scheduler tick."""
+
+        class _BrokenStore:
+            def is_camera_active(self, *a, **k):
+                raise RuntimeError("simulated")
+
+        cam = _cam("motion")
+        assert (
+            RecordingScheduler.evaluate(
+                cam, datetime(2026, 4, 17, 10, 0), motion_event_store=_BrokenStore()
+            )
+            is False
+        )
+
+    def test_continuous_ignores_motion_store(self):
+        """Motion store only matters for mode=motion."""
+        cam = _cam("continuous")
+        store = _FakeMotionStore(active=False)
+        assert (
+            RecordingScheduler.evaluate(
+                cam, datetime(2026, 4, 17, 10, 0), motion_event_store=store
+            )
+            is True
+        )
 
     def test_schedule_in_window(self):
         # 2026-04-17 is a Friday.

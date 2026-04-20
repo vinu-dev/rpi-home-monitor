@@ -22,6 +22,8 @@ from monitor.services.cert_service import CertService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
+from monitor.services.motion_clip_correlator import MotionClipCorrelator
+from monitor.services.motion_event_store import MotionEventStore
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
@@ -173,6 +175,13 @@ def _init_infrastructure(app):
         threshold_percent=app.config.get("STORAGE_THRESHOLD_PERCENT"),
     )
 
+    motion_events_path = os.path.join(app.config["CONFIG_DIR"], "motion_events.json")
+    app.motion_event_store = MotionEventStore(motion_events_path)
+    app.motion_clip_correlator = MotionClipCorrelator(
+        app.config["RECORDINGS_DIR"],
+        clip_duration_seconds=app.config.get("CLIP_DURATION_SECONDS", 180),
+    )
+
 
 def _load_persisted_settings(app, explicit_config_keys=None):
     """Load persisted runtime settings before service initialization."""
@@ -189,6 +198,8 @@ def _load_persisted_settings(app, explicit_config_keys=None):
         app.config["STORAGE_THRESHOLD_PERCENT"] = settings.storage_threshold_percent
     if "SESSION_TIMEOUT_MINUTES" not in explicit_config_keys:
         app.config["SESSION_TIMEOUT_MINUTES"] = settings.session_timeout_minutes
+    if "MOTION_POST_ROLL_SECONDS" not in explicit_config_keys:
+        app.config["MOTION_POST_ROLL_SECONDS"] = settings.motion_post_roll_seconds
 
     app.storage_manager.set_threshold_percent(app.config["STORAGE_THRESHOLD_PERCENT"])
 
@@ -292,9 +303,14 @@ def _init_services(app):
         data_dir=app.config["DATA_DIR"],
     )
 
-    # Connect storage manager → streaming service for dir change notifications
+    # Connect storage manager → streaming service for dir change notifications.
+    # Also keep the motion_clip_correlator in sync so clip_ref lookups don't
+    # quietly fail against a stale /data/recordings path after the operator
+    # selects a USB device.
     def _on_recording_dir_change(new_dir):
         app.streaming.update_recordings_dir(new_dir)
+        if getattr(app, "motion_clip_correlator", None) is not None:
+            app.motion_clip_correlator.set_recordings_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -311,6 +327,8 @@ def _init_services(app):
         streaming=app.streaming,
         control_client=app.camera_control_client,
         coordinator=app.on_demand_coordinator,
+        motion_event_store=app.motion_event_store,
+        motion_post_roll_seconds=app.config.get("MOTION_POST_ROLL_SECONDS", 10.0),
     )
     app.loop_recorder = LoopRecorder(
         base_dir=app.config["RECORDINGS_DIR"],
@@ -359,10 +377,14 @@ def _startup(app):
     _ensure_default_admin(app.store)
     log.debug("Default admin user ensured")
 
-    # Auto-mount USB if previously configured
+    # Auto-mount USB if previously configured. Keep the motion clip
+    # correlator aligned with the effective recordings path so it
+    # searches the right tree.
     recordings_dir = _auto_mount_usb(app, app.config["RECORDINGS_DIR"])
     if recordings_dir != app.config["RECORDINGS_DIR"]:
         app.streaming.update_recordings_dir(recordings_dir)
+        if getattr(app, "motion_clip_correlator", None) is not None:
+            app.motion_clip_correlator.set_recordings_dir(recordings_dir)
 
     app.streaming.start()
     app.storage_manager.start()
@@ -451,10 +473,24 @@ def _start_staleness_checker(app):
     def _run():
         import time
 
+        reap_counter = 0
         while True:
             try:
                 with app.app_context():
                     app.discovery_service.check_offline()
+                    # Every ~60s (6 ticks at 10s), sweep for orphaned motion
+                    # events — a camera started one and went dark before
+                    # sending "end". Closes anything open > 10 min so the UI
+                    # stops showing "ongoing" forever.
+                    reap_counter += 1
+                    if reap_counter >= 6:
+                        reap_counter = 0
+                        store = getattr(app, "motion_event_store", None)
+                        if store is not None:
+                            try:
+                                store.reap_stale()
+                            except Exception as exc:  # pragma: no cover
+                                log.warning("motion event reaper error: %s", exc)
             except Exception as exc:
                 log.warning("Staleness checker error: %s", exc)
             time.sleep(staleness_check_interval)
@@ -506,6 +542,7 @@ def _register_blueprints(app):
     from monitor.api.audit import audit_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
+    from monitor.api.motion_events import events_router_bp, motion_events_bp
     from monitor.api.on_demand import on_demand_bp
     from monitor.api.ota import ota_bp
     from monitor.api.pairing import pairing_bp
@@ -533,6 +570,10 @@ def _register_blueprints(app):
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
+    app.register_blueprint(motion_events_bp, url_prefix="/api/v1/motion-events")
+    # Click-through router at /events/<id>. Mounted at root (not /api/v1)
+    # so it can issue user-navigable redirects into /recordings and /live.
+    app.register_blueprint(events_router_bp)
     # ADR-0017: localhost-only on-demand coordinator for MediaMTX hooks.
     # Mounted outside /api/v1 so the CSRF layer on /api/* can stay strict.
     app.register_blueprint(on_demand_bp, url_prefix="/internal/on-demand")

@@ -46,6 +46,12 @@ class Camera:
     rotation: int = 0
     hflip: bool = False
     vflip: bool = False
+    # Motion detection sensitivity (ADR-0021): 1 (lowest) … 10 (highest).
+    # 5 = Medium is the shipping default; it catches hand-sized motion at
+    # a few metres while rejecting typical indoor sensor noise. Operators
+    # tune this per camera from Camera Settings; the server pushes changes
+    # over the existing control channel (ADR-0015).
+    motion_sensitivity: int = 5
     config_sync: str = "unknown"  # synced | pending | error | unknown
     # Live status fields — populated by heartbeat (ADR-0016)
     streaming: bool = False  # is camera actively streaming RTSP?
@@ -100,6 +106,35 @@ class Settings:
     # and stops deleting once free space reaches low + hysteresis.
     loop_low_watermark_percent: int = 10
     loop_hysteresis_percent: int = 5
+    # Motion detection (docs/exec-plans/motion-detection.md §Phase 4).
+    # When recording_mode="motion" on a camera, the RecordingScheduler
+    # keeps the recorder running for this many seconds after the last
+    # motion event ends — so the saved clip includes the tail of the
+    # scene (the person walking out of frame, the gate closing, etc.).
+    # Bump up for "I want 30 s of aftermath"; shrink to trim storage.
+    motion_post_roll_seconds: int = 10
+
+
+@dataclass
+class MotionEvent:
+    """A single motion detection, as surfaced by a camera.
+
+    See `docs/exec-plans/motion-detection.md`. Events are always logged
+    regardless of the camera's `recording_mode`; the optional `clip_ref`
+    is populated by the server when it can match the event timestamp to
+    a finalised clip on disk.
+    """
+
+    id: str  # e.g. "mot-20260419T143002Z-cam-d8ee"
+    camera_id: str
+    started_at: str  # ISO-8601 UTC, server-side authoritative time
+    ended_at: str | None = None  # None while active
+    peak_score: float = 0.0  # 0.0-1.0 fraction of pixels changed
+    peak_pixels_changed: int = 0
+    duration_seconds: float = 0.0
+    clip_ref: dict | None = None  # {camera_id, date, filename, offset_seconds}
+    zones: list[dict] = field(default_factory=list)  # future motion-zone support
+    version: int = 1
 
 
 @dataclass

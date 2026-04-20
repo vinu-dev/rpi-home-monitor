@@ -495,8 +495,10 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 #### SR-SRV-14: Per-Camera Recording Mode + Schedule (ADR-0017)
 
 - Each camera has a `recording_mode` of `off`, `continuous`, `schedule`, or
-  `motion`. `motion` is accepted by the API but evaluated as `off` until the
-  motion ADR lands.
+  `motion`. All four modes are fully implemented (`motion` per ADR-0021 as
+  of Phase 2, 2026-04-20). In `motion` mode, the RecordingScheduler
+  evaluates `MotionEventStore.is_camera_active()` every 10 s and starts /
+  stops the recorder with a 10 s post-roll after each event ends.
 - When `recording_mode = schedule`, the camera persists a
   `recording_schedule`: a list of `{days, start, end}` windows with HH:MM
   times and day codes `mon..sun`. Overnight windows (end ≤ start) span
@@ -517,6 +519,31 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 - The currently-writing segment SHALL never be deleted.
 - Each deletion SHALL emit a `RECORDING_ROTATED` audit event.
 - Watermark + hysteresis are exposed in the Storage settings tab.
+
+#### SR-SRV-16: Motion Detection + Events (ADR-0021)
+
+- Motion detection SHALL run on the camera using Picamera2's lores stream
+  (320×240 grayscale @ 5 fps). The server SHALL NOT decode RTSP to detect
+  motion — all detection is camera-side.
+- The detector SHALL emit a `start` event when motion crosses
+  `start_score_threshold` for `min_start_frames` consecutive frames and an
+  `end` event when score stays below `end_score_threshold` for
+  `min_end_frames` frames (hysteresis).
+- Each phase transition SHALL be POSTed to
+  `POST /api/v1/cameras/motion-event` with an HMAC-SHA256 signature over
+  the body, keyed by the pairing secret (same scheme as the heartbeat).
+- The server SHALL store every motion event in the `MotionEventStore` (JSON
+  file, capped at 10 000 rows with drop-oldest compaction) regardless of the
+  camera's `recording_mode`. Events outlive clips.
+- The server SHALL auto-close any still-open event for camera X when a new
+  `start` arrives from X (restart safety) and SHALL reap any event open for
+  more than 10 minutes in a 60 s background sweep.
+- A `/events/<id>` route SHALL resolve a motion event to either a
+  `/recordings?...&seek=<offset>` redirect (when a continuous clip covers
+  the motion timestamp) or `/live?cam=<id>` otherwise.
+- The dashboard "Recent events" feed and the `/events` page SHALL surface
+  motion events as first-class rows alongside clip rows, sorted newest
+  first, with a wall-clock timestamp (local timezone via `toLocaleTimeString`).
 
 #### SR-SRV-12: REST API
 

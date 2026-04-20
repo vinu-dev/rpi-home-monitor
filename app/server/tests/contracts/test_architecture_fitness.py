@@ -23,7 +23,14 @@ MONITOR_ROOT = Path(__file__).parents[2] / "monitor"
 API_ROOT = MONITOR_ROOT / "api"
 
 _MUTATING_METHODS = frozenset({"POST", "PUT", "DELETE", "PATCH"})
-_M2M_ROUTE_NAMES = frozenset({"config_notify", "camera_goodbye", "camera_heartbeat"})
+_M2M_ROUTE_NAMES = frozenset(
+    {
+        "config_notify",
+        "camera_goodbye",
+        "camera_heartbeat",
+        "camera_motion_event",
+    }
+)
 _SESSION_AUTH_DECORATORS = frozenset(
     {"login_required", "admin_required", "viewer_or_better"}
 )

@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Log - Home Monitor{% endblock %}
+
+{% block content %}
+<div x-data="logsPage()" x-init="init()">
+
+<h1 class="page-title">Activity log</h1>
+
+<!-- Filter chips for common categories. Same visual pattern as /events
+     so operators don't relearn a new vocabulary; the difference is the
+     data source (audit log vs motion events) and the admin-only gate. -->
+<div class="card mb-16">
+    <div class="chip-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <template x-for="opt in categoryOptions" :key="opt.value">
+            <button type="button"
+                    class="chip"
+                    :class="category === opt.value ? 'chip--active' : ''"
+                    @click="category = opt.value; load()"
+                    x-text="opt.label"></button>
+        </template>
+    </div>
+    <div class="inline-form__row">
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="log-user">User</label>
+            <input type="text" id="log-user" class="form-input" x-model="userFilter"
+                   @input.debounce.300="load()" placeholder="Any user">
+        </div>
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="log-from">From</label>
+            <input type="date" id="log-from" class="form-input" x-model="fromDate" @change="load()">
+        </div>
+        <div class="form-group" style="flex:1; min-width:140px;">
+            <label for="log-to">To</label>
+            <input type="date" id="log-to" class="form-input" x-model="toDate" @change="load()">
+        </div>
+    </div>
+</div>
+
+<!-- Admin-only banner when a non-admin somehow lands here. -->
+<div class="card mb-16" x-show="forbidden">
+    <p class="text-muted" style="margin:0;">
+        This page is available to administrators only.
+    </p>
+</div>
+
+<!-- Result count + refresh -->
+<div class="section-header" x-show="!forbidden">
+    <span x-text="headerLabel()"></span>
+    <button class="text-small" style="float:right; background:none; border:none; color:var(--color-accent); cursor:pointer;"
+            @click="load()" :disabled="loading">
+        <span x-show="!loading">Refresh</span>
+        <span x-show="loading">Loading...</span>
+    </button>
+</div>
+
+<!-- Empty / error -->
+<div class="card mb-16" x-show="!loading && !forbidden && events.length === 0 && !error">
+    <p class="text-muted" style="margin:0;">
+        No log entries match the current filters.
+    </p>
+</div>
+<div class="card mb-16" x-show="error">
+    <p class="text-muted" style="margin:0;" x-text="error"></p>
+</div>
+
+<!-- Log rows. Reuse the .event-row vocabulary for visual parity with
+     the Events page; each row shows:
+       type chip · time · user/actor · detail
+     Colour-coded backgrounds highlight failure / security severity via
+     the existing _auditEventClass helper (same one the dashboard teaser
+     uses). -->
+<div class="events-feed" x-show="!forbidden && events.length > 0">
+    <template x-for="ev in events" :key="ev._key">
+        <div class="event-row" :class="_auditEventClass(ev.event)">
+            <div class="event-row__trigger" style="cursor:default;">
+                <span class="event-row__type"
+                      :class="_auditEventTypeClass(ev.event)"
+                      x-text="_auditEventLabel(ev.event)"></span>
+                <span class="event-row__time" x-text="_relativeTime(ev.timestamp)"
+                      :title="ev.timestamp"></span>
+                <span class="event-row__camera" x-text="ev.user || '\u2014'"></span>
+                <span class="event-row__duration" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px;"
+                      x-text="ev.detail || (ev.ip ? 'from ' + ev.ip : '')"></span>
+                <span></span>
+            </div>
+        </div>
+    </template>
+</div>
+
+<div class="mb-16" style="text-align:center;" x-show="!forbidden && events.length > 0 && events.length >= limit">
+    <button type="button" class="btn btn--secondary btn--small"
+            @click="limit = limit + 100; load()" :disabled="loading">
+        Load more
+    </button>
+</div>
+
+</div>
+
+<script>
+function logsPage() {
+    return {
+        // Filter state
+        category: 'all',    // chip value
+        userFilter: '',
+        fromDate: '',
+        toDate: '',
+        limit: 100,
+
+        // Coarse categories map to sets of audit event codes. Keep these
+        // in sync with the server's AuditLogger event vocabulary — see
+        // monitor/services/audit.py. Adding a new category is adding one
+        // entry here; no server change needed.
+        categoryOptions: [
+            { value: 'all',      label: 'All' },
+            { value: 'auth',     label: 'Authentication', codes: ['LOGIN_OK', 'LOGIN_FAILED', 'LOGOUT', 'SESSION_EXPIRED'] },
+            { value: 'cameras',  label: 'Cameras',        codes: ['CAMERA_PAIRED', 'CAMERA_REMOVED', 'CAMERA_ONLINE', 'CAMERA_OFFLINE'] },
+            { value: 'users',    label: 'Users',          codes: ['USER_CREATED', 'USER_DELETED', 'PASSWORD_CHANGED'] },
+            { value: 'ota',      label: 'OTA',            codes: ['OTA_STARTED', 'OTA_COMPLETED', 'OTA_FAILED', 'OTA_ROLLBACK'] },
+            { value: 'system',   label: 'System',         codes: ['SETTINGS_CHANGED', 'FACTORY_RESET', 'CERT_GENERATED', 'CERT_REVOKED'] },
+        ],
+
+        // Data
+        events: [],
+        loading: false,
+        error: '',
+        forbidden: false,
+
+        async init() {
+            // Default window = last 7 days. Admins viewing a production
+            // log don't want every entry since install on first paint.
+            var today = new Date();
+            var weekAgo = new Date(today.getTime() - 7 * 86400000);
+            this.fromDate = this._ymd(weekAgo);
+            this.toDate = this._ymd(today);
+            await this.load();
+        },
+
+        async load() {
+            this.loading = true;
+            this.error = '';
+            this.forbidden = false;
+            try {
+                // Fetch more than the display limit so post-filter slicing
+                // still leaves the user with meaningful results. The API
+                // caps at 500; if we need more, we page via "load more".
+                var raw = await window.HM.api.get('/api/v1/audit/events?limit=500');
+                var events = (raw && raw.events) || [];
+                // Motion events are surfaced on /events with full
+                // playback — keep the activity log for security/ops
+                // events only.
+                events = events.filter(function(e) {
+                    return e.event !== 'MOTION_DETECTED' && e.event !== 'MOTION_ENDED';
+                });
+                // Category filter.
+                var codes = this._codesForCategory(this.category);
+                if (codes) {
+                    events = events.filter(function(e) {
+                        return codes.indexOf(e.event) !== -1;
+                    });
+                }
+                // User filter (case-insensitive substring).
+                if (this.userFilter) {
+                    var u = this.userFilter.toLowerCase();
+                    events = events.filter(function(e) {
+                        return (e.user || '').toLowerCase().indexOf(u) !== -1;
+                    });
+                }
+                // Date filters (timestamp is ISO8601Z).
+                if (this.fromDate) {
+                    var from = this.fromDate + 'T00:00:00Z';
+                    events = events.filter(function(e) { return (e.timestamp || '') >= from; });
+                }
+                if (this.toDate) {
+                    var to = this.toDate + 'T23:59:59Z';
+                    events = events.filter(function(e) { return (e.timestamp || '') <= to; });
+                }
+                // Stable key for Alpine's x-for. Timestamp + event + user
+                // handles simultaneous entries without collision.
+                events.forEach(function(e, idx) {
+                    e._key = (e.timestamp || '') + '/' + (e.event || '') + '/' + (e.user || '') + '/' + idx;
+                });
+                this.events = events.slice(0, this.limit);
+            } catch (e) {
+                // A 403 means viewer-level session hit an admin-only route.
+                // Detect via the fetch-wrapper error; fall back to generic.
+                var msg = String((e && e.message) || e || '');
+                if (msg.indexOf('403') !== -1 || msg.toLowerCase().indexOf('forbidden') !== -1) {
+                    this.forbidden = true;
+                    this.events = [];
+                } else {
+                    this.events = [];
+                    this.error = 'Failed to load log. Please refresh.';
+                }
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        _codesForCategory(value) {
+            if (value === 'all') return null;
+            var opt = this.categoryOptions.find(function(o) { return o.value === value; });
+            return opt ? opt.codes : null;
+        },
+
+        headerLabel() {
+            var n = this.events.length;
+            if (this.loading) return 'Loading log...';
+            if (n === 0) return 'No entries';
+            var suffix = n === 1 ? 'entry' : 'entries';
+            return n + ' ' + suffix;
+        },
+
+        _auditEventLabel(code) {
+            if (!code) return '';
+            var map = {
+                LOGIN_OK: 'Signed in',
+                LOGIN_FAILED: 'Login failed',
+                LOGOUT: 'Signed out',
+                SESSION_EXPIRED: 'Session expired',
+                USER_CREATED: 'User created',
+                USER_DELETED: 'User deleted',
+                PASSWORD_CHANGED: 'Password changed',
+                CAMERA_PAIRED: 'Camera paired',
+                CAMERA_REMOVED: 'Camera removed',
+                CAMERA_OFFLINE: 'Camera went offline',
+                CAMERA_ONLINE: 'Camera came online',
+                CLIP_DELETED: 'Clip deleted',
+                CLIPS_DELETED: 'Clips deleted',
+                OTA_STARTED: 'OTA started',
+                OTA_COMPLETED: 'OTA completed',
+                OTA_FAILED: 'OTA failed',
+                OTA_ROLLBACK: 'OTA rolled back',
+                FACTORY_RESET: 'Factory reset',
+                SETTINGS_CHANGED: 'Settings changed',
+                CERT_GENERATED: 'Cert generated',
+                CERT_REVOKED: 'Cert revoked',
+                FIREWALL_BLOCKED: 'Firewall blocked',
+            };
+            return map[code] || code.toLowerCase().replace(/_/g, ' ');
+        },
+
+        _auditEventClass(code) {
+            if (!code) return '';
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK') {
+                return 'log-teaser__row--bad';
+            }
+            if (code === 'CAMERA_OFFLINE' || code === 'FIREWALL_BLOCKED') {
+                return 'log-teaser__row--warn';
+            }
+            return '';
+        },
+
+        _auditEventTypeClass(code) {
+            // Subtle colour on the type chip so severity reads at a glance
+            // without needing full-row colour flips.
+            if (!code) return '';
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK') {
+                return 'event-row__type--motion';  // red treatment
+            }
+            return '';
+        },
+
+        _relativeTime(iso) {
+            if (!iso) return '';
+            var secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+            if (secs < 5) return 'just now';
+            if (secs < 60) return secs + 's ago';
+            if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+            if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+            return Math.floor(secs / 86400) + 'd ago';
+        },
+
+        _ymd(d) {
+            var m = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            return d.getFullYear() + '-' + m + '-' + day;
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -34,6 +34,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0018 | [Dashboard information architecture](0018-dashboard-information-architecture.md)                 | Accepted   |
 | 0019 | [Time sync and timezone](0019-time-sync-and-timezone.md)                                         | Accepted   |
 | 0020 | [Dual-transport OTA (server upload + server-to-camera push)](0020-dual-transport-ota.md)         | Accepted   |
+| 0021 | [Camera-side motion detection](0021-camera-side-motion-detection.md)                             | Accepted   |
 
 ## Writing a new ADR
 

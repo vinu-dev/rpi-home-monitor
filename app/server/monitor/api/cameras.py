@@ -281,6 +281,158 @@ def camera_heartbeat():
     return jsonify(response), 200
 
 
+# Per-camera rate limit for motion-event POSTs. A stuck detector firing
+# faster than this is dropped at the edge so it can't saturate the event
+# store. 20 s matches the min_end_frames + cooldown window on the camera
+# side — legitimate events can't arrive faster than that anyway.
+_MOTION_RATE_LIMIT_SECONDS = 20
+_motion_rate_last_start: dict[str, float] = {}
+_motion_rate_lock = threading.Lock()
+
+
+@cameras_bp.route("/motion-event", methods=["POST"])
+def camera_motion_event():
+    """Accept a motion-detection event from a camera.
+
+    Auth: HMAC-SHA256 signature using pairing_secret (same scheme as
+    heartbeat + config-notify). No session/CSRF — machine-to-machine.
+
+    Body JSON:
+        {
+          "phase": "start" | "end",
+          "event_id": "mot-...",     # client-chosen; stable across start+end
+          "started_at": "ISO8601Z",  # camera-reported, informational
+          "peak_score": float,       # 0.0-1.0
+          "peak_pixels_changed": int,
+          "duration_seconds": float  # 0 for start, actual duration for end
+        }
+
+    On `phase=start` the server creates a new MotionEvent with the
+    server-side authoritative timestamp. On `phase=end` it upserts the
+    existing event with final duration + peak. An `AUDIT` event is
+    emitted for each transition.
+
+    Per-camera rate limit: at most one phase=start per 20 seconds. Excess
+    returns 429 and is NOT persisted.
+    """
+    camera_id, err = _verify_camera_hmac(request)
+    if err:
+        status_code = 401 if err != "Invalid timestamp" else 400
+        return jsonify({"error": err}), status_code
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    phase = data.get("phase")
+    if phase not in ("start", "end"):
+        return jsonify({"error": "phase must be 'start' or 'end'"}), 400
+
+    event_id = data.get("event_id") or ""
+    if not event_id or not isinstance(event_id, str):
+        return jsonify({"error": "event_id required"}), 400
+
+    # Rate limit only applies to phase=start — end events are bounded by
+    # the preceding start and should never be dropped.
+    if phase == "start":
+        now = time.time()
+        with _motion_rate_lock:
+            last = _motion_rate_last_start.get(camera_id, 0.0)
+            if now - last < _MOTION_RATE_LIMIT_SECONDS:
+                return jsonify({"error": "Rate limited"}), 429
+            _motion_rate_last_start[camera_id] = now
+
+    from monitor.models import MotionEvent
+
+    store = current_app.motion_event_store
+    server_ts = request.headers.get("X-Timestamp", "")
+    # Convert the HMAC-validated X-Timestamp (epoch seconds) to ISO8601 UTC
+    # so the event time is always server-authoritative — camera clock
+    # skew cannot corrupt clip lookups later.
+    try:
+        from datetime import UTC, datetime
+
+        iso_server = datetime.fromtimestamp(int(server_ts), UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    except (ValueError, OSError):
+        return jsonify({"error": "Invalid timestamp"}), 400
+
+    if phase == "start":
+        evt = MotionEvent(
+            id=event_id,
+            camera_id=camera_id,
+            started_at=iso_server,
+            ended_at=None,
+            peak_score=float(data.get("peak_score") or 0.0),
+            peak_pixels_changed=int(data.get("peak_pixels_changed") or 0),
+            duration_seconds=0.0,
+        )
+        store.append(evt)
+        current_app.audit.log_event(
+            event="MOTION_DETECTED",
+            user="camera",
+            ip=request.remote_addr or "",
+            detail=f"{camera_id} event={event_id} score={evt.peak_score:.3f}",
+        )
+        return jsonify({"message": "Event recorded", "event_id": event_id}), 200
+
+    # phase == "end"
+    existing = store.get(event_id)
+    if existing is None:
+        # End without a preceding start — create a closed event anyway
+        # so callers can't lose information due to a race.
+        evt = MotionEvent(
+            id=event_id,
+            camera_id=camera_id,
+            started_at=iso_server,
+            ended_at=iso_server,
+            peak_score=float(data.get("peak_score") or 0.0),
+            peak_pixels_changed=int(data.get("peak_pixels_changed") or 0),
+            duration_seconds=float(data.get("duration_seconds") or 0.0),
+        )
+        store.append(evt)
+    else:
+        existing.ended_at = iso_server
+        existing.peak_score = max(
+            existing.peak_score, float(data.get("peak_score") or 0.0)
+        )
+        existing.peak_pixels_changed = max(
+            existing.peak_pixels_changed,
+            int(data.get("peak_pixels_changed") or 0),
+        )
+        existing.duration_seconds = float(data.get("duration_seconds") or 0.0)
+        store.append(existing)
+
+    current_app.audit.log_event(
+        event="MOTION_ENDED",
+        user="camera",
+        ip=request.remote_addr or "",
+        detail=(
+            f"{camera_id} event={event_id} "
+            f"duration={data.get('duration_seconds', 0.0):.1f}s"
+        ),
+    )
+
+    # Auto-attach clip_ref when the event ends so the dashboard can
+    # know immediately whether a saved clip covers this motion. The
+    # correlator filters on finalised .mp4 (ignoring .mp4.part), so it
+    # returns None if the segment is still being written — in that
+    # case the dashboard's click handler will fall back to Live.
+    try:
+        correlator = getattr(current_app, "motion_clip_correlator", None)
+        if correlator is not None:
+            current = store.get(event_id)
+            if current is not None and not current.clip_ref:
+                clip_ref = correlator.find_clip(camera_id, current.started_at)
+                if clip_ref is not None:
+                    store.attach_clip(event_id, clip_ref)
+    except Exception:
+        # Correlator is a side-effect; never fail the response on its account.
+        pass
+    return jsonify({"message": "Event closed", "event_id": event_id}), 200
+
+
 @cameras_bp.route("/scan", methods=["POST"])
 @admin_required
 @csrf_protect

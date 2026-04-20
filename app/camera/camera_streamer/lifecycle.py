@@ -300,6 +300,7 @@ class CameraLifecycle:
         self._stream = StreamManager(
             self._config,
             camera_device=self._platform.camera_device,
+            pairing_manager=self._pairing,
         )
         desired = _read_desired_stream_state(self._stream_state_path)
         if self._config.is_configured and desired == "running":
