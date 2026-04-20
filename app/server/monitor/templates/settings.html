@@ -852,28 +852,39 @@
                                 <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
                             </div>
                         </div>
-                        <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
-                        <span x-show="d.in_use" class="text-small text-muted">Active — eject below to switch</span>
-                        <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                            <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                            <span x-show="d.in_use" class="text-small text-muted">Active</span>
+                            <!-- Issue #107: Reformat available for all device states.
+                                 In-use drives auto-eject first via showFormat(). -->
+                            <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
+                            <button x-show="d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Reformat</button>
+                        </div>
                     </div>
                 </template>
             </div>
         </div>
 
-        <!-- Format Dialog -->
+        <!-- Format Dialog (issue #107: supports all device states) -->
         <div class="inline-form" :class="{ visible: storage.showFormat }">
             <div class="card" style="margin-top:12px;">
                 <div class="msg msg--warn">
-                    WARNING: Formatting will ERASE ALL DATA on the device. This cannot be undone.
+                    <strong>WARNING:</strong> Formatting will ERASE ALL DATA on the device. This cannot be undone.
+                    <span x-show="storage.formatDevice.in_use">
+                        This drive is currently active — all recordings stored on it will be permanently lost.
+                        Recording will switch to internal storage after format.
+                    </span>
                 </div>
                 <p style="margin:12px 0;">
-                    Device <strong x-text="storage.formatDevice.model || '--'"></strong> has an unsupported filesystem
-                    (<span x-text="storage.formatDevice.fstype || '--'"></span>). Format it to ext4?
+                    Device <strong x-text="storage.formatDevice.model || '--'"></strong>
+                    (<span x-text="storage.formatDevice.path || '--'"></span>,
+                    <span x-text="storage.formatDevice.fstype || 'unformatted'"></span>).
+                    Format to ext4?
                 </p>
                 <button class="btn btn--danger btn--small" @click="formatUsb()" :disabled="storage.formatting">
-                    <span x-text="storage.formatting ? 'Formatting...' : 'Format to ext4'"></span>
+                    <span x-text="storage.formatting ? 'Formatting...' : (storage.formatDevice.in_use ? 'Eject &amp; format to ext4' : 'Format to ext4')"></span>
                 </button>
-                <button class="btn btn--secondary btn--small" @click="storage.showFormat = false" style="margin-left:8px;">Cancel</button>
+                <button class="btn btn--secondary btn--small" @click="storage.showFormat = false" style="margin-left:8px;" :disabled="storage.formatting">Cancel</button>
             </div>
         </div>
 
@@ -1706,9 +1717,22 @@ function settingsPage() {
         async formatUsb() {
             this.storage.formatting = true;
             try {
+                // Issue #107: in-use drive must be ejected first. The format
+                // endpoint refuses to operate on a mounted device, so switch
+                // recordings back to internal storage and unmount, then format.
+                if (this.storage.formatDevice.in_use) {
+                    try {
+                        await window.HM.api.post('/api/v1/storage/eject', {});
+                    } catch(e) {
+                        window.HM.toast('Eject failed: ' + (e.message || 'unknown'), 'error');
+                        this.storage.formatting = false;
+                        return;
+                    }
+                }
                 var data = await window.HM.api.post('/api/v1/storage/format', { device_path: this.storage.formatDevice.path, confirm: true });
                 window.HM.toast(data.message || 'Format complete', 'success');
                 this.storage.showFormat = false;
+                this.loadStorageStatus();
                 this.scanUsb();
             } catch(e) { window.HM.toast(e.message || 'Format failed', 'error'); }
             this.storage.formatting = false;
