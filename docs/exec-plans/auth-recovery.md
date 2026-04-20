@@ -1,9 +1,9 @@
 # Exec Plan — Authentication Recovery
 
-**Status:** Accepted. Slice 1 (admin resets other user + CLI admin recovery) shipped with this plan.
-**Date:** 2026-04-20
+**Status:** Accepted. Slice 1 (admin resets other user) shipped. The originally-planned CLI admin-recovery script was removed on review — any documented command that bypasses the admin password is a backdoor regardless of its permission envelope. Admin-forgot recovery is now a hardware factory reset tracked as hardware-refresh work (see [`docs/admin-recovery.md`](../admin-recovery.md)).
+**Date:** 2026-04-20 (initial) → 2026-04-20 (revised — removed CLI path)
 **Owner:** vinu-dev
-**Closes:** #99 (slice 1), #100. Slice 2 (self-service reset token) tracked in #99; secrets-at-rest tracked in #101.
+**Closes:** #99 (slice 1). Slice 2 (self-service reset token) tracked in #99; secrets-at-rest tracked in #101. #100 reframed as hardware factory reset, deferred to hardware work.
 
 ## Why
 
@@ -49,32 +49,17 @@ The first two are urgent usability bugs. The third is an architectural layer (LU
   - Refuse to reset the only remaining admin. The service already guards "can't demote the last admin" — extend the same guard to "can't force-change the last admin" so the admin can't strand themselves in a must-change loop if the reset fails halfway.
   - All reset flows audit-log.
 
-### 1b. CLI admin recovery (issue #100 Option A)
+### 1b. ~~CLI admin recovery~~ — rejected on review
 
-**Script.** `scripts/reset-admin-password.py` — a standalone, argparse-driven Python script.
-  - Imports only stdlib at top-level so it runs on the camera image out of the box. The bcrypt / user-store modules are late-imported inside `main()` so `--help` works even when the monitor app isn't importable.
-  - Loads `/data/config/users.json` (path overridable via `--store`) using the same `JsonFileStore` the app uses — atomic writes, same on-disk format.
-  - Finds the first user whose `role == "admin"`. Refuses if there is zero, or prints all candidates if more than one and `--username` wasn't supplied.
-  - Writes a new bcrypt hash using the same `hash_password()` the app uses (cost 12) so the hash format matches exactly.
-  - Sets `must_change_password: true` so the admin is forced to rotate on first login.
-  - Writes a line to `/data/config/audit.log` recording `PASSWORD_RESET_VIA_CLI` with the acting Unix user. The audit event is ingested by the running app on its next poll.
-  - Does **not** restart the monitor service — the user store reads from disk on each `get_user` call via `JsonFileStore`, so a fresh bcrypt hash on disk takes effect immediately without a restart.
+An earlier revision of this plan shipped `scripts/reset-admin-password.py`: a sudo-only Python script that rewrote the admin's bcrypt hash in-place. It was removed, and the deploy path along with it, after a product review.
 
-**Invocation.**
-  ```
-  sudo python3 /opt/monitor/scripts/reset-admin-password.py \
-      --username admin \
-      --password 'temp-password-123'
-  ```
-  `--password` is mandatory (no interactive prompt) so the command is captured faithfully in shell history and the operator knows what to hand back to the user.
+**Why rejected.** Even narrowly scoped, a documented command that resets the admin password is a backdoor. Threat-model language aside ("sudo = operator-trusted, same bar as rm -rf"), the practical problem is that a *searchable, discoverable* recovery command on a home-security product normalises the "physical access == easy bypass" mental model. That's a posture we're explicitly rejecting.
 
-**Security model.** The script is only effective to someone who can already `sudo` on the device. That's the same bar as `systemctl stop` or `rm -rf /data` — consistent with ADR-0009's trust boundary ("physical / SSH access = operator-trusted"). Not a new threat surface.
+**Consequence.** The "sole admin locked out" case has **no software recovery**. It becomes a **hardware factory reset** — a pin-short / button on the server board that wipes `/data` and returns to first-boot. Tracked as hardware-refresh work; documented interim in `docs/admin-recovery.md`.
 
-### 1c. "Forgot password?" link on `/login`
+### 1c. "Forgot password?" on `/login`
 
-A `<a href="#" …>` on the login page that opens a short static note: *"Ask your admin to reset it from Settings → Users. If you are the admin and have no other admin account, run `sudo /opt/monitor/scripts/reset-admin-password.py --help` on the device."*
-
-This is a one-line documentation surface — sets expectations now, leaves room for the token flow later.
+**Never a disclosure.** A pre-auth surface must not leak the existence of recovery paths. The login page shows a single muted line: *"Contact your administrator if you can't sign in."* No command, no mention of SSH, no link to documentation. Full recovery procedure lives in `docs/admin-recovery.md` (in the repo, not served on the device).
 
 ## Slice 2 — deferred (#99 case 2)
 
