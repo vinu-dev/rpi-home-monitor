@@ -179,23 +179,43 @@ def _ensure_tls_material(config):
 def _wrap_https_server(server, config):
     """Wrap the status server socket with TLS.
 
-    Uses CERT_NONE so browsers (Chrome/Edge) can connect without being
-    asked for a client certificate. Control API endpoints authenticate the
-    server by its IP address (config.server_ip) which is set during pairing
-    and is sufficient for a home LAN. Raw mTLS peer-cert verification is
-    kept as a secondary check for clients that voluntarily present a cert.
+    Uses ``CERT_OPTIONAL`` so browsers (Chrome/Edge) that don't have a
+    client cert can still reach the human-facing login + status pages,
+    while machine-facing ``/api/v1/control/*`` requests that DO present
+    a client cert have it validated against the paired CA. The control
+    handler itself (``_require_mtls``) then enforces the presence + CA
+    signature — no cert, no call. See ADR-0022 + issue #112.
+
+    Prior behaviour was CERT_NONE with ``_require_mtls`` falling back to
+    a source-IP check against ``config.server_ip``. That let anyone on
+    the same LAN who could spoof / inherit the server IP call machine
+    endpoints. Now the peer must hold a CA-signed client cert.
     """
     cert_path, key_path = _ensure_tls_material(config)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
     ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE  # don't request client cert — breaks Chrome
 
-    # Still load the CA so getpeercert() works if a client voluntarily sends one
     ca_path = os.path.join(config.certs_dir, "ca.crt")
     if os.path.isfile(ca_path):
         ctx.load_verify_locations(ca_path)
-        log.info("CA loaded for peer-cert inspection (CA: %s)", ca_path)
+        # CERT_OPTIONAL: ask for a client cert. If the peer sends one,
+        # the TLS layer validates it against ca.crt before the HTTP
+        # handler runs. If the peer sends nothing, the connection still
+        # completes (browsers need this) and the HTTP handler decides
+        # whether to allow the call based on the path.
+        ctx.verify_mode = ssl.CERT_OPTIONAL
+        log.info("TLS client-cert validation enabled (CA: %s)", ca_path)
+    else:
+        # Pre-pairing bring-up: no CA yet. The status server runs over
+        # plain TLS; control endpoints stay locked because no peer can
+        # present a CA-signed cert.
+        ctx.verify_mode = ssl.CERT_NONE
+        log.warning(
+            "CA not present at %s — control-endpoint mTLS cannot be enforced "
+            "until the camera is paired",
+            ca_path,
+        )
 
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
     return server
@@ -463,37 +483,21 @@ def _make_status_handler(
             log.debug("Status HTTPS: " + format % args)
 
         def _has_mtls_client_cert(self):
-            """Check if the request is from the paired server.
+            """True iff the peer presented a client cert validated by OpenSSL.
 
-            Accepts the request if:
-            - The client IP matches config.server_ip (set during pairing,
-              either as an IP literal or as a hostname resolved to one), OR
-            - The client voluntarily presented a valid TLS peer certificate.
-
-            The SSL context uses CERT_NONE so browsers don't get a client-cert
-            challenge (which breaks Chrome/Edge). Server IP check is the primary
-            auth path; peer-cert is a fallback for future full mTLS enforcement.
+            The TLS layer (``CERT_OPTIONAL`` + ``load_verify_locations``)
+            already validated any cert the peer sent against the paired
+            CA before the HTTP handler runs — so ``getpeercert()``
+            returning a non-empty dict is proof of valid CA signature.
+            No peer cert → dict is empty → False. Issue #112 / #119.
+            Source-IP fallback was removed: a LAN attacker who could
+            spoof ``config.server_ip`` could previously bypass auth.
             """
-            server_ip = getattr(config, "server_ip", "") or ""
-            if server_ip:
-                client_ip = self.client_address[0]
-                if client_ip == server_ip:
-                    return True
-                # server_ip may be a hostname (e.g. "rpi-divinu.local").
-                # Resolve it so a fresh DNS/mDNS lookup matches the raw
-                # TCP client IP we see here.
-                try:
-                    resolved = socket.gethostbyname(server_ip)
-                except (socket.gaierror, socket.herror):
-                    resolved = ""
-                if resolved and client_ip == resolved:
-                    return True
-            # Fallback: TLS peer cert (only when client voluntarily sends one)
             try:
                 peer_cert = self.request.getpeercert()
-                return peer_cert is not None and len(peer_cert) > 0
             except (AttributeError, ValueError):
                 return False
+            return bool(peer_cert)
 
         def _require_mtls(self):
             """Require mTLS client certificate for control API endpoints."""

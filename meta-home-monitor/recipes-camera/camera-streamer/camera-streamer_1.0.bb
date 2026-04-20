@@ -5,8 +5,11 @@
 SUMMARY = "Camera RTSP streamer for home monitoring"
 DESCRIPTION = "Captures video from the PiHut ZeroCam via v4l2 \
 and streams it over RTSPS to the home monitoring server."
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+# Project is AGPL-3.0-only (see repo-root LICENSE). A prior revision of
+# this recipe declared MIT — that was incorrect and contaminated SBOM /
+# license-report output for the shipped camera image (issue #120).
+LICENSE = "AGPL-3.0-only"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=eb1e647870add0502f8f010b19de32af"
 
 # Source files from app/camera/ directory in the repo
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:"

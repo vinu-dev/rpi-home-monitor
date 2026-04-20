@@ -5,8 +5,11 @@
 SUMMARY = "Home monitoring server with web UI and video recording"
 DESCRIPTION = "Flask-based web server that manages RTSP camera streams, \
 records video using ffmpeg, and provides a mobile-friendly web interface."
-LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+# Project is AGPL-3.0-only (see repo-root LICENSE). A prior revision of
+# this recipe declared MIT — that was incorrect and contaminated SBOM /
+# license-report output for the shipped server image (issue #120).
+LICENSE = "AGPL-3.0-only"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=eb1e647870add0502f8f010b19de32af"
 
 # Source files from app/server/ directory in the repo
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/server:"

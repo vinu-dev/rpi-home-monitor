@@ -416,7 +416,7 @@ class TestAdminResetAnotherUser:
         so that admin can't be trapped in a must-change loop."""
         sole_admin = _make_user(id="user-001", role="admin")
         store.get_user.return_value = sole_admin
-        store.list_users.return_value = [sole_admin]
+        store.get_users.return_value = [sole_admin]
         msg, status = svc.change_password(
             "user-001",
             "newpassword12",
@@ -429,6 +429,47 @@ class TestAdminResetAnotherUser:
         assert status == 400
         assert "only admin" in msg.lower()
         store.save_user.assert_not_called()
+
+    def test_safety_rail_uses_real_store_method_name(self, tmp_path):
+        """Regression for issue #117 — the guard previously called
+        ``self._store.list_users()``, a method that doesn't exist on the
+        concrete ``Store``. Exercise the real class (not a MagicMock) so
+        any future rename of get_users → list_users fails loudly here
+        instead of crashing in production with AttributeError."""
+        from monitor.services.user_service import UserService
+        from monitor.store import Store
+
+        real_store = Store(config_dir=str(tmp_path))
+        # Seed two admins so the "only admin" guard is NOT triggered —
+        # we just want the code path that calls get_users() to execute.
+        from monitor.auth import hash_password
+        from monitor.models import User
+
+        for i, uname in enumerate(("alice", "bob"), start=1):
+            real_store.save_user(
+                User(
+                    id=f"user-{i:03d}",
+                    username=uname,
+                    password_hash=hash_password("temp" + "x" * 12),
+                    role="admin",
+                    must_change_password=False,
+                )
+            )
+
+        svc = UserService(real_store, audit=None)
+        msg, status = svc.change_password(
+            "user-001",
+            "new-temp-password-123",
+            requesting_role="admin",
+            requesting_user_id="user-002",  # the other admin
+            requesting_user="bob",
+            requesting_ip="10.0.0.1",
+            force_change_next_login=True,
+        )
+        # Must succeed — not crash with AttributeError.
+        assert status == 200, msg
+        reloaded = real_store.get_user("user-001")
+        assert reloaded.must_change_password is True
 
 
 # ---------------------------------------------------------------------------
