@@ -23,7 +23,10 @@ inherit packagegroup
 #   - python3-picamera2                — Picamera2 high-level API.
 #   - python3-numpy                    — motion state machine does
 #                                        vector magnitude aggregation.
-#   - python3-simplejpeg / pillow      — picamera2 snapshot paths.
+# JPEG snapshot paths inside picamera2 are lazy-imported by our
+# 0001-lazy-optional-imports.patch, so simplejpeg / pillow / piexif /
+# pidng are intentionally NOT pulled here — they'd drag large vendored
+# source trees through bitbake.
 RDEPENDS:${PN} = " \
     ffmpeg \
     v4l-utils \
@@ -32,6 +35,4 @@ RDEPENDS:${PN} = " \
     libcamera-pycamera \
     python3-picamera2 \
     python3-numpy \
-    python3-simplejpeg \
-    python3-pillow \
     "

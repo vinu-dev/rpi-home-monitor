@@ -1,0 +1,97 @@
+From: meta-home-monitor <noreply@anthropic.com>
+Date: Sun, 20 Apr 2026 00:00:00 +0000
+Subject: [PATCH] lazy-load JPEG/DNG/PyAV/videodev2 optional imports
+
+We only use the H264Encoder + dual-stream capture path on the Zero 2W
+camera. Upstream picamera2 eagerly imports simplejpeg, piexif, pidng,
+PIL, videodev2, and the libav_* encoders at package load — pulling a
+large transitive dependency chain we don't ship (simplejpeg bundles
+libjpeg-turbo and yasm source in setup.py, which bitbake can't fetch).
+
+Make each optional import soft: if the module isn't present, skip it.
+The corresponding picamera2 features become unusable (they'd raise
+NameError / AttributeError when called) but H264Encoder + capture_array
+still work, which is all our motion-detection pipeline needs.
+
+--- a/picamera2/request.py
++++ b/picamera2/request.py
+@@ -9,11 +9,23 @@
+
+ import libcamera
+ import numpy as np
+-import piexif
+-import simplejpeg
+-from pidng.camdefs import Picamera2Camera
+-from pidng.core import PICAM2DNG
+-from PIL import Image
++try:
++    import piexif
++except ImportError:
++    piexif = None
++try:
++    import simplejpeg
++except ImportError:
++    simplejpeg = None
++try:
++    from pidng.camdefs import Picamera2Camera
++    from pidng.core import PICAM2DNG
++except ImportError:
++    Picamera2Camera = None
++    PICAM2DNG = None
++try:
++    from PIL import Image
++except ImportError:
++    Image = None
+
+ import picamera2.formats as formats
+
+--- a/picamera2/encoders/__init__.py
++++ b/picamera2/encoders/__init__.py
+@@ -1,14 +1,29 @@
+ import fcntl
+
+-import videodev2
++try:
++    import videodev2
++except ImportError:
++    videodev2 = None
+
+ from picamera2.platform import Platform, get_platform
+
+ from .encoder import Encoder, Quality
+-from .jpeg_encoder import JpegEncoder
+-from .libav_h264_encoder import LibavH264Encoder
+-from .libav_mjpeg_encoder import LibavMjpegEncoder
+-from .multi_encoder import MultiEncoder
++try:
++    from .jpeg_encoder import JpegEncoder
++except ImportError:
++    JpegEncoder = None
++try:
++    from .libav_h264_encoder import LibavH264Encoder
++except ImportError:
++    LibavH264Encoder = None
++try:
++    from .libav_mjpeg_encoder import LibavMjpegEncoder
++except ImportError:
++    LibavMjpegEncoder = None
++try:
++    from .multi_encoder import MultiEncoder
++except ImportError:
++    MultiEncoder = None
+
+ _hw_encoder_available = get_platform() == Platform.VC4
+
+--- a/picamera2/encoders/jpeg_encoder.py
++++ b/picamera2/encoders/jpeg_encoder.py
+@@ -1,6 +1,9 @@
+ """JPEG encoder functionality"""
+
+-import simplejpeg
++try:
++    import simplejpeg
++except ImportError:
++    simplejpeg = None
+
+ from picamera2.encoders import Quality
+
