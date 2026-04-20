@@ -24,7 +24,24 @@
 <!-- Controls -->
 <div class="flex-between mt-8">
     <span id="live-stream-status" class="text-muted text-small"></span>
-    <div>
+    <!-- Player controls. The <video> element deliberately has no
+         native ``controls`` attribute (issue #96) — the dark theme
+         conflicts with native bars and the custom buttons need
+         disabled-gating on stream state. Icons are text glyphs to
+         avoid shipping an SVG icon set for four buttons. -->
+    <div class="live-controls">
+        <button class="btn btn--secondary btn--small" id="btn-mute"
+                disabled aria-label="Toggle sound" title="Toggle sound">
+            <span id="btn-mute-icon">&#x1F507;</span>
+        </button>
+        <button class="btn btn--secondary btn--small" id="btn-pip"
+                disabled aria-label="Picture in picture" title="Picture in picture">
+            &#x2B1A;
+        </button>
+        <button class="btn btn--secondary btn--small" id="btn-fullscreen"
+                disabled aria-label="Fullscreen" title="Fullscreen">
+            <span id="btn-fullscreen-icon">&#x26F6;</span>
+        </button>
         <button class="btn btn--secondary btn--small" id="btn-snapshot" disabled>Snapshot</button>
     </div>
 </div>
@@ -73,8 +90,27 @@
     var overlayText = document.getElementById('live-overlay-text');
     var selectEl = document.getElementById('live-camera-select');
     var btnSnapshot = document.getElementById('btn-snapshot');
+    var btnMute = document.getElementById('btn-mute');
+    var btnMuteIcon = document.getElementById('btn-mute-icon');
+    var btnPip = document.getElementById('btn-pip');
+    var btnFullscreen = document.getElementById('btn-fullscreen');
     var statusEl = document.getElementById('live-stream-status');
     var infoPanel = document.getElementById('live-camera-info');
+
+    // Player-control buttons share the same enabled/disabled state as
+    // Snapshot (enabled only while a stream is live). Centralised here so
+    // the cascade (WebRTC → HLS.js → native HLS) + destroyStream() all
+    // toggle a single helper.
+    function setControlsEnabled(enabled) {
+        btnSnapshot.disabled = !enabled;
+        btnMute.disabled = !enabled;
+        // PiP: only enable where the browser supports it.
+        var pipSupported = 'pictureInPictureEnabled' in document &&
+                           document.pictureInPictureEnabled;
+        btnPip.disabled = !(enabled && pipSupported);
+        // Fullscreen: universal support — enable if a stream is live.
+        btnFullscreen.disabled = !enabled;
+    }
 
     var peerConnection = null;
     var hlsInstance = null;
@@ -167,7 +203,7 @@
         videoEl.srcObject = null;
         videoEl.removeAttribute('src');
         videoEl.load();
-        btnSnapshot.disabled = true;
+        setControlsEnabled(false);
         statusEl.textContent = '';
         currentTransport = '';
     }
@@ -229,7 +265,7 @@
                     clearTimeout(timeout);
                     currentTransport = 'webrtc';
                     hideOverlay();
-                    btnSnapshot.disabled = false;
+                    setControlsEnabled(true);
                     statusEl.textContent = 'Live (WebRTC)';
                     resolve();
                 }
@@ -312,7 +348,7 @@
             videoEl.addEventListener('loadedmetadata', function onLoaded() {
                 videoEl.removeEventListener('loadedmetadata', onLoaded);
                 hideOverlay();
-                btnSnapshot.disabled = false;
+                setControlsEnabled(true);
                 statusEl.textContent = 'Live (HLS)';
             });
             videoEl.addEventListener('error', function onErr() {
@@ -337,7 +373,7 @@
 
             hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
                 hideOverlay();
-                btnSnapshot.disabled = false;
+                setControlsEnabled(true);
                 statusEl.textContent = 'Live (HLS)';
                 videoEl.play().catch(function() {});
             });
@@ -373,6 +409,76 @@
             window.open('/api/v1/live/' + encodeURIComponent(cameraId) + '/snapshot', '_blank');
         }
     });
+
+    // --- Mute / unmute ---
+    // Stream starts muted (autoplay policy); unmute only on user gesture.
+    function refreshMuteIcon() {
+        // 🔇 when muted, 🔊 when unmuted.
+        btnMuteIcon.textContent = videoEl.muted ? '\u{1F507}' : '\u{1F50A}';
+        btnMute.setAttribute(
+            'aria-label', videoEl.muted ? 'Unmute' : 'Mute'
+        );
+        btnMute.setAttribute('title', videoEl.muted ? 'Unmute' : 'Mute');
+    }
+    btnMute.addEventListener('click', function() {
+        videoEl.muted = !videoEl.muted;
+        refreshMuteIcon();
+    });
+    videoEl.addEventListener('volumechange', refreshMuteIcon);
+
+    // --- Picture-in-picture ---
+    btnPip.addEventListener('click', function() {
+        if (!document.pictureInPictureEnabled) return;
+        if (document.pictureInPictureElement === videoEl) {
+            document.exitPictureInPicture().catch(function() {});
+        } else {
+            videoEl.requestPictureInPicture().catch(function() {
+                // User gesture required / not supported — silently ignore.
+            });
+        }
+    });
+
+    // --- Fullscreen ---
+    // Use the video container so custom overlays (status, snapshot
+    // flash) also enter fullscreen, not just the bare <video>.
+    var fsTarget = document.getElementById('live-video-container') || videoEl;
+    function enterFullscreen() {
+        var fn = fsTarget.requestFullscreen ||
+                 fsTarget.webkitRequestFullscreen ||
+                 videoEl.webkitEnterFullscreen;  // iOS Safari native video
+        if (fn) {
+            try { fn.call(fsTarget.webkitEnterFullscreen ? videoEl : fsTarget); }
+            catch (e) { /* silently ignore — user gesture required */ }
+        }
+        // Best-effort landscape lock on mobile; wrapped because
+        // screen.orientation is undefined on iOS Safari.
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(function() {});
+            }
+        } catch (e) { /* noop */ }
+    }
+    function exitFullscreen() {
+        var fn = document.exitFullscreen || document.webkitExitFullscreen;
+        if (fn) fn.call(document);
+    }
+    btnFullscreen.addEventListener('click', function() {
+        var current = document.fullscreenElement || document.webkitFullscreenElement;
+        if (current) { exitFullscreen(); } else { enterFullscreen(); }
+    });
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach(function(ev) {
+        document.addEventListener(ev, function() {
+            var active = document.fullscreenElement || document.webkitFullscreenElement;
+            btnFullscreen.setAttribute(
+                'aria-label', active ? 'Exit fullscreen' : 'Fullscreen'
+            );
+            btnFullscreen.setAttribute(
+                'title', active ? 'Exit fullscreen' : 'Fullscreen'
+            );
+        });
+    });
+
+    refreshMuteIcon();
 
     function init() { loadCameras(); }
 

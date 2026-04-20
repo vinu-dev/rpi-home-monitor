@@ -746,18 +746,24 @@ select.form-input {
     display: block;
     margin: 0;
 }
-.inline-player video {
+.inline-player video,
+.inline-player__placeholder {
     width: 100%;
     aspect-ratio: 16 / 9;
+    /* Cap the player at ~45 % of the viewport so the clip list below
+       always has at least half the screen to scroll through — important
+       on short viewports (Echo Show, small tablets, narrow browser
+       windows). Without this cap a full-width 16:9 player eats the
+       entire visible area under the top nav on compact displays
+       (issue #95). object-fit contain keeps the frame aspect-correct
+       when the cap kicks in (letterbox instead of distort). */
+    max-height: 45vh;
+    object-fit: contain;
     border-radius: var(--radius-md);
     background: #000;
     display: block;
 }
 .inline-player__placeholder {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    border-radius: var(--radius-md);
-    background: #000;
     color: var(--color-text-muted);
     display: flex;
     align-items: center;
@@ -769,6 +775,16 @@ select.form-input {
 }
 .inline-player__placeholder.hidden { display: none; }
 .inline-player video.hidden { display: none; }
+
+/* Live player button row (issue #96) — Mute / PiP / Fullscreen / Snapshot
+   sit in a single flex row. Gap matches the overall small-button spacing
+   elsewhere in the app for visual consistency. */
+.live-controls {
+    display: inline-flex;
+    gap: var(--space-2);
+    align-items: center;
+    flex-wrap: wrap;
+}
 .inline-player__bar {
     display: flex;
     align-items: center;
