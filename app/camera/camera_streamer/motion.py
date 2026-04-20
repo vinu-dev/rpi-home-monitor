@@ -36,12 +36,17 @@ class MotionConfig:
     background_alpha: float = 0.1
 
     # Per-pixel luminance difference considered "changed" (0-255).
-    pixel_diff_threshold: int = 20
+    # 8 works for indoor scenes at typical webcam distance; drop to 5
+    # for low-light / raise to 15 for noisy sensors. Exposed in
+    # Camera Settings → Recording once the slider lands.
+    pixel_diff_threshold: int = 8
 
     # Fraction of pixels changed that counts as motion onset / exit.
     # Hysteresis: start uses the higher threshold, end uses the lower.
-    start_score_threshold: float = 0.02
-    end_score_threshold: float = 0.005
+    # 0.005 = 384 px in a 320×240 frame — roughly a hand-sized object
+    # a few metres from the lens.
+    start_score_threshold: float = 0.005
+    end_score_threshold: float = 0.001
 
     # Consecutive frames above / below the threshold required to
     # transition. At 5 fps: start=3 frames = 0.6 s, end=15 frames = 3 s.

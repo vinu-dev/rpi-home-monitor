@@ -91,7 +91,7 @@
             <template x-if="ev._type === 'motion'">
                 <button class="event-row__trigger" @click="playMotionEvent(ev)">
                     <span class="event-row__type event-row__type--motion">Motion detected</span>
-                    <span class="event-row__time" x-text="_relativeTime(ev.started_at)"></span>
+                    <span class="event-row__time" x-text="_wallClockTime(ev.started_at)" :title="_relativeTime(ev.started_at)"></span>
                     <span class="event-row__camera" x-text="ev._camera_name || ev.camera_id"></span>
                     <span class="event-row__duration" x-text="_motionLabel(ev)"></span>
                     <span class="event-row__chevron" x-text="(ev.clip_ref ? (playingKey === ev._key ? '\u25BC' : '\u25B6') : '\u25B6')"></span>
@@ -795,6 +795,23 @@ function dashboardPage() {
             if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
             if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
             return Math.floor(secs / 86400) + 'd ago';
+        },
+
+        _wallClockTime(iso) {
+            // Tapo-style timestamp: "14:23:05" for today, "Yesterday 14:23",
+            // "Mon 14:23" this week, "Apr 15 14:23" older. Local timezone —
+            // Date() converts the UTC ISO string to the browser's clock.
+            if (!iso) return '';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            var now = new Date();
+            var hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+            var dayDiff = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) -
+                                      new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+            if (dayDiff === 0) return hhmm;
+            if (dayDiff === 1) return 'Yesterday ' + hhmm.slice(0, 5);
+            if (dayDiff < 7) return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + hhmm.slice(0, 5);
+            return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + hhmm.slice(0, 5);
         },
 
         _clipIso(clip) {
