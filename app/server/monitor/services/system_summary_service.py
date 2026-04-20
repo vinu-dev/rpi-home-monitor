@@ -351,7 +351,7 @@ class SystemSummaryService:
             events = self._audit.get_events(limit=500)
         except Exception as exc:
             log.warning("summary: audit.get_events failed: %s", exc)
-            return "green", 0, "/settings#audit"
+            return "green", 0, "/logs"
 
         cutoff = datetime.now(UTC) - timedelta(seconds=ERROR_WINDOW_SECONDS)
         errors = 0
@@ -371,7 +371,7 @@ class SystemSummaryService:
             state = "red"
         elif warnings > 0:
             state = "amber"
-        return state, errors + warnings, "/settings#audit"
+        return state, errors + warnings, "/logs"
 
     # -- summary sentence ---------------------------------------------------
 

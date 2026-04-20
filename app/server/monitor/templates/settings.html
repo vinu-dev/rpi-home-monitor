@@ -1049,6 +1049,17 @@ function settingsPage() {
                 this.isAdmin = this.currentUser && this.currentUser.role === 'admin';
             } catch(e) {}
 
+            // Honour a URL fragment like /settings#storage so status-strip
+            // deep-links (/settings#system, /settings#storage etc.) open
+            // directly on the correct tab instead of bouncing the user
+            // through the default tab. Unknown fragments are ignored.
+            var validTabs = ['system','network','tailscale','users','recording','storage','updates'];
+            var frag = (window.location.hash || '').replace('#','').toLowerCase();
+            if (frag && validTabs.indexOf(frag) !== -1) {
+                this.tab = frag;
+                if (frag === 'updates' && this.isAdmin) { this.loadOtaStatus(); }
+            }
+
             this.loadSystemInfo();
             this.loadTimeStatus();
 
