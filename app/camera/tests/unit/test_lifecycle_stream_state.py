@@ -10,10 +10,15 @@ from camera_streamer.lifecycle import _read_desired_stream_state
 
 
 class TestReadDesiredStreamState:
-    def test_missing_file_defaults_to_running(self, tmp_path):
-        """Fresh boot with no override file → stream for instant Live view."""
+    def test_missing_file_defaults_to_stopped(self, tmp_path):
+        """Fresh boot / fresh pair with no override file → stopped.
+
+        ADR-0017 on-demand model (issue #115): the camera waits for the
+        server to ask for a stream. No file == no explicit ask == stopped.
+        Must match ControlHandler._load_stream_state in control.py.
+        """
         path = tmp_path / "stream_state"
-        assert _read_desired_stream_state(str(path)) == "running"
+        assert _read_desired_stream_state(str(path)) == "stopped"
 
     def test_reads_running(self, tmp_path):
         path = tmp_path / "stream_state"
@@ -26,16 +31,34 @@ class TestReadDesiredStreamState:
         path.write_text("stopped")
         assert _read_desired_stream_state(str(path)) == "stopped"
 
-    def test_garbage_collapses_to_running(self, tmp_path):
-        """Unreadable content falls back to streaming (instant-live default)."""
+    def test_garbage_collapses_to_stopped(self, tmp_path):
+        """Unreadable content falls back to stopped (ADR-0017 on-demand)."""
         path = tmp_path / "stream_state"
         path.write_text("maybe")
-        assert _read_desired_stream_state(str(path)) == "running"
+        assert _read_desired_stream_state(str(path)) == "stopped"
 
     def test_trailing_whitespace_is_stripped(self, tmp_path):
         path = tmp_path / "stream_state"
         path.write_text("running\n")
         assert _read_desired_stream_state(str(path)) == "running"
+
+    def test_matches_control_server_default(self, tmp_path):
+        """Regression for #115: lifecycle + control must agree on the default.
+
+        If a future refactor makes one of them default to 'running' again,
+        this test fails loudly — that drift was exactly what #115 reported.
+        """
+        from unittest.mock import MagicMock
+
+        from camera_streamer.control import ControlHandler
+
+        path = tmp_path / "stream_state"
+        cs = ControlHandler.__new__(ControlHandler)
+        cs._stream_state_path = str(path)
+        cs._stream = MagicMock()
+        lifecycle_default = _read_desired_stream_state(str(path))
+        control_default = cs._load_stream_state()
+        assert lifecycle_default == control_default == "stopped"
 
 
 class TestDoRunningHonoursStreamState:
