@@ -616,11 +616,25 @@
                                x-model="cam.recording_mode">
                         <span>Schedule</span>
                     </label>
-                    <label style="display:flex; align-items:center; gap:6px; cursor:not-allowed; opacity:0.6;">
-                        <input type="radio" :name="'rec-mode-' + cam.id" value="motion" disabled>
-                        <span>Motion <span class="text-small text-muted">(coming soon)</span></span>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" :name="'rec-mode-' + cam.id" value="motion"
+                               x-model="cam.recording_mode">
+                        <span>Motion</span>
                     </label>
                 </fieldset>
+
+                <!-- Motion-mode explainer. Shown only when the user has
+                     selected the motion radio so we don't clutter the
+                     common-case settings for continuous/schedule users. -->
+                <div x-show="cam.recording_mode === 'motion'"
+                     class="text-small text-muted"
+                     style="margin-top:6px; padding:8px 10px; border:1px solid var(--border); border-radius:4px; line-height:1.4;">
+                    The recorder only runs while motion is detected plus a
+                    short post-roll so the clip doesn't cut off the end of
+                    the action. No video is written during quiet periods —
+                    saves USB space and still lets you jump to any flagged
+                    event on the dashboard.
+                </div>
 
                 <!-- Schedule editor -->
                 <div x-show="cam.recording_mode === 'schedule'" style="margin-top:12px;">
