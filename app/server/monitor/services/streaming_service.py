@@ -32,22 +32,17 @@ FFMPEG_LOG_DIR = Path("/data/logs/ffmpeg")
 def finalize_completed_segments(
     cam_rec_dir: Path, segments_log: Path, last_offset: int
 ) -> int:
-    """Rename newly-completed `.mp4.part` files to `.mp4`.
+    """Legacy no-op kept for callers/tests.
 
-    ffmpeg's segment muxer appends one line per completed segment to
-    ``segments_log`` — the line arrives *after* the file is closed, so
-    "in the log" is a strict "safe to rename" signal. The log may use
-    either the original `.part` filename or the base name depending on
-    ffmpeg version; we handle both.
+    Historical: used to rename ``.mp4.part → .mp4`` after ffmpeg closed
+    a segment. ffmpeg 6.1.4's segment muxer rejects ``.mp4.part`` as an
+    output filename, so we now write ``.mp4`` directly. "Safe to read"
+    is instead determined by membership in ``segments_log`` — see
+    ``completed_segment_names``.
 
-    Args:
-        cam_rec_dir: Directory containing the .part files.
-        segments_log: ffmpeg's -segment_list manifest.
-        last_offset: Byte offset into the log we last consumed (so we
-            don't re-process lines on each poll).
-
-    Returns:
-        New byte offset to pass on the next call.
+    Args / returns: unchanged so existing call sites keep compiling.
+    Offset is tracked to match the historical contract even though we
+    no longer do anything with the lines.
     """
     if not segments_log.exists():
         return last_offset
@@ -55,45 +50,31 @@ def finalize_completed_segments(
         size = segments_log.stat().st_size
     except OSError:
         return last_offset
-    if size <= last_offset:
-        return last_offset
+    return max(last_offset, size)
 
+
+def completed_segment_names(segments_log: Path) -> set[str]:
+    """Return the basenames of every segment ffmpeg has closed so far.
+
+    A name appears in ``segments_log`` only after ffmpeg has flushed
+    and closed the corresponding file, so this set is the strict
+    "safe to read" view over the recording directory. The currently-
+    being-written clip exists on disk but is not yet in the log.
+    """
+    names: set[str] = set()
+    if not segments_log.exists():
+        return names
     try:
         with open(segments_log, "rb") as f:
-            f.seek(last_offset)
             raw = f.read()
     except OSError:
-        return last_offset
-
-    new_offset = last_offset + len(raw)
+        return names
     for line in raw.splitlines():
         name = line.decode("utf-8", errors="replace").strip()
         if not name:
             continue
-        # Log may contain just the basename, a `.mp4.part`, a bare `.mp4`,
-        # or a full path. Normalise to `<stem>.mp4.part` inside cam_rec_dir.
-        base = Path(name).name
-        if base.endswith(".mp4.part"):
-            part = cam_rec_dir / base
-            final = cam_rec_dir / base[: -len(".part")]
-        elif base.endswith(".mp4"):
-            part = cam_rec_dir / f"{base}.part"
-            final = cam_rec_dir / base
-        else:
-            continue
-
-        if not part.exists():
-            continue
-        try:
-            # `.mp4` may already exist if a previous pass crashed between
-            # rename + segment_list flush; os.replace is atomic on POSIX
-            # and overwrites on Windows.
-            import os as _os
-
-            _os.replace(part, final)
-        except OSError as exc:
-            log.warning("Failed to finalise %s → %s: %s", part.name, final.name, exc)
-    return new_offset
+        names.add(Path(name).name)
+    return names
 
 
 # Legacy constants kept for backwards-compat with import sites that still
@@ -319,6 +300,13 @@ class StreamingService:
             str(self._clip_duration),
             "-segment_format",
             "mp4",
+            # Fragmented-mp4 flags on each segment: moov fragments written
+            # as the segment grows (empty_moov + frag_keyframe) rather than
+            # appended at close. Means clicking a motion event whose
+            # timestamp falls inside the *currently* open clip plays back
+            # immediately instead of hitting a "moov not found" error.
+            "-segment_format_options",
+            "movflags=+frag_keyframe+empty_moov+default_base_moof",
             "-reset_timestamps",
             "1",
             "-strftime",
@@ -332,7 +320,15 @@ class StreamingService:
             "+live",
             "-segment_list_type",
             "flat",
-            str(cam_rec_dir / "%Y%m%d_%H%M%S.mp4.part"),
+            # ffmpeg 6.1.4's segment muxer refuses the ``.mp4.part``
+            # extension with "Output file does not contain any stream"
+            # even when ``-segment_format mp4`` is passed — the format
+            # auto-detection inspects the filename too. Write ``.mp4``
+            # directly; "safe to read" is derived from presence in
+            # ``.segments.log`` (ffmpeg appends that line only after
+            # closing the file). In-progress clips are filtered by the
+            # recordings listing + correlator, not by filename suffix.
+            str(cam_rec_dir / "%Y%m%d_%H%M%S.mp4"),
         ]
         proc = self._launch_ffmpeg(cmd, f"rec-{cam_id}")
         if proc:

@@ -86,25 +86,23 @@ class TestDatedLayout:
         assert ref["filename"] in {"20260419_143000.mp4", "14-30-00.mp4"}
 
 
-class TestPartialFilesIgnored:
-    def test_mp4_part_is_ignored(self, recordings_dir):
-        """The .mp4.part sentinel must never match — it's still being written."""
+class TestNonClipFilesIgnored:
+    """ffmpeg 6.1.4's segment muxer refuses ``.mp4.part`` names, so the
+    recorder now writes ``.mp4`` directly (see streaming_service.py).
+    Fragmented-mp4 flags make in-progress segments playable as they
+    grow, so the correlator intentionally doesn't filter them out —
+    if a motion event falls inside the currently-writing segment, the
+    user still gets a playable clip with seek. This suite verifies that
+    files which aren't valid segment names (e.g. stray trash) are
+    ignored without crashing."""
+
+    def test_non_clip_filenames_are_skipped(self, recordings_dir):
         cam = recordings_dir / "cam-001"
-        _make_clip(cam, "20260419_143000.mp4.part")
+        _make_clip(cam, "20260419_143000.mp4")  # real clip
+        _make_clip(cam, "notes.mp4")            # junk — no timestamp pattern
         corr = MotionClipCorrelator(recordings_dir)
 
         ref = corr.find_clip("cam-001", "2026-04-19T14:30:30Z")
-        assert ref is None
-
-    def test_finalised_mp4_alongside_partial_still_matches(self, recordings_dir):
-        """Finalised clip for an earlier segment must still match even with
-        a .part for the currently-writing segment in the same directory."""
-        cam = recordings_dir / "cam-001"
-        _make_clip(cam, "20260419_143000.mp4")  # finalised
-        _make_clip(cam, "20260419_143300.mp4.part")  # currently writing
-        corr = MotionClipCorrelator(recordings_dir)
-
-        ref = corr.find_clip("cam-001", "2026-04-19T14:31:00Z")
         assert ref is not None
         assert ref["filename"] == "20260419_143000.mp4"
 
