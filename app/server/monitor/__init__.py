@@ -387,7 +387,15 @@ def _startup(app):
             app.motion_clip_correlator.set_recordings_dir(recordings_dir)
 
     app.streaming.start()
-    app.storage_manager.start()
+    # NOTE: app.storage_manager is NOT started. LoopRecorder (ADR-0017)
+    # is the sole eviction path — it's layout-agnostic, protects clips
+    # ffmpeg is still writing (DEFAULT_LIVE_AGE), applies hysteresis
+    # around the low-watermark, and coordinates with the recorder.
+    # StorageManager remains constructed because multiple service
+    # constructors take it as a dependency (it still serves as the
+    # on-disk catalogue / listing helper), but its cleanup loop is
+    # intentionally never started. See issue #89 for the race
+    # conditions and data-loss bugs that forced this.
     app.cert_service.start()
     app.recording_scheduler.start()
     app.loop_recorder.start()
