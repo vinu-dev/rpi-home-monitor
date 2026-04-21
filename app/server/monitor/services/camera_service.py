@@ -179,6 +179,14 @@ class CameraService:
                 "recording_schedule": list(c.recording_schedule),
                 "recording_motion_enabled": c.recording_motion_enabled,
                 "desired_stream_state": c.desired_stream_state,
+                # Hardware health is not admin-gated — even viewers
+                # benefit from seeing "no camera module detected" on
+                # the dashboard so they don't wait for a broken
+                # stream to come up. ``getattr`` with defaults keeps
+                # test stubs (SimpleNamespace) working without having
+                # to enumerate every Camera field.
+                "hardware_ok": getattr(c, "hardware_ok", True),
+                "hardware_error": getattr(c, "hardware_error", ""),
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -351,6 +359,14 @@ class CameraService:
                 camera.uptime_seconds = int(data["uptime_seconds"])
             except (TypeError, ValueError):
                 pass
+        # Hardware health — "no camera module detected" + friends.
+        # Accept only the expected types; ignore garbage.
+        if "hardware_ok" in data:
+            camera.hardware_ok = bool(data["hardware_ok"])
+        if "hardware_error" in data and isinstance(data["hardware_error"], str):
+            # Clip to a sane length so a malformed camera can't bloat
+            # the persisted store.
+            camera.hardware_error = data["hardware_error"][:512]
         # Pick up the camera's post-OTA firmware version the first time
         # it reports in after a reboot. Heartbeat is the most reliable
         # channel — avahi TXT records refresh with noticeable lag and

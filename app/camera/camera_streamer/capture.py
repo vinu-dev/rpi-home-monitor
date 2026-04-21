@@ -27,6 +27,12 @@ class CaptureManager:
         self._device = device or DEFAULT_DEVICE
         self._available = False
         self._formats = []
+        # Short, user-facing error message populated by ``check()``.
+        # Surfaced on the dashboard camera card + camera status page
+        # via the heartbeat so operators know a freshly-paired camera
+        # is missing its sensor module (common cause: ribbon cable
+        # not seated, or Zero 2W plugged in without a camera module).
+        self._last_error = ""
 
     @property
     def device(self):
@@ -39,6 +45,16 @@ class CaptureManager:
     @property
     def formats(self):
         return list(self._formats)
+
+    @property
+    def last_error(self) -> str:
+        """Short user-facing description of the last hardware fault.
+
+        Empty string when the last ``check()`` succeeded or was not yet
+        run. Consumed by HeartbeatSender to surface in the dashboard
+        + camera status page.
+        """
+        return self._last_error
 
     def check(self):
         """Validate the camera device exists and is accessible.
@@ -65,6 +81,11 @@ class CaptureManager:
                 video_devs or "none",
             )
             self._available = False
+            self._last_error = (
+                "No camera module detected. Check the ribbon cable is "
+                "seated firmly and /boot/config.txt has dtoverlay=ov5647 "
+                "(for the PiHut ZeroCam) or the overlay for your sensor."
+            )
             return False
 
         # Check it's a character device (video device)
@@ -108,6 +129,7 @@ class CaptureManager:
                 self._device,
             )
         self._available = True
+        self._last_error = ""
         return True
 
     def supports_h264(self):

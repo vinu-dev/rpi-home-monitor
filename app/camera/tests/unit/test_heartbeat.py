@@ -203,6 +203,36 @@ class TestHeartbeatSender:
         payload = sender._build_payload()
         assert payload["stream_state"] == "stopped"
 
+    def test_hardware_ok_defaults_true_without_capture_manager(self):
+        """When no CaptureManager is wired, hardware is assumed OK.
+
+        Prevents test stubs from lighting up a false "no camera
+        module" warning on the dashboard.
+        """
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing(), capture_manager=None)
+        payload = sender._build_payload()
+        assert payload["hardware_ok"] is True
+        assert payload["hardware_error"] == ""
+
+    def test_hardware_fields_reflect_capture_manager_state(self):
+        """Heartbeat mirrors CaptureManager.available + last_error."""
+        cfg = _make_config()
+        capture = MagicMock()
+        capture.available = False
+        capture.last_error = "No camera module detected."
+        sender = HeartbeatSender(cfg, _make_pairing(), capture_manager=capture)
+        payload = sender._build_payload()
+        assert payload["hardware_ok"] is False
+        assert payload["hardware_error"] == "No camera module detected."
+
+        # When hardware recovers, heartbeat clears the banner fields.
+        capture.available = True
+        capture.last_error = ""
+        payload = sender._build_payload()
+        assert payload["hardware_ok"] is True
+        assert payload["hardware_error"] == ""
+
     def test_stream_state_from_control_handler(self):
         """ADR-0017: with a handler, stream_state is the persisted desired value.
 

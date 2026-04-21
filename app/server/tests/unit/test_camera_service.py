@@ -647,6 +647,57 @@ class TestAcceptHeartbeat:
         svc.accept_heartbeat("cam-001", self._basic_payload(streaming=False))
         assert cam.streaming is False
 
+    def test_accepts_hardware_fault_from_heartbeat(self):
+        """Camera reports a hardware fault — server stores + surfaces it.
+
+        Prevents the dashboard "no camera module detected" banner
+        from silently regressing to always-green.
+        """
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload(
+            hardware_ok=False,
+            hardware_error="No camera module detected.",
+        )
+        svc.accept_heartbeat("cam-001", payload)
+        assert cam.hardware_ok is False
+        assert cam.hardware_error == "No camera module detected."
+
+    def test_clears_hardware_fault_when_recovered(self):
+        """When the camera reports ok=true, the previously stored error is cleared.
+
+        Covers the "operator plugged the ribbon cable back in" path.
+        """
+        cam = _make_camera()
+        cam.hardware_ok = False
+        cam.hardware_error = "No camera module detected."
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(hardware_ok=True, hardware_error=""),
+        )
+        assert cam.hardware_ok is True
+        assert cam.hardware_error == ""
+
+    def test_ignores_malformed_hardware_error(self):
+        """Non-string hardware_error is dropped silently."""
+        cam = _make_camera()
+        # Seed the real attribute name so we can assert it was left alone.
+        cam.hardware_error = "prior-value"
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(hardware_error={"evil": "dict"}),
+        )
+        # Malformed value is ignored — prior value preserved, no exception.
+        assert cam.hardware_error == "prior-value"
+
     def test_updates_health_metrics(self):
         cam = _make_camera()
         store = MagicMock()
