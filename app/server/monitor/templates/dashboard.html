@@ -260,6 +260,21 @@
                         'text-muted': cam.config_sync === 'unknown'
                     }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
                 </div>
+                <!-- Hardware fault banner. Shows when the camera's
+                     CaptureManager.check() fails — typically "no
+                     camera module detected" on a freshly paired
+                     Zero 2W whose ribbon cable is loose or sensor
+                     is missing. Click doesn't bubble so tapping
+                     the banner doesn't trigger the outer "go to
+                     Live" handler (which would 500 on a broken
+                     stream). -->
+                <div class="camera-card__alert msg msg--warn"
+                     x-show="cam.hardware_ok === false && cam.status !== 'pending'"
+                     @click.stop
+                     style="margin-top:var(--space-2); font-size:var(--text-sm);">
+                    <strong>Camera hardware issue.</strong>
+                    <span x-text="cam.hardware_error || 'No camera module detected.'"></span>
+                </div>
                 <!-- Surface the camera's IP for admins — a necessary fallback
                      when mDNS/.local resolution fails on the operator's
                      network (issue #90). Click-to-copy eases typing into

@@ -149,6 +149,7 @@ class HeartbeatSender:
         stream_manager=None,
         thermal_path=None,
         control_handler=None,
+        capture_manager=None,
     ):
         self._config = config
         self._pairing = pairing_manager
@@ -159,6 +160,11 @@ class HeartbeatSender:
         # compares against to detect drift. Tests that don't care about
         # drift pass None and we fall back to the live streaming flag.
         self._control = control_handler
+        # Optional CaptureManager — when provided, the heartbeat reports
+        # ``hardware_ok`` + ``hardware_error`` so the server dashboard +
+        # camera status page can surface a "no camera module detected"
+        # banner without waiting for a stream-start failure.
+        self._capture = capture_manager
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Track consecutive 401 Unknown-camera responses to detect server-side unpair
@@ -221,6 +227,17 @@ class HeartbeatSender:
         else:
             stream_state = "running" if streaming else "stopped"
 
+        # Hardware status — surfaces "no camera module detected" and
+        # similar faults on both the dashboard + camera status page.
+        # Defaults to ok=True so tests that omit CaptureManager don't
+        # light up a false warning banner.
+        if self._capture is not None:
+            hardware_ok = bool(self._capture.available)
+            hardware_error = "" if hardware_ok else (self._capture.last_error or "")
+        else:
+            hardware_ok = True
+            hardware_error = ""
+
         return {
             "camera_id": config.camera_id,
             "timestamp": int(time.time()),
@@ -230,6 +247,8 @@ class HeartbeatSender:
             "memory_percent": _get_memory_percent(),
             "uptime_seconds": _get_uptime_seconds(),
             "firmware_version": _get_firmware_version(),
+            "hardware_ok": hardware_ok,
+            "hardware_error": hardware_error,
             "stream_config": {
                 "width": config.width,
                 "height": config.height,

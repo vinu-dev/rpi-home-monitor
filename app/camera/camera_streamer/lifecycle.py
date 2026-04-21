@@ -324,6 +324,10 @@ class CameraLifecycle:
             thermal_path=self._platform.thermal_path,
             pairing_manager=self._pairing,
             stream_state_path=self._stream_state_path,
+            # Capture manager flows into /api/status so the camera's
+            # own status page can show a "no camera module detected"
+            # banner. Set by _do_validating (the state before us).
+            capture_manager=self._capture,
         )
         self._status_server.start()
 
@@ -341,6 +345,9 @@ class CameraLifecycle:
             stream_manager=self._stream,
             thermal_path=self._platform.thermal_path,
             control_handler=self._status_server.control_handler,
+            # Surface hardware faults ("no camera module detected")
+            # to the server so the dashboard can show the user.
+            capture_manager=self._capture,
         )
         if self._config.is_configured and self._pairing.is_paired:
             self._heartbeat.start()

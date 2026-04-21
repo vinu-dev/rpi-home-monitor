@@ -471,6 +471,16 @@ details[open] summary::after { transform: rotate(45deg); }
 
 <!-- ============ STATUS ============ -->
 <section id="status">
+  <!-- Hardware fault banner. Hidden by default; loadStatus() flips
+       hidden off when /api/status reports hardware_ok=false. This
+       is the same "no camera module detected" signal the server
+       surfaces on its dashboard card. -->
+  <div id="hardware-alert" class="msg msg--warn" hidden
+       style="margin-bottom:var(--gap-3)">
+    <strong>Camera hardware issue.</strong>
+    <span id="hardware-alert-msg">No camera module detected.</span>
+  </div>
+
   <div class="hero">
     <div><span id="hero-dot" class="hero__dot"></span><span id="hero-line" class="hero__line">Loading status…</span></div>
     <dl class="hero__sub">
@@ -771,6 +781,19 @@ function loadStatus() {
         $("h-uptime").textContent = friendlyUptime(d.uptime);
         _currentFirmware = d.firmware_version || "";
         $("h-firmware").textContent = _currentFirmware || "--";
+
+        // Hardware fault banner — show when CaptureManager.check()
+        // failed. Server reports the same signal on the dashboard;
+        // this is the local mirror so an operator who SSH'd to the
+        // camera directly or is on its setup hotspot sees it too.
+        var hwAlert = $("hardware-alert");
+        if (d.hardware_ok === false) {
+            $("hardware-alert-msg").textContent =
+                d.hardware_error || "No camera module detected.";
+            hwAlert.hidden = false;
+        } else {
+            hwAlert.hidden = true;
+        }
 
         // Chips
         if (typeof d.cpu_temp === "number") {

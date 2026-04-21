@@ -58,6 +58,14 @@ class Camera:
     cpu_temp: float = 0.0  # °C, from last heartbeat
     memory_percent: int = 0  # 0-100, from last heartbeat
     uptime_seconds: int = 0  # seconds since camera boot
+    # Hardware health reported by the camera in every heartbeat. Set
+    # to False (with a human-readable error in ``hardware_error``)
+    # when CaptureManager.check() fails — typically "no camera module
+    # detected" on a freshly paired Zero 2W whose ribbon cable is
+    # loose or sensor is missing. Surfaced as a banner on the
+    # dashboard card + camera status page.
+    hardware_ok: bool = True
+    hardware_error: str = ""
 
 
 @dataclass

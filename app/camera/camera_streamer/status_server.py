@@ -330,12 +330,17 @@ class CameraStatusServer:
         thermal_path=None,
         pairing_manager=None,
         stream_state_path=None,
+        capture_manager=None,
     ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
         self._pairing = pairing_manager
+        # Optional CaptureManager — when provided, /api/status reports
+        # ``hardware_ok`` + ``hardware_error`` so the camera's own
+        # status page can show a "no camera module detected" banner.
+        self._capture = capture_manager
         # Let ControlHandler pick the default path when caller didn't override
         # so tests and production share the same default (ADR-0017).
         if stream_state_path is None:
@@ -362,6 +367,7 @@ class CameraStatusServer:
             self._thermal_path,
             self._pairing,
             self._control,
+            self._capture,
         )
         try:
             self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
@@ -475,6 +481,7 @@ def _make_status_handler(
     thermal_path,
     pairing_manager,
     control_handler=None,
+    capture_manager=None,
 ):
     """Create HTTP handler for the camera status page."""
 
@@ -851,6 +858,19 @@ def _make_status_handler(
 
             paired = pairing_manager.is_paired if pairing_manager else False
 
+            # Hardware status for the status page banner. Defaults
+            # ok=True so environments that haven't wired up a
+            # CaptureManager (tests, early-boot) don't show a false
+            # warning.
+            if capture_manager is not None:
+                hardware_ok = bool(capture_manager.available)
+                hardware_error = (
+                    "" if hardware_ok else (capture_manager.last_error or "")
+                )
+            else:
+                hardware_ok = True
+                hardware_error = ""
+
             return {
                 "camera_id": config.camera_id,
                 "hostname": hostname,
@@ -865,6 +885,8 @@ def _make_status_handler(
                 "uptime": uptime,
                 "memory_total_mb": mem_total,
                 "memory_used_mb": mem_used,
+                "hardware_ok": hardware_ok,
+                "hardware_error": hardware_error,
                 "stream_config": {
                     "width": config.width,
                     "height": config.height,

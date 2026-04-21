@@ -47,6 +47,8 @@ components:
           uptime,
           memory_total_mb,
           memory_used_mb,
+          hardware_ok,
+          hardware_error,
         ]
       properties:
         camera_id:
@@ -73,6 +75,17 @@ components:
           type: integer
         memory_used_mb:
           type: integer
+        hardware_ok:
+          type: boolean
+          description: |
+            False when the CaptureManager couldn't open the V4L2 device
+            (typically "no camera module detected"). Surfaced as a
+            banner on the camera status page + server dashboard.
+        hardware_error:
+          type: string
+          description: |
+            Short, user-facing description of the hardware fault.
+            Empty when hardware_ok=true.
     NetworkList:
       type: object
       required: [networks]
@@ -163,6 +176,15 @@ components:
           type: integer
         uptime_seconds:
           type: integer
+        hardware_ok:
+          type: boolean
+          description: |
+            False when the camera's V4L2 device failed to open (e.g.
+            the ribbon cable is not seated). Server mirrors this to
+            the dashboard card.
+        hardware_error:
+          type: string
+          description: Short, user-facing fault string. Empty when hardware_ok=true.
 paths:
   /login:
     post:

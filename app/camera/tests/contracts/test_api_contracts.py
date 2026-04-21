@@ -330,6 +330,10 @@ STATUS_API_FIELDS = {
     "memory_total_mb",
     "memory_used_mb",
     "stream_config",
+    # Hardware health surfaces the "no camera module detected" banner
+    # on both the camera's own status page and the server dashboard.
+    "hardware_ok",
+    "hardware_error",
 }
 
 
