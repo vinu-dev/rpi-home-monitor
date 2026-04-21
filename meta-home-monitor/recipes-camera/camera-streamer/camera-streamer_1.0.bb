@@ -9,7 +9,7 @@ and streams it over RTSPS to the home monitoring server."
 # this recipe declared MIT — that was incorrect and contaminated SBOM /
 # license-report output for the shipped camera image (issue #120).
 LICENSE = "AGPL-3.0-only"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=eb1e647870add0502f8f010b19de32af"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=73f1eb20517c55bf9493b7dd6e480788"
 
 # Source files from app/camera/ directory in the repo
 FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:"
