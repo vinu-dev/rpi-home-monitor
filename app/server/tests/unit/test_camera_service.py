@@ -698,6 +698,66 @@ class TestAcceptHeartbeat:
         # Malformed value is ignored — prior value preserved, no exception.
         assert cam.hardware_error == "prior-value"
 
+    def test_accepts_structured_hardware_faults(self):
+        """Structured hardware_faults list is stored on the Camera (ADR-0023)."""
+        cam = _make_camera()
+        cam.hardware_faults = []
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload(
+            hardware_faults=[
+                {
+                    "code": "camera_sensor_missing",
+                    "severity": "error",
+                    "message": "Camera sensor missing",
+                    "hint": "Check ribbon cable and dtoverlay.",
+                    "context": {"device": "/dev/video14"},
+                }
+            ],
+        )
+        svc.accept_heartbeat("cam-001", payload)
+        assert len(cam.hardware_faults) == 1
+        f = cam.hardware_faults[0]
+        assert f["code"] == "camera_sensor_missing"
+        assert f["severity"] == "error"
+        assert f["message"] == "Camera sensor missing"
+        assert f["hint"] == "Check ribbon cable and dtoverlay."
+        assert f["context"] == {"device": "/dev/video14"}
+
+    def test_hardware_faults_drops_malformed_entries(self):
+        """Entries missing ``code`` or not dicts are skipped; valid ones kept."""
+        cam = _make_camera()
+        cam.hardware_faults = []
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload(
+            hardware_faults=[
+                "not a dict",  # skipped
+                {"severity": "error"},  # missing code → skipped
+                {"code": "camera_sensor_missing"},  # kept, defaults filled
+                {"code": "", "severity": "error"},  # empty code → skipped
+            ],
+        )
+        svc.accept_heartbeat("cam-001", payload)
+        assert len(cam.hardware_faults) == 1
+        assert cam.hardware_faults[0]["code"] == "camera_sensor_missing"
+
+    def test_hardware_faults_caps_list_length(self):
+        """Runaway camera can't bloat the store with thousands of faults."""
+        cam = _make_camera()
+        cam.hardware_faults = []
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload(
+            hardware_faults=[{"code": f"fault_{i}"} for i in range(128)],
+        )
+        svc.accept_heartbeat("cam-001", payload)
+        # Cap is 32 (see CameraService.accept_heartbeat).
+        assert len(cam.hardware_faults) == 32
+
     def test_updates_health_metrics(self):
         cam = _make_camera()
         store = MagicMock()

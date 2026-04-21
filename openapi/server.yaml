@@ -146,12 +146,39 @@ components:
             Camera-reported hardware health. `false` surfaces a warning
             banner on the dashboard card — typically "no camera module
             detected" on a freshly paired Zero 2W without a sensor
-            connected. Updated on every heartbeat.
+            connected. Legacy field; prefer `hardware_faults` per ADR-0023.
         hardware_error:
           type: string
           description: |
             Short, user-facing description of the hardware fault.
-            Empty string when `hardware_ok=true`.
+            Empty string when `hardware_ok=true`. Legacy field;
+            prefer `hardware_faults` per ADR-0023.
+        hardware_faults:
+          type: array
+          description: |
+            Structured list of active hardware faults (ADR-0023).
+            Empty list when the camera is healthy. Updated on every
+            heartbeat — any fault from the previous snapshot that is
+            not present in the new list is auto-resolved.
+          items:
+            type: object
+            required: [code, severity, message]
+            properties:
+              code:
+                type: string
+                description: Stable identifier. See camera_streamer/faults.py.
+              severity:
+                type: string
+                enum: [info, warning, error, critical]
+              message:
+                type: string
+                description: Short label (fits on a dashboard badge).
+              hint:
+                type: string
+                description: Long actionable advice (rendered as tooltip).
+              context:
+                type: object
+                description: Free-form supplementary data (device paths, counters).
     CameraUpdate:
       type: object
       description: |

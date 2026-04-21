@@ -15,6 +15,13 @@ import logging
 import os
 import subprocess
 
+from camera_streamer.faults import (
+    FAULT_CAMERA_H264_UNSUPPORTED,
+    FAULT_CAMERA_SENSOR_MISSING,
+    Fault,
+    make_fault,
+)
+
 log = logging.getLogger("camera-streamer.capture")
 
 DEFAULT_DEVICE = "/dev/video0"
@@ -38,11 +45,15 @@ class CaptureManager:
         self._available = False
         self._formats = []
         # Short, user-facing error message populated by ``check()``.
-        # Surfaced on the dashboard camera card + camera status page
-        # via the heartbeat so operators know a freshly-paired camera
-        # is missing its sensor module (common cause: ribbon cable
-        # not seated, or Zero 2W plugged in without a camera module).
+        # Kept as a plain string for backward compat with the first
+        # hardware-status slice; richer callers should consume
+        # ``faults`` instead.
         self._last_error = ""
+        # List of ``Fault`` records for the structured wire format.
+        # Heartbeat serialises each entry to a dict and the server
+        # stores them so the dashboard can render severity + code
+        # per-fault instead of a single boolean. Empty list = healthy.
+        self._faults: list[Fault] = []
 
     @property
     def device(self):
@@ -65,6 +76,17 @@ class CaptureManager:
         + camera status page.
         """
         return self._last_error
+
+    @property
+    def faults(self) -> list[Fault]:
+        """Active hardware faults from the last ``check()``.
+
+        Empty list when healthy. Each entry has ``code`` + ``severity``
+        + ``message`` (see ``faults.py``). Heartbeat serialises the
+        list into the wire payload so the server dashboard can render
+        per-fault banners with severity colouring.
+        """
+        return list(self._faults)
 
     def check(self):
         """Validate the camera device exists and is accessible.
@@ -92,6 +114,12 @@ class CaptureManager:
             )
             self._available = False
             self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
             return False
 
         # Existence isn't enough on a Pi Zero 2W:
@@ -122,6 +150,12 @@ class CaptureManager:
             )
             self._available = False
             self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
             return False
 
         # libcamera-hello is authoritative on the Pi: no sensor → no
@@ -137,6 +171,12 @@ class CaptureManager:
             )
             self._available = False
             self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
             return False
 
         # Check it's a character device (video device)
@@ -181,6 +221,13 @@ class CaptureManager:
             )
         self._available = True
         self._last_error = ""
+        # Happy path — clear faults, emit a non-fatal warning fault if
+        # the sensor is there but can't give us H.264. Surfaces as a
+        # yellow badge without changing online status.
+        if h264_ok or libcam:
+            self._faults = []
+        else:
+            self._faults = [make_fault(FAULT_CAMERA_H264_UNSUPPORTED)]
         return True
 
     def supports_h264(self):

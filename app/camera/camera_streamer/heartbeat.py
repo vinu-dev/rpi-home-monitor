@@ -231,12 +231,26 @@ class HeartbeatSender:
         # similar faults on both the dashboard + camera status page.
         # Defaults to ok=True so tests that omit CaptureManager don't
         # light up a false warning banner.
+        #
+        # Three fields for forward + backward compat:
+        #   hardware_ok      bool    (legacy v1.3 contract)
+        #   hardware_error   str     (legacy v1.3 contract)
+        #   hardware_faults  list    structured list of Fault records
+        #                            (see camera_streamer/faults.py).
+        #                            New consumers prefer this.
         if self._capture is not None:
             hardware_ok = bool(self._capture.available)
             hardware_error = "" if hardware_ok else (self._capture.last_error or "")
+            # ``getattr`` so a CaptureManager stub in older tests that
+            # doesn't expose ``.faults`` still works without raising.
+            raw_faults = getattr(self._capture, "faults", [])
+            hardware_faults = [
+                f.to_dict() if hasattr(f, "to_dict") else dict(f) for f in raw_faults
+            ]
         else:
             hardware_ok = True
             hardware_error = ""
+            hardware_faults = []
 
         return {
             "camera_id": config.camera_id,
@@ -249,6 +263,7 @@ class HeartbeatSender:
             "firmware_version": _get_firmware_version(),
             "hardware_ok": hardware_ok,
             "hardware_error": hardware_error,
+            "hardware_faults": hardware_faults,
             "stream_config": {
                 "width": config.width,
                 "height": config.height,
