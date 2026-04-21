@@ -32,14 +32,23 @@ _M2M_INFO = (
 
 
 def _capture_v4l2_run_mock(
-    info_stdout=_CAPTURE_INFO, formats_stdout="H.264\n1920x1080\n"
+    info_stdout=_CAPTURE_INFO,
+    formats_stdout="H.264\n1920x1080\n",
+    libcamera_list="0 : ov5647 [2592x1944 10-bit GBRG]\nAvailable cameras\n-----------------\n",
 ):
-    """Return a subprocess.run side_effect that answers both --info and --list-formats-ext."""
+    """subprocess.run side_effect covering the three commands CaptureManager runs.
+
+    - ``v4l2-ctl --info`` → info_stdout
+    - ``v4l2-ctl --list-formats-ext`` → formats_stdout
+    - ``libcamera-hello --list-cameras`` → libcamera_list
+    """
 
     def _run(cmd, *args, **kwargs):
+        if cmd and cmd[0] in ("libcamera-hello", "rpicam-hello"):
+            return MagicMock(returncode=0, stdout=libcamera_list, stderr="")
         if "--info" in cmd:
-            return MagicMock(returncode=0, stdout=info_stdout)
-        return MagicMock(returncode=0, stdout=formats_stdout)
+            return MagicMock(returncode=0, stdout=info_stdout, stderr="")
+        return MagicMock(returncode=0, stdout=formats_stdout, stderr="")
 
     return _run
 
@@ -75,6 +84,29 @@ class TestCaptureManager:
         fake_dev.write_text("")
         with patch(
             "subprocess.run", side_effect=_capture_v4l2_run_mock(info_stdout=_M2M_INFO)
+        ):
+            mgr = CaptureManager(device=str(fake_dev))
+            assert mgr.check() is False
+            assert mgr.available is False
+            assert "No camera module detected" in mgr.last_error
+
+    def test_capture_node_but_no_libcamera_sensor(self, tmp_path):
+        """Video Capture node + ``No cameras available!`` → fault.
+
+        Regression for the deeper "cameraless Pi still shows online"
+        case: dtoverlay=ov5647 registers /dev/video14 as a Video
+        Capture node even without the sensor physically connected.
+        The V4L2 cap check passes — but libcamera-hello enumerates
+        zero sensors over I2C and reports "No cameras available!".
+        check() must fall back to that probe and fault out.
+        """
+        fake_dev = tmp_path / "video14"
+        fake_dev.write_text("")
+        with patch(
+            "subprocess.run",
+            side_effect=_capture_v4l2_run_mock(
+                libcamera_list="No cameras available!\n"
+            ),
         ):
             mgr = CaptureManager(device=str(fake_dev))
             assert mgr.check() is False
