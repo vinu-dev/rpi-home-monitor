@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RPi Home Monitor — brand mark (monochrome variant).
+
+  Uses ``currentColor`` throughout so the logo inherits the
+  surrounding text / button colour. Suitable for nav bars, menu
+  rails, print / export, and anywhere a gradient would clash
+  with the theme.
+
+  Stroke-only so the house silhouette reads clearly at small
+  sizes (down to 24 px) where the gradient fill version muddies.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RPi Home Monitor"
+     fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- House silhouette -->
+  <path d="M32 5
+           L58 25
+           L58 52
+           Q58 58 52 58
+           L12 58
+           Q6 58 6 52
+           L6 25
+           Z"/>
+  <!-- Camera lens — larger open ring -->
+  <circle cx="32" cy="38" r="11"/>
+  <!-- Inner pupil dot (filled) signals "live / recording" -->
+  <circle cx="32" cy="38" r="2.4" fill="currentColor" stroke="none"/>
+</svg>

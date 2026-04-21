@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RPi Home Monitor — favicon (16–32 px).
+
+  Simplified from the main mark: thicker strokes, no inner blades.
+  Uses the gradient so the tab icon stays on-brand; browsers that
+  don't support gradient SVG fall back to the first stop colour.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="RPi Home Monitor">
+  <defs>
+    <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff5c7c"/>
+      <stop offset="100%" stop-color="#b06bf8"/>
+    </linearGradient>
+  </defs>
+  <!-- House, filled gradient -->
+  <path d="M16 3
+           L29 13
+           L29 27
+           Q29 29 27 29
+           L5 29
+           Q3 29 3 27
+           L3 13
+           Z"
+        fill="url(#fg)"/>
+  <!-- Lens ring -->
+  <circle cx="16" cy="19" r="6" fill="#0d0d24" stroke="#fff" stroke-width="1.25"/>
+  <!-- Recording dot -->
+  <circle cx="16" cy="19" r="1.8" fill="#ff5c7c"/>
+</svg>

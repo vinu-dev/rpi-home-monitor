@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RPi Home Monitor — brand mark (gradient variant).
+
+  Design: a house silhouette with a camera aperture where its
+  window/door would be. House = self-hosted / local / home.
+  Aperture = surveillance + privacy control. The six iris blades
+  echo the "your eye on your own data" idea.
+
+  Colour: coral → violet gradient (the product's existing accent,
+  matches the hero banner and the status dot on the camera status
+  page). A currentColor fallback is provided by logo-mono.svg for
+  small sizes (favicon, nav rail) where a gradient washes out.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RPi Home Monitor">
+  <defs>
+    <linearGradient id="hm-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff5c7c"/>
+      <stop offset="100%" stop-color="#b06bf8"/>
+    </linearGradient>
+    <!-- Subtle inner glow so the aperture feels like a lit lens -->
+    <radialGradient id="hm-lens" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- House silhouette (filled gradient) -->
+  <path
+    d="M32 4
+       L58 24
+       L58 52
+       Q58 58 52 58
+       L12 58
+       Q6 58 6 52
+       L6 24
+       Z"
+    fill="url(#hm-grad)"/>
+
+  <!-- Roofline inner shadow for depth (1px darker line under the peak) -->
+  <path
+    d="M10 26 L32 8 L54 26"
+    fill="none"
+    stroke="#ffffff"
+    stroke-opacity="0.25"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Camera aperture (the heart of the mark) -->
+  <g transform="translate(32 38)">
+    <!-- Outer lens ring -->
+    <circle r="13" fill="#0d0d24" stroke="#ffffff" stroke-opacity="0.95" stroke-width="2"/>
+    <!-- Inner glow -->
+    <circle r="11" fill="url(#hm-lens)"/>
+    <!-- Six iris blades — triangles rotated 60° each -->
+    <g fill="#ffffff" fill-opacity="0.82">
+      <polygon points="0,-10 -3.2,-1 3.2,-1"/>
+      <polygon points="0,-10 -3.2,-1 3.2,-1" transform="rotate(60)"/>
+      <polygon points="0,-10 -3.2,-1 3.2,-1" transform="rotate(120)"/>
+      <polygon points="0,-10 -3.2,-1 3.2,-1" transform="rotate(180)"/>
+      <polygon points="0,-10 -3.2,-1 3.2,-1" transform="rotate(240)"/>
+      <polygon points="0,-10 -3.2,-1 3.2,-1" transform="rotate(300)"/>
+    </g>
+    <!-- Central pupil / status dot -->
+    <circle r="1.8" fill="#ff5c7c"/>
+  </g>
+</svg>
