@@ -145,6 +145,12 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "desired_stream_state",
     # ADR-0021: per-camera motion detection sensitivity (1-10)
     "motion_sensitivity",
+    # Hardware health — reported by camera each heartbeat, surfaced on
+    # dashboard + camera status page. Intentionally non-admin-gated so
+    # viewers see "no camera module detected" instead of a mysteriously
+    # empty Live View.
+    "hardware_ok",
+    "hardware_error",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)

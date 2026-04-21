@@ -140,6 +140,18 @@ components:
           type: string
         firmware_version:
           type: string
+        hardware_ok:
+          type: boolean
+          description: |
+            Camera-reported hardware health. `false` surfaces a warning
+            banner on the dashboard card — typically "no camera module
+            detected" on a freshly paired Zero 2W without a sensor
+            connected. Updated on every heartbeat.
+        hardware_error:
+          type: string
+          description: |
+            Short, user-facing description of the hardware fault.
+            Empty string when `hardware_ok=true`.
     CameraUpdate:
       type: object
       description: |
