@@ -5,13 +5,18 @@
 # Part 1: boot    (512MB, vfat)  - U-Boot, kernel, DTBs, config.txt, U-Boot env
 # Part 2: rootfsA (8GB, ext4)    - active root filesystem
 # Part 3: rootfsB (8GB, ext4)    - standby root (OTA target)
-# Part 4: data    (raw, no fs)   - LUKS-encrypted on first boot (ADR-0010)
+# Part 4: data    (4GB, ext4)    - config, certs, updates
 #
-# The data partition is left unformatted. The luks-first-boot.service
-# runs cryptsetup luksFormat with Adiantum cipher, creates ext4 inside
-# the LUKS container, and mounts at /data.
+# /data ships as ext4 so fstab mount + local-fs.target succeed on
+# fresh boot, which is the precondition for monitor-hotspot.service.
+# LUKS migration (ADR-0010) now runs POST-setup instead of blocking
+# first-boot — see docs/exec-plans/luks-post-pair.md. This avoids a
+# class of bugs where the LUKS first-boot chain failed silently
+# (missing passphrase, detached console, etc.) and left /data
+# unformatted, which made local-fs.target hang and the setup
+# hotspot never come up.
 
 part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 512M
 part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfsA --align 4096 --size 8192M
 part --ondisk mmcblk0 --fstype=ext4 --label rootfsB --align 4096 --size 8192M
-part --ondisk mmcblk0 --align 4096 --size 4096M
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4096M
