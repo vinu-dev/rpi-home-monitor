@@ -151,6 +151,9 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # empty Live View.
     "hardware_ok",
     "hardware_error",
+    # Structured fault list per ADR-0023 — [{code, severity, message,
+    # hint, context}]. Empty list when healthy. Not admin-gated.
+    "hardware_faults",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)

@@ -300,6 +300,55 @@ a:hover { text-decoration: underline; }
     gap: var(--space-1);
 }
 
+/* Fault badge (ADR-0023). Compact inline chip next to the ONLINE
+   pill. Severity-keyed colour. Hover shows full ``hint`` via title=.
+   Size = short label only; detail lives on the tooltip so the card
+   stays scannable.
+
+   .fault-badge          base layout
+   .fault-badge--info    muted grey
+   .fault-badge--warning amber
+   .fault-badge--error   red
+   .fault-badge--critical pulsing red
+*/
+.fault-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: var(--text-xs, 12px);
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: help;
+    user-select: none;
+    border: 1px solid currentColor;
+    max-width: 100%;
+    /* Don't wrap between dot + label; truncate if it overflows */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.fault-badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.fault-badge--info     { color: #9698b8; background: rgba(150,152,184,0.08); }
+.fault-badge--warning  { color: #f7b94a; background: rgba(247,185,74,0.10); }
+.fault-badge--error    { color: #ef5b4a; background: rgba(239,91,74,0.12); }
+.fault-badge--critical {
+    color: #ef5b4a;
+    background: rgba(239,91,74,0.16);
+    animation: fault-critical-pulse 1.8s ease-in-out infinite;
+}
+@keyframes fault-critical-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,91,74,0.25); }
+    50%      { box-shadow: 0 0 0 4px rgba(239,91,74,0.0); }
+}
+
 /* Collapsible "Details" panel under each camera card (issue #110).
    Collapsed by default so the card stays compact; expands to show
    recording mode, motion detection state, firmware, bitrate, and

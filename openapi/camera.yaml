@@ -179,12 +179,34 @@ components:
         hardware_ok:
           type: boolean
           description: |
-            False when the camera's V4L2 device failed to open (e.g.
-            the ribbon cable is not seated). Server mirrors this to
-            the dashboard card.
+            False when the camera has any active hardware fault.
+            Legacy field; prefer `hardware_faults` per ADR-0023.
         hardware_error:
           type: string
-          description: Short, user-facing fault string. Empty when hardware_ok=true.
+          description: |
+            Short, user-facing fault string. Empty when hardware_ok=true.
+            Legacy field; prefer `hardware_faults` per ADR-0023.
+        hardware_faults:
+          type: array
+          description: |
+            Structured list of active hardware faults (ADR-0023).
+            Empty when healthy. Each entry describes one concurrent
+            fault: code + severity + short message + longer hint.
+          items:
+            type: object
+            required: [code, severity, message]
+            properties:
+              code:
+                type: string
+              severity:
+                type: string
+                enum: [info, warning, error, critical]
+              message:
+                type: string
+              hint:
+                type: string
+              context:
+                type: object
 paths:
   /login:
     post:

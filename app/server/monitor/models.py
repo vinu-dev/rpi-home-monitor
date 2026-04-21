@@ -58,14 +58,18 @@ class Camera:
     cpu_temp: float = 0.0  # °C, from last heartbeat
     memory_percent: int = 0  # 0-100, from last heartbeat
     uptime_seconds: int = 0  # seconds since camera boot
-    # Hardware health reported by the camera in every heartbeat. Set
-    # to False (with a human-readable error in ``hardware_error``)
-    # when CaptureManager.check() fails — typically "no camera module
-    # detected" on a freshly paired Zero 2W whose ribbon cable is
-    # loose or sensor is missing. Surfaced as a banner on the
-    # dashboard card + camera status page.
+    # Hardware health reported by the camera in every heartbeat.
+    #
+    # v1.3.0 shipped two flat fields (``hardware_ok`` +
+    # ``hardware_error``). v1.3.x adds ``hardware_faults``, a
+    # structured list of {code, severity, message, context} records
+    # — see ``app/camera/camera_streamer/faults.py`` for the fault
+    # catalogue. Keep the legacy fields populated for any consumer
+    # that hasn't migrated yet; new code should prefer
+    # ``hardware_faults`` so it can render per-fault severity.
     hardware_ok: bool = True
     hardware_error: str = ""
+    hardware_faults: list[dict] = field(default_factory=list)
 
 
 @dataclass

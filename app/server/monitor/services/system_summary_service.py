@@ -86,6 +86,14 @@ def _parse_ts(value: str | None) -> datetime | None:
         return None
 
 
+_SEVERITY_RANKS = {"info": 0, "warning": 1, "error": 2, "critical": 3}
+
+
+def _sev_rank(severity: str) -> int:
+    """Numeric rank of a fault severity string. Higher = worse."""
+    return _SEVERITY_RANKS.get(severity, 0)
+
+
 def _worst(*states: str) -> str:
     """Return the worst state of the supplied set (red > amber > green)."""
     order = {"green": 0, "amber": 1, "red": 2}
@@ -216,17 +224,43 @@ class SystemSummaryService:
             elif elapsed >= CAMERA_OFFLINE_AMBER_SECONDS:
                 worst = _worst(worst, "amber")
 
+        # Hardware faults on online cameras count against the summary
+        # even when the camera is reachable — "3/3 online" is still
+        # misleading when two of them have no sensor. Promote to amber
+        # for any ``warning``/``error`` fault, red for ``critical``.
+        faulted = []
+        for cam in online:
+            faults = getattr(cam, "hardware_faults", None) or []
+            if not faults:
+                # Legacy path for cameras that haven't reported the
+                # structured list yet — fall back to the v1.3.0 flag.
+                if getattr(cam, "hardware_ok", True) is False:
+                    faulted.append(cam)
+                    worst = _worst(worst, "amber")
+                continue
+            faulted.append(cam)
+            max_sev = max((f.get("severity", "warning") for f in faults), key=_sev_rank)
+            if max_sev == "critical":
+                worst = _worst(worst, "red")
+            else:
+                worst = _worst(worst, "amber")
+
         detail = {
             "online": len(online),
             "total": len(paired),
             "offline_names": [
                 getattr(c, "name", "") or getattr(c, "id", "") for c in offline
             ],
+            "faulted_names": [
+                getattr(c, "name", "") or getattr(c, "id", "") for c in faulted
+            ],
         }
-        # Deep-link to the first offline camera if any, else the dashboard itself.
+        # Deep-link to the first offline or faulted camera if any,
+        # else the dashboard itself.
         link = "/"
-        if offline:
-            link = "/#camera-" + (offline[0].id if hasattr(offline[0], "id") else "")
+        first_problem = offline[0] if offline else (faulted[0] if faulted else None)
+        if first_problem is not None:
+            link = "/#camera-" + getattr(first_problem, "id", "")
         return worst, detail, link
 
     # -- storage ------------------------------------------------------------
@@ -443,7 +477,7 @@ class SystemSummaryService:
             ),
             (
                 cam_state,
-                cam_detail.get("offline_names"),
+                cam_detail.get("offline_names") or cam_detail.get("faulted_names"),
                 _camera_sentence(cam_detail),
                 cam_link,
             ),

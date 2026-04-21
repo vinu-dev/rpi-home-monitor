@@ -15,9 +15,26 @@ import logging
 import os
 import subprocess
 
+from camera_streamer.faults import (
+    FAULT_CAMERA_H264_UNSUPPORTED,
+    FAULT_CAMERA_SENSOR_MISSING,
+    Fault,
+    make_fault,
+)
+
 log = logging.getLogger("camera-streamer.capture")
 
 DEFAULT_DEVICE = "/dev/video0"
+
+# User-facing banner string — kept in one place so the two failure
+# branches (no V4L2 Video Capture node; V4L2 node present but
+# libcamera finds no sensor) surface the same message. Re-used as
+# the text of the dashboard + camera status page warning banners.
+_NO_CAMERA_ERROR = (
+    "No camera module detected. Check the ribbon cable is seated "
+    "firmly and /boot/config.txt has dtoverlay=ov5647 (PiHut "
+    "ZeroCam) or the overlay for your sensor."
+)
 
 
 class CaptureManager:
@@ -28,11 +45,15 @@ class CaptureManager:
         self._available = False
         self._formats = []
         # Short, user-facing error message populated by ``check()``.
-        # Surfaced on the dashboard camera card + camera status page
-        # via the heartbeat so operators know a freshly-paired camera
-        # is missing its sensor module (common cause: ribbon cable
-        # not seated, or Zero 2W plugged in without a camera module).
+        # Kept as a plain string for backward compat with the first
+        # hardware-status slice; richer callers should consume
+        # ``faults`` instead.
         self._last_error = ""
+        # List of ``Fault`` records for the structured wire format.
+        # Heartbeat serialises each entry to a dict and the server
+        # stores them so the dashboard can render severity + code
+        # per-fault instead of a single boolean. Empty list = healthy.
+        self._faults: list[Fault] = []
 
     @property
     def device(self):
@@ -55,6 +76,17 @@ class CaptureManager:
         + camera status page.
         """
         return self._last_error
+
+    @property
+    def faults(self) -> list[Fault]:
+        """Active hardware faults from the last ``check()``.
+
+        Empty list when healthy. Each entry has ``code`` + ``severity``
+        + ``message`` (see ``faults.py``). Heartbeat serialises the
+        list into the wire payload so the server dashboard can render
+        per-fault banners with severity colouring.
+        """
+        return list(self._faults)
 
     def check(self):
         """Validate the camera device exists and is accessible.
@@ -81,11 +113,70 @@ class CaptureManager:
                 video_devs or "none",
             )
             self._available = False
-            self._last_error = (
-                "No camera module detected. Check the ribbon cable is "
-                "seated firmly and /boot/config.txt has dtoverlay=ov5647 "
-                "(for the PiHut ZeroCam) or the overlay for your sensor."
+            self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
+            return False
+
+        # Existence isn't enough on a Pi Zero 2W:
+        #
+        #  a) /dev/video10-31 are libcamera subdevices (bcm2835-codec
+        #     M2M, bcm2835-isp Output) that exist regardless of
+        #     whether a sensor is attached. Those fail the V4L2
+        #     "Video Capture" capability check below.
+        #
+        #  b) /dev/video14 (unicam capture node) is registered the
+        #     moment ``dtoverlay=ov5647`` loads, even with the
+        #     ribbon cable unplugged. It reports "Video Capture" in
+        #     Device Caps — V4L2 alone isn't enough. The definitive
+        #     probe for "is a real sensor attached" on Pi is
+        #     ``libcamera-hello --list-cameras``: prints "No cameras
+        #     available!" (exit 0) when the I2C enumerator finds no
+        #     sensor, otherwise lists the sensor names.
+        #
+        # We run (a) first (cheap, no ISP spin-up) then fall through
+        # to (b) which is the expensive-but-accurate check.
+        if not self._reports_video_capture(self._device):
+            log.error(
+                "Camera device %s is not a Video Capture node "
+                "(likely libcamera subdevice without a sensor). "
+                "Available: %s",
+                self._device,
+                video_devs or "none",
             )
+            self._available = False
+            self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
+            return False
+
+        # libcamera-hello is authoritative on the Pi: no sensor → no
+        # enumerated camera. Tolerates missing tool (return True) so
+        # non-Pi test environments that happen to have real V4L2
+        # capture don't get falsely flagged.
+        if not self._libcamera_reports_sensor():
+            log.error(
+                "libcamera-hello reports no sensor attached despite "
+                "%s being a Video Capture node. Ribbon cable likely "
+                "unplugged or sensor not on the expected I2C bus.",
+                self._device,
+            )
+            self._available = False
+            self._last_error = _NO_CAMERA_ERROR
+            self._faults = [
+                make_fault(
+                    FAULT_CAMERA_SENSOR_MISSING,
+                    context={"device": self._device},
+                )
+            ]
             return False
 
         # Check it's a character device (video device)
@@ -130,6 +221,13 @@ class CaptureManager:
             )
         self._available = True
         self._last_error = ""
+        # Happy path — clear faults, emit a non-fatal warning fault if
+        # the sensor is there but can't give us H.264. Surfaces as a
+        # yellow badge without changing online status.
+        if h264_ok or libcam:
+            self._faults = []
+        else:
+            self._faults = [make_fault(FAULT_CAMERA_H264_UNSUPPORTED)]
         return True
 
     def supports_h264(self):
@@ -146,6 +244,116 @@ class CaptureManager:
         """Check if a specific resolution is listed in formats."""
         res_str = f"{width}x{height}"
         return any(res_str in f for f in self._formats)
+
+    def _reports_video_capture(self, device: str) -> bool:
+        """True iff ``v4l2-ctl --info`` shows Video Capture in Device Caps.
+
+        Device Caps (the "what this specific node does" block) is
+        the correct thing to read — the top-level Capabilities
+        line mirrors every node on the hardware and always contains
+        "Video Capture" on a board with a capture-capable driver,
+        even on nodes that are actually M2M or Output.
+
+        Returns ``True`` on tool failure so we don't regress a
+        working sensor into a false negative when v4l2-ctl is
+        missing from the image; downstream picamera2 checks will
+        catch real problems at stream start.
+        """
+        try:
+            result = subprocess.run(
+                ["v4l2-ctl", "--device", device, "--info"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except FileNotFoundError:
+            log.warning(
+                "v4l2-ctl not available — skipping capture-capability "
+                "verification on %s",
+                device,
+            )
+            return True
+        except subprocess.TimeoutExpired:
+            log.warning("v4l2-ctl timed out probing %s", device)
+            return True
+        except OSError as e:
+            log.warning("v4l2-ctl OSError on %s: %s", device, e)
+            return True
+
+        if result.returncode != 0:
+            return False
+
+        in_device_caps = False
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Device Caps"):
+                in_device_caps = True
+                continue
+            if in_device_caps:
+                if not line.startswith(("\t", " ")):
+                    break
+                if "Video Capture" in stripped:
+                    return True
+        return False
+
+    def _libcamera_reports_sensor(self) -> bool:
+        """True iff ``libcamera-hello --list-cameras`` enumerates a sensor.
+
+        On Pi, the I2C enumerator runs when this tool is invoked:
+        with a connected sensor it prints one or more ``Available
+        cameras`` lines; without, it prints
+        ``No cameras available!`` and exits 0. We treat the tool
+        missing or hung as "sensor present" so non-Pi test hosts
+        or images without libcamera-hello don't trigger a false
+        negative.
+        """
+        try:
+            result = subprocess.run(
+                ["libcamera-hello", "--list-cameras"],
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+        except FileNotFoundError:
+            # Fall back to rpicam-hello (newer Pi image split the
+            # name). Same output shape.
+            try:
+                result = subprocess.run(
+                    ["rpicam-hello", "--list-cameras"],
+                    capture_output=True,
+                    text=True,
+                    timeout=6,
+                )
+            except FileNotFoundError:
+                log.warning(
+                    "Neither libcamera-hello nor rpicam-hello found — "
+                    "cannot verify sensor presence"
+                )
+                return True
+            except subprocess.TimeoutExpired:
+                log.warning("rpicam-hello --list-cameras timed out")
+                return True
+            except OSError as e:
+                log.warning("rpicam-hello OSError: %s", e)
+                return True
+        except subprocess.TimeoutExpired:
+            log.warning("libcamera-hello --list-cameras timed out")
+            return True
+        except OSError as e:
+            log.warning("libcamera-hello OSError: %s", e)
+            return True
+
+        combined = (result.stdout or "") + (result.stderr or "")
+        if "No cameras available" in combined:
+            return False
+        # Positive signal: the tool lists at least one sensor.
+        # "Available cameras" header, or an indexed entry like
+        # "0 : ov5647 [..." is enough.
+        if "Available cameras" in combined:
+            return True
+        # Neither marker — assume present to avoid false negatives
+        # when the tool's output format changes across versions.
+        return True
 
     def _query_formats(self):
         """Query supported formats from v4l2-ctl."""

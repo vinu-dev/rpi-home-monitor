@@ -260,20 +260,28 @@
                         'text-muted': cam.config_sync === 'unknown'
                     }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
                 </div>
-                <!-- Hardware fault banner. Shows when the camera's
-                     CaptureManager.check() fails — typically "no
-                     camera module detected" on a freshly paired
-                     Zero 2W whose ribbon cable is loose or sensor
-                     is missing. Click doesn't bubble so tapping
-                     the banner doesn't trigger the outer "go to
-                     Live" handler (which would 500 on a broken
-                     stream). -->
-                <div class="camera-card__alert msg msg--warn"
-                     x-show="cam.hardware_ok === false && cam.status !== 'pending'"
+                <!-- Hardware fault badges (ADR-0023).
+                     Camera stays ONLINE even when faulted — these
+                     sit next to the online pill with severity-
+                     keyed colour. Short ``message`` on the badge,
+                     full ``hint`` revealed on hover via title=
+                     (no click required, no drill-in). Falls back
+                     to the v1.3.0 flat fields (hardware_ok /
+                     hardware_error) when a camera hasn't yet
+                     shipped the structured list. -->
+                <div class="camera-card__faults"
+                     x-show="(cam.hardware_faults && cam.hardware_faults.length) || cam.hardware_ok === false"
                      @click.stop
-                     style="margin-top:var(--space-2); font-size:var(--text-sm);">
-                    <strong>Camera hardware issue.</strong>
-                    <span x-text="cam.hardware_error || 'No camera module detected.'"></span>
+                     style="display:flex; flex-wrap:wrap; gap:var(--space-1); margin-top:var(--space-2);">
+                    <template x-for="f in (cam.hardware_faults && cam.hardware_faults.length ? cam.hardware_faults : [{ code: 'camera_sensor_missing', severity: 'error', message: cam.hardware_error || 'Hardware fault', hint: cam.hardware_error || '' }])"
+                              :key="f.code">
+                        <span class="fault-badge"
+                              :class="'fault-badge--' + (f.severity || 'warning')"
+                              :title="(f.hint || f.message) + ((f.context && f.context.device) ? ' (' + f.context.device + ')' : '')">
+                            <span class="fault-badge__dot" aria-hidden="true"></span>
+                            <span x-text="f.message || f.code"></span>
+                        </span>
+                    </template>
                 </div>
                 <!-- Surface the camera's IP for admins — a necessary fallback
                      when mDNS/.local resolution fails on the operator's

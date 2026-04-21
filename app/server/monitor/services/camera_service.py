@@ -187,6 +187,9 @@ class CameraService:
                 # to enumerate every Camera field.
                 "hardware_ok": getattr(c, "hardware_ok", True),
                 "hardware_error": getattr(c, "hardware_error", ""),
+                # Structured faults (ADR-0023). Kept alongside the
+                # flat legacy fields until all consumers migrate.
+                "hardware_faults": list(getattr(c, "hardware_faults", []) or []),
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -367,6 +370,33 @@ class CameraService:
             # Clip to a sane length so a malformed camera can't bloat
             # the persisted store.
             camera.hardware_error = data["hardware_error"][:512]
+        # Structured fault list (ADR-0023). Each entry is a dict with
+        # code/severity/message/hint/context. We store as-is with two
+        # sanity caps: list length and message length. If a future
+        # camera emits garbage (non-dict entries, missing code), we
+        # drop just those entries rather than the whole payload.
+        if "hardware_faults" in data and isinstance(data["hardware_faults"], list):
+            accepted: list[dict] = []
+            for raw in data["hardware_faults"][:32]:
+                if not isinstance(raw, dict):
+                    continue
+                code = raw.get("code")
+                if not isinstance(code, str) or not code:
+                    continue
+                accepted.append(
+                    {
+                        "code": code[:64],
+                        "severity": str(raw.get("severity", "warning"))[:16],
+                        "message": str(raw.get("message", ""))[:80],
+                        "hint": str(raw.get("hint", ""))[:512],
+                        "context": (
+                            raw.get("context", {})
+                            if isinstance(raw.get("context", {}), dict)
+                            else {}
+                        ),
+                    }
+                )
+            camera.hardware_faults = accepted
         # Pick up the camera's post-OTA firmware version the first time
         # it reports in after a reboot. Heartbeat is the most reliable
         # channel — avahi TXT records refresh with noticeable lag and

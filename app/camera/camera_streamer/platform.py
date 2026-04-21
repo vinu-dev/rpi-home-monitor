@@ -93,9 +93,61 @@ class Platform:
 
 
 def _probe_camera_device() -> str:
-    """Find the first available video device."""
+    """Find the first V4L2 node that reports *Video Capture* capability.
+
+    Previously returned the first ``/dev/video*`` node found, which on
+    a Pi Zero 2W without a camera module is ``/dev/video10`` — a
+    ``bcm2835-codec`` Video-M2M decode node that is NOT a capture
+    sensor. ``CaptureManager.check()`` then happily passed the
+    existence test and reported ``hardware_ok=True``, hiding a real
+    no-camera fault from both the dashboard banner and the camera
+    status page (bug report: three paired cameras show online but
+    two have no sensor attached).
+
+    Rules:
+    - Use ``v4l2-ctl --info`` and require ``Video Capture`` in the
+      Device Caps line. Multiplanar capture (``Video Capture
+      Multiplanar``) also qualifies.
+    - Do NOT accept ``Video Memory-to-Memory`` (codec) or
+      ``Video Output`` (ISP) nodes — those exist even when no sensor
+      is connected.
+    - If v4l2-ctl is unavailable or no device qualifies, fall back
+      to ``/dev/video0``. That path's absence is the correct
+      diagnostic signal (``CaptureManager.check()`` raises the
+      ``No camera module detected`` banner).
+    """
+    try:
+        import subprocess
+    except ImportError:  # pragma: no cover — defensive
+        return "/dev/video0"
+
     for path in sorted(glob.glob("/dev/video*")):
-        return path
+        try:
+            result = subprocess.run(
+                ["v4l2-ctl", "--device", path, "--info"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            # v4l2-ctl missing or hung — fall back to the default
+            # entry. Real hardware-check happens in CaptureManager.
+            return "/dev/video0"
+        if result.returncode != 0:
+            continue
+        # Look only at the "Device Caps" section (not the parent
+        # "Capabilities" which mirrors every node on the device).
+        in_device_caps = False
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Device Caps"):
+                in_device_caps = True
+                continue
+            if in_device_caps:
+                if not line.startswith(("\t", " ")):
+                    break
+                if "Video Capture" in stripped:
+                    return path
     return "/dev/video0"
 
 
