@@ -6,6 +6,45 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.3.0] — 2026-04-21
+
+Feature release: camera-side motion detection, admin password reset,
+expanded recordings + storage controls, control-channel mTLS
+hardening, and a mobile-UI polish pass. No breaking API changes.
+
+### Added
+- **Camera-side motion detection + motion recording mode** (ADR-0021, [#92](https://github.com/vinu-dev/rpi-home-monitor/pull/92)) — new on-device motion pipeline. Recording modes are now `continuous` / `motion` / `off`; motion mode writes clips only around detected events (with a configurable pre-roll + sensitivity). Exposed per-camera in the dashboard Stream Settings modal.
+- **Dashboard camera details panel + motion toggle** ([#124](https://github.com/vinu-dev/rpi-home-monitor/pull/124), [#110](https://github.com/vinu-dev/rpi-home-monitor/issues/110), [#106](https://github.com/vinu-dev/rpi-home-monitor/issues/106)) — collapsible `<details>` per paired-camera card showing recording mode, firmware, bitrate/profile/keyframe, uptime, and admin-only Health rows. Motion detection checkbox + sensitivity slider wired into the stream-settings modal. New `DELETE /api/v1/recordings` endpoint with a two-step Danger Zone UI to wipe every clip across every camera.
+- **Admin password reset — slice 1** (ADR-0022, [#103](https://github.com/vinu-dev/rpi-home-monitor/pull/103)) — admins can force-reset any user's password from Settings → Users with a strict-mode confirmation dialog. Sole-admin safety rail prevents demoting/clearing the only admin. Reset-token self-service flow deferred to a later slice.
+- **USB reformat for all device states** ([#125](https://github.com/vinu-dev/rpi-home-monitor/pull/125), [#107](https://github.com/vinu-dev/rpi-home-monitor/issues/107)) — Format button previously appeared only for unsupported filesystems. Now: Reformat available for supported-but-not-in-use drives and for the currently-active drive (client auto-ejects before the format request). Dialog copy adapts per state.
+- **Recordings Tier-2 / Tier-3 endpoints** — `GET /api/v1/recordings/latest` (newest clip across every camera) and `GET /api/v1/recordings/recent?limit=N` (most-recent N), used by dashboard surfaces.
+
+### Changed
+- **Control-channel mTLS tightened** (ADR-0015, [#122](https://github.com/vinu-dev/rpi-home-monitor/pull/122), partial [#119](https://github.com/vinu-dev/rpi-home-monitor/issues/119)) — camera status server now loads the pairing CA (`ssl.CERT_OPTIONAL` + `load_verify_locations(ca.crt)`), and `_has_mtls_client_cert` accepts only validated peer certs. The source-IP fallback was removed so an attacker on the same LAN can't impersonate the server. Pre-pairing, the listener still accepts CERT_NONE with a warning until the CA lands.
+- **Yocto license labels aligned to AGPL** ([#122](https://github.com/vinu-dev/rpi-home-monitor/pull/122), [#120](https://github.com/vinu-dev/rpi-home-monitor/issues/120)) — `monitor-server_1.0.bb` and `camera-streamer_1.0.bb` now declare `LICENSE = "AGPL-3.0-only"` with the upstream `COMMON_LICENSE_DIR` checksum.
+- **Mobile Recordings layout + date-picker width** ([#123](https://github.com/vinu-dev/rpi-home-monitor/pull/123), [#104](https://github.com/vinu-dev/rpi-home-monitor/issues/104), [#105](https://github.com/vinu-dev/rpi-home-monitor/issues/105)) — Recordings player capped at 38vh on narrow viewports so the list remains reachable. Date / datetime-local inputs get a sensible min/max width. Clip-card checkbox hit area expanded to 44×44 per WCAG 2.5.5 while the visual remains 18px.
+- **Camera Status page tap-target polish** ([#123](https://github.com/vinu-dev/rpi-home-monitor/pull/123), [#109](https://github.com/vinu-dev/rpi-home-monitor/issues/109)) — TOC links padded to ≥44px with `touch-action: manipulation` to kill the iOS 300ms tap delay.
+- **Live View height cap** ([#98](https://github.com/vinu-dev/rpi-home-monitor/pull/98), [#97](https://github.com/vinu-dev/rpi-home-monitor/pull/97)) — player capped at 70vh with player controls; fits laptop viewports without scrolling.
+- **Dashboard "N recent system events" strip** ([#102](https://github.com/vinu-dev/rpi-home-monitor/pull/102)) — now clears when the user visits `/logs` instead of hanging around until page reload.
+- **Server-deploy script now ships `reset-admin-password.py`** ([#108](https://github.com/vinu-dev/rpi-home-monitor/pull/108)) under `/opt/monitor/scripts/` so on-device recovery uses the same code the CI tests exercise.
+- **Release planning + local-first roadmap docs landed** (`docs/roadmap-next-2-releases.md`, `docs/specs/r1-*.md`).
+
+### Fixed
+- **Motion-mode recordings — clip spawning race** ([#94](https://github.com/vinu-dev/rpi-home-monitor/pull/94)) — scheduler now wakes on motion event + correlator accepts clips that start just after the event timestamp.
+- **Fresh-camera stream-state default** (ADR-0017, [#126](https://github.com/vinu-dev/rpi-home-monitor/pull/126), [#115](https://github.com/vinu-dev/rpi-home-monitor/issues/115)) — `lifecycle._read_desired_stream_state` defaulted to `running` for a missing state file, drifting from `control.py`'s `stopped`. Aligned to `stopped` per ADR-0017 on-demand; regression test locks parity with ControlHandler.
+- **Safety-rail AttributeError on admin password reset** ([#122](https://github.com/vinu-dev/rpi-home-monitor/pull/122), [#117](https://github.com/vinu-dev/rpi-home-monitor/issues/117)) — `UserService` called the non-existent `self._store.list_users()`; renamed to `get_users()` with a regression test that instantiates a real `Store` (not a MagicMock) so future renames fail loudly.
+- **Nightly Validation** ([#149](https://github.com/vinu-dev/rpi-home-monitor/pull/149)) — 5+ consecutive red runs. Fixed the Browser E2E Full login race (waitForURL before navigating onward), refreshed stale camera-status section labels, and installed `pytest` in the Yocto Runtime job.
+- **Mobile UI + storage triage** ([#93](https://github.com/vinu-dev/rpi-home-monitor/pull/93)) — covers [#86](https://github.com/vinu-dev/rpi-home-monitor/issues/86), [#87](https://github.com/vinu-dev/rpi-home-monitor/issues/87), [#88](https://github.com/vinu-dev/rpi-home-monitor/issues/88), [#89](https://github.com/vinu-dev/rpi-home-monitor/issues/89); confirms [#91](https://github.com/vinu-dev/rpi-home-monitor/issues/91); partial [#90](https://github.com/vinu-dev/rpi-home-monitor/issues/90).
+
+### Security
+- ADR-0022 ("no backdoors") codified. The earlier sudo-only CLI admin-recovery script was removed end-to-end in [#111](https://github.com/vinu-dev/rpi-home-monitor/pull/111); sole-admin lockout is now a hardware-only recovery path. Every auth/recovery PR in this release cites ADR-0022.
+- Camera control-channel source-IP fallback removed (see Changed above).
+
+### Known follow-up
+- Server→camera direction still uses `ssl.CERT_NONE` because the camera's status-server cert is self-signed; closing this needs an ADR picking CA-signed-at-pairing vs pinned fingerprint. Tracked in [#119](https://github.com/vinu-dev/rpi-home-monitor/issues/119).
+- Self-service forgot-password (reset-token) flow deferred to a future slice of [#99](https://github.com/vinu-dev/rpi-home-monitor/issues/99).
+- Secrets-at-rest ([#101](https://github.com/vinu-dev/rpi-home-monitor/issues/101)) needs its own ADR before implementation.
+
 ## [1.2.1] — 2026-04-19
 
 Quality-and-polish patch. No API changes, no migration needed.
