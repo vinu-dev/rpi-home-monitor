@@ -379,8 +379,24 @@
         <div class="modal-overlay" @click.self="editCam = null">
             <div class="card modal-card">
                 <div class="modal-card__header">
-                    <span style="font-weight:600" x-text="'Stream Settings \u2014 ' + (editCam.name || editCam.id)"></span>
+                    <span style="font-weight:600" x-text="'Camera Settings \u2014 ' + (editCam.name || editCam.id)"></span>
                     <button class="btn btn--secondary btn--small btn--icon" @click="editCam = null">&#x2715;</button>
+                </div>
+                <!-- Issue #156: after pairing, operators had no way to rename
+                     a camera from "Camera 1" to "Front Door" or attach a
+                     location. Exposing these two fields at the top of the
+                     existing Settings modal is the smallest-diff fix — the
+                     PUT /api/v1/cameras/{id} API already accepts both and
+                     enforces the 1–64 char name length. -->
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" class="form-input" x-model="editForm.name"
+                           maxlength="64" placeholder="e.g. Front Door">
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" class="form-input" x-model="editForm.location"
+                           maxlength="64" placeholder="e.g. Porch (optional)">
                 </div>
                 <div class="form-group">
                     <label>Resolution</label>
@@ -882,6 +898,9 @@ function dashboardPage() {
             this.editCam = cam;
             var resKey = cam.width + 'x' + cam.height;
             this.editForm = {
+                // Issue #156 — name + location editable in the same modal.
+                name: cam.name || '',
+                location: cam.location || '',
                 resolution: resKey,
                 fps: cam.fps,
                 bitrateMbps: (cam.bitrate / 1000000),
@@ -933,7 +952,19 @@ function dashboardPage() {
             this.savingStream = true;
             this.streamSaveMsg = '';
             var parts = this.editForm.resolution.split('x');
+            // Validate name client-side before the round-trip so a trivial
+            // empty-field typo surfaces immediately (backend enforces
+            // 1-64 chars and will 400 otherwise).
+            var name = (this.editForm.name || '').trim();
+            if (!name) {
+                this.streamSaveOk = false;
+                this.streamSaveMsg = 'Name is required (1-64 characters).';
+                this.savingStream = false;
+                return;
+            }
             var payload = {
+                name: name,
+                location: (this.editForm.location || '').trim(),
                 width: parseInt(parts[0]),
                 height: parseInt(parts[1]),
                 fps: this.editForm.fps,
