@@ -10,6 +10,22 @@
 #
 # Cipher: xchacha20,aes-adiantum-plain64 (2-3.5x faster than AES
 # on ARM without hardware acceleration)
+#
+# UX — LED feedback (issue hotspot-stuck):
+#   Set ACT LED to fast-blink while cryptsetup runs (up to several
+#   minutes on a Zero 2W). If this script fails silently the user
+#   just sees solid green, which is indistinguishable from "stuck
+#   kernel default" and led them to think the device was bricked.
+#
+# UX — fresh-camera fallback:
+#   Camera LUKS is keyed off the pairing_secret, but a freshly
+#   flashed SD card isn't paired yet — there's no secret. Rather
+#   than silently exit and leave /data as a raw partition (which
+#   makes local-fs.target hang forever and the setup hotspot never
+#   fire), we mkfs.ext4 the partition as a plain filesystem so
+#   boot can complete, the hotspot can come up, and the user can
+#   pair. Pairing writes a re-encryption marker that a later
+#   boot converts to LUKS once the secret exists.
 # =============================================================
 set -e
 
@@ -17,6 +33,34 @@ STAMP="/data/.luks-done"
 DATA_DEV="/dev/mmcblk0p4"
 DM_NAME="data"
 MOUNT_POINT="/data"
+
+# --- LED control (ACT LED on RPi) ---
+LED_PATH="/sys/class/leds/ACT"
+
+led_write() {
+    # Best-effort: chmod may fail in a chroot test env.
+    [ -w "${LED_PATH}/$1" ] 2>/dev/null && echo "$2" > "${LED_PATH}/$1" 2>/dev/null
+    return 0
+}
+
+led_working() {
+    # Fast blink (200ms on/off) — "I'm busy, don't unplug me".
+    # The camera-hotspot.sh / monitor-hotspot.sh set slow blink
+    # (1s) for setup mode, so fast blink distinguishes early
+    # first-boot work from setup-waiting.
+    chmod 0666 "${LED_PATH}/trigger" "${LED_PATH}/brightness" \
+        "${LED_PATH}/delay_on" "${LED_PATH}/delay_off" 2>/dev/null || true
+    led_write trigger timer
+    led_write delay_on 200
+    led_write delay_off 200
+}
+
+led_off() {
+    led_write trigger none
+    led_write brightness 0
+}
+
+led_working
 
 log() {
     logger -t "luks-first-boot" "$1"
@@ -56,6 +100,7 @@ if cryptsetup isLuks "$DATA_DEV" 2>/dev/null; then
         mount /dev/mapper/"$DM_NAME" "$MOUNT_POINT"
         log "Mounted encrypted /data"
     fi
+    led_off
     exit 0
 fi
 
@@ -71,27 +116,64 @@ fi
 if is_server; then
     log "Server mode: requesting passphrase for disk encryption"
 
-    # Server uses passphrase with 1 GB argon2id memory
+    # UX — headless first boot:
+    #   If nobody is attached to a console (no keyboard + display
+    #   and no serial typing), timeout=0 would block forever and
+    #   the setup hotspot (which the user DOES expect to see)
+    #   never fires. Retry with a 5-minute timeout, then fall
+    #   back to plain ext4 + a stamp the admin UI surfaces so
+    #   the user can opt into LUKS later from the Settings page.
     PASSPHRASE=""
-    while [ -z "$PASSPHRASE" ]; do
-        PASSPHRASE=$(systemd-ask-password --timeout=0 \
-            "Create encryption passphrase for /data (min 12 chars):")
+    PASSPHRASE_TIMEOUT=300
+    MAX_RETRIES=5
+    RETRY=0
+    while [ -z "$PASSPHRASE" ] && [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+        RETRY=$((RETRY + 1))
+        PASSPHRASE=$(systemd-ask-password --timeout="$PASSPHRASE_TIMEOUT" \
+            "Create encryption passphrase for /data (min 12 chars):" || true)
 
-        # Check minimum length
+        # Timeout / empty entry — user isn't at a console. Fall back
+        # to plain ext4 so the hotspot can come up. Admin opts into
+        # LUKS later from Settings -> Storage.
+        if [ -z "$PASSPHRASE" ]; then
+            log "No passphrase entered within ${PASSPHRASE_TIMEOUT}s — falling back to plain ext4"
+            log "The hotspot will come up so the admin can finish setup over WiFi."
+            log "Enable LUKS later from Settings -> Storage once the server is reachable."
+            if ! blkid -o value -s TYPE "$DATA_DEV" 2>/dev/null | grep -q ext4; then
+                mkfs.ext4 -F -L data "$DATA_DEV"
+            fi
+            mount "$DATA_DEV" "$MOUNT_POINT"
+            touch "$MOUNT_POINT/.luks-opt-in-pending"
+            led_off
+            exit 0
+        fi
+
+        # Check minimum length — loop back for another try.
         if [ "${#PASSPHRASE}" -lt 12 ]; then
-            log "Passphrase too short (minimum 12 characters)"
+            log "Passphrase too short (minimum 12 characters) — try again"
             PASSPHRASE=""
             continue
         fi
 
         # Confirm
-        CONFIRM=$(systemd-ask-password --timeout=0 \
-            "Confirm encryption passphrase:")
+        CONFIRM=$(systemd-ask-password --timeout="$PASSPHRASE_TIMEOUT" \
+            "Confirm encryption passphrase:" || true)
         if [ "$PASSPHRASE" != "$CONFIRM" ]; then
-            log "Passphrases do not match"
+            log "Passphrases do not match — try again"
             PASSPHRASE=""
         fi
     done
+
+    if [ -z "$PASSPHRASE" ]; then
+        log "Exhausted $MAX_RETRIES attempts — falling back to plain ext4 (same as timeout path)"
+        if ! blkid -o value -s TYPE "$DATA_DEV" 2>/dev/null | grep -q ext4; then
+            mkfs.ext4 -F -L data "$DATA_DEV"
+        fi
+        mount "$DATA_DEV" "$MOUNT_POINT"
+        touch "$MOUNT_POINT/.luks-opt-in-pending"
+        led_off
+        exit 0
+    fi
 
     log "Formatting $DATA_DEV with LUKS2 + Adiantum (server parameters)..."
     echo -n "$PASSPHRASE" | cryptsetup luksFormat --type luks2 \
@@ -130,11 +212,28 @@ elif is_camera; then
     fi
 
     if [ ! -f "$PAIRING_SECRET_FILE" ]; then
-        log "ERROR: No pairing_secret found — cannot derive LUKS key"
-        log "Camera must be paired with server before LUKS encryption"
-        log "Skipping LUKS formatting — /data will remain unencrypted"
-        # Mount as plain partition so camera can function
-        mount "$DATA_DEV" "$MOUNT_POINT" 2>/dev/null || true
+        log "No pairing_secret found — camera not yet paired with a server"
+        log "Formatting /data as plain ext4 so the setup hotspot can run."
+        log "Once paired, the camera re-keys /data to LUKS on the next boot"
+        log "(see /data/.luks-migrate-pending marker written at pair time)."
+
+        # Important: the raw partition from the LUKS wks has no
+        # filesystem. Without mkfs here, systemd's fsck for
+        # /dev/mmcblk0p4 fails -> local-fs.target never fires ->
+        # camera-hotspot.service (After=local-fs.target) stays
+        # queued forever and the user sees no setup WiFi.
+        if ! blkid -o value -s TYPE "$DATA_DEV" 2>/dev/null | grep -q ext4; then
+            log "mkfs.ext4 -L data $DATA_DEV"
+            mkfs.ext4 -F -L data "$DATA_DEV"
+        fi
+
+        mount "$DATA_DEV" "$MOUNT_POINT" || {
+            log "ERROR: mkfs succeeded but mount failed on $DATA_DEV"
+            led_off
+            exit 1
+        }
+        log "Plain ext4 mounted at $MOUNT_POINT — boot can proceed"
+        led_off
         exit 0
     fi
 
@@ -203,3 +302,8 @@ if is_server; then
 fi
 
 log "=== LUKS first-boot encryption complete ==="
+
+# Hand a clean LED state to the hotspot / streamer. The hotspot
+# script will re-arm the LED to slow-blink if setup is still
+# pending, or leave it solid once everything is up.
+led_off
