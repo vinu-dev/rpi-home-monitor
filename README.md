@@ -1,5 +1,9 @@
 # RPi Home Monitor
 
+<p align="center">
+  <img src="docs/images/hero.png" alt="RPi Home Monitor — self-hosted, private home security on Raspberry Pi" width="100%">
+</p>
+
 [![CI](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml/badge.svg)](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml)
 
 **A self-hosted home security camera system built on Raspberry Pi.** Open-source alternative to Ring, Tapo, and Nest — with no cloud subscriptions, no vendor lock-in, and complete control over your data.
