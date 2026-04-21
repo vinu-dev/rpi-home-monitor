@@ -88,6 +88,31 @@ class CaptureManager:
             )
             return False
 
+        # Existence isn't enough: on a Pi Zero 2W without a sensor,
+        # /dev/video10-31 still exist (libcamera subdevices like
+        # bcm2835-codec and bcm2835-isp). We need to verify the node
+        # actually reports *Video Capture* — otherwise the streamer
+        # later fails at libcamera/picamera2 start with a cryptic
+        # "list index out of range" and the dashboard banner never
+        # fires because hardware_ok was left True.
+        if not self._reports_video_capture(self._device):
+            log.error(
+                "Camera device %s is not a Video Capture node "
+                "(likely libcamera subdevice without a sensor). "
+                "Available: %s",
+                self._device,
+                video_devs or "none",
+            )
+            self._available = False
+            self._last_error = (
+                "No camera module detected. A video device node was "
+                "found but it does not report a capture sensor. Check "
+                "the ribbon cable is seated firmly and "
+                "/boot/config.txt has dtoverlay=ov5647 (PiHut ZeroCam) "
+                "or the overlay for your sensor."
+            )
+            return False
+
         # Check it's a character device (video device)
         mode = os.stat(self._device).st_mode
         if not mode & 0o020000:
@@ -146,6 +171,57 @@ class CaptureManager:
         """Check if a specific resolution is listed in formats."""
         res_str = f"{width}x{height}"
         return any(res_str in f for f in self._formats)
+
+    def _reports_video_capture(self, device: str) -> bool:
+        """True iff ``v4l2-ctl --info`` shows Video Capture in Device Caps.
+
+        Device Caps (the "what this specific node does" block) is
+        the correct thing to read — the top-level Capabilities
+        line mirrors every node on the hardware and always contains
+        "Video Capture" on a board with a capture-capable driver,
+        even on nodes that are actually M2M or Output.
+
+        Returns ``True`` on tool failure so we don't regress a
+        working sensor into a false negative when v4l2-ctl is
+        missing from the image; downstream picamera2 checks will
+        catch real problems at stream start.
+        """
+        try:
+            result = subprocess.run(
+                ["v4l2-ctl", "--device", device, "--info"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except FileNotFoundError:
+            log.warning(
+                "v4l2-ctl not available — skipping capture-capability "
+                "verification on %s",
+                device,
+            )
+            return True
+        except subprocess.TimeoutExpired:
+            log.warning("v4l2-ctl timed out probing %s", device)
+            return True
+        except OSError as e:
+            log.warning("v4l2-ctl OSError on %s: %s", device, e)
+            return True
+
+        if result.returncode != 0:
+            return False
+
+        in_device_caps = False
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Device Caps"):
+                in_device_caps = True
+                continue
+            if in_device_caps:
+                if not line.startswith(("\t", " ")):
+                    break
+                if "Video Capture" in stripped:
+                    return True
+        return False
 
     def _query_formats(self):
         """Query supported formats from v4l2-ctl."""
