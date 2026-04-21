@@ -2,13 +2,13 @@
 
 Date: 2026-04-20
 Purpose: Turn the market backlog into an AI-ready execution plan for the next two release cycles.
-Source: [market-feature-backlog-100.md](C:/Users/vinun/codex/rpi-home-monitor/docs/market-feature-backlog-100.md)
+Source: [market-feature-backlog-100.md](./market-feature-backlog-100.md)
 Execution pack:
-- [Release 01 plan](C:/Users/vinun/codex/rpi-home-monitor/docs/releases/release-01.md)
-- [Release 02 plan](C:/Users/vinun/codex/rpi-home-monitor/docs/releases/release-02.md)
-- [Feature specs index](C:/Users/vinun/codex/rpi-home-monitor/docs/specs/index.md)
-- [AI execution rules](C:/Users/vinun/codex/rpi-home-monitor/docs/ai/execution-rules.md)
-- [Connectivity and privacy constraints](C:/Users/vinun/codex/rpi-home-monitor/docs/connectivity-and-privacy-constraints.md)
+- [Release 01 plan](./releases/release-01.md)
+- [Release 02 plan](./releases/release-02.md)
+- [Feature specs index](./specs/index.md)
+- [AI execution rules](./ai/execution-rules.md)
+- [Connectivity and privacy constraints](./connectivity-and-privacy-constraints.md)
 
 ## Planning Rules
 
@@ -156,7 +156,7 @@ For AI-assisted implementation, the preferred order is:
 A feature is ready for implementation when it has:
 
 - a GitHub issue
-- a feature spec using [ai-feature-template.md](C:/Users/vinun/codex/rpi-home-monitor/docs/ai-feature-template.md)
+- a feature spec using [ai-feature-template.md](./ai-feature-template.md)
 - acceptance criteria
 - identified modules/files likely to change
 - test expectations
