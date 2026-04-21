@@ -58,3 +58,6 @@ meta-home-monitor/recipes-support/swupdate/files/generated/
 Thumbs.db
 ota-staging/
 app/camera/MagicMock/
+hw-banner.png
+logo-preview.png
+logo-variants.png
