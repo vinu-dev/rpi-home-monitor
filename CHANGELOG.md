@@ -6,6 +6,33 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.3.1] — 2026-04-22
+
+Patch release. Fixes the prod first-boot hotspot chain, cameraless
+Pi Zero 2W detection, a UX cluster around hardware faults, and
+adds a brand mark. No breaking API changes.
+
+### Added
+- **Unified fault framework** (ADR-0023, [#158](https://github.com/vinu-dev/rpi-home-monitor/pull/158)) — structured `hardware_faults: [{code, severity, message, hint, context}]` on every heartbeat. Dashboard renders one compact severity-colored chip per active fault next to the ONLINE pill; hover reveals the actionable hint. Codes this release: `camera_sensor_missing`, `camera_h264_unsupported`. Flat v1.3.0 `hardware_ok`/`hardware_error` kept for back-compat.
+- **Brand mark** ([bc9d6a5](https://github.com/vinu-dev/rpi-home-monitor/commit/bc9d6a5)) — new house-with-camera-aperture SVG logo in coral→violet gradient. Replaces the generic DSLR silhouette in the nav; same asset drives the favicon. Monochrome + favicon variants shipped.
+- **Edit camera name + location** ([#157](https://github.com/vinu-dev/rpi-home-monitor/pull/157), [#156](https://github.com/vinu-dev/rpi-home-monitor/issues/156)) — Camera Settings modal now exposes name + location at the top. After pairing, operators can rename "Camera 1" → "Front Door" without an SSH round-trip.
+- **README hero image** ([c505cd3](https://github.com/vinu-dev/rpi-home-monitor/commit/c505cd3)) — marketing banner at the top of the repo landing page.
+
+### Fixed
+- **Prod first-boot hotspot never came up** ([#153](https://github.com/vinu-dev/rpi-home-monitor/pull/153), [#155](https://github.com/vinu-dev/rpi-home-monitor/pull/155)) — two stacked bugs on prod images: `luks-first-boot.sh` never shipped in the rootfs (LUKS_ENABLED scoping bug) and the wks left `/data` raw. Fixed by formatting `/data` as ext4 at image-build time in `home-{camera,monitor}-ab-luks.wks`; LUKS migration now sequences post-pairing in a follow-up slice.
+- **Cameraless Pi Zero 2W reported hardware_ok=true** ([#158](https://github.com/vinu-dev/rpi-home-monitor/pull/158)) — `/dev/video10-31` exist as libcamera subdevices regardless of sensor presence, and `dtoverlay=ov5647` registers `/dev/video14` as a Video Capture node even with the ribbon cable unplugged. `CaptureManager.check()` now chains `v4l2-ctl` Device Caps (`Video Capture` only) with `libcamera-hello --list-cameras` as the authoritative probe.
+- **"All systems normal — 3/3 online"** shown even when paired cameras had no sensor attached. Tier-1 summary now counts active faults into the state: amber for warning/error, red for critical.
+- **LED was dark during LUKS first-boot** ([#153](https://github.com/vinu-dev/rpi-home-monitor/pull/153)) — added a fast-blink (200 ms) LED state during cryptsetup so operators know the device is working.
+
+### Changed
+- **Build checksum aligned** ([#151](https://github.com/vinu-dev/rpi-home-monitor/pull/151)) — `LIC_FILES_CHKSUM` for AGPL-3.0-only now matches poky scarthgap's bundled file (`73f1eb20517c…`). Previous `eb1e6478…` was the upstream/FSF copy and failed `populate_lic_qa` on build.
+- **python3-videodev2 recipe** ([#152](https://github.com/vinu-dev/rpi-home-monitor/pull/152)) — declares `LIC_FILES_CHKSUM` so scarthgap's `do_populate_lic` QA stops failing the camera-prod build.
+- **E2E regression spec** ([#149](https://github.com/vinu-dev/rpi-home-monitor/pull/149)) — `waitForURL(/dashboard/)` before navigating onward (login was racing the redirect); stale "Device Info / Connection" selectors replaced with `nav[aria-label="Page sections"]`-backed role queries. Yocto Runtime job now installs pytest.
+
+### Known follow-up
+- **LUKS-post-pair migration** — re-key `/data` to LUKS on the next boot after pairing completes (reopens the security posture temporarily relaxed by the wks fix). Tracked as ADR follow-up.
+- **/faults page + mute endpoint** — deferred per ADR-0023 §Scope.
+
 ## [1.3.0] — 2026-04-21
 
 Feature release: camera-side motion detection, admin password reset,
