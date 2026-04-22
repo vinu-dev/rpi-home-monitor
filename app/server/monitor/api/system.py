@@ -13,6 +13,9 @@ Endpoints:
   POST /system/factory-reset           - Wipe all data and return to first-boot state
 """
 
+import time
+from datetime import datetime
+
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
@@ -34,6 +37,34 @@ def _read_os_release():
             return result
     except OSError:
         return {}
+
+
+@system_bp.route("/time", methods=["GET"])
+@login_required
+def time_now():
+    """Return the server's current wall-clock time.
+
+    Used by the dashboard top-bar clock so the displayed time matches
+    what ends up in audit logs / motion event timestamps. The
+    dashboard fetches this once on load, computes offset from the
+    client clock, and ticks locally every second — re-syncing every
+    five minutes to avoid drift.
+    """
+    now = datetime.now().astimezone()
+    # Local-time ISO without microseconds + offset (e.g.
+    # "2026-04-22T07:34:02+01:00"). Clients can Date.parse() it
+    # directly.
+    iso = now.replace(microsecond=0).isoformat()
+    return jsonify(
+        {
+            "iso": iso,
+            "unix": int(time.time()),
+            "tz": now.tzname() or "UTC",
+            "tz_offset_seconds": int(now.utcoffset().total_seconds())
+            if now.utcoffset()
+            else 0,
+        }
+    )
 
 
 @system_bp.route("/health", methods=["GET"])

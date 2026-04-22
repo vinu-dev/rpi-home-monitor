@@ -134,6 +134,27 @@ a:hover { text-decoration: underline; }
     color: var(--color-text-muted);
 }
 
+/* Server wall clock in the top bar.
+   Tabular-nums keeps each second tick the same width (no jiggle).
+   Hidden on narrow viewports (< 480 px) where space is tight; the
+   dashboard page has its own uptime/last-seen anyway. */
+.top-bar__clock {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    letter-spacing: 0.02em;
+    padding: 2px 10px;
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--color-border);
+    white-space: nowrap;
+}
+@media (max-width: 480px) {
+    .top-bar__clock { display: none; }
+}
+
 .top-bar__logout {
     background: none;
     border: 1px solid var(--color-border);

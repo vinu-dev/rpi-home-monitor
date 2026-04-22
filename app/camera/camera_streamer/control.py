@@ -58,6 +58,12 @@ PARAM_SCHEMA = {
     # thresholds at motion-pipeline start. See config.motion_sensitivity
     # + motion_runner.motion_config_from_sensitivity.
     "motion_sensitivity": {"type": int, "min": 1, "max": 10},
+    # Motion detection on/off gate. Maps to the MOTION_DETECTION
+    # config key on-device; stream.py gates the motion pipeline
+    # on it. The server's Camera model uses the longer name
+    # ``recording_motion_enabled`` for the same boolean and
+    # renames before pushing (see camera_service._translate_stream_params_for_wire).
+    "motion_detection": {"type": bool},
 }
 
 # Rate limit: minimum seconds between config changes
@@ -208,6 +214,7 @@ class ControlHandler:
                 "hflip": {"type": "bool"},
                 "vflip": {"type": "bool"},
                 "motion_sensitivity": {"type": "int", "min": 1, "max": 10},
+                "motion_detection": {"type": "bool"},
             },
         }
 
@@ -224,6 +231,7 @@ class ControlHandler:
             "hflip": self._config.hflip,
             "vflip": self._config.vflip,
             "motion_sensitivity": self._config.motion_sensitivity,
+            "motion_detection": self._config.motion_detection,
         }
 
     def set_config(self, params, request_id=0, origin="server"):
