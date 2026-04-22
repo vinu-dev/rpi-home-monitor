@@ -28,6 +28,13 @@
             <span class="top-bar__title">Home Monitor</span>
         </div>
         <div class="top-bar__right">
+            <!-- Server-side wall clock. Fetched once from /system/time
+                 to get the server's local offset, then ticks client-
+                 side every second. Re-syncs every 5 min to correct
+                 drift. Shows the same time as audit log + motion
+                 event timestamps (not the browser's clock). -->
+            <span class="top-bar__clock" id="topbar-clock" title="Server time"
+                  aria-label="Server time"></span>
             <span class="top-bar__user" id="topbar-username"></span>
             <button class="top-bar__logout" id="btn-logout" type="button">Logout</button>
         </div>
@@ -128,6 +135,58 @@
         link.addEventListener('touchstart', warm, { once: true, passive: true });
         // Also kick on focus for keyboard navigation.
         link.addEventListener('focus', warm, { once: true });
+    })();
+    </script>
+    <script>
+    // Server wall-clock in the top bar. Fetches once from /system/time
+    // to anchor the display to the server's clock + timezone, then
+    // ticks locally every second. Re-syncs every 5 minutes so long
+    // browser sessions don't drift. Works without Alpine — this
+    // runs on every authenticated page.
+    (function() {
+        var el = document.getElementById('topbar-clock');
+        if (!el) return;
+        var serverUnix = null;   // server-reported unix seconds at sync
+        var localUnix = null;    // client performance-time at that sync
+        var tzName = '';
+        var tzOffsetSeconds = 0;
+
+        function sync() {
+            fetch('/api/v1/system/time', { credentials: 'same-origin', cache: 'no-store' })
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    if (!d || typeof d.unix !== 'number') return;
+                    serverUnix = d.unix;
+                    localUnix = Date.now() / 1000;
+                    tzName = d.tz || '';
+                    tzOffsetSeconds = d.tz_offset_seconds || 0;
+                    render();
+                })
+                .catch(function() { /* keep last value */ });
+        }
+
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+        function render() {
+            if (serverUnix === null) {
+                el.textContent = '--:--:--';
+                return;
+            }
+            var elapsed = (Date.now() / 1000) - localUnix;
+            var t = serverUnix + elapsed;
+            // Convert unix + tz_offset to a "virtual local date" whose
+            // UTC fields match the server's local wall clock.
+            var d = new Date((t + tzOffsetSeconds) * 1000);
+            var hh = pad(d.getUTCHours());
+            var mm = pad(d.getUTCMinutes());
+            var ss = pad(d.getUTCSeconds());
+            el.textContent = hh + ':' + mm + ':' + ss;
+            el.title = 'Server time' + (tzName ? ' (' + tzName + ')' : '');
+        }
+
+        sync();
+        setInterval(render, 1000);
+        setInterval(sync, 5 * 60 * 1000);
     })();
     </script>
     {% block scripts %}{% endblock %}
