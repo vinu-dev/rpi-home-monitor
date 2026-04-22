@@ -59,6 +59,10 @@ class TestGetCapabilities:
             "vflip",
             # ADR-0021: per-camera motion sensitivity dial (1-10)
             "motion_sensitivity",
+            # MOTION_DETECTION on/off gate. Server pushes this
+            # (renamed from recording_motion_enabled) when the admin
+            # toggles motion on from the Camera Settings modal.
+            "motion_detection",
         }
         assert set(params.keys()) == expected
 
@@ -88,6 +92,10 @@ class TestGetConfig:
             "vflip",
             # ADR-0021: per-camera motion sensitivity dial (1-10)
             "motion_sensitivity",
+            # MOTION_DETECTION on/off gate. Server pushes this
+            # (renamed from recording_motion_enabled) when the admin
+            # toggles motion on from the Camera Settings modal.
+            "motion_detection",
         }
         assert set(cfg.keys()) == expected
 

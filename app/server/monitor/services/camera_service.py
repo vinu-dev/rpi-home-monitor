@@ -41,7 +41,32 @@ STREAM_PARAMS = {
     "hflip",
     "vflip",
     "motion_sensitivity",
+    # recording_motion_enabled is named for the RecordingScheduler
+    # on the server side, but on the wire it maps to the camera's
+    # MOTION_DETECTION flag that gates its on-device detector.
+    # See ``_translate_stream_params_for_wire`` below.
+    "recording_motion_enabled",
 }
+
+
+def _translate_stream_params_for_wire(params: dict) -> dict:
+    """Rename server-side model fields to the keys the camera expects.
+
+    The camera's ``ControlHandler.set_config`` upper-cases each key
+    and stores it in ``camera.conf`` as-is. The stream pipeline then
+    reads specific keys (``MOTION_DETECTION``, not
+    ``RECORDING_MOTION_ENABLED``), so without this translation a
+    toggled-on motion flag silently ends up in an unread config
+    bucket and the on-device detector stays off.
+
+    Keep this mapping narrow — only fields where the server model
+    name diverges from the camera config key. Most params already
+    agree by name (``width``, ``bitrate``, etc.) and pass through.
+    """
+    translated = dict(params)
+    if "recording_motion_enabled" in translated:
+        translated["motion_detection"] = translated.pop("recording_motion_enabled")
+    return translated
 
 
 def _validate_schedule(schedule) -> str:
@@ -301,10 +326,13 @@ class CameraService:
         for key, value in data.items():
             setattr(camera, key, value)
 
-        # Push stream params to camera if any changed (ADR-0015)
+        # Push stream params to camera if any changed (ADR-0015).
+        # Translate server-side names to the camera's wire keys
+        # (e.g. recording_motion_enabled → motion_detection).
         stream_changes = {k: v for k, v in data.items() if k in STREAM_PARAMS}
-        if stream_changes and camera.ip and self._control:
-            result, err = self._control.set_config(camera.ip, stream_changes)
+        wire_changes = _translate_stream_params_for_wire(stream_changes)
+        if wire_changes and camera.ip and self._control:
+            result, err = self._control.set_config(camera.ip, wire_changes)
             if err:
                 log.warning("Failed to push config to camera %s: %s", camera_id, err)
                 camera.config_sync = "pending"

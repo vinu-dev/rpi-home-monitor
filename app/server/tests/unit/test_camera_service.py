@@ -744,6 +744,33 @@ class TestAcceptHeartbeat:
         assert len(cam.hardware_faults) == 1
         assert cam.hardware_faults[0]["code"] == "camera_sensor_missing"
 
+    def test_recording_motion_enabled_translates_to_motion_detection_on_wire(self):
+        """When the admin toggles motion on, the server must push ``motion_detection``
+        to the camera — not ``recording_motion_enabled`` (the server-side model
+        field name). The camera config reads ``MOTION_DETECTION``; using the
+        server-side name leaves motion detection off silently.
+
+        Regression for the bug discovered on 2026-04-22: Front Door
+        showed motion_enabled=true on the dashboard but was actually
+        running with motion off — no events ever fired.
+        """
+        cam = _make_camera(
+            id="cam-001", ip="192.168.1.148", recording_motion_enabled=False
+        )
+        cam.hardware_faults = []
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        control = MagicMock()
+        control.set_config.return_value = ({"applied": {}}, "")
+        svc = CameraService(store, control_client=control)
+        svc.update("cam-001", {"recording_motion_enabled": True})
+        # The key pushed to the control client must be motion_detection.
+        control.set_config.assert_called_once()
+        pushed = control.set_config.call_args[0][1]
+        assert "motion_detection" in pushed
+        assert pushed["motion_detection"] is True
+        assert "recording_motion_enabled" not in pushed
+
     def test_hardware_faults_caps_list_length(self):
         """Runaway camera can't bloat the store with thousands of faults."""
         cam = _make_camera()
