@@ -323,6 +323,19 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
 [Install]
 WantedBy=multi-user.target
 SVCEOF
+        # journald limits — prevent /run from filling up under active streaming.
+        # Without explicit RuntimeMaxUse, journald's implicit cap (~7MB on a 70MB
+        # /run) is not enforced tightly enough under the ~6 entries/sec picamera2
+        # log flood, causing archived journals to accumulate and daemon-reload to
+        # fail when /run drops below the 16MB safety buffer. See issue #170.
+        mkdir -p /etc/systemd/journald.conf.d
+        cat > /etc/systemd/journald.conf.d/10-camera-limits.conf << 'EOF'
+[Journal]
+Storage=volatile
+RuntimeMaxUse=8M
+RuntimeKeepFree=20M
+RuntimeMaxFileSize=2M
+EOF
         # Tailscale: skip if unconfigured — saves ~50MB RAM on Zero 2W
         state_keys=0
         if [ -f /data/tailscale/tailscaled.state ]; then
