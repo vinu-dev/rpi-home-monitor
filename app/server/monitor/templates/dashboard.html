@@ -515,7 +515,11 @@ function dashboardPage() {
         playingKey: '',
         health: { uptime: '' },
         auditEvents: [],      // Slice 3 log teaser
-        auditAdmin: true,     // becomes false if /audit 403s (viewer role)
+        // Safe default: viewers must never see the admin-only audit
+        // teaser flash before the /audit/events call resolves (#148).
+        // Flipped to true by loadAuditEvents() on HTTP 200, left false
+        // on 403 so the section stays hidden for non-admin roles.
+        auditAdmin: false,
         // Mirrors settings.html's isAdmin — resolved from /api/v1/auth/me
         // on load and used to gate destructive UI controls (issue #86).
         // Defaults to false (safe-by-default): UI hides Settings/Delete
