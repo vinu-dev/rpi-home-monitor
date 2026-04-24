@@ -295,6 +295,56 @@ class TestGetStorageStats:
         stats = mgr.get_storage_stats()
         assert stats["is_usb"] is True
 
+    def test_oldest_newest_segment_none_when_no_clips(self, tmp_path):
+        mgr, _ = _make_manager(tmp_path)
+        stats = mgr.get_storage_stats()
+        assert stats["oldest_segment"] is None
+        assert stats["newest_segment"] is None
+
+    def test_oldest_newest_segment_present_after_clips(self, tmp_path):
+        """oldest/newest are ISO 8601 UTC strings once clips exist."""
+        mgr, rec_dir = _make_manager(tmp_path)
+        _make_clip(rec_dir, "cam-001", "2026-01-01", "06-00-00")
+        _make_clip(rec_dir, "cam-001", "2026-04-01", "12-00-00")
+        stats = mgr.get_storage_stats()
+        assert stats["oldest_segment"] is not None
+        assert stats["newest_segment"] is not None
+        # Both must be ISO 8601 UTC (end with Z)
+        assert stats["oldest_segment"].endswith("Z")
+        assert stats["newest_segment"].endswith("Z")
+        # oldest must be strictly before newest (different mtimes)
+        assert stats["oldest_segment"] <= stats["newest_segment"]
+
+    def test_oldest_newest_segment_order_across_cameras(self, tmp_path):
+        """The oldest/newest scan crosses camera subdirectories."""
+        import os
+        import time as _time
+
+        mgr, rec_dir = _make_manager(tmp_path)
+        old_clip = _make_clip(rec_dir, "cam-001", "2026-01-01", "00-00-00")
+        new_clip = _make_clip(rec_dir, "cam-002", "2026-04-01", "12-00-00")
+
+        # Force distinct mtimes so the test isn't filesystem-resolution-sensitive.
+        t_old = _time.time() - 10000
+        t_new = _time.time() - 1
+        os.utime(old_clip, (t_old, t_old))
+        os.utime(new_clip, (t_new, t_new))
+
+        stats = mgr.get_storage_stats()
+        assert stats["oldest_segment"] < stats["newest_segment"]
+
+    def test_oldest_newest_segment_none_in_oserror_path(self, tmp_path):
+        """The OSError early-return must include the two keys as None."""
+        mgr, _ = _make_manager(tmp_path)
+        with patch(
+            "monitor.services.storage_manager.shutil.disk_usage", side_effect=OSError
+        ):
+            stats = mgr.get_storage_stats()
+        assert "oldest_segment" in stats
+        assert "newest_segment" in stats
+        assert stats["oldest_segment"] is None
+        assert stats["newest_segment"] is None
+
 
 # ===========================================================================
 # start / stop lifecycle
