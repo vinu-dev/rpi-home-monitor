@@ -73,3 +73,30 @@ class TestAuditEventsEndpoint:
         response = client.get("/api/v1/audit/events")
         assert response.status_code == 200
         assert response.get_json() == {"events": [], "count": 0}
+
+
+class TestClearAuditEventsEndpoint:
+    def test_requires_auth(self, client):
+        response = client.delete("/api/v1/audit/events")
+        assert response.status_code == 401
+
+    def test_viewer_forbidden(self, logged_in_client):
+        client = logged_in_client("viewer")
+        response = client.delete("/api/v1/audit/events")
+        assert response.status_code == 403
+
+    def test_admin_clears_log(self, app, logged_in_client):
+        app.audit = MagicMock()
+        client = logged_in_client()
+        response = client.delete("/api/v1/audit/events")
+        assert response.status_code == 200
+        assert response.get_json() == {"cleared": True}
+        app.audit.clear_events.assert_called_once()
+
+    def test_clears_with_user_and_ip(self, app, logged_in_client):
+        app.audit = MagicMock()
+        client = logged_in_client()
+        client.delete("/api/v1/audit/events")
+        call_kwargs = app.audit.clear_events.call_args.kwargs
+        assert call_kwargs["user"] == "admin"
+        assert "ip" in call_kwargs
