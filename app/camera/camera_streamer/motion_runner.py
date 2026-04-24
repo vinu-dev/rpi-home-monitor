@@ -221,6 +221,11 @@ class MotionRunner:
             expected to push frames via ``process_frame(y_plane)``. This
             is the Picamera2-dual-stream path where the lores callback
             is already running on its own thread (picam_backend).
+        warmup_seconds: Frames fed within this window after start() are
+            discarded. Suppresses the phantom motion event caused by
+            auto-exposure / auto-white-balance settling when the ISP
+            pipeline restarts. Defaults to 3 s (empirically measured
+            AE/AWB convergence time on the OV5647 sensor).
     """
 
     def __init__(
@@ -232,6 +237,7 @@ class MotionRunner:
         poster_factory: Callable | None = None,
         frame_reader: Callable | None = None,
         passive: bool = False,
+        warmup_seconds: float = 3.0,
     ):
         if not passive and frame_fd is None and frame_reader is None:
             raise ValueError(
@@ -248,25 +254,36 @@ class MotionRunner:
         self._frame_reader = frame_reader
         self._passive = passive
         self._passive_lock = threading.Lock()
+        self._warmup_seconds = warmup_seconds
+        self._warmup_until: float = 0.0
 
     def start(self) -> bool:
         if self._thread and self._thread.is_alive():
             log.debug("MotionRunner already running")
             return True
         self._running = True
+        # Reset detector state from any prior run and set the warm-up gate.
+        # The gate discards frames while the ISP's AE/AWB is converging so
+        # the brightness surge on pipeline restart doesn't look like motion.
+        self._detector.reset()
+        self._warmup_until = time.monotonic() + self._warmup_seconds
         if self._passive:
             # No thread — frames arrive via process_frame() from the
             # Picamera2 lores callback.
-            log.info("MotionRunner started (passive mode)")
+            log.info(
+                "MotionRunner started (passive mode, warmup=%.1fs)",
+                self._warmup_seconds,
+            )
             return True
         self._thread = threading.Thread(
             target=self._run, name="motion-runner", daemon=True
         )
         self._thread.start()
         log.info(
-            "MotionRunner started (fd=%s, reader=%s)",
+            "MotionRunner started (fd=%s, reader=%s, warmup=%.1fs)",
             self._frame_fd,
             "yes" if self._frame_reader else "no",
+            self._warmup_seconds,
         )
         return True
 
@@ -278,6 +295,8 @@ class MotionRunner:
         interleave half-updated state.
         """
         if not self._running:
+            return
+        if time.monotonic() < self._warmup_until:
             return
         with self._passive_lock:
             self._detector.process_frame(y_plane)
@@ -306,6 +325,8 @@ class MotionRunner:
             if not self._running:
                 break
             if frame is None:
+                continue
+            if time.monotonic() < self._warmup_until:
                 continue
             self._detector.process_frame(frame)
             transition = self._detector.poll_event()

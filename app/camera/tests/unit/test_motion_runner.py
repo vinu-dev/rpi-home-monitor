@@ -84,6 +84,7 @@ class TestEmission:
             motion_config=_motion_cfg(),
             poster_factory=lambda *a, **kw: poster,
             frame_reader=reader,
+            warmup_seconds=0.0,
         )
         runner.start()
         # Wait for the generator to drain; stop only if still running.
@@ -116,6 +117,7 @@ class TestEmission:
             motion_config=_motion_cfg(),
             poster_factory=lambda *a, **kw: poster,
             frame_reader=reader,
+            warmup_seconds=0.0,
         )
         runner.start()
         # Wait for the generator to drain; stop only if still running.
@@ -142,6 +144,7 @@ class TestEmission:
             motion_config=_motion_cfg(),
             poster_factory=lambda *a, **kw: poster,
             frame_reader=reader,
+            warmup_seconds=0.0,
         )
         runner.start()
         # Wait for the generator to drain; stop only if still running.
@@ -177,6 +180,7 @@ class TestFdReadPath:
             frame_fd=read_fd,
             motion_config=_motion_cfg(),
             poster_factory=lambda *a, **kw: poster,
+            warmup_seconds=0.0,
         )
         runner.start()
 
@@ -260,6 +264,136 @@ class TestPosterSignatureHeaders:
         assert body["phase"] == "start"
         assert body["event_id"] == "mot-test-001"
         assert body["peak_score"] == 0.12
+
+
+class TestWarmupGate:
+    """Frames delivered within warmup_seconds after start() must be discarded."""
+
+    def _runner(self, warmup_seconds=3.0, frames=None):
+        poster = _FakePoster()
+        frames = frames or (
+            [_blank()] * 5 + [_moving(40 + i * 10) for i in range(10)] + [_blank()] * 10
+        )
+
+        def reader():
+            yield from frames
+
+        runner = MotionRunner(
+            config=_cfg(),
+            pairing_manager=_pairing(),
+            motion_config=_motion_cfg(),
+            poster_factory=lambda *a, **kw: poster,
+            frame_reader=reader,
+            warmup_seconds=warmup_seconds,
+        )
+        return runner, poster
+
+    def test_no_events_during_warmup(self):
+        """All frames arrive inside the warm-up window — no events."""
+        runner, poster = self._runner(warmup_seconds=9999.0)
+        runner.start()
+        if runner._thread is not None:
+            runner._thread.join(timeout=5)
+        runner.stop()
+        assert poster.calls == []
+
+    def test_events_fire_after_warmup(self):
+        """warmup_seconds=0 → gate is already expired → normal detection."""
+        runner, poster = self._runner(warmup_seconds=0.0)
+        runner.start()
+        if runner._thread is not None:
+            runner._thread.join(timeout=5)
+        runner.stop()
+        phases = [c["phase"] for c in poster.calls]
+        assert "start" in phases
+
+    def test_warmup_resets_on_each_start(self):
+        """Calling start() twice re-arms the gate each time."""
+        runner, poster = self._runner(warmup_seconds=0.0)
+        runner.start()
+        if runner._thread is not None:
+            runner._thread.join(timeout=5)
+
+        # Second start() with gate in the far future → no events.
+        runner._warmup_seconds = 9999.0
+
+        def reader2():
+            yield from (
+                [_blank()] * 5
+                + [_moving(40 + i * 10) for i in range(10)]
+                + [_blank()] * 10
+            )
+
+        runner._frame_reader = reader2
+        runner._thread = None
+        runner.start()
+        if runner._thread is not None:
+            runner._thread.join(timeout=5)
+        runner.stop()
+
+        # Only the first run's events should be in calls.
+        assert all(c["phase"] in ("start", "end") for c in poster.calls)
+        run2_calls = poster.calls[len(poster.calls) :]  # empty slice — nothing added
+        assert run2_calls == []
+
+    def test_detector_reset_on_start(self):
+        """start() calls detector.reset() to clear stale state from prior run."""
+        runner, _ = self._runner(warmup_seconds=0.0)
+        runner._detector = MagicMock()
+        runner._detector.process_frame = MagicMock()
+        runner._detector.poll_event = MagicMock(return_value=None)
+        runner.start()
+        runner._detector.reset.assert_called_once()
+        runner.stop()
+
+    def test_passive_mode_warmup(self):
+        """process_frame() respects the warm-up gate in passive mode."""
+        poster = _FakePoster()
+        runner = MotionRunner(
+            config=_cfg(),
+            pairing_manager=_pairing(),
+            motion_config=_motion_cfg(),
+            poster_factory=lambda *a, **kw: poster,
+            passive=True,
+            warmup_seconds=9999.0,
+        )
+        runner.start()
+        for i in range(25):
+            runner.process_frame(_moving(40 + i * 5))
+        runner.stop()
+        assert poster.calls == []
+
+    def test_passive_mode_no_warmup(self):
+        """process_frame() fires normally when warmup_seconds=0."""
+        poster = _FakePoster()
+        runner = MotionRunner(
+            config=_cfg(),
+            pairing_manager=_pairing(),
+            motion_config=_motion_cfg(),
+            poster_factory=lambda *a, **kw: poster,
+            passive=True,
+            warmup_seconds=0.0,
+        )
+        runner.start()
+        # Feed blank frames first to let background settle, then motion.
+        for _ in range(5):
+            runner.process_frame(_blank())
+        for i in range(15):
+            runner.process_frame(_moving(40 + i * 10))
+        for _ in range(10):
+            runner.process_frame(_blank())
+        runner.stop()
+        phases = [c["phase"] for c in poster.calls]
+        assert "start" in phases
+
+    def test_default_warmup_is_three_seconds(self):
+        """Default warmup_seconds value matches the OV5647 AE/AWB spec."""
+        runner = MotionRunner(
+            config=_cfg(),
+            pairing_manager=_pairing(),
+            passive=True,
+        )
+        assert runner._warmup_seconds == 3.0
 
 
 class TestSensitivityMapping:
