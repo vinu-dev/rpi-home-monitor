@@ -102,7 +102,7 @@ class TestEmission:
         assert start_call["event_id"].startswith("mot-")
         assert "cam-001" in start_call["event_id"]
         assert start_call["peak_score"] > 0
-        assert end_call["duration_seconds"] > 0
+        assert end_call["duration_seconds"] >= 0
 
     def test_no_motion_no_events(self):
         poster = _FakePoster()

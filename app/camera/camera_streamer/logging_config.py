@@ -56,6 +56,11 @@ def configure_logging(log_level=None):
     except OSError as e:
         root.warning("Cannot create file log at %s: %s", LOG_DIR / LOG_FILE, e)
 
+    # picamera2 sets its own logger to DEBUG internally; clamp it to WARNING so
+    # the ~6 entries/sec "Execute job:" flood never reaches the journal regardless
+    # of our root level. See issue #170.
+    logging.getLogger("picamera2").setLevel(logging.WARNING)
+
     logging.getLogger("camera-streamer").info(
         "Logging configured: level=%s, file=%s", log_level, LOG_DIR / LOG_FILE
     )
