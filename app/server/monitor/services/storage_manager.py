@@ -20,7 +20,7 @@ import logging
 import shutil
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger("monitor.storage")
@@ -130,12 +130,17 @@ class StorageManager:
                 "clip_count": 0,
                 "recordings_dir": str(rec_dir),
                 "is_usb": self._is_usb_path(rec_dir),
+                "oldest_segment": None,
+                "newest_segment": None,
             }
 
-        # Count clips per camera
+        # Count clips per camera; track oldest/newest mtime across all clips
+        # in the same pass so we don't pay an extra rglob.
         camera_stats = {}
         total_clips = 0
         recordings_bytes = 0
+        oldest_mtime: float | None = None
+        newest_mtime: float | None = None
         if rec_dir.is_dir():
             for cam_dir in rec_dir.iterdir():
                 if not cam_dir.is_dir():
@@ -145,7 +150,13 @@ class StorageManager:
                 for mp4 in cam_dir.rglob("*.mp4"):
                     count += 1
                     try:
-                        cam_bytes += mp4.stat().st_size
+                        st = mp4.stat()
+                        cam_bytes += st.st_size
+                        mtime = st.st_mtime
+                        if oldest_mtime is None or mtime < oldest_mtime:
+                            oldest_mtime = mtime
+                        if newest_mtime is None or mtime > newest_mtime:
+                            newest_mtime = mtime
                     except OSError:
                         pass
                 camera_stats[cam_dir.name] = {
@@ -168,6 +179,8 @@ class StorageManager:
             "is_usb": self._is_usb_path(rec_dir),
             "reserve_mb": self._reserve_mb,
             "threshold_percent": self._threshold_percent,
+            "oldest_segment": _epoch_to_iso(oldest_mtime),
+            "newest_segment": _epoch_to_iso(newest_mtime),
         }
 
     def needs_cleanup(self) -> bool:
@@ -266,6 +279,13 @@ class StorageManager:
     def _is_usb_path(self, path) -> bool:
         """Check if path is on USB (not under /data)."""
         return not str(path).startswith(str(self._data_dir))
+
+
+def _epoch_to_iso(epoch: float | None) -> str | None:
+    """Convert a POSIX timestamp to an ISO 8601 UTC string, or None."""
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def create_recording_dirs(recordings_dir, cam_id):
