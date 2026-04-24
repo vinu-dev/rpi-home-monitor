@@ -12,6 +12,7 @@ REQUIRED_CANONICAL = [
     "docs/ai/repo-map.md",
     "docs/ai/working-agreement.md",
     "docs/ai/engineering-standards.md",
+    "docs/ai/execution-rules.md",
     "docs/ai/design-standards.md",
     "docs/ai/validation-and-release.md",
     "docs/exec-plans/template.md",

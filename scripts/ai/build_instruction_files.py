@@ -36,6 +36,7 @@ def render_agents() -> str:
         - [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
         - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
         - [`docs/ai/engineering-standards.md`](docs/ai/engineering-standards.md)
+        - [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
         - [`docs/ai/design-standards.md`](docs/ai/design-standards.md)
         - [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
         - [`docs/exec-plans/template.md`](docs/exec-plans/template.md)
@@ -78,7 +79,8 @@ def render_claude() -> str:
         1. [`docs/ai/index.md`](docs/ai/index.md)
         2. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
         3. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
-        4. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+        4. [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
+        5. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 
         Claude-specific notes:
         - respect [`.claude/settings.json`](.claude/settings.json)

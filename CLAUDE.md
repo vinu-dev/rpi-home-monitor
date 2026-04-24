@@ -9,7 +9,8 @@ Start here:
 1. [`docs/ai/index.md`](docs/ai/index.md)
 2. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
 3. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
-4. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+4. [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
+5. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 
 Claude-specific notes:
 - respect [`.claude/settings.json`](.claude/settings.json)

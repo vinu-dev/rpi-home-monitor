@@ -25,8 +25,8 @@
 - CI should run `pre-commit`, repository governance checks, Ruff, workflow lint,
   shell checks, and the relevant test suites.
 - Coverage is enforced, not just reported:
-  - server: `--cov-fail-under=80`
-  - camera: `--cov-fail-under=70`
+  - server: `--cov-fail-under=85`
+  - camera: `--cov-fail-under=80`
 - Path filters must include app code, Yocto layers, configs, workflows, docs,
   scripts, and generated adapters.
 
