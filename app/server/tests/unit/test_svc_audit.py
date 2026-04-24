@@ -151,6 +151,7 @@ class TestClearEvents:
         lines = (data_dir / "logs" / "audit.log").read_text().strip().splitlines()
         assert len(lines) == 1
         import json
+
         entry = json.loads(lines[0])
         assert entry["event"] == "AUDIT_LOG_CLEARED"
         assert entry["user"] == "admin"
@@ -160,6 +161,7 @@ class TestClearEvents:
         logger = AuditLogger(str(data_dir / "logs"))
         logger.clear_events()
         import json
+
         content = (data_dir / "logs" / "audit.log").read_text().strip()
         entry = json.loads(content)
         assert entry["timestamp"].endswith("Z")
