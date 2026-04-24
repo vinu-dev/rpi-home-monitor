@@ -15,6 +15,7 @@
     <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
     <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
     <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
+    <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadAuditLog()">Security</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -1099,6 +1100,60 @@
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════
+     SECURITY TAB (admin only)
+     ═══════════════════════════════════════════════════════════ -->
+<div x-show="isAdmin && tab === 'security'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Audit Log</div>
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3);">
+                <span class="text-small text-muted">Security events, newest first. Max 200 shown.</span>
+                <div>
+                    <button class="btn btn--secondary" @click="loadAuditLog()" :disabled="security.loading">Refresh</button>
+                    <button class="btn btn--danger" style="margin-left:var(--space-2);"
+                            @click="security.clearConfirm = true"
+                            :disabled="security.clearing || security.loading"
+                            x-show="!security.clearConfirm">Clear Log</button>
+                    <span x-show="security.clearConfirm" style="display:inline-flex; gap:var(--space-2); align-items:center;">
+                        <span class="text-small" style="color:var(--color-danger);">This cannot be undone. Confirm?</span>
+                        <button class="btn btn--danger" @click="clearAuditLog()" :disabled="security.clearing">Yes, clear</button>
+                        <button class="btn btn--secondary" @click="security.clearConfirm = false">Cancel</button>
+                    </span>
+                </div>
+            </div>
+            <div x-show="security.loading" class="text-small text-muted">Loading…</div>
+            <div x-show="!security.loading && security.events.length === 0" class="text-small text-muted">No events recorded.</div>
+            <table x-show="!security.loading && security.events.length > 0"
+                   style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+                <thead>
+                    <tr style="text-align:left; border-bottom:1px solid var(--color-border);">
+                        <th style="padding:4px 8px; color:var(--color-text-muted);">Time</th>
+                        <th style="padding:4px 8px; color:var(--color-text-muted);">Event</th>
+                        <th style="padding:4px 8px; color:var(--color-text-muted);">User</th>
+                        <th style="padding:4px 8px; color:var(--color-text-muted);">IP</th>
+                        <th style="padding:4px 8px; color:var(--color-text-muted);">Detail</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="(ev, i) in security.events" :key="i">
+                        <tr style="border-bottom:1px solid var(--color-border-subtle);">
+                            <td style="padding:4px 8px; white-space:nowrap;" x-text="ev.timestamp"></td>
+                            <td style="padding:4px 8px; white-space:nowrap;">
+                                <span :class="ev.event.startsWith('LOGIN_FAIL') || ev.event === 'FIREWALL_BLOCKED' ? 'badge badge--warn' : 'badge badge--ok'"
+                                      x-text="ev.event"></span>
+                            </td>
+                            <td style="padding:4px 8px;" x-text="ev.user || '—'"></td>
+                            <td style="padding:4px 8px;" x-text="ev.ip || '—'"></td>
+                            <td style="padding:4px 8px; color:var(--color-text-muted);" x-text="ev.detail || ''"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 </div>
 {% endblock %}
 
@@ -1149,6 +1204,8 @@ function settingsPage() {
         ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
         _otaPollTimer: null,
 
+        security: { events: [], loading: false, clearing: false, clearConfirm: false },
+
         async init() {
             try {
                 await window.HM.auth.getMe();
@@ -1160,7 +1217,7 @@ function settingsPage() {
             // deep-links (/settings#system, /settings#storage etc.) open
             // directly on the correct tab instead of bouncing the user
             // through the default tab. Unknown fragments are ignored.
-            var validTabs = ['system','network','tailscale','users','recording','storage','updates'];
+            var validTabs = ['system','network','tailscale','users','recording','storage','updates','security'];
             var frag = (window.location.hash || '').replace('#','').toLowerCase();
             if (frag && validTabs.indexOf(frag) !== -1) {
                 this.tab = frag;
@@ -2028,6 +2085,33 @@ function settingsPage() {
                 window.HM.toast(cam.error, 'error');
             }
             this.loadOtaStatus();
+        },
+
+        /* --- Security / Audit log --- */
+        async loadAuditLog() {
+            this.security.loading = true;
+            try {
+                var data = await window.HM.api.get('/api/v1/audit/events?limit=200');
+                this.security.events = data.events || [];
+            } catch(e) {
+                window.HM.toast('Failed to load audit log', 'error');
+            } finally {
+                this.security.loading = false;
+            }
+        },
+
+        async clearAuditLog() {
+            this.security.clearing = true;
+            this.security.clearConfirm = false;
+            try {
+                await window.HM.api.del('/api/v1/audit/events');
+                window.HM.toast('Audit log cleared', 'success');
+                await this.loadAuditLog();
+            } catch(e) {
+                window.HM.toast('Failed to clear audit log', 'error');
+            } finally {
+                this.security.clearing = false;
+            }
         },
     };
 }

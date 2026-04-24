@@ -135,6 +135,66 @@ class TestGetEvents:
         assert logger.get_events() == []
 
 
+class TestClearEvents:
+    """Test audit log truncation via clear_events()."""
+
+    def test_clear_creates_file_if_missing(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.clear_events(user="admin", ip="10.0.0.1")
+        assert (data_dir / "logs" / "audit.log").exists()
+
+    def test_clear_writes_sentinel_only(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        for i in range(5):
+            logger.log_event(f"EVENT_{i}")
+        logger.clear_events(user="admin", ip="10.0.0.1")
+        lines = (data_dir / "logs" / "audit.log").read_text().strip().splitlines()
+        assert len(lines) == 1
+        import json
+
+        entry = json.loads(lines[0])
+        assert entry["event"] == "AUDIT_LOG_CLEARED"
+        assert entry["user"] == "admin"
+        assert entry["ip"] == "10.0.0.1"
+
+    def test_sentinel_has_timestamp(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.clear_events()
+        import json
+
+        content = (data_dir / "logs" / "audit.log").read_text().strip()
+        entry = json.loads(content)
+        assert entry["timestamp"].endswith("Z")
+
+    def test_clear_then_get_events_returns_sentinel(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        for i in range(10):
+            logger.log_event(f"EVENT_{i}")
+        logger.clear_events(user="admin")
+        events = logger.get_events(limit=100)
+        assert len(events) == 1
+        assert events[0]["event"] == "AUDIT_LOG_CLEARED"
+
+    def test_clear_handles_write_error(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.log_event("EXISTING")
+        with patch("builtins.open", side_effect=OSError("disk full")):
+            logger.clear_events(user="admin")
+        # Original file must be untouched since the open failed before truncation
+        events = logger.get_events()
+        assert any(e["event"] == "EXISTING" for e in events)
+
+    def test_clear_multiple_times(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.log_event("BEFORE")
+        logger.clear_events(user="admin")
+        logger.log_event("AFTER")
+        logger.clear_events(user="admin")
+        events = logger.get_events(limit=100)
+        assert len(events) == 1
+        assert events[0]["event"] == "AUDIT_LOG_CLEARED"
+
+
 class TestConcurrency:
     """Test thread-safe logging."""
 

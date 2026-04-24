@@ -14,6 +14,7 @@ Events:
 - OTA_STARTED, OTA_COMPLETED, OTA_FAILED, OTA_ROLLBACK
 - FIREWALL_BLOCKED
 - CERT_GENERATED, CERT_REVOKED
+- AUDIT_LOG_CLEARED
 
 Log format (one JSON object per line):
 {
@@ -77,6 +78,32 @@ class AuditLogger:
                 log.error("Failed to write audit log: %s", e)
 
         log.info("AUDIT: %s user=%s ip=%s detail=%s", event, user, ip, detail)
+
+    def clear_events(self, user: str = "", ip: str = "") -> None:
+        """Truncate the audit log and write an AUDIT_LOG_CLEARED sentinel.
+
+        Atomic under _lock: no concurrent log_event can interleave between
+        truncation and the sentinel write, preserving chain of custody.
+        The cleared log always begins with a record of who cleared it.
+        """
+        entry = {
+            "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "event": "AUDIT_LOG_CLEARED",
+            "user": user,
+            "ip": ip,
+            "detail": "audit log cleared by admin",
+        }
+        line = json.dumps(entry, separators=(",", ":"))
+
+        with self._lock:
+            try:
+                with open(self.log_file, "w", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except OSError as e:
+                log.error("Failed to clear audit log: %s", e)
+                return
+
+        log.info("AUDIT: AUDIT_LOG_CLEARED user=%s ip=%s", user, ip)
 
     def get_events(self, limit: int = 100, event_type: str = "") -> list[dict]:
         """Read recent events from the audit log.
