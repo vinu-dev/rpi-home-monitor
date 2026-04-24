@@ -87,6 +87,18 @@ class LoopRecorder:
             self._hys,
         )
 
+    def set_base_dir(self, new_dir: str | Path) -> None:
+        """Redirect the recorder to a new recordings root (e.g. after USB mount).
+
+        Must be called whenever the recordings directory changes so that
+        free-space checks and segment enumeration target the right filesystem.
+        Without this, the recorder watches the old path (typically the internal
+        /data partition which is nearly empty) and never triggers cleanup on the
+        USB drive that is actually full.
+        """
+        self._base_dir = Path(new_dir)
+        log.info("LoopRecorder base_dir updated: %s", self._base_dir)
+
     # --- Public API -------------------------------------------------------
 
     def tick(self) -> int:

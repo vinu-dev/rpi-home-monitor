@@ -311,6 +311,8 @@ def _init_services(app):
         app.streaming.update_recordings_dir(new_dir)
         if getattr(app, "motion_clip_correlator", None) is not None:
             app.motion_clip_correlator.set_recordings_dir(new_dir)
+        if getattr(app, "loop_recorder", None) is not None:
+            app.loop_recorder.set_base_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -385,6 +387,7 @@ def _startup(app):
         app.streaming.update_recordings_dir(recordings_dir)
         if getattr(app, "motion_clip_correlator", None) is not None:
             app.motion_clip_correlator.set_recordings_dir(recordings_dir)
+        app.loop_recorder.set_base_dir(recordings_dir)
 
     app.streaming.start()
     # NOTE: app.storage_manager is NOT started. LoopRecorder (ADR-0017)

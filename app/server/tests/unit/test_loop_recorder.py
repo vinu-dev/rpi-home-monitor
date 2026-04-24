@@ -113,3 +113,48 @@ class TestLoopRecorderEdgeCases:
         lr = LoopRecorder(tmp_path, audit=MagicMock())
         lr._free_percent = lambda: 1.0
         assert lr.tick() == 0
+
+
+class TestLoopRecorderSetBaseDir:
+    def test_set_base_dir_redirects_cleanup(self, tmp_path):
+        """set_base_dir must redirect both free-space checks and segment scans.
+
+        Regression: when USB storage is selected the recordings directory
+        changes from /data/recordings to /mnt/recordings/home-monitor-recordings.
+        Before the fix, LoopRecorder kept watching the original internal path
+        (nearly empty → free_pct always ≥ low watermark → tick() → 0) so the
+        USB drive filled to 100% and was never pruned.
+        """
+        internal = tmp_path / "internal"
+        internal.mkdir()
+        usb = tmp_path / "usb"
+        usb.mkdir()
+
+        # Old segment sits on USB; internal is empty.
+        old_seg = _mkseg(usb, "cam1", "old.mp4", 5000)
+
+        lr = LoopRecorder(internal, audit=MagicMock(), low_watermark=10, hysteresis=5)
+
+        # Before redirect: free_percent targets internal (plenty of space) →
+        # tick does nothing even though USB is full.
+        lr._free_percent = lambda: 80.0
+        assert lr.tick() == 0
+        assert old_seg.exists()
+
+        # Simulate USB mount: redirect the recorder to the USB path.
+        lr.set_base_dir(usb)
+        assert lr._base_dir == usb
+
+        # Now free_percent is patched to reflect the full USB; tick prunes.
+        seq = iter([2.0, 2.0, 20.0, 20.0])
+        lr._free_percent = lambda: next(seq)
+        deleted = lr.tick()
+        assert deleted == 1
+        assert not old_seg.exists()
+
+    def test_set_base_dir_accepts_string(self, tmp_path):
+        lr = LoopRecorder(tmp_path, audit=MagicMock())
+        lr.set_base_dir(str(tmp_path / "new"))
+        from pathlib import Path
+
+        assert lr._base_dir == Path(tmp_path / "new")
