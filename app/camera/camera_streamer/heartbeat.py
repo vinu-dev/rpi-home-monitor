@@ -252,7 +252,17 @@ class HeartbeatSender:
             hardware_error = ""
             hardware_faults = []
 
-        return {
+        # Sensor capabilities — populated when a control handler is wired
+        # (production path). The server uses this to build the per-camera
+        # Settings dropdown, so two cameras with different sensors render
+        # different mode lists. Test paths that omit ``_control`` simply
+        # don't advertise capabilities (the server falls back to the
+        # legacy preset list).
+        capabilities: dict | None = None
+        if self._control is not None and hasattr(self._control, "sensor_capabilities"):
+            capabilities = self._control.sensor_capabilities.to_dict()
+
+        payload = {
             "camera_id": config.camera_id,
             "timestamp": int(time.time()),
             "streaming": streaming,
@@ -276,6 +286,9 @@ class HeartbeatSender:
                 "vflip": config.vflip,
             },
         }
+        if capabilities is not None:
+            payload["capabilities"] = capabilities
+        return payload
 
     def _send(self) -> dict | None:
         """POST one heartbeat to the server. Returns parsed response or None."""

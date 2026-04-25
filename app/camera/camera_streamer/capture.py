@@ -30,10 +30,14 @@ DEFAULT_DEVICE = "/dev/video0"
 # branches (no V4L2 Video Capture node; V4L2 node present but
 # libcamera finds no sensor) surface the same message. Re-used as
 # the text of the dashboard + camera status page warning banners.
+#
+# Sensor-agnostic: the image ships with auto-detect + overlays for
+# every Pi-officially-supported sensor (OV5647, IMX219, IMX477, IMX708),
+# so the operator-actionable signal is "the cable, not the overlay".
 _NO_CAMERA_ERROR = (
     "No camera module detected. Check the ribbon cable is seated "
-    "firmly and /boot/config.txt has dtoverlay=ov5647 (PiHut "
-    "ZeroCam) or the overlay for your sensor."
+    "firmly at both ends and reboot. The image supports OV5647, "
+    "IMX219, IMX477 and IMX708 sensors via firmware auto-detect."
 )
 
 
@@ -107,8 +111,9 @@ class CaptureManager:
         if not os.path.exists(self._device):
             log.error(
                 "Camera device %s not found. Available: %s. "
-                "Check ribbon cable is connected and camera overlay is enabled "
-                "(dtoverlay=ov5647 for PiHut ZeroCam in config.txt)",
+                "Check ribbon cable is connected; firmware auto-detect "
+                "should pick the right overlay for any supported sensor "
+                "(OV5647 / IMX219 / IMX477 / IMX708)",
                 self._device,
                 video_devs or "none",
             )
@@ -194,7 +199,9 @@ class CaptureManager:
         else:
             log.warning(
                 "No formats detected for %s — v4l2-ctl may not be installed "
-                "or camera driver not loaded. Check: lsmod | grep ov5647",
+                "or camera driver not loaded. Run `dmesg | grep -iE "
+                "'imx219|ov5647|imx477|imx708'` to see which sensor (if any) "
+                "the kernel probed.",
                 self._device,
             )
 
@@ -346,10 +353,12 @@ class CaptureManager:
         combined = (result.stdout or "") + (result.stderr or "")
         if "No cameras available" in combined:
             return False
-        # Positive signal: the tool lists at least one sensor.
-        # "Available cameras" header, or an indexed entry like
-        # "0 : ov5647 [..." is enough.
+        # Positive signal: the tool lists at least one sensor. We accept
+        # either the "Available cameras" header or an indexed entry like
+        # "0 : <sensor> [..." for any supported sensor name.
         if "Available cameras" in combined:
+            return True
+        if any(s in combined for s in ("ov5647", "imx219", "imx477", "imx708")):
             return True
         # Neither marker — assume present to avoid false negatives
         # when the tool's output format changes across versions.

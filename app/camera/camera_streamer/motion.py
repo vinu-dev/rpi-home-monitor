@@ -44,7 +44,11 @@ log = logging.getLogger("camera-streamer.motion")
 class MotionConfig:
     """Tunable detector parameters.
 
-    Defaults target the ZeroCam (OV5647) at 320x240 grayscale / 5 fps.
+    Defaults target a 320x240 grayscale lores stream at 5 fps. The
+    detector operates on the Y plane only, so the same defaults work
+    across every Pi camera sensor (OV5647, IMX219, IMX477, IMX708) —
+    fine sensitivity tuning is exposed via the per-camera 1-10 slider
+    (see ``motion_runner.motion_config_from_sensitivity``).
     """
 
     # Per-pixel luminance difference (0-255) between consecutive frames

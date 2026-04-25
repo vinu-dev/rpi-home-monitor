@@ -270,11 +270,14 @@ class CameraLifecycle:
         if not self._capture.check():
             log.error(
                 "Camera device not available. Troubleshooting:\n"
-                "  1. Check ribbon cable is seated firmly\n"
-                "  2. Check config.txt has: start_x=1 and gpu_mem=128\n"
-                "  3. For PiHut ZeroCam (OV5647): dtoverlay=ov5647\n"
-                "  4. Run: vcgencmd get_camera\n"
-                "Will retry via health monitor..."
+                "  1. Check ribbon cable is seated firmly at both ends\n"
+                "  2. Check /boot/config.txt has: gpu_mem=128 and "
+                "camera_auto_detect=1 (and no explicit dtoverlay=<sensor>)\n"
+                "  3. Run: dmesg | grep -iE 'imx219|ov5647|imx477|imx708' "
+                "to confirm which sensor the kernel probed\n"
+                "  4. Run: libcamera-hello --list-cameras\n"
+                "Supported sensors: OV5647, IMX219, IMX477, IMX708 — auto-detect "
+                "selects the right overlay. Will retry via health monitor..."
             )
         else:
             log.info(
