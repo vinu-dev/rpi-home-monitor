@@ -54,7 +54,10 @@ def motion_config_from_sensitivity(sensitivity: int) -> MotionConfig:
     reason about per-pixel deltas or score fractions. The mapping is
     monotonic and roughly log-linear around the shipped default (5).
 
-    Anchors chosen from on-device tuning on the OV5647 at indoor light:
+    Anchors chosen from on-device tuning at indoor light. The thresholds
+    operate on the Y plane only, so they hold across every Pi camera
+    sensor we ship; sensor-specific drift is a small offset that the
+    1-10 dial covers.
 
     - **1-3 "Low":** reject ambient noise + small movement. Good outdoor
       default — ignores rain, fine wind sway, flies.
@@ -224,8 +227,11 @@ class MotionRunner:
         warmup_seconds: Frames fed within this window after start() are
             discarded. Suppresses the phantom motion event caused by
             auto-exposure / auto-white-balance settling when the ISP
-            pipeline restarts. Defaults to 3 s (empirically measured
-            AE/AWB convergence time on the OV5647 sensor).
+            pipeline restarts. Sensor-agnostic — the gate is a wall-clock
+            timer, not a sensor-specific exposure metric. Defaults to 3 s,
+            which empirically covers AE/AWB convergence on every Pi
+            camera sensor we ship support for (OV5647, IMX219, IMX477,
+            IMX708).
     """
 
     def __init__(

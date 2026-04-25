@@ -387,7 +387,9 @@ class TestWarmupGate:
         assert "start" in phases
 
     def test_default_warmup_is_three_seconds(self):
-        """Default warmup_seconds value matches the OV5647 AE/AWB spec."""
+        """Default warmup_seconds covers AE/AWB convergence on every
+        supported Pi camera sensor (OV5647 / IMX219 / IMX477 / IMX708);
+        the gate is sensor-agnostic and uses wall-clock time."""
         runner = MotionRunner(
             config=_cfg(),
             pairing_manager=_pairing(),

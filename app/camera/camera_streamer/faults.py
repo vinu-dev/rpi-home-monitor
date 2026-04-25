@@ -93,9 +93,10 @@ FAULT_DEFAULTS: dict[str, dict[str, str]] = {
         "severity": SEVERITY_ERROR,
         "message": "Camera sensor missing",
         "hint": (
-            "Check the ribbon cable is seated firmly and "
-            "/boot/config.txt has dtoverlay=ov5647 (PiHut ZeroCam) "
-            "or the overlay for your sensor, then reboot the camera."
+            "Check the ribbon cable is seated firmly at both ends and "
+            "reboot the camera. The image supports OV5647, IMX219, "
+            "IMX477 and IMX708 sensors via firmware auto-detect; no "
+            "manual config.txt edit is needed for a swap."
         ),
     },
     FAULT_CAMERA_H264_UNSUPPORTED: {

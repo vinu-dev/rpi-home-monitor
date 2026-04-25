@@ -9,14 +9,12 @@ Controllable parameters (all require stream pipeline restart):
   width, height, fps, bitrate, h264_profile, keyframe_interval,
   rotation, hflip, vflip
 
-OV5647 sensor modes usable for H264 streaming (libcamera on RPi Zero 2W):
-  640x480   @ up to 58 fps
-  1296x972  @ up to 43 fps
-  1920x1080 @ up to 30 fps
-
-Note: 2592x1944 (full 5MP) is a valid sensor mode but the Pi Zero 2W
-cannot encode it fast enough for real-time H264 streaming — ffmpeg
-fails to detect codec parameters. Excluded from allowed resolutions.
+The set of valid (width, height) and the per-resolution max framerate
+come from ``camera_streamer.sensor_info`` — the connected sensor is
+identified at construction time and its catalogued modes are used as
+the validation table. This module no longer hardcodes OV5647 modes;
+plugging in an IMX219 / IMX477 / IMX708 surfaces a different mode set
+to the server and the dashboard.
 
 Stream start/stop control (ADR-0017):
 The handler also owns the persisted desired stream state at
@@ -32,22 +30,25 @@ import os
 import tempfile
 import time
 
+from camera_streamer.sensor_info import (
+    KNOWN_SENSOR_MODES,
+    SensorCapabilities,
+    detect_sensor_capabilities,
+)
+
 log = logging.getLogger("camera-streamer.control")
 
-# OV5647 sensor: validated resolution+fps combinations.
-# Max FPS per resolution from libcamera --list-cameras output.
-SENSOR_MODES = {
-    (640, 480): 58,
-    (1296, 972): 43,
-    (1920, 1080): 30,
-}
 
-VALID_RESOLUTIONS = set(SENSOR_MODES.keys())
-
-PARAM_SCHEMA = {
-    "width": {"type": int, "allowed": [w for w, _ in VALID_RESOLUTIONS]},
-    "height": {"type": int, "allowed": [h for _, h in VALID_RESOLUTIONS]},
-    "fps": {"type": int, "min": 1, "max": 58},
+# Parameter schema with sensor-independent bounds. Per-resolution and
+# per-fps validation comes from the live ``SensorCapabilities`` rather
+# than this static schema. The ``allowed`` lists for ``width`` /
+# ``height`` are derived from the sensor's modes inside
+# ``ControlHandler``; the schema entries below are placeholders kept so
+# the validation loop has a uniform structure.
+PARAM_SCHEMA: dict[str, dict] = {
+    "width": {"type": int},
+    "height": {"type": int},
+    "fps": {"type": int, "min": 1},
     "bitrate": {"type": int, "min": 500000, "max": 8000000},
     "h264_profile": {"type": str, "allowed": ["baseline", "main", "high"]},
     "keyframe_interval": {"type": int, "min": 1, "max": 120},
@@ -66,6 +67,10 @@ PARAM_SCHEMA = {
     "motion_detection": {"type": bool},
 }
 
+# Highest framerate the schema will accept regardless of resolution.
+# Cross-field validation (per-resolution max) tightens this further.
+ABSOLUTE_FPS_MAX = 240
+
 # Rate limit: minimum seconds between config changes
 RATE_LIMIT_SECONDS = 5
 
@@ -74,17 +79,44 @@ DEFAULT_STREAM_STATE_PATH = "/data/config/stream_state"
 VALID_STREAM_STATES = ("running", "stopped")
 
 
+def _legacy_sensor_modes(caps: SensorCapabilities) -> dict[tuple[int, int], int]:
+    """Return the (w, h) → max_fps mapping in the legacy dict shape.
+
+    Several call sites (heartbeat builder, tests) historically read the
+    module-level ``SENSOR_MODES`` dict directly. Building the same
+    shape on demand from the live capabilities preserves that
+    interface without a static table.
+    """
+    return {(m.width, m.height): int(m.max_fps) for m in caps.modes}
+
+
+# Module-level alias retained for backward compatibility with callers
+# that import ``SENSOR_MODES`` directly (e.g. ``test_control.py``).
+# Initialised to the OV5647 table — the Pi camera the home monitor
+# originally shipped with — so a fresh import without a configured
+# ControlHandler sees a sensible default. Each instantiated
+# ``ControlHandler`` rewrites this in :meth:`_update_module_alias`
+# to match the actually-detected sensor.
+SENSOR_MODES: dict[tuple[int, int], int] = {
+    (m.width, m.height): int(m.max_fps) for m in KNOWN_SENSOR_MODES["ov5647"]
+}
+
+
 class ControlHandler:
     """Handles server control API requests.
 
-    Validates parameters against OV5647 hardware capabilities,
-    applies changes to ConfigManager, and restarts stream if needed.
+    Validates parameters against the connected sensor's catalogued modes
+    (looked up via :mod:`camera_streamer.sensor_info`), applies changes
+    to ConfigManager, and restarts the stream if needed.
 
     Args:
         config: ConfigManager instance.
         stream_manager: StreamManager instance (or None in tests).
         stream_state_path: Path to the persisted desired stream state file
             (ADR-0017). Default ``/data/config/stream_state``.
+        sensor_capabilities: Optional pre-built ``SensorCapabilities``
+            for tests. Production leaves this ``None`` and lets the
+            handler call ``detect_sensor_capabilities()`` at startup.
     """
 
     def __init__(
@@ -92,15 +124,39 @@ class ControlHandler:
         config,
         stream_manager=None,
         stream_state_path=DEFAULT_STREAM_STATE_PATH,
+        *,
+        sensor_capabilities: SensorCapabilities | None = None,
     ):
         self._config = config
         self._stream = stream_manager
         self._last_request_id = 0
         self._last_change_time = 0.0
         self._stream_state_path = stream_state_path
+        # Detect the sensor at construction. ``Picamera2.global_camera_info()``
+        # does not lock the camera, so this is safe to call before the
+        # streaming pipeline opens its own ``Picamera2()`` instance.
+        if sensor_capabilities is None:
+            sensor_capabilities = detect_sensor_capabilities()
+        self._sensor = sensor_capabilities
+        self._update_module_alias()
         # Load the persisted desired state so a boot-time lookup is cheap
         # and the in-memory value is always authoritative for the server.
         self._desired_stream_state = self._load_stream_state()
+
+    def _update_module_alias(self) -> None:
+        """Refresh the module-level ``SENSOR_MODES`` to match this handler.
+
+        Backward-compat hook: tests and heartbeat code that import
+        ``SENSOR_MODES`` directly continue to see a dict consistent with
+        the live sensor.
+        """
+        global SENSOR_MODES
+        SENSOR_MODES = _legacy_sensor_modes(self._sensor)
+
+    @property
+    def sensor_capabilities(self) -> SensorCapabilities:
+        """Capabilities snapshot used by this handler."""
+        return self._sensor
 
     @property
     def desired_stream_state(self):
@@ -183,27 +239,33 @@ class ControlHandler:
         )
 
     def get_capabilities(self):
-        """Return supported parameter ranges for this camera hardware."""
+        """Return the full capability descriptor for this camera.
+
+        Wire shape (consumed by the server-side dashboard):
+          - ``sensor``           — uppercase display name (or "Unknown")
+          - ``sensor_model``     — lowercase libcamera model (or null)
+          - ``sensor_modes``     — list of {width, height, max_fps}
+          - ``detection_method`` — how the sensor was identified
+          - ``parameters``       — generic schema (sensor-agnostic
+                                   bounds; per-mode constraints are
+                                   enforced by ``set_config``)
+        """
+        sensor_dict = self._sensor.to_dict()
+        valid_resolutions = self._sensor.valid_resolutions()
+        max_fps = self._max_fps_overall()
         return {
-            "sensor": "OV5647",
-            "sensor_modes": [
-                {
-                    "width": w,
-                    "height": h,
-                    "max_fps": max_fps,
-                }
-                for (w, h), max_fps in sorted(SENSOR_MODES.items())
-            ],
+            "sensor": self._sensor.display_name(),
+            **sensor_dict,
             "parameters": {
                 "width": {
                     "type": "int",
-                    "allowed": sorted({w for w, _ in VALID_RESOLUTIONS}),
+                    "allowed": sorted({w for w, _ in valid_resolutions}),
                 },
                 "height": {
                     "type": "int",
-                    "allowed": sorted({h for _, h in VALID_RESOLUTIONS}),
+                    "allowed": sorted({h for _, h in valid_resolutions}),
                 },
-                "fps": {"type": "int", "min": 1, "max": 58},
+                "fps": {"type": "int", "min": 1, "max": max_fps},
                 "bitrate": {"type": "int", "min": 500000, "max": 8000000},
                 "h264_profile": {
                     "type": "string",
@@ -332,8 +394,16 @@ class ControlHandler:
             "desired_stream_state": self._desired_stream_state,
         }
 
+    # --- Validation helpers ---------------------------------------------
+
+    def _max_fps_overall(self) -> int:
+        """Highest max_fps across all modes for the schema bound."""
+        if not self._sensor.modes:
+            return ABSOLUTE_FPS_MAX
+        return int(max(m.max_fps for m in self._sensor.modes))
+
     def _validate_params(self, params):
-        """Validate parameters against schema and hardware constraints.
+        """Validate parameters against schema and the live sensor.
 
         Returns error string or empty string on success.
         """
@@ -341,12 +411,25 @@ class ControlHandler:
         if unknown:
             return f"Unknown parameters: {', '.join(sorted(unknown))}"
 
+        # Sensor-derived bounds for width / height / fps. Falls through
+        # to the generic schema for everything else.
+        valid_resolutions = self._sensor.valid_resolutions()
+        widths = sorted({w for w, _ in valid_resolutions})
+        heights = sorted({h for _, h in valid_resolutions})
+        max_fps_overall = self._max_fps_overall()
+
         for key, value in params.items():
             schema = PARAM_SCHEMA[key]
             expected_type = schema["type"]
 
             if not isinstance(value, expected_type):
                 return f"{key}: expected {expected_type.__name__}, got {type(value).__name__}"
+
+            # Sensor-derived allowed lists for w/h.
+            if key == "width" and widths and value not in widths:
+                return f"{key}: must be one of {widths}, got {value}"
+            if key == "height" and heights and value not in heights:
+                return f"{key}: must be one of {heights}, got {value}"
 
             if "allowed" in schema and value not in schema["allowed"]:
                 return f"{key}: must be one of {schema['allowed']}, got {value}"
@@ -357,22 +440,25 @@ class ControlHandler:
             if "max" in schema and value > schema["max"]:
                 return f"{key}: maximum is {schema['max']}, got {value}"
 
-        # Cross-field validation: width+height must form valid resolution pair
+            if key == "fps" and value > max_fps_overall:
+                return f"{key}: maximum is {max_fps_overall}, got {value}"
+
+        # Cross-field validation: width+height must form a valid mode
+        # for this sensor.
         width = params.get("width", self._config.width)
         height = params.get("height", self._config.height)
         if ("width" in params or "height" in params) and (
             width,
             height,
-        ) not in VALID_RESOLUTIONS:
-            valid = ", ".join(f"{w}x{h}" for w, h in sorted(VALID_RESOLUTIONS))
+        ) not in valid_resolutions:
+            valid = ", ".join(f"{w}x{h}" for w, h in sorted(valid_resolutions))
             return f"Invalid resolution {width}x{height}. Valid: {valid}"
 
-        # Cross-field: fps must not exceed sensor mode max
+        # Cross-field: fps must not exceed the chosen mode's max framerate.
         fps = params.get("fps", self._config.fps)
-        if (width, height) in SENSOR_MODES:
-            max_fps = SENSOR_MODES[(width, height)]
-            if fps > max_fps:
-                return f"FPS {fps} exceeds maximum {max_fps} for {width}x{height}"
+        max_for_res = self._sensor.max_fps_for(width, height)
+        if max_for_res is not None and fps > max_for_res:
+            return f"FPS {fps} exceeds maximum {int(max_for_res)} for {width}x{height}"
 
         return ""
 

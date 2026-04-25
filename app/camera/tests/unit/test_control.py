@@ -10,22 +10,40 @@ from camera_streamer.control import (
     ControlHandler,
     parse_control_request,
 )
+from camera_streamer.sensor_info import (
+    KNOWN_SENSOR_MODES,
+    capabilities_for_testing,
+)
 
 
 @pytest.fixture
 def control(camera_config):
-    """ControlHandler with mock stream manager."""
+    """ControlHandler with mock stream manager.
+
+    Defaults to an injected OV5647 ``SensorCapabilities`` so the
+    existing OV5647-shaped expectations (1920x1080 max 30 fps,
+    1296x972 max 43, 640x480 max 58) hold without depending on
+    real Picamera2 enumeration.
+    """
     stream = MagicMock()
     stream.is_streaming = True
     stream.consecutive_failures = 0
     stream.restart.return_value = True
-    return ControlHandler(camera_config, stream)
+    return ControlHandler(
+        camera_config,
+        stream,
+        sensor_capabilities=capabilities_for_testing("ov5647"),
+    )
 
 
 @pytest.fixture
 def control_no_stream(camera_config):
     """ControlHandler without stream manager."""
-    return ControlHandler(camera_config, None)
+    return ControlHandler(
+        camera_config,
+        None,
+        sensor_capabilities=capabilities_for_testing("ov5647"),
+    )
 
 
 # --- get_capabilities ---
@@ -35,7 +53,10 @@ class TestGetCapabilities:
     def test_returns_sensor_info(self, control):
         caps = control.get_capabilities()
         assert caps["sensor"] == "OV5647"
-        assert len(caps["sensor_modes"]) == 3
+        assert caps["sensor_model"] == "ov5647"
+        # Catalogue ships four OV5647 modes (640x480, 1296x972,
+        # 1920x1080, 2592x1944).
+        assert len(caps["sensor_modes"]) == len(KNOWN_SENSOR_MODES["ov5647"])
 
     def test_sensor_modes_match_constants(self, control):
         caps = control.get_capabilities()
@@ -43,6 +64,80 @@ class TestGetCapabilities:
             key = (mode["width"], mode["height"])
             assert key in SENSOR_MODES
             assert mode["max_fps"] == SENSOR_MODES[key]
+
+    def test_unknown_sensor_falls_back_to_default_modes(self, camera_config):
+        """No sensor detected → handler still works; modes from FALLBACK_MODES."""
+        from camera_streamer.sensor_info import FALLBACK_MODES, SensorCapabilities
+
+        unknown = SensorCapabilities(
+            model=None,
+            modes=FALLBACK_MODES,
+            detection_method="fallback",
+        )
+        h = ControlHandler(camera_config, None, sensor_capabilities=unknown)
+        caps = h.get_capabilities()
+        assert caps["sensor"] == "Unknown"
+        assert caps["sensor_model"] is None
+        assert len(caps["sensor_modes"]) == len(FALLBACK_MODES)
+        assert caps["detection_method"] == "fallback"
+
+
+class TestPerSensorCapabilities:
+    """Each sensor reports its own catalogued modes; the dashboard
+    Settings dropdown is built from these so cameras with different
+    sensors render different option lists."""
+
+    @pytest.mark.parametrize(
+        "model,expected_top_resolution",
+        [
+            ("ov5647", (2592, 1944)),
+            ("imx219", (3280, 2464)),
+            ("imx477", (4056, 3040)),
+            ("imx708", (4608, 2592)),
+        ],
+    )
+    def test_native_resolution_present_in_capabilities(
+        self, camera_config, model, expected_top_resolution
+    ):
+        h = ControlHandler(
+            camera_config,
+            None,
+            sensor_capabilities=capabilities_for_testing(model),
+        )
+        caps = h.get_capabilities()
+        resolutions = {(m["width"], m["height"]) for m in caps["sensor_modes"]}
+        assert expected_top_resolution in resolutions, (
+            f"{model} caps missing native resolution {expected_top_resolution}: {resolutions}"
+        )
+        assert caps["sensor"] == model.upper()
+        assert caps["sensor_model"] == model
+
+    def test_imx219_accepts_3280x2464_validation(self, camera_config):
+        """User requirement: IMX219's 3280x2464 must be selectable."""
+        h = ControlHandler(
+            camera_config,
+            None,
+            sensor_capabilities=capabilities_for_testing("imx219"),
+        )
+        result, err, status = h.set_config(
+            {"width": 3280, "height": 2464, "fps": 21},
+            origin="server",
+        )
+        assert status == 200, err
+        assert result["applied"]["width"] == 3280
+
+    def test_ov5647_rejects_imx219_only_resolution(self, camera_config):
+        """An OV5647 must NOT accept 3280x2464 — that's IMX219-only."""
+        h = ControlHandler(
+            camera_config,
+            None,
+            sensor_capabilities=capabilities_for_testing("ov5647"),
+        )
+        result, err, status = h.set_config({"width": 3280, "height": 2464})
+        assert status == 400
+        # Specific message identifies the rejected mode and lists valid
+        # OV5647 modes.
+        assert "Invalid resolution 3280x2464" in err or "must be one of" in err
 
     def test_parameters_list_all_params(self, control):
         caps = control.get_capabilities()
