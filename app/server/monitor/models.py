@@ -80,6 +80,21 @@ class Camera:
     sensor_model: str = ""
     sensor_modes: list[dict] = field(default_factory=list)
     sensor_detection_method: str = ""
+    # Image-quality controls catalogue (#182). Mirrors the camera's
+    # IMAGE_CONTROL_CATALOGUE: keyed by libcamera control name with
+    # min/max/default/kind. Empty for cameras still on pre-#182
+    # firmware; the dashboard renders a row only for keys present here.
+    image_controls: dict = field(default_factory=dict)
+    # User-customised image-quality values (#182). Keyed by libcamera
+    # control name. Absent keys mean "no override — use libcamera
+    # default". Pushed to the camera via the existing control channel.
+    image_quality: dict = field(default_factory=dict)
+    # Encoder ceiling the camera-board can H.264-encode (#182). Surfaced
+    # so the dashboard can flag any saved mode whose pixel count now
+    # exceeds what the running board can drive (e.g. sensor swap on a
+    # Zero 2W to one with higher native res than the encoder supports).
+    encoder_max_pixels: int = 0
+    board_name: str = ""
 
 
 @dataclass

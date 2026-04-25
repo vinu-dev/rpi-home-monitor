@@ -191,6 +191,8 @@ class TestGetConfig:
             # (renamed from recording_motion_enabled) when the admin
             # toggles motion on from the Camera Settings modal.
             "motion_detection",
+            # #182 image-quality controls dict.
+            "image_quality",
         }
         assert set(cfg.keys()) == expected
 

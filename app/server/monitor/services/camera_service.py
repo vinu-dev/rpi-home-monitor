@@ -60,6 +60,10 @@ STREAM_PARAMS = {
     # MOTION_DETECTION flag that gates its on-device detector.
     # See ``_translate_stream_params_for_wire`` below.
     "recording_motion_enabled",
+    # Image-quality controls dict (#182). Pushed to camera as a
+    # JSON-encoded value via the existing control channel; camera
+    # decodes and applies via Picamera2.set_controls.
+    "image_quality",
 }
 
 
@@ -81,6 +85,45 @@ def _translate_stream_params_for_wire(params: dict) -> dict:
     if "recording_motion_enabled" in translated:
         translated["motion_detection"] = translated.pop("recording_motion_enabled")
     return translated
+
+
+def _validate_image_quality(payload: dict, camera) -> str:
+    """Validate an ``image_quality`` dict against the camera's catalogue.
+
+    Empty dict is always allowed (clears all overrides). Unknown keys
+    are silently dropped — the dashboard only offers what the camera
+    advertised, so unknown means "user agent sent something we don't
+    support yet" not "user typed garbage". Known keys are validated
+    against the camera's reported ``image_controls`` bounds; an
+    out-of-range value rejects the whole PUT.
+    """
+    if not payload:
+        return ""
+    catalogue = getattr(camera, "image_controls", {}) if camera is not None else {}
+    for k, v in payload.items():
+        if k not in catalogue:
+            # Unknown — silently dropped during persistence (see update()).
+            continue
+        spec = catalogue[k]
+        kind = spec.get("kind") if isinstance(spec, dict) else None
+        if kind in ("linear", "multiplier"):
+            try:
+                v_f = float(v)
+            except (TypeError, ValueError):
+                return f"image_quality.{k}: expected number, got {type(v).__name__}"
+            lo = spec.get("min")
+            hi = spec.get("max")
+            if lo is not None and v_f < lo:
+                return f"image_quality.{k}: minimum is {lo}, got {v_f}"
+            if hi is not None and v_f > hi:
+                return f"image_quality.{k}: maximum is {hi}, got {v_f}"
+        elif kind == "enum":
+            if not isinstance(v, str):
+                return f"image_quality.{k}: expected string, got {type(v).__name__}"
+            allowed = spec.get("choices") or []
+            if v not in allowed:
+                return f"image_quality.{k}: must be one of {allowed}, got {v!r}"
+    return ""
 
 
 def _validate_schedule(schedule) -> str:
@@ -235,6 +278,11 @@ class CameraService:
                 # is empty.
                 "sensor_model": getattr(c, "sensor_model", "") or "",
                 "sensor_modes": list(getattr(c, "sensor_modes", []) or []),
+                # Image-quality controls (#182).
+                "image_controls": dict(getattr(c, "image_controls", {}) or {}),
+                "image_quality": dict(getattr(c, "image_quality", {}) or {}),
+                "encoder_max_pixels": int(getattr(c, "encoder_max_pixels", 0) or 0),
+                "board_name": getattr(c, "board_name", "") or "",
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -280,6 +328,11 @@ class CameraService:
             "sensor_modes": list(getattr(camera, "sensor_modes", []) or []),
             "sensor_detection_method": getattr(camera, "sensor_detection_method", "")
             or "",
+            # Image-quality controls (#182).
+            "image_controls": dict(getattr(camera, "image_controls", {}) or {}),
+            "image_quality": dict(getattr(camera, "image_quality", {}) or {}),
+            "encoder_max_pixels": int(getattr(camera, "encoder_max_pixels", 0) or 0),
+            "board_name": getattr(camera, "board_name", "") or "",
         }, ""
 
     def confirm(
@@ -492,6 +545,26 @@ class CameraService:
             method = caps.get("detection_method")
             if isinstance(method, str):
                 camera.sensor_detection_method = method[:32]
+            # #182: image-quality controls catalogue + encoder ceiling +
+            # board name. Defensive: only persist well-formed shapes.
+            ic = caps.get("image_controls")
+            if isinstance(ic, dict):
+                # Cap entries to avoid a malformed camera bloating the
+                # JSON store. Each value should itself be a small dict.
+                accepted_ic: dict = {}
+                for k, v in list(ic.items())[:32]:
+                    if not isinstance(k, str) or len(k) > 64:
+                        continue
+                    if not isinstance(v, dict):
+                        continue
+                    accepted_ic[k] = v
+                camera.image_controls = accepted_ic
+            emp = caps.get("encoder_max_pixels")
+            if isinstance(emp, int) and 0 <= emp <= 200_000_000:
+                camera.encoder_max_pixels = emp
+            bn = caps.get("board_name")
+            if isinstance(bn, str):
+                camera.board_name = bn[:64]
 
         # Capture sync state before touching stream params.
         # If config_sync is "pending" the server has unsent changes — keep them
@@ -623,6 +696,8 @@ class CameraService:
             "hflip",
             "vflip",
             "motion_sensitivity",
+            # #182 image-quality controls dict
+            "image_quality",
         }
         unknown = set(data.keys()) - allowed
         if unknown:
@@ -721,6 +796,14 @@ class CameraService:
             data["recording_motion_enabled"], bool
         ):
             return "recording_motion_enabled must be a boolean"
+
+        if "image_quality" in data:
+            iq = data["image_quality"]
+            if not isinstance(iq, dict):
+                return "image_quality must be an object"
+            err = _validate_image_quality(iq, camera)
+            if err:
+                return err
 
         return ""
 

@@ -438,7 +438,14 @@
                 </div>
                 <div class="form-group">
                     <label>Bitrate (Mbps)</label>
-                    <input type="number" class="form-input" x-model.number="editForm.bitrateMbps" min="0.5" max="8" step="0.5">
+                    <!-- max bumped from 8 to 12 to support higher-resolution
+                         IMX477/IMX708 modes on Pi 4. The input must accept
+                         the camera's CURRENT value or the browser silently
+                         clamps it visibly to the cap, which looks like
+                         "settings showing defaults instead of saved value".
+                         Server-side validation still enforces 0.5-8 Mbps
+                         on Zero 2W via the camera's encoder ceiling. -->
+                    <input type="number" class="form-input" x-model.number="editForm.bitrateMbps" min="0.5" max="12" step="0.5">
                 </div>
                 <div class="form-group">
                     <label>H.264 Profile</label>
@@ -506,6 +513,53 @@
                     <div class="text-small text-muted" style="margin-top:6px;"
                          x-text="motionSensitivityHint(editForm.motion_sensitivity)"></div>
                 </div>
+                <!-- Image Quality panel (#182). Capability-driven: rows
+                     render only for controls the camera reported in
+                     ``image_controls``. Empty for cameras still on pre-#182
+                     firmware — section header is hidden in that case. -->
+                <div x-show="editForm.imageQualityRows && editForm.imageQualityRows.length > 0"
+                     style="margin-top:18px;border-top:1px solid var(--border, #e2e2e2);padding-top:14px;">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
+                        <strong>Image Quality</strong>
+                        <button class="btn btn--secondary btn--small" @click="resetAllImageQuality()" type="button">Reset all to defaults</button>
+                    </div>
+                    <template x-for="row in editForm.imageQualityRows" :key="row.key">
+                        <div class="form-group">
+                            <label style="display:flex; align-items:baseline; justify-content:space-between;">
+                                <span>
+                                    <span x-text="row.label"></span>
+                                    <span class="text-small" style="margin-left:6px;color:var(--text-muted);font-weight:500;"
+                                          x-show="isImageQualityAtDefault(row)">default</span>
+                                </span>
+                                <span style="display:flex;gap:8px;align-items:center;">
+                                    <span class="text-small" style="font-weight:600;"
+                                          x-text="formatImageQualityValue(row)"></span>
+                                    <button type="button" class="btn btn--small btn--secondary"
+                                            title="Reset to default"
+                                            @click="resetImageQualityRow(row)"
+                                            style="padding:2px 6px;font-size:12px;">↺</button>
+                                </span>
+                            </label>
+                            <template x-if="row.kind === 'linear' || row.kind === 'multiplier'">
+                                <input type="range" class="form-input" style="padding:0;"
+                                       :min="row.min" :max="row.max" :step="row.step"
+                                       x-model.number="editForm.imageQuality[row.key]"
+                                       @change="onImageQualityChange(row.key)">
+                            </template>
+                            <template x-if="row.kind === 'enum'">
+                                <select class="form-input"
+                                        x-model="editForm.imageQuality[row.key]"
+                                        @change="onImageQualityChange(row.key)">
+                                    <template x-for="choice in row.choices" :key="choice">
+                                        <option :value="choice" x-text="choice"></option>
+                                    </template>
+                                </select>
+                            </template>
+                            <div class="text-small text-muted" x-show="row.hint" x-text="row.hint" style="margin-top:4px;"></div>
+                        </div>
+                    </template>
+                </div>
+
                 <div style="display:flex;gap:8px;margin-top:12px;">
                     <button class="btn btn--primary" @click="saveStreamSettings()" :disabled="savingStream">
                         <span x-text="savingStream ? 'Saving...' : 'Save & Apply'"></span>
@@ -965,6 +1019,144 @@ function dashboardPage() {
             return 30;
         },
 
+        // ---- Image Quality (#182) ---------------------------------
+
+        // Human labels + hints for the libcamera control names.
+        // Keeps the markup clean (template reads from row.label /
+        // row.hint instead of inline ternaries) and centralises the
+        // copy that's intended for non-technical operators.
+        _IMAGE_QUALITY_META: {
+            Brightness:       { label: 'Brightness',         step: 0.05,
+                                hint: 'Lifts or drops overall image lightness.' },
+            ExposureValue:    { label: 'Exposure (EV)',      step: 0.1,
+                                hint: 'Bias the auto-exposure target. +1 EV = one stop brighter.' },
+            Contrast:         { label: 'Contrast',           step: 0.05,
+                                hint: 'Multiplier. 1.0 = no change.' },
+            Saturation:       { label: 'Saturation',         step: 0.05,
+                                hint: 'Multiplier. 1.0 = no change.' },
+            Sharpness:        { label: 'Sharpness',          step: 0.1,
+                                hint: 'Edge sharpening. Security-camera sweet spot ~1.5–2.0.' },
+            NoiseReductionMode: { label: 'Noise reduction',  step: 1,
+                                hint: 'Off / Fast / Minimal / HighQuality.' },
+            AwbMode:          { label: 'White balance',      step: 1,
+                                hint: 'Lock to a preset for fixed-scene cameras.' },
+        },
+
+        // Build the rows the panel renders, in a stable order, only
+        // for keys the camera reported in image_controls.
+        _imageQualityRowsFor(cam) {
+            var ic = (cam && cam.image_controls) ? cam.image_controls : {};
+            // Stable ordering — match the design doc / issue #182.
+            var order = [
+                'Brightness', 'ExposureValue',
+                'Contrast', 'Saturation', 'Sharpness',
+                'NoiseReductionMode', 'AwbMode'
+            ];
+            var meta = this._IMAGE_QUALITY_META;
+            var rows = [];
+            for (var i = 0; i < order.length; i++) {
+                var key = order[i];
+                var spec = ic[key];
+                if (!spec) { continue; }
+                var m = meta[key] || { label: key, step: 0.1, hint: '' };
+                var kind = spec.kind || 'linear';
+                rows.push({
+                    key: key,
+                    label: m.label,
+                    hint: m.hint,
+                    kind: kind,
+                    min: spec.min,
+                    max: spec.max,
+                    step: m.step,
+                    default: spec.default,
+                    choices: spec.choices || [],
+                });
+            }
+            return rows;
+        },
+
+        // For each row, the value the slider/dropdown opens at:
+        // saved customised value if present, otherwise the catalogue's
+        // default. Crucial — without this the panel "opens at defaults"
+        // and that's what the user-reported bug was about.
+        _imageQualityInitial(cam, rows) {
+            var saved = (cam && cam.image_quality) ? cam.image_quality : {};
+            var out = {};
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                out[r.key] = (r.key in saved) ? saved[r.key] : r.default;
+            }
+            return out;
+        },
+
+        isImageQualityAtDefault(row) {
+            var v = this.editForm.imageQuality[row.key];
+            // Numeric tolerance for sliders so floating-point noise
+            // doesn't make the "default" pill flicker.
+            if (row.kind === 'enum') return v === row.default;
+            return Math.abs(Number(v) - Number(row.default)) < 1e-6;
+        },
+
+        formatImageQualityValue(row) {
+            var v = this.editForm.imageQuality[row.key];
+            if (row.kind === 'enum') return String(v);
+            // Sliders: show two decimals for fine controls, integer for EV.
+            return Number(v).toFixed(row.step >= 1 ? 0 : 2);
+        },
+
+        resetImageQualityRow(row) {
+            this.editForm.imageQuality[row.key] = row.default;
+            this._scheduleImageQualitySave();
+        },
+
+        resetAllImageQuality() {
+            for (var i = 0; i < this.editForm.imageQualityRows.length; i++) {
+                var r = this.editForm.imageQualityRows[i];
+                this.editForm.imageQuality[r.key] = r.default;
+            }
+            this._scheduleImageQualitySave();
+        },
+
+        // Debounced save: applies on slider release / dropdown change
+        // but coalesces rapid drags into a single PUT 250 ms later.
+        // Avoids spamming the camera with 60 updates per second.
+        _imageQualityDebounce: null,
+        onImageQualityChange(_key) {
+            this._scheduleImageQualitySave();
+        },
+        _scheduleImageQualitySave() {
+            if (this._imageQualityDebounce) {
+                clearTimeout(this._imageQualityDebounce);
+            }
+            this._imageQualityDebounce = setTimeout(() => {
+                this._imageQualityDebounce = null;
+                this.saveStreamSettings();
+            }, 250);
+        },
+
+        // Strip out keys that are at the catalogue default — server
+        // stores only customised overrides, so the persistence stays
+        // clean and a sensor swap that drops a control doesn't carry
+        // dead defaults forward.
+        _imageQualityForSave() {
+            var rows = this.editForm.imageQualityRows || [];
+            var values = this.editForm.imageQuality || {};
+            var out = {};
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var v = values[r.key];
+                if (v === undefined) continue;
+                if (r.kind === 'enum') {
+                    if (v !== r.default) out[r.key] = v;
+                } else {
+                    if (Math.abs(Number(v) - Number(r.default)) >= 1e-6) {
+                        out[r.key] = Number(v);
+                    }
+                }
+            }
+            return out;
+        },
+
         openStreamSettings(cam) {
             this.editCam = cam;
             var resKey = cam.width + 'x' + cam.height;
@@ -1031,6 +1223,16 @@ function dashboardPage() {
                        + ' which is the closest mode this sensor supports. '
                        + 'Adjust below and click Save to apply.')
                     : '',
+                // #182 image-quality state. Build catalogue rows from the
+                // camera's reported image_controls; pre-fill values from
+                // its saved image_quality dict (or catalogue default if
+                // a control hasn't been customised yet). Empty rows array
+                // for cameras still on pre-#182 firmware — Alpine x-show
+                // hides the section header in that case.
+                imageQualityRows: this._imageQualityRowsFor(cam),
+                imageQuality: this._imageQualityInitial(
+                    cam, this._imageQualityRowsFor(cam)
+                ),
             };
             this.streamSaveMsg = '';
         },
@@ -1093,6 +1295,10 @@ function dashboardPage() {
                 recording_motion_enabled: Boolean(this.editForm.recording_motion_enabled),
                 motion_sensitivity: Math.max(1, Math.min(10,
                     parseInt(this.editForm.motion_sensitivity) || 5)),
+                // #182 — only customised image-quality keys travel
+                // (defaults are inferred from the camera's catalogue
+                // and don't need to be persisted).
+                image_quality: this._imageQualityForSave(),
             };
             try {
                 await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(this.editCam.id), payload);

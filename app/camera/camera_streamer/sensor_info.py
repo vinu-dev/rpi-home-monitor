@@ -61,7 +61,39 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass, field
 
+from camera_streamer.board_profile import BoardProfile, get_board_profile
+
 log = logging.getLogger("camera-streamer.sensor_info")
+
+
+# ---------------------------------------------------------------
+# Image-quality control catalogue
+# ---------------------------------------------------------------
+#
+# Curated subset of ``Picamera2.camera_controls`` that we expose on
+# the dashboard's Image Quality panel. Each entry caps the libcamera
+# range to a UX-sensible value (libcamera allows Saturation up to 32;
+# anything past 2 is unusable for security streaming).
+#
+# Adding a control here AND wiring the heartbeat embed below is what
+# makes it appear in the dashboard. Removing it hides the row.
+IMAGE_CONTROL_CATALOGUE: dict[str, dict] = {
+    "Brightness": {"min": -1.0, "max": 1.0, "default": 0.0, "kind": "linear"},
+    "ExposureValue": {"min": -2.0, "max": 2.0, "default": 0.0, "kind": "linear"},
+    "Contrast": {"min": 0.0, "max": 2.0, "default": 1.0, "kind": "multiplier"},
+    "Saturation": {"min": 0.0, "max": 2.0, "default": 1.0, "kind": "multiplier"},
+    "Sharpness": {"min": 0.0, "max": 4.0, "default": 1.0, "kind": "multiplier"},
+    "NoiseReductionMode": {
+        "choices": ["Off", "Fast", "Minimal", "HighQuality"],
+        "default": "Fast",
+        "kind": "enum",
+    },
+    "AwbMode": {
+        "choices": ["Auto", "Tungsten", "Fluorescent", "Indoor", "Daylight", "Cloudy"],
+        "default": "Auto",
+        "kind": "enum",
+    },
+}
 
 
 # ---------------------------------------------------------------
@@ -101,12 +133,28 @@ class SensorCapabilities:
     model: str | None
     modes: tuple[SensorMode, ...] = field(default_factory=tuple)
     detection_method: str = "fallback"
+    # Image-quality controls the dashboard renders sliders/dropdowns
+    # for. Populated from IMAGE_CONTROL_CATALOGUE at detection time so
+    # the wire shape is stable across sensors; per-control availability
+    # is handled by Picamera2 silently ignoring controls a given sensor
+    # doesn't expose. ``image_controls`` is keyed by libcamera control
+    # name and carries the UX-sensible bounds (NOT raw libcamera bounds
+    # — see IMAGE_CONTROL_CATALOGUE for the curation rationale).
+    image_controls: dict = field(default_factory=dict)
+    # Encoder ceiling that filtered ``modes``. Surfaced on the wire so
+    # the dashboard can show "this mode is unavailable on your hardware"
+    # tooltips when a saved config has a mode that's now too big.
+    encoder_max_pixels: int = 0
+    board_name: str = ""
 
     def to_dict(self) -> dict:
         return {
             "sensor_model": self.model,
             "sensor_modes": [m.to_dict() for m in self.modes],
             "detection_method": self.detection_method,
+            "image_controls": dict(self.image_controls),
+            "encoder_max_pixels": self.encoder_max_pixels,
+            "board_name": self.board_name,
         }
 
     def display_name(self) -> str:
@@ -218,12 +266,17 @@ def detect_sensor_capabilities(
     else:
         info_list = _picamera2_global_camera_info()
 
+    # Resolve the board's encoder ceiling once. Used to filter the
+    # sensor's mode list — see ``filter_modes_by_encoder``.
+    board = get_board_profile()
+
     if not info_list:
         log.info("No camera enumerated by libcamera — using fallback capabilities")
-        return SensorCapabilities(
+        return _build_caps(
             model=None,
             modes=FALLBACK_MODES,
-            detection_method="fallback",
+            method="fallback",
+            board=board,
         )
 
     raw_model = info_list[0].get("Model") or info_list[0].get("model")
@@ -232,10 +285,11 @@ def detect_sensor_capabilities(
             "libcamera entry has no Model key (got %r) — using fallback",
             info_list[0],
         )
-        return SensorCapabilities(
+        return _build_caps(
             model=None,
             modes=FALLBACK_MODES,
-            detection_method="fallback",
+            method="fallback",
+            board=board,
         )
 
     model = str(raw_model).strip().lower()
@@ -245,17 +299,65 @@ def detect_sensor_capabilities(
             "Detected sensor %r is not in KNOWN_SENSOR_MODES — using fallback",
             model,
         )
-        return SensorCapabilities(
+        return _build_caps(
             model=model,
             modes=FALLBACK_MODES,
-            detection_method="fallback",
+            method="fallback",
+            board=board,
         )
 
-    log.info("Detected sensor %s with %d modes", model, len(modes))
-    return SensorCapabilities(
+    log.info("Detected sensor %s with %d modes (pre-filter)", model, len(modes))
+    return _build_caps(
         model=model,
         modes=modes,
-        detection_method="picamera2",
+        method="picamera2",
+        board=board,
+    )
+
+
+def filter_modes_by_encoder(
+    modes: tuple[SensorMode, ...], max_pixels: int
+) -> tuple[SensorMode, ...]:
+    """Drop modes whose pixel count exceeds the board's encoder ceiling.
+
+    The Pi's V4L2 H.264 encoder allocates buffers proportional to
+    width*height*1.5 (YUV420). Past the per-board ceiling
+    (``BoardProfile.max_encoder_pixels``) the kernel returns ENOMEM on
+    ``VIDIOC_REQBUFS`` and the streamer crashes — see issue notes from
+    the Zero 2W + IMX219 8 MP attempt. Filtering upstream keeps the
+    dashboard from offering modes the hardware can't fulfil.
+    """
+    kept: list[SensorMode] = []
+    for m in modes:
+        if m.width * m.height <= max_pixels:
+            kept.append(m)
+        else:
+            log.info(
+                "filter_modes_by_encoder: dropping %dx%d (%.2f MP) — exceeds %d px",
+                m.width,
+                m.height,
+                m.width * m.height / 1_000_000,
+                max_pixels,
+            )
+    return tuple(kept)
+
+
+def _build_caps(
+    *,
+    model: str | None,
+    modes: tuple[SensorMode, ...],
+    method: str,
+    board: BoardProfile,
+) -> SensorCapabilities:
+    """Apply the board encoder filter + curated image-control catalogue."""
+    filtered = filter_modes_by_encoder(modes, board.max_encoder_pixels)
+    return SensorCapabilities(
+        model=model,
+        modes=filtered,
+        detection_method=method,
+        image_controls=dict(IMAGE_CONTROL_CATALOGUE),
+        encoder_max_pixels=board.max_encoder_pixels,
+        board_name=board.name,
     )
 
 

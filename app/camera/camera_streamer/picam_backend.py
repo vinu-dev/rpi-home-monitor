@@ -36,6 +36,68 @@ from collections.abc import Callable
 
 log = logging.getLogger("camera-streamer.picam_backend")
 
+
+_LIBCAMERA_ENUM_CODES = {
+    # libcamera draft NoiseReductionModeEnum
+    "NoiseReductionMode": {
+        "Off": 0,
+        "Fast": 1,
+        "HighQuality": 2,
+        "Minimal": 3,
+        "ZSL": 4,
+    },
+    # libcamera AwbMode (auto-white-balance mode preset)
+    "AwbMode": {
+        "Auto": 0,
+        "Tungsten": 1,
+        "Fluorescent": 2,
+        "Indoor": 3,
+        "Daylight": 4,
+        "Cloudy": 5,
+        "Custom": 6,
+    },
+}
+
+
+def _resolve_libcamera_enum(key: str, value):
+    """Translate a string image_quality enum value into the libcamera form.
+
+    Tries the live ``libcamera.controls`` Python bindings first (so we
+    pass the actual enum instance the kernel expects). Falls back to
+    the well-known integer codes when the bindings aren't available
+    (test hosts) or when the enum's class moved between libcamera
+    versions. Returns ``None`` to signal "drop this key" — the caller
+    pops it from the controls dict so an invalid value never reaches
+    ``Picamera2.set_controls``.
+    """
+    if not isinstance(value, str):
+        return value if isinstance(value, int) else None
+    # Live libcamera bindings (production path)
+    try:
+        from libcamera import controls as _libc_controls  # type: ignore
+
+        if key == "NoiseReductionMode":
+            enum_cls = _libc_controls.draft.NoiseReductionModeEnum
+        elif key == "AwbMode":
+            enum_cls = _libc_controls.AwbModeEnum
+        else:
+            enum_cls = None
+        if enum_cls is not None:
+            try:
+                return getattr(enum_cls, value)
+            except AttributeError:
+                log.warning("libcamera enum %s has no %r — dropping", key, value)
+                return None
+    except (ImportError, AttributeError):
+        pass
+    # Fallback: well-known integer codes
+    table = _LIBCAMERA_ENUM_CODES.get(key, {})
+    if value in table:
+        return table[value]
+    log.warning("Unknown enum value for %s: %r — dropping", key, value)
+    return None
+
+
 MAIN_FORMAT = "YUV420"
 LORES_FORMAT = "YUV420"
 
@@ -258,6 +320,72 @@ class PicameraH264Backend:
             "Picamera2 H264 recording started → ffmpeg stdin (PID %d)",
             self._ffmpeg.pid if self._ffmpeg else -1,
         )
+        self._apply_image_quality()
+
+    def _apply_image_quality(self) -> None:
+        """Apply persisted image-quality controls to the live camera (#182).
+
+        Controls are JSON-encoded in ``cfg.image_quality`` and pushed to
+        ``Picamera2.set_controls`` after ``start_recording`` (set_controls
+        only takes effect on a running camera). Defensive: any failure
+        is logged at WARNING and the streamer continues — one malformed
+        control doesn't break the others or the stream itself.
+        """
+        try:
+            controls_dict = self._config.image_quality
+        except Exception as exc:  # pragma: no cover — defensive
+            log.warning("image_quality read failed: %s", exc)
+            return
+        if not controls_dict:
+            log.debug("image_quality empty — leaving libcamera defaults in place")
+            return
+        applied = self._coerce_image_quality(controls_dict)
+        if not applied:
+            return
+        try:
+            self._picam2.set_controls(applied)
+        except Exception as exc:
+            log.warning("Picamera2.set_controls failed: %s", exc)
+            return
+        log.info("Image-quality controls applied: %s", applied)
+
+    @staticmethod
+    def _coerce_image_quality(raw: dict) -> dict:
+        """Translate the wire dict into the shape libcamera expects.
+
+        - Scalar floats pass through (Brightness, Contrast, Saturation,
+          Sharpness, ExposureValue, Brightness)
+        - Enum strings → libcamera enum values
+          (NoiseReductionMode, AwbMode)
+        - Unknown keys are dropped silently — the camera's reported
+          ``image_controls`` catalogue gates what the dashboard offers,
+          so unknown means "user agent sent something we don't support
+          yet" not "user typed garbage".
+        """
+        scalar = (
+            "Brightness",
+            "Contrast",
+            "Saturation",
+            "Sharpness",
+            "ExposureValue",
+        )
+        out: dict = {}
+        for key, val in raw.items():
+            if key in scalar:
+                try:
+                    out[key] = float(val)
+                except (TypeError, ValueError):
+                    log.warning(
+                        "image_quality: %s=%r not a number — skipping", key, val
+                    )
+                continue
+            if key in ("NoiseReductionMode", "AwbMode"):
+                out[key] = _resolve_libcamera_enum(key, val)
+                if out[key] is None:
+                    out.pop(key)
+                continue
+            log.debug("image_quality: dropping unsupported key %r", key)
+        return out
 
     @staticmethod
     def _h264_profile_name(profile: str) -> str:
