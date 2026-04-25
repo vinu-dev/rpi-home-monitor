@@ -406,12 +406,29 @@
                     <input type="text" class="form-input" x-model="editForm.location"
                            maxlength="64" placeholder="e.g. Porch (optional)">
                 </div>
+                <!-- Sensor label — rendered from the camera's reported
+                     ``capabilities`` block (#173). Empty for cameras still
+                     on pre-multi-sensor firmware; the dropdown falls back
+                     to the legacy preset in that case. -->
+                <div class="form-group" x-show="editForm.sensorLabel">
+                    <label>Sensor</label>
+                    <div class="form-input" style="background: var(--surface-muted, #f5f5f5); color: var(--text-muted, #555); cursor: default;"
+                         x-text="editForm.sensorLabel"></div>
+                </div>
+                <!-- Mismatch banner — fires when the camera's saved
+                     resolution is no longer in its current sensor's
+                     mode list (e.g. the user swapped from IMX219 back
+                     to OV5647 with a saved 3280x2464). -->
+                <div class="alert alert-warning" x-show="editForm.resolutionMismatch" style="margin-bottom: 1rem;">
+                    <strong>Saved resolution unavailable on this sensor.</strong>
+                    <span x-text="editForm.resolutionMismatchHint"></span>
+                </div>
                 <div class="form-group">
                     <label>Resolution</label>
                     <select class="form-input" x-model="editForm.resolution" @change="onResolutionChange()">
-                        <option value="640x480">640x480 (max 58 fps)</option>
-                        <option value="1296x972">1296x972 (max 43 fps)</option>
-                        <option value="1920x1080">1920x1080 (max 30 fps)</option>
+                        <template x-for="opt in editForm.resolutionOptions" :key="opt.value">
+                            <option :value="opt.value" x-text="opt.label"></option>
+                        </template>
                     </select>
                 </div>
                 <div class="form-group">
@@ -904,17 +921,82 @@ function dashboardPage() {
         },
 
         // --- Stream Settings (ADR-0015) ---
-        _resMaxFps: { '640x480': 58, '1296x972': 43, '1920x1080': 30 },
+
+        // Legacy fallback dropdown options + max-fps map. Used when the
+        // camera hasn't reported its sensor capabilities yet (pre-#173
+        // firmware, or fresh pair before the first heartbeat).
+        _legacyResolutionOptions: [
+            { value: '640x480',   label: '640x480 (max 58 fps)',  width: 640,  height: 480,  max_fps: 58 },
+            { value: '1296x972',  label: '1296x972 (max 43 fps)', width: 1296, height: 972,  max_fps: 43 },
+            { value: '1920x1080', label: '1920x1080 (max 30 fps)', width: 1920, height: 1080, max_fps: 30 },
+        ],
+
+        // Build the dropdown option list for ONE camera from its
+        // reported sensor_modes (#173). Each camera gets its own list,
+        // so an IMX219 shows 3280x2464 and an OV5647 stops at 2592x1944.
+        _resolutionOptionsFor(cam) {
+            var modes = (cam && Array.isArray(cam.sensor_modes)) ? cam.sensor_modes : [];
+            if (!modes.length) {
+                return this._legacyResolutionOptions.slice();
+            }
+            // Sort by pixel count so the dropdown is small-to-large.
+            var sorted = modes.slice().sort(function(a, b) {
+                return (a.width * a.height) - (b.width * b.height);
+            });
+            return sorted.map(function(m) {
+                var fps = Math.round(Number(m.max_fps) || 0);
+                return {
+                    value: m.width + 'x' + m.height,
+                    label: m.width + 'x' + m.height + ' (max ' + fps + ' fps)',
+                    width: m.width,
+                    height: m.height,
+                    max_fps: fps,
+                };
+            });
+        },
+
+        // Look up max fps for a resolution string in a given options list.
+        _maxFpsFor(options, resKey) {
+            for (var i = 0; i < options.length; i++) {
+                if (options[i].value === resKey) {
+                    return options[i].max_fps;
+                }
+            }
+            return 30;
+        },
 
         openStreamSettings(cam) {
             this.editCam = cam;
             var resKey = cam.width + 'x' + cam.height;
+            var options = this._resolutionOptionsFor(cam);
+            // If the camera's saved resolution isn't in the current
+            // sensor's mode list (e.g. the user swapped sensors and
+            // the saved 3280x2464 is now invalid), pick the closest
+            // smaller mode and warn the operator.
+            var savedInModes = options.some(function(o) { return o.value === resKey; });
+            var mismatch = !savedInModes && options.length > 0;
+            var clampTarget = options.length ? options[options.length - 1] : null;
+            // When the saved value is too big, clamp DOWN to the largest
+            // mode the new sensor supports. When it's too small (rare —
+            // sensor downgrade), use the smallest. Pick the largest
+            // available mode that does not exceed the saved width so the
+            // user stays close to what they had.
+            if (mismatch && options.length) {
+                var keep = null;
+                for (var i = 0; i < options.length; i++) {
+                    if (options[i].width <= cam.width && options[i].height <= cam.height) {
+                        keep = options[i];
+                    }
+                }
+                clampTarget = keep || options[options.length - 1];
+            }
+            var pickedRes = mismatch ? clampTarget.value : resKey;
             this.editForm = {
                 // Issue #156 — name + location editable in the same modal.
                 name: cam.name || '',
                 location: cam.location || '',
-                resolution: resKey,
-                fps: cam.fps,
+                resolution: pickedRes,
+                fps: mismatch ? Math.min(cam.fps, clampTarget.max_fps) : cam.fps,
                 bitrateMbps: (cam.bitrate / 1000000),
                 h264_profile: cam.h264_profile || 'high',
                 keyframe_interval: cam.keyframe_interval || 30,
@@ -932,7 +1014,23 @@ function dashboardPage() {
                 // /data/config default (ADR-0021).
                 motion_sensitivity: (typeof cam.motion_sensitivity === 'number')
                     ? cam.motion_sensitivity : 5,
-                maxFps: this._resMaxFps[resKey] || 30,
+                resolutionOptions: options,
+                maxFps: this._maxFpsFor(options, pickedRes),
+                // Sensor identity (#173). Empty when the camera hasn't
+                // reported caps yet — Alpine x-show hides the row.
+                sensorLabel: cam.sensor_model
+                    ? (cam.sensor_model.toUpperCase()
+                       + (cam.sensor_modes && cam.sensor_modes.length
+                          ? ' (' + cam.sensor_modes.length + ' modes available)'
+                          : ''))
+                    : '',
+                resolutionMismatch: mismatch,
+                resolutionMismatchHint: mismatch
+                    ? ('Saved was ' + resKey + ' (' + cam.fps + ' fps); '
+                       + 'switched to ' + clampTarget.value
+                       + ' which is the closest mode this sensor supports. '
+                       + 'Adjust below and click Save to apply.')
+                    : '',
             };
             this.streamSaveMsg = '';
         },
@@ -952,7 +1050,13 @@ function dashboardPage() {
         },
 
         onResolutionChange() {
-            this.editForm.maxFps = this._resMaxFps[this.editForm.resolution] || 30;
+            // Look up the new max fps from THIS camera's options list,
+            // not a global preset — different sensors have different
+            // ceilings (#173).
+            this.editForm.maxFps = this._maxFpsFor(
+                this.editForm.resolutionOptions || [],
+                this.editForm.resolution
+            );
             if (this.editForm.fps > this.editForm.maxFps) {
                 this.editForm.fps = this.editForm.maxFps;
             }
