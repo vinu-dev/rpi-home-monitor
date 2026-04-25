@@ -97,10 +97,22 @@ esac
 # and works regardless of which slot the device is currently on
 # (previously hardcoded to p3, which no-op'd on devices already on B).
 
-# Auto-detect version from rootfs path if not specified
+# Auto-detect version when not explicitly passed via --version /
+# MONITOR_VERSION. Priority:
+#   1. ``--version`` arg / $VERSION already set above (caller wins).
+#   2. ``VERSION`` file at the repo root — single source of truth so
+#      standalone runs of build-swu.sh (no build.sh wrapper) produce
+#      release-named bundles instead of dated stamps.
+#   3. Dated dev stamp as a final fallback so iterative dev builds
+#      don't require either a tag or a VERSION file edit.
 if [ -z "$VERSION" ]; then
-    # Try to extract from rootfs filename timestamp or use date
-    VERSION="1.1.0-$(date +%Y%m%d)"
+    REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+    if [ -f "$REPO_ROOT/VERSION" ]; then
+        VERSION="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
+    fi
+fi
+if [ -z "$VERSION" ]; then
+    VERSION="dev-$(date +%Y%m%d-%H%M)"
 fi
 
 # --- Build in temp directory ---
