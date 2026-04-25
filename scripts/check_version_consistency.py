@@ -76,14 +76,12 @@ def check_distro_conf() -> None:
     text = DISTRO_CONF.read_text(encoding="utf-8")
     if not DISTRO_DYNAMIC_RE.search(text):
         # Look for any DISTRO_VERSION assignment so the diagnostic is useful.
-        match = re.search(
-            r"^DISTRO_VERSION\s*:?=\s*\".*\"", text, re.MULTILINE
-        )
+        match = re.search(r"^DISTRO_VERSION\s*:?=\s*\".*\"", text, re.MULTILINE)
         actual = match.group(0) if match else "(no DISTRO_VERSION assignment found)"
         fail(
             f"{DISTRO_CONF.relative_to(REPO)} must derive DISTRO_VERSION from "
             f"the repo-root VERSION file via "
-            f'``${{@open(d.getVar(\'LAYERDIR\') + \'/../VERSION\').read().strip()}}``\n'
+            f"``${{@open(d.getVar('LAYERDIR') + '/../VERSION').read().strip()}}``\n"
             f"  current: {actual}"
         )
 
