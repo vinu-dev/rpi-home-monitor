@@ -52,19 +52,33 @@ class TestKnownSensors:
         "model",
         sorted(KNOWN_SENSOR_MODES.keys()),
     )
-    def test_each_known_sensor_round_trips(self, model: str) -> None:
+    def test_each_known_sensor_round_trips(
+        self, model: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HM_BOARD_MODEL", "Raspberry Pi 4 Model B")
         caps = detect_sensor_capabilities(global_info_factory=lambda: _info(model))
         assert caps.model == model
-        assert caps.modes == KNOWN_SENSOR_MODES[model]
+        # Kept modes must be a subset of the catalogue — the encoder
+        # filter may drop modes whose pixel count exceeds the board's
+        # H.264 ceiling (e.g. IMX477's 12 MP and IMX708's 12 MP native
+        # modes on Pi 4's 4K cap).
+        assert set(caps.modes).issubset(set(KNOWN_SENSOR_MODES[model]))
+        assert len(caps.modes) > 0
         assert caps.detection_method == "picamera2"
 
-    def test_uppercase_model_is_normalised(self) -> None:
+    def test_uppercase_model_is_normalised(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # libcamera typically reports lowercase, but be defensive.
+        monkeypatch.setenv("HM_BOARD_MODEL", "Raspberry Pi 4 Model B")
         caps = detect_sensor_capabilities(global_info_factory=lambda: _info("IMX219"))
         assert caps.model == "imx219"
         assert caps.modes == KNOWN_SENSOR_MODES["imx219"]
 
-    def test_whitespace_in_model_is_stripped(self) -> None:
+    def test_whitespace_in_model_is_stripped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HM_BOARD_MODEL", "Raspberry Pi 4 Model B")
         caps = detect_sensor_capabilities(
             global_info_factory=lambda: _info("  ov5647  ")
         )
@@ -119,11 +133,19 @@ class TestSensorCapabilitiesShape:
             modes=(SensorMode(1920, 1080, 47.0),),
             detection_method="picamera2",
         )
-        assert caps.to_dict() == {
-            "sensor_model": "imx219",
-            "sensor_modes": [{"width": 1920, "height": 1080, "max_fps": 47.0}],
-            "detection_method": "picamera2",
-        }
+        d = caps.to_dict()
+        # Multi-sensor base shape.
+        assert d["sensor_model"] == "imx219"
+        assert d["sensor_modes"] == [{"width": 1920, "height": 1080, "max_fps": 47.0}]
+        assert (
+            d["sensor_detection_method"]
+            if False
+            else d["detection_method"] == "picamera2"
+        )
+        # New in #182: image_controls catalogue + encoder ceiling.
+        assert "image_controls" in d
+        assert "encoder_max_pixels" in d
+        assert "board_name" in d
 
     def test_display_name_uppercases_known_model(self) -> None:
         caps = capabilities_for_testing("imx708")

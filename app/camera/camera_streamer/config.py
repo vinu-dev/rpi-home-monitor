@@ -49,6 +49,14 @@ DEFAULTS = {
     # ``motion_sensitivity`` param so operators can tune per-camera from
     # the server's Settings UI without editing camera.conf by hand.
     "MOTION_SENSITIVITY": "5",
+    # Image-quality controls (#182). JSON-encoded dict mapping libcamera
+    # control names to user-set values, e.g.
+    #   {"Sharpness": 1.5, "Contrast": 1.2, "NoiseReductionMode": "Fast"}
+    # Keys absent from the dict fall through to libcamera defaults — only
+    # user-customised values are persisted. Pushed by the server via the
+    # existing control channel; applied by ``picam_backend`` after
+    # ``start_recording`` via ``Picamera2.set_controls``.
+    "IMAGE_QUALITY": "{}",
 }
 
 
@@ -126,6 +134,28 @@ class ConfigManager:
         except (TypeError, ValueError):
             v = 5
         return max(1, min(10, v))
+
+    @property
+    def image_quality(self) -> dict:
+        """User-customised image-quality controls (#182).
+
+        JSON-decoded dict mapping libcamera control name → value.
+        Empty dict means "no overrides — use libcamera defaults".
+        Defensively returns an empty dict on any decode error so a
+        malformed value can't crash the streamer.
+        """
+        import json
+
+        raw = self._values.get("IMAGE_QUALITY", "{}")
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            log.warning("IMAGE_QUALITY is not valid JSON (%r) — ignoring", raw)
+            return {}
+        if not isinstance(data, dict):
+            log.warning("IMAGE_QUALITY is not a JSON object (%r) — ignoring", data)
+            return {}
+        return data
 
     @property
     def camera_id(self):

@@ -162,6 +162,16 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # empty until the first heartbeat carries the capabilities block.
     "sensor_model",
     "sensor_modes",
+    # Image-quality controls (#182). ``image_controls`` is the
+    # advertised catalogue (libcamera-name → min/max/default/kind).
+    # ``image_quality`` is the user-customised values (empty dict means
+    # libcamera defaults). ``encoder_max_pixels`` is the board's H.264
+    # encoder ceiling so the dashboard can flag a saved mode that no
+    # longer fits. ``board_name`` is the human-readable board label.
+    "image_controls",
+    "image_quality",
+    "encoder_max_pixels",
+    "board_name",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)

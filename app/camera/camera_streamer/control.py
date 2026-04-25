@@ -65,6 +65,11 @@ PARAM_SCHEMA: dict[str, dict] = {
     # ``recording_motion_enabled`` for the same boolean and
     # renames before pushing (see camera_service._translate_stream_params_for_wire).
     "motion_detection": {"type": bool},
+    # Image-quality controls (#182). Accepted as a JSON-decoded dict;
+    # per-key validation runs against the sensor's image_controls
+    # catalogue. Stored in camera.conf as a JSON string under
+    # IMAGE_QUALITY. Empty dict clears all overrides.
+    "image_quality": {"type": dict},
 }
 
 # Highest framerate the schema will accept regardless of resolution.
@@ -294,6 +299,7 @@ class ControlHandler:
             "vflip": self._config.vflip,
             "motion_sensitivity": self._config.motion_sensitivity,
             "motion_detection": self._config.motion_detection,
+            "image_quality": self._config.image_quality,
         }
 
     def set_config(self, params, request_id=0, origin="server"):
@@ -343,9 +349,15 @@ class ControlHandler:
         config_updates = {}
         for key, value in changes.items():
             config_key = key.upper()
-            config_updates[config_key] = (
-                str(value).lower() if isinstance(value, bool) else str(value)
-            )
+            if isinstance(value, bool):
+                config_updates[config_key] = str(value).lower()
+            elif isinstance(value, dict):
+                # image_quality is a dict — JSON-encode for config-file
+                # storage. ConfigManager re-decodes via the
+                # ``image_quality`` property (see config.py).
+                config_updates[config_key] = json.dumps(value)
+            else:
+                config_updates[config_key] = str(value)
 
         old_values = {k: current[k] for k in changes}
         self._config.update(**config_updates)
@@ -443,6 +455,17 @@ class ControlHandler:
             if key == "fps" and value > max_fps_overall:
                 return f"{key}: maximum is {max_fps_overall}, got {value}"
 
+            # image_quality dict: validate each entry against the
+            # IMAGE_CONTROL_CATALOGUE the sensor advertises. Unknown
+            # keys are dropped silently from the saved dict (the
+            # dashboard only offers what the camera reports). Bad
+            # values per known key are an error — we'd rather reject
+            # the PUT than silently store garbage.
+            if key == "image_quality":
+                err = self._validate_image_quality(value)
+                if err:
+                    return err
+
         # Cross-field validation: width+height must form a valid mode
         # for this sensor.
         width = params.get("width", self._config.width)
@@ -460,6 +483,40 @@ class ControlHandler:
         if max_for_res is not None and fps > max_for_res:
             return f"FPS {fps} exceeds maximum {int(max_for_res)} for {width}x{height}"
 
+        return ""
+
+    def _validate_image_quality(self, payload: dict) -> str:
+        """Validate an ``image_quality`` dict against the camera's catalogue.
+
+        Returns error string (caller propagates as 400) or empty string
+        on success. Unknown keys are NOT errors — they're silently
+        ignored when the dict is JSON-encoded into camera.conf below.
+        Known keys must respect their advertised bounds.
+        """
+        catalogue = self._sensor.image_controls or {}
+        for k, v in payload.items():
+            spec = catalogue.get(k)
+            if spec is None:
+                # Unknown key — drop silently (sensor swap, future bindings).
+                continue
+            kind = spec.get("kind")
+            if kind in ("linear", "multiplier"):
+                try:
+                    v_f = float(v)
+                except (TypeError, ValueError):
+                    return f"image_quality.{k}: expected number, got {type(v).__name__}"
+                lo = spec.get("min")
+                hi = spec.get("max")
+                if lo is not None and v_f < lo:
+                    return f"image_quality.{k}: minimum is {lo}, got {v_f}"
+                if hi is not None and v_f > hi:
+                    return f"image_quality.{k}: maximum is {hi}, got {v_f}"
+            elif kind == "enum":
+                if not isinstance(v, str):
+                    return f"image_quality.{k}: expected string, got {type(v).__name__}"
+                allowed = spec.get("choices") or []
+                if v not in allowed:
+                    return f"image_quality.{k}: must be one of {allowed}, got {v!r}"
         return ""
 
 
