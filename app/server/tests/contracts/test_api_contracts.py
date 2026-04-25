@@ -154,6 +154,14 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # Structured fault list per ADR-0023 — [{code, severity, message,
     # hint, context}]. Empty list when healthy. Not admin-gated.
     "hardware_faults",
+    # Sensor identity + supported modes (#173). Populated from the
+    # camera-side capability detection layer via heartbeat.
+    # ``sensor_model`` is a lowercase libcamera string ("imx219",
+    # "ov5647", ...) or empty for cameras still on pre-#173 firmware.
+    # ``sensor_modes`` is a list of {width, height, max_fps} dicts —
+    # empty until the first heartbeat carries the capabilities block.
+    "sensor_model",
+    "sensor_modes",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
