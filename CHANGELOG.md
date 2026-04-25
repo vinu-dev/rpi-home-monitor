@@ -6,6 +6,28 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.4.0] — 2026-04-25
+
+Feature release. Multi-sensor camera support — any Pi-officially-supported camera sensor (OV5647 / IMX219 / IMX477 / IMX708) works out of the box on the camera image, and the per-camera dashboard Settings page renders dropdowns built from each camera's actual reported sensor capabilities. Plus single-source-of-truth release tooling. No breaking API changes.
+
+### Added
+- **Multi-sensor camera support** ([#173](https://github.com/vinu-dev/rpi-home-monitor/issues/173) — four PRs):
+  - **Yocto + boot config** ([#174](https://github.com/vinu-dev/rpi-home-monitor/pull/174)) — switched the camera image from hardcoded `dtoverlay=ov5647` to firmware `camera_auto_detect=1`. Image now ships overlays for OV5647, IMX219, IMX477, IMX708. `app/camera/config/ensure-camera-overlay.sh` rewritten as an idempotent reconciler that heals stale `/boot/config.txt` lines on every boot — critical because SWUpdate's rootfs-only OTA can never overwrite the boot partition on existing field cameras. Optional `/data/config/camera-sensor` override pins a specific sensor when needed. 13-test pytest harness covers four fixtures and the four-sensor override path.
+  - **Camera-side capability discovery** ([#175](https://github.com/vinu-dev/rpi-home-monitor/pull/175)) — new `camera_streamer/sensor_info.py` identifies the connected sensor via `Picamera2.global_camera_info()` (a static method that doesn't lock the camera) and looks up its modes in a hand-curated `KNOWN_SENSOR_MODES` table. `ControlHandler.get_capabilities()` returns the live sensor + modes; heartbeat embeds the same block. Generalised the OV5647-anchored hint strings across `capture.py`, `lifecycle.py`, `faults.py`, `motion_runner.py`, `motion.py`. 27 new unit tests; 404 unit tests pass overall.
+  - **Server-side capability persistence** ([#176](https://github.com/vinu-dev/rpi-home-monitor/pull/176)) — `Camera` dataclass gains `sensor_model`, `sensor_modes`, `sensor_detection_method`. `accept_heartbeat` parses the new `capabilities` block defensively (per-entry rejection of malformed modes, length cap, no clobber on garbage). `_validate_update` derives valid `(width, height)` and per-resolution max fps from the live sensor — IMX219 accepts 3280×2464 and 47 fps@1080p; OV5647 rejects both with a useful message. Pre-#175 firmware leaves the record untouched (clean fallback). 11 new tests.
+  - **Dashboard per-camera Settings dropdown** ([#177](https://github.com/vinu-dev/rpi-home-monitor/pull/177)) — replaced the hardcoded `_resMaxFps` map and three-option `<select>` with Alpine `<template x-for>` rendering each camera's `sensor_modes`. New "Sensor" row above the dropdown shows the live model + mode count. Mismatch banner fires when the camera's saved resolution is no longer in its current sensor's mode list (sensor swap), auto-clamps to the closest supported mode, and prompts the user to review + save. Backward-compatible with cameras still on pre-#175 firmware.
+
+- **Single-source-of-truth release tooling** ([#178](https://github.com/vinu-dev/rpi-home-monitor/pull/178)) — new `VERSION` file at the repo root is consumed by Yocto's `DISTRO_VERSION` and `scripts/build-swu.sh`'s fallback. `scripts/release.sh` is a five-subcommand entry point (prepare/tag/build/verify/publish) for the whole release flow. `scripts/check_version_consistency.py` runs in CI's Repo Governance job and catches drift before it ships. `RELEASE.md` documents the policy and flow.
+
+### Changed
+- **OV5647-specific hint strings generalised** across `capture.py`, `lifecycle.py`, `faults.py`, `motion_runner.py`, `motion.py` — now reference all four supported sensors instead of OV5647 only. The detection-error log lines point at `dmesg | grep -iE 'imx219|ov5647|imx477|imx708'` instead of `lsmod | grep ov5647`.
+
+### Fixed
+- **PR [#92](https://github.com/vinu-dev/rpi-home-monitor/pull/92)'s incidental partial IMX219 add** is now complete. The IMX219 driver and overlay shipped in the image but no path activated them, so an IMX219 camera reported "camera missing" with a `Picamera2() → IndexError` loop in the journal. End-to-end fix landed across the four PRs above; verified in-session on three live cameras (one pre-deployment with the manual hand-patch on `.186` IMX219, `.115` IMX219, `.148` OV5647 ZeroCam — confirmed firmware auto-detect works for both EEPROM-carrying and EEPROM-less boards).
+
+### Known follow-up
+- **LUKS post-pair migration** (issue [#101](https://github.com/vinu-dev/rpi-home-monitor/issues/101) + ADR-0010) still deferred from 1.3.1. `/data` ships raw ext4. Stolen SD card exposes recordings + WiFi credentials + admin hash. Targeted for 1.4.1 with hardware validation, not bundled into 1.4.0 because the safe-shipping mitigations (feature-flag gating, atomic snapshot+rollback, container-loopback test wiring, post-OTA initramfs propagation, dropbear/Plymouth unlock for the server) are larger than the rest of this release combined and cannot be hardware-validated without risk of dev-camera data loss.
+
 ## [1.3.1] — 2026-04-22
 
 Patch release. Fixes the prod first-boot hotspot chain, cameraless
