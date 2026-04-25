@@ -51,6 +51,12 @@ CHANGELOG = REPO / "CHANGELOG.md"
 
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 DISTRO_DYNAMIC_RE = re.compile(
+    # Accepts any ``${@open(...VERSION...).read().strip()}`` expression
+    # where the path argument resolves to the repo-root VERSION file —
+    # currently via ``HOME_MONITOR_LAYERDIR`` (set in
+    # ``meta-home-monitor/conf/layer.conf``), but the regex stays
+    # tolerant so a refactor to a different bbvar doesn't fail this
+    # check by name alone.
     r"DISTRO_VERSION\s*:?=\s*\"\$\{@open\(.+VERSION.+\)\.read\(\)\.strip\(\)\}\""
 )
 CHANGELOG_HEADER_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]")
