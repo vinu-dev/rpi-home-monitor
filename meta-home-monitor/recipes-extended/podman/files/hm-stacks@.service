@@ -1,0 +1,25 @@
+[Unit]
+Description=Home Monitor add-on stack: %i
+Documentation=file:///usr/share/doc/hm-stacks/README.md
+After=network-online.target podman.socket
+Wants=network-online.target
+ConditionPathExists=/data/stacks/%i/docker-compose.yml
+# Don't run if explicitly disabled via the marker file convention.
+ConditionPathExists=/data/stacks/%i/enabled
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/data/stacks/%i
+# `podman compose` invokes podman's own compose backend (no external
+# docker-compose binary needed). Output goes to journald via systemd.
+ExecStart=/usr/bin/podman compose -f /data/stacks/%i/docker-compose.yml up -d
+ExecStop=/usr/bin/podman compose -f /data/stacks/%i/docker-compose.yml down
+TimeoutStartSec=300
+# Hardening sane for compose stacks (still allows mounts / network):
+NoNewPrivileges=no
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

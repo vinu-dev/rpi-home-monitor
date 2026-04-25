@@ -47,6 +47,30 @@ IMAGE_INSTALL += " \
     first-boot \
     "
 
+# --- Container runtime (Podman) for optional add-on stacks ---
+# Server-only — gated on virtualization in DISTRO_FEATURES, which is
+# set in config/rpi4b/local.conf and NOT in the shared distro config.
+# Camera builds therefore never pull these in.
+#
+# Packages:
+#   podman          rootless container engine (no daemon)
+#   podman-docker   /usr/bin/docker → podman shim, for compose/CLI parity
+#   cni-plugins     bridge/host-local/loopback for default network
+#   fuse-overlayfs  rootless overlayfs storage driver
+#   slirp4netns     userspace networking for rootless containers
+#   conmon          container monitor (runtime helper)
+#   crun            OCI runtime (lighter than runc, default for podman)
+#   netavark        next-gen container network backend (replaces CNI)
+#   aardvark-dns    DNS for netavark networks
+#
+# hm-stacks systemd units (see recipes-extended/podman/) live with the
+# storage-config bbappend and are pulled in via that recipe's RDEPENDS.
+IMAGE_INSTALL += " \
+    ${@bb.utils.contains('DISTRO_FEATURES', 'virtualization', \
+        'podman podman-docker cni-plugins fuse-overlayfs slirp4netns \
+         conmon crun netavark aardvark-dns hm-stacks', '', d)} \
+    "
+
 # --- Image output ---
 IMAGE_FSTYPES = "wic.bz2 wic.bmap ext4.gz"
 WKS_FILE = "home-monitor-ab.wks"
@@ -80,5 +104,9 @@ home_monitor_inject_fstab() {
 }
 ROOTFS_POSTPROCESS_COMMAND += "home_monitor_inject_fstab;"
 
-# --- Extra space for video recordings (1GB) ---
+# --- Extra space for video recordings (1GB) + container images (256 MB) ---
+# +256 MB headroom on raspberrypi4-64 for podman base images that may be
+# baked-in or pre-pulled on first boot. Camera doesn't pull this image
+# .inc so its rootfs sizing is unaffected.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
+IMAGE_ROOTFS_EXTRA_SPACE:append:raspberrypi4-64 = " + 262144"

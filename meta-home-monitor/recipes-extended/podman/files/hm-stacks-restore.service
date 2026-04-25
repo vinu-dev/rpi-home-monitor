@@ -1,0 +1,20 @@
+[Unit]
+Description=Restore Home Monitor add-on stack enable-symlinks after OTA
+Documentation=file:///usr/share/doc/hm-stacks/README.md
+# Run before any hm-stacks@ instances would; OTAs land us on a fresh
+# rootfs whose /etc/systemd/system/ has no enable symlinks for stacks
+# the user previously opted into. /data persists across slots, so the
+# restore script reads /data/stacks/*/enabled and `systemctl enable`s
+# the matching template instance(s) so the next stage of boot starts them.
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target
+ConditionPathIsDirectory=/data/stacks
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/hm-stacks/restore.sh
+
+[Install]
+WantedBy=multi-user.target

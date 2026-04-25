@@ -6,6 +6,8 @@
 poky/
 meta-raspberrypi/
 meta-openembedded/
+meta-swupdate/
+meta-virtualization/
 
 # Build output
 build/
