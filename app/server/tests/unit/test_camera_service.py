@@ -879,3 +879,201 @@ class TestAcceptHeartbeat:
         _, error, code = svc.accept_heartbeat("cam-001", payload)
         assert code == 200
         assert not error
+
+
+# --- Sensor capabilities (#173) ---
+
+
+class TestSensorCapabilitiesIngestion:
+    """The camera-side heartbeat embeds a ``capabilities`` block carrying
+    sensor identity + supported modes (#173). The service persists the
+    block on the Camera record so the dashboard can render per-camera
+    Settings dropdowns and so future updates can be validated against
+    the live sensor's actual mode list."""
+
+    def _capabilities_payload(self, **overrides):
+        return {
+            "streaming": False,
+            "cpu_temp": 40.0,
+            "memory_percent": 30,
+            "uptime_seconds": 100,
+            "capabilities": {
+                "sensor_model": "imx219",
+                "sensor_modes": [
+                    {"width": 640, "height": 480, "max_fps": 58.0},
+                    {"width": 1640, "height": 1232, "max_fps": 41.0},
+                    {"width": 1920, "height": 1080, "max_fps": 47.0},
+                    {"width": 3280, "height": 2464, "max_fps": 21.0},
+                ],
+                "detection_method": "picamera2",
+                **overrides,
+            },
+        }
+
+    def test_persists_imx219_capabilities(self):
+        cam = _make_camera(sensor_model="", sensor_modes=[])
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._capabilities_payload())
+        assert cam.sensor_model == "imx219"
+        assert {(m["width"], m["height"]) for m in cam.sensor_modes} == {
+            (640, 480),
+            (1640, 1232),
+            (1920, 1080),
+            (3280, 2464),
+        }
+        assert cam.sensor_detection_method == "picamera2"
+
+    def test_lowercases_and_trims_sensor_model(self):
+        cam = _make_camera(sensor_model="")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._capabilities_payload(sensor_model="  IMX219  "),
+        )
+        assert cam.sensor_model == "imx219"
+
+    def test_drops_garbage_modes(self):
+        cam = _make_camera(sensor_model="", sensor_modes=[])
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._capabilities_payload(
+                sensor_modes=[
+                    {"width": 1920, "height": 1080, "max_fps": 30.0},  # ok
+                    {"width": "bad", "height": 1080, "max_fps": 30.0},  # type
+                    {"width": -1, "height": 1080, "max_fps": 30.0},  # neg
+                    {"height": 1080, "max_fps": 30.0},  # missing width
+                    {"width": 1920, "height": 1080, "max_fps": 9999.0},  # absurd
+                    "not a dict",
+                ]
+            ),
+        )
+        # Only the one well-formed entry survives.
+        assert len(cam.sensor_modes) == 1
+        assert cam.sensor_modes[0]["width"] == 1920
+
+    def test_caps_persisted_modes_at_max(self):
+        cam = _make_camera(sensor_model="", sensor_modes=[])
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        # Hand-craft a payload with way more modes than we accept.
+        from monitor.services.camera_service import MAX_SENSOR_MODES
+
+        modes = [
+            {"width": 640 + i, "height": 480, "max_fps": 30.0}
+            for i in range(MAX_SENSOR_MODES + 5)
+        ]
+        svc.accept_heartbeat(
+            "cam-001",
+            self._capabilities_payload(sensor_modes=modes),
+        )
+        assert len(cam.sensor_modes) == MAX_SENSOR_MODES
+
+    def test_unknown_capabilities_block_is_ignored(self):
+        """Garbage shape under ``capabilities`` does not crash or
+        clobber the existing record."""
+        cam = _make_camera(sensor_model="ov5647", sensor_modes=[{"a": 1}])
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            {
+                "streaming": False,
+                "capabilities": "not-a-dict",
+            },
+        )
+        assert cam.sensor_model == "ov5647"
+        assert cam.sensor_modes == [{"a": 1}]
+
+    def test_pre_173_payload_leaves_record_untouched(self):
+        """Cameras on older firmware omit ``capabilities`` entirely.
+        The existing sensor fields on the record must not be cleared."""
+        cam = _make_camera(
+            sensor_model="ov5647",
+            sensor_modes=[{"width": 1920, "height": 1080, "max_fps": 30.0}],
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            {
+                "streaming": False,
+                "cpu_temp": 40.0,
+                "memory_percent": 30,
+                "uptime_seconds": 100,
+            },
+        )
+        assert cam.sensor_model == "ov5647"
+        assert cam.sensor_modes == [{"width": 1920, "height": 1080, "max_fps": 30.0}]
+
+
+class TestPerCameraValidation:
+    """Update validation respects each camera's reported sensor modes
+    when available, falling back to the legacy preset bounds for
+    pre-#173 cameras."""
+
+    def _service_with_camera(self, **overrides):
+        cam = _make_camera(**overrides)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        return CameraService(store), cam
+
+    def test_imx219_camera_accepts_3280x2464(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="imx219",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 47.0},
+                {"width": 3280, "height": 2464, "max_fps": 21.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 3280, "height": 2464, "fps": 21})
+        assert code == 200, err
+
+    def test_ov5647_camera_rejects_imx219_resolution(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 2592, "height": 1944, "max_fps": 15.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 3280, "height": 2464})
+        assert code == 400
+        assert "not supported by sensor" in err
+
+    def test_imx219_camera_accepts_47fps_at_1080p(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="imx219",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 47.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
+        assert code == 200, err
+
+    def test_ov5647_camera_rejects_47fps(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
+        assert code == 400
+        assert "must be 1-43" in err  # max across modes is 43
+
+    def test_pre_173_camera_keeps_legacy_30fps_cap(self):
+        svc, _ = self._service_with_camera(sensor_model="", sensor_modes=[])
+        err, code = svc.update("cam-001", {"fps": 47})
+        assert code == 400
+        assert "1 and 30" in err

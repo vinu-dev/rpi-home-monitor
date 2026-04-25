@@ -70,6 +70,16 @@ class Camera:
     hardware_ok: bool = True
     hardware_error: str = ""
     hardware_faults: list[dict] = field(default_factory=list)
+    # Camera sensor identity + supported modes — populated from the
+    # heartbeat payload's ``capabilities`` block (#173). Cameras on
+    # firmware older than the multi-sensor change don't include the
+    # block; those records keep ``sensor_model=""`` and an empty
+    # ``sensor_modes`` list and the dashboard falls back to the legacy
+    # preset dropdown for them. Each mode is a dict with integer
+    # ``width``, ``height`` and float ``max_fps``.
+    sensor_model: str = ""
+    sensor_modes: list[dict] = field(default_factory=list)
+    sensor_detection_method: str = ""
 
 
 @dataclass

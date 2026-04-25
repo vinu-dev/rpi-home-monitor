@@ -18,7 +18,21 @@ from datetime import UTC, datetime
 log = logging.getLogger("monitor.camera_service")
 
 VALID_RECORDING_MODES = {"off", "continuous", "schedule", "motion"}
+
+# Legacy resolution allowlist used when the camera has not yet reported
+# its sensor capabilities (cameras on pre-#173 firmware, or a fresh pair
+# whose first heartbeat hasn't landed). Once a camera reports its real
+# ``sensor_modes`` via heartbeat, validation uses those instead and this
+# preset becomes a fallback.
 VALID_RESOLUTIONS = {"720p", "1080p"}
+
+# Lowercase libcamera model strings the multi-sensor work supports.
+# Mirrors `KNOWN_SENSOR_MODES` in the camera-side `sensor_info` module.
+KNOWN_SENSORS = ("ov5647", "imx219", "imx477", "imx708")
+
+# Cap on persisted sensor_modes list length — defends against a malformed
+# camera heartbeat trying to inflate the cameras.json store.
+MAX_SENSOR_MODES = 32
 VALID_SCHEDULE_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 
@@ -215,6 +229,12 @@ class CameraService:
                 # Structured faults (ADR-0023). Kept alongside the
                 # flat legacy fields until all consumers migrate.
                 "hardware_faults": list(getattr(c, "hardware_faults", []) or []),
+                # Sensor capabilities (#173) — empty for cameras still
+                # on pre-multi-sensor firmware. Dashboard falls back
+                # to the legacy preset dropdown when ``sensor_modes``
+                # is empty.
+                "sensor_model": getattr(c, "sensor_model", "") or "",
+                "sensor_modes": list(getattr(c, "sensor_modes", []) or []),
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -254,6 +274,12 @@ class CameraService:
             "vflip": camera.vflip,
             "motion_sensitivity": getattr(camera, "motion_sensitivity", 5),
             "config_sync": camera.config_sync,
+            # Sensor capabilities (#173). Empty for pre-multi-sensor
+            # firmware; dashboard falls back to the legacy preset.
+            "sensor_model": getattr(camera, "sensor_model", "") or "",
+            "sensor_modes": list(getattr(camera, "sensor_modes", []) or []),
+            "sensor_detection_method": getattr(camera, "sensor_detection_method", "")
+            or "",
         }, ""
 
     def confirm(
@@ -316,8 +342,10 @@ class CameraService:
         if not data:
             return "JSON body required", 400
 
-        # Validate fields
-        error = self._validate_update(data)
+        # Validate fields. Pass the live camera record so per-camera
+        # sensor capabilities tighten the resolution / fps checks
+        # beyond the legacy preset bounds.
+        error = self._validate_update(data, camera=camera)
         if error:
             return error, 400
 
@@ -434,6 +462,37 @@ class CameraService:
         if fw and isinstance(fw, str):
             camera.firmware_version = fw
 
+        # Sensor capabilities — populated by the camera-side detection
+        # layer (#173). Cameras on older firmware omit the key entirely
+        # and the existing record is left untouched.
+        caps = data.get("capabilities")
+        if isinstance(caps, dict):
+            sensor_model = caps.get("sensor_model")
+            if sensor_model is None:
+                # Detected-but-unknown sensor: clear any previous value.
+                camera.sensor_model = ""
+            elif isinstance(sensor_model, str):
+                camera.sensor_model = sensor_model.strip().lower()[:32]
+            modes = caps.get("sensor_modes")
+            if isinstance(modes, list):
+                accepted_modes: list[dict] = []
+                for raw_mode in modes[:MAX_SENSOR_MODES]:
+                    if not isinstance(raw_mode, dict):
+                        continue
+                    try:
+                        w = int(raw_mode["width"])
+                        h = int(raw_mode["height"])
+                        f = float(raw_mode["max_fps"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if w <= 0 or h <= 0 or f <= 0 or f > 240:
+                        continue
+                    accepted_modes.append({"width": w, "height": h, "max_fps": f})
+                camera.sensor_modes = accepted_modes
+            method = caps.get("detection_method")
+            if isinstance(method, str):
+                camera.sensor_detection_method = method[:32]
+
         # Capture sync state before touching stream params.
         # If config_sync is "pending" the server has unsent changes — keep them
         # and tell the camera via pending_config instead of overwriting with its
@@ -533,8 +592,20 @@ class CameraService:
 
         return "", 200
 
-    def _validate_update(self, data: dict) -> str:
-        """Validate camera update fields. Returns error string or empty."""
+    def _validate_update(self, data: dict, camera=None) -> str:
+        """Validate camera update fields. Returns error string or empty.
+
+        When ``camera`` is provided and has reported its sensor
+        capabilities (#173), per-camera ``sensor_modes`` tighten the
+        resolution / fps checks: a camera with an IMX219 accepts
+        3280x2464, an OV5647 doesn't, etc. Without ``camera`` (or with
+        an empty modes list — pre-#173 firmware), validation falls back
+        to the legacy preset bounds (fps 1-30, resolution from
+        ``VALID_RESOLUTIONS``).
+        """
+        sensor_modes: list[dict] = []
+        if camera is not None:
+            sensor_modes = list(getattr(camera, "sensor_modes", []) or [])
         allowed = {
             "name",
             "location",
@@ -571,7 +642,15 @@ class CameraService:
 
         if "fps" in data:
             fps = data["fps"]
-            if not isinstance(fps, int) or fps < 1 or fps > 30:
+            if not isinstance(fps, int) or fps < 1:
+                return "fps must be a positive integer"
+            # Per-camera fps cap when the sensor's modes are known.
+            # Otherwise fall back to the legacy 1-30 bound.
+            if sensor_modes:
+                fps_max = max(int(m["max_fps"]) for m in sensor_modes if "max_fps" in m)
+                if fps > fps_max:
+                    return f"fps must be 1-{fps_max} for this sensor"
+            elif fps > 30:
                 return "fps must be an integer between 1 and 30"
 
         if "name" in data:
@@ -588,6 +667,19 @@ class CameraService:
             not isinstance(data["height"], int) or data["height"] < 1
         ):
             return "height must be a positive integer"
+
+        # Per-camera (width, height) pair check — only when the sensor's
+        # modes have been reported. The pair must be one of the modes
+        # the camera advertised. Skipped silently for pre-#173 cameras.
+        if sensor_modes and ("width" in data or "height" in data):
+            current_w = camera.width if camera is not None else None
+            current_h = camera.height if camera is not None else None
+            w = data.get("width", current_w)
+            h = data.get("height", current_h)
+            valid_pairs = {(int(m["width"]), int(m["height"])) for m in sensor_modes}
+            if (w, h) not in valid_pairs:
+                pretty = ", ".join(f"{pw}x{ph}" for pw, ph in sorted(valid_pairs))
+                return f"resolution {w}x{h} not supported by sensor (valid: {pretty})"
 
         if "bitrate" in data:
             br = data["bitrate"]
