@@ -133,9 +133,7 @@ class TestTriggerReboot:
         assert content.isdigit()
         # Atomic-write contract: no leftover temp file in the spool.
         leftovers = [
-            n
-            for n in os.listdir(str(spool))
-            if n.startswith(".reboot-trigger.")
+            n for n in os.listdir(str(spool)) if n.startswith(".reboot-trigger.")
         ]
         assert leftovers == []
 
