@@ -4,6 +4,12 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
+(Nothing yet — next release will land here.)
+
+## [1.4.3] — 2026-04-27
+
+End-to-end fix for the wrong-firmware-version display that showed up on fresh-flashed prod images. Adds a versioning SSOT design (`docs/architecture/versioning.md`) and the seven CI guards that lock the contract. No on-device behaviour change beyond the displayed version string finally being correct.
+
 ### Fixed
 - **Camera and server now report the actual release version on fresh-flashed images.** Previously both surfaces (camera local status page and server dashboard `firmware_version`) read `/etc/sw-versions`, which shipped hardcoded as `home-monitor 1.0.0` from `meta-home-monitor/recipes-core/sw-versions/files/sw-versions` and was only updated by SWUpdate's post-install hook during OTA. A freshly flashed prod card therefore reported `1.0.0` no matter what release it was actually running. End-to-end fix:
   - The sw-versions Yocto recipe is now templated: `do_install` writes `home-monitor ${DISTRO_VERSION}` at build time. The static baseline file is deleted.
