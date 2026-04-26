@@ -1,0 +1,34 @@
+[Unit]
+Description=Camera OTA reboot (root, post-install activation)
+# Reuses the trigger-file pattern already established for the OTA
+# installer (camera-ota-installer.{path,service}). The unprivileged
+# camera-streamer process cannot call `systemctl reboot` itself —
+# `subprocess.run(["reboot"])` from User=camera fails with
+# "Failed to unlink reboot parameter file: Read-only file system",
+# and on this image we don't ship polkit (avoiding an extra daemon
+# + dependency just for one reboot action). Instead camera-streamer
+# writes /var/lib/camera-ota/reboot-trigger; the matching .path
+# unit watches it and activates this service to reboot as root.
+ConditionPathExists=/var/lib/camera-ota/reboot-trigger
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+# Remove the trigger BEFORE rebooting — otherwise it persists across
+# the reboot (it's on /var/lib which is on the rootfs partition) and
+# fires again the next time the path unit starts. Doesn't actually
+# matter for correctness (the unit is idempotent) but it keeps the
+# spool clean and avoids confusing repeat reboots if the operator
+# inspects /var/lib/camera-ota.
+ExecStartPre=/bin/rm -f /var/lib/camera-ota/reboot-trigger
+ExecStart=/bin/systemctl reboot
+TimeoutStartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Installed via the .path unit, not directly wanted by a target.
+# WantedBy=camera-ota-reboot.path keeps systemd happy even though
+# path-triggered services are activated imperatively.
+WantedBy=multi-user.target

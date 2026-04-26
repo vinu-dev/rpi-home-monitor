@@ -1106,11 +1106,19 @@ def _make_status_handler(
             self._json_response({"message": "Rebooting"})
 
             def _reboot():
+                # Give the response a beat to flush before the trigger
+                # fires the root-privileged reboot service.
                 time.sleep(1.0)
-                try:
-                    subprocess.run(["reboot"], check=False, timeout=15)
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    log.error("reboot command failed: %s", exc)
+                ok, msg = ota_installer.trigger_reboot()
+                if not ok:
+                    # Camera-streamer runs as User=camera; if the
+                    # trigger write fails (spool dir gone, full disk),
+                    # the reboot won't happen. Log it; the dashboard
+                    # already received the 200 so we can't escalate
+                    # cleanly from here, but the next status poll will
+                    # show the camera still on the old slot and the
+                    # operator can retry.
+                    log.error("reboot trigger failed: %s", msg)
 
             threading.Thread(target=_reboot, daemon=True, name="ota-reboot").start()
 

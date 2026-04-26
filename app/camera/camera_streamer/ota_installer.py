@@ -42,6 +42,7 @@ log = logging.getLogger("camera-streamer.ota-installer")
 SPOOL_DIR = "/var/lib/camera-ota"
 STAGING_DIR = os.path.join(SPOOL_DIR, "staging")
 TRIGGER_PATH = os.path.join(SPOOL_DIR, "trigger")
+REBOOT_TRIGGER_PATH = os.path.join(SPOOL_DIR, "reboot-trigger")
 STATUS_PATH = os.path.join(SPOOL_DIR, "status.json")
 BUNDLE_NAME = "update.swu"
 
@@ -318,6 +319,52 @@ def trigger_install(bundle=None):
     write_status(STATE_VERIFYING, progress=5)
     log.info("Install trigger written for %s", bundle)
     return True, "Install triggered"
+
+
+def trigger_reboot():
+    """Request a reboot via the trigger-file protocol.
+
+    The camera-streamer service runs as ``User=camera`` with no shell
+    and no CAP_SYS_BOOT, so it cannot reboot directly —
+    ``subprocess.run(["reboot"])`` from the camera user fails with
+    "Failed to unlink reboot parameter file: Read-only file system"
+    even on a writable rootfs (the legacy ``reboot`` binary needs
+    privileges the user doesn't have).
+
+    This mirrors the install pattern: write a trigger file under
+    ``SPOOL_DIR``, and the root-privileged ``camera-ota-reboot.service``
+    activated by ``camera-ota-reboot.path`` performs the actual
+    ``systemctl reboot``.
+
+    Caller must ensure ``status.json`` reports ``state="installed"``
+    before calling — rebooting mid-install bricks the standby slot.
+    The HTTP handler in ``status_server._handle_ota_reboot`` already
+    enforces this check.
+
+    Returns:
+        (ok: bool, message: str). On error the camera-streamer caller
+        logs the message and surfaces a 500 to the dashboard; the
+        device itself is unharmed.
+    """
+    try:
+        os.makedirs(SPOOL_DIR, exist_ok=True)
+    except OSError as exc:
+        return False, f"Spool dir inaccessible: {exc}"
+
+    # Atomic write: temp file + rename. ``PathModified=`` on the
+    # reboot path-unit watches for IN_CLOSE_WRITE / IN_MOVED_TO so
+    # the rename suffices to fire the trigger.
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".reboot-trigger.", dir=SPOOL_DIR)
+        with os.fdopen(fd, "w") as f:
+            f.write(f"{int(time.time())}\n")
+        os.chmod(tmp, 0o664)
+        os.replace(tmp, REBOOT_TRIGGER_PATH)
+    except OSError as exc:
+        return False, f"Could not write reboot trigger: {exc}"
+
+    log.info("Reboot trigger written")
+    return True, "Reboot triggered"
 
 
 def wait_for_completion(timeout=900, poll_interval=2):

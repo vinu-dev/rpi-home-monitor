@@ -16,6 +16,11 @@ def spool(tmp_path, monkeypatch):
     monkeypatch.setattr(ota_installer, "SPOOL_DIR", str(spool_dir))
     monkeypatch.setattr(ota_installer, "STAGING_DIR", str(staging))
     monkeypatch.setattr(ota_installer, "TRIGGER_PATH", str(spool_dir / "trigger"))
+    monkeypatch.setattr(
+        ota_installer,
+        "REBOOT_TRIGGER_PATH",
+        str(spool_dir / "reboot-trigger"),
+    )
     monkeypatch.setattr(ota_installer, "STATUS_PATH", str(spool_dir / "status.json"))
     return spool_dir
 
@@ -104,6 +109,57 @@ class TestTriggerInstall:
         ok, msg = ota_installer.trigger_install("/no/such/file.swu")
         assert ok is False
         assert "missing" in msg.lower()
+
+
+class TestTriggerReboot:
+    """The /api/ota/reboot HTTP handler in status_server runs as
+    User=camera; the legacy ``reboot`` binary fails for that user
+    ("Failed to unlink reboot parameter file: Read-only file system")
+    so the camera-streamer drops a trigger file and the root-side
+    ``camera-ota-reboot.path`` -> ``camera-ota-reboot.service``
+    performs ``systemctl reboot``. Tests below cover the user-side
+    half of that contract: write the trigger atomically, return a
+    sane (ok, msg) tuple."""
+
+    def test_writes_trigger_atomically(self, spool):
+        ok, msg = ota_installer.trigger_reboot()
+        assert ok is True
+        assert "trigger" in msg.lower()
+        assert os.path.isfile(ota_installer.REBOOT_TRIGGER_PATH)
+        # Trigger contents are a unix timestamp on a single line —
+        # gives the operator a way to tell stale triggers apart.
+        with open(ota_installer.REBOOT_TRIGGER_PATH) as f:
+            content = f.read().strip()
+        assert content.isdigit()
+        # Atomic-write contract: no leftover temp file in the spool.
+        leftovers = [
+            n
+            for n in os.listdir(str(spool))
+            if n.startswith(".reboot-trigger.")
+        ]
+        assert leftovers == []
+
+    def test_independent_of_install_trigger(self, spool):
+        # Writing the reboot trigger must NOT also fire the install
+        # trigger (they're separate files; separate path units).
+        ota_installer.trigger_reboot()
+        assert os.path.isfile(ota_installer.REBOOT_TRIGGER_PATH)
+        assert not os.path.exists(ota_installer.TRIGGER_PATH)
+
+    def test_creates_spool_dir_if_missing(self, tmp_path, monkeypatch):
+        # Fresh spool that doesn't yet exist (e.g. the tmpfiles.d rule
+        # hasn't fired yet on a freshly-flashed dev rebuild). Helper
+        # should create it idempotently rather than failing.
+        spool_dir = tmp_path / "fresh-spool"
+        monkeypatch.setattr(ota_installer, "SPOOL_DIR", str(spool_dir))
+        monkeypatch.setattr(
+            ota_installer,
+            "REBOOT_TRIGGER_PATH",
+            str(spool_dir / "reboot-trigger"),
+        )
+        ok, _ = ota_installer.trigger_reboot()
+        assert ok is True
+        assert os.path.isdir(str(spool_dir))
 
 
 class TestWaitForCompletion:
