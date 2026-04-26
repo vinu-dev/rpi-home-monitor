@@ -60,13 +60,17 @@ def _latest_camera_bundle(ota, camera_id):
 @login_required
 def get_status():
     """Get OTA update status for server + all cameras."""
-    settings = current_app.store.get_settings()
     cameras = current_app.store.get_cameras()
     ota = current_app.ota_service
 
+    # Live read from /etc/os-release VERSION_ID, not the persisted
+    # Settings.firmware_version (which is legacy plumbing — see
+    # docs/architecture/versioning.md §C).
+    from monitor.release_version import release_version
+
     result = {
         "server": {
-            "current_version": settings.firmware_version,
+            "current_version": release_version(),
             **ota.get_status("server"),
         },
         "cameras": [],

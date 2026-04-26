@@ -4,7 +4,13 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
-(Nothing yet — next release will land here.)
+### Fixed
+- **Camera and server now report the actual release version on fresh-flashed images.** Previously both surfaces (camera local status page and server dashboard `firmware_version`) read `/etc/sw-versions`, which shipped hardcoded as `home-monitor 1.0.0` from `meta-home-monitor/recipes-core/sw-versions/files/sw-versions` and was only updated by SWUpdate's post-install hook during OTA. A freshly flashed prod card therefore reported `1.0.0` no matter what release it was actually running. End-to-end fix:
+  - The sw-versions Yocto recipe is now templated: `do_install` writes `home-monitor ${DISTRO_VERSION}` at build time. The static baseline file is deleted.
+  - A shared `release_version()` helper lands in `app/shared/release_version/` (canonical) plus identical copies in `camera_streamer/release_version.py` and `monitor/release_version.py`. The helper reads `/etc/os-release VERSION_ID` (the standard Linux convention, already templated correctly) and is lazy-cached.
+  - `heartbeat.py` and `status_server.py` (camera) and `settings_service.py` + `api/ota.py` + `api/system.py` (server) now route through the helper.
+  - Seven new CI guards in `scripts/check_versioning_design.py` lock the contract: templated recipe, byte-identical helper copies, no app-code reads of `/etc/sw-versions`, no app-code reads of `/etc/os-release` outside the helper, `@@VERSION@@` placeholder in SWU templates, semver tag validity, VERSION ↔ CHANGELOG match.
+  - Design lives in `docs/architecture/versioning.md` and is now linked from `docs/ai/index.md` so future agents pick it up.
 
 ## [1.4.2] — 2026-04-26
 

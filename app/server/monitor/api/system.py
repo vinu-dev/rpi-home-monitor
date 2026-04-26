@@ -100,10 +100,18 @@ def info():
     settings = current_app.store.get_settings()
     uptime = get_uptime()
     os_info = _read_os_release()
+    # Live read of release version from /etc/os-release via the shared
+    # helper — the persisted Settings.firmware_version is legacy plumbing
+    # (see docs/architecture/versioning.md §C). Note: we already parse
+    # /etc/os-release locally in this module via _read_os_release(); we
+    # still defer to the helper to keep ONE read path and ONE caching
+    # policy across the codebase.
+    from monitor.release_version import release_version
+
     return jsonify(
         {
             "hostname": settings.hostname,
-            "firmware_version": settings.firmware_version,
+            "firmware_version": release_version(),
             "uptime": uptime,
             "os_name": os_info.get("PRETTY_NAME", "Unknown"),
             "os_version": os_info.get("VERSION_ID", ""),

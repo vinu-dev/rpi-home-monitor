@@ -84,6 +84,7 @@ jobs:
           python scripts/ai/check_doc_links.py
           python scripts/ai/check_shell_scripts.py
           python scripts/check_version_consistency.py
+          python scripts/check_versioning_design.py
 
   pre-commit:
     name: Pre-commit

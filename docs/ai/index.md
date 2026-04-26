@@ -35,6 +35,10 @@ point back here instead of duplicating the whole handbook.
 ## Existing System References
 
 - [`../architecture.md`](../architecture.md)
+- [`../architecture/versioning.md`](../architecture/versioning.md) — single
+  source of truth for product release versions; `/etc/os-release` is the
+  image-side SSOT and `release_version()` is the only allowed reader. CI
+  guards this in `scripts/check_versioning_design.py`.
 - [`../development-guide.md`](../development-guide.md)
 - [`../testing-guide.md`](../testing-guide.md)
 - [`../build-setup.md`](../build-setup.md)

@@ -18,6 +18,19 @@ from flask import current_app
 
 log = logging.getLogger("monitor.services.settings_service")
 
+
+def _live_firmware_version() -> str:
+    """Read the live release version from /etc/os-release.
+
+    Defers the import so unit tests that don't ship the helper on
+    PYTHONPATH still load this module. The helper itself is
+    lazy-cached so repeated calls are essentially free.
+    """
+    from monitor.release_version import release_version
+
+    return release_version()
+
+
 UPDATABLE_FIELDS = {
     "timezone",
     "ntp_mode",
@@ -54,7 +67,13 @@ class SettingsService:
             "session_timeout_minutes": settings.session_timeout_minutes,
             "hostname": settings.hostname,
             "setup_completed": settings.setup_completed,
-            "firmware_version": settings.firmware_version,
+            # Always serve the live release version from /etc/os-release
+            # (via the shared release_version() helper) rather than the
+            # persisted Settings.firmware_version field. The persisted
+            # field is legacy plumbing kept for store-schema stability;
+            # the truth lives in /etc/os-release per
+            # docs/architecture/versioning.md §C.
+            "firmware_version": _live_firmware_version(),
             "tailscale_enabled": settings.tailscale_enabled,
             "tailscale_auto_connect": settings.tailscale_auto_connect,
             "tailscale_accept_routes": settings.tailscale_accept_routes,
