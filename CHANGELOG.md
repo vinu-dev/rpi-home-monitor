@@ -4,6 +4,12 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
+(Nothing yet — next release will land here.)
+
+## [1.4.1] — 2026-04-26
+
+Security + reliability patch. Both dev and prod images now enforce SWU signing (no more "dev accepts anything" footgun). The dashboard's camera reboot button actually reboots. AI agents pick up a security-posture rule that blocks future "weaken-prod-for-convenience" suggestions. No breaking API changes; same partition layout, same A/B flow.
+
 ### Security
 - **SWU signing now enforced on dev builds for parity with prod** — distro default is `SWUPDATE_SIGNING ?= "1"`; `config/{rpi4b,zero2w}/local.conf` no longer override it to `"0"`; `scripts/build.sh` always passes `--sign`. Both dev and prod images now ship `/etc/swupdate-public.crt` + `/etc/swupdate-enforce` and accept only CMS-signed `.swu` bundles. The dev-vs-prod axis is now strictly debug-tweaks + dev tools — not the signing layer. Tests the signing workflow on dev hardware before promotion to prod and removes the "dev accepts anything" footgun. ADR-0014 updated with the new policy.
 - **AI execution rules: "never propose weakening security"** — new section in `docs/ai/execution-rules.md` codifying the rule that AI agents must refuse insecure shortcuts (injecting authorized_keys, disabling signing, adding debug-tweaks to prod, bypassing CSRF/mTLS/signatures, etc.) and propose secure alternatives instead. Triggered by an actual instance of the agent suggesting a security-weakening "convenience option" during 1.4.0 OTA validation.
