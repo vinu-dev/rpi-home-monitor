@@ -4,7 +4,11 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
-(Nothing yet — next release will land here.)
+### Added
+- **Static regression test for camera-streamer systemd hardening** (`app/camera/tests/unit/test_systemd_hardening.py`) — parses `app/camera/config/camera-streamer.service` at build time and asserts that `ReadWritePaths=` enumerates every directory the camera process writes to at runtime (`/data`, `/var/lib/camera-ota`). Triggered by a 1.3.0 → 1.4.1 OTA blocker on three cameras: the 1.3.0 unit shipped `ReadWritePaths=/data` only, which made systemd's namespace mask `/var/lib/camera-ota` read-only — every dashboard OTA upload failed with `[Errno 30] Read-only file system` even though the underlying disk was rw. Recovery on stuck cameras required a manual systemd drop-in over SSH followed by an unsigned migration SWU. The test fails by construction in either direction: a missing path, an extra path, or weakened `ProtectSystem`/`ProtectHome`/`PrivateTmp` settings.
+
+### Documentation
+- **AI execution rule: "Systemd Hardening Rule"** — new section in `docs/ai/execution-rules.md` requiring AI agents to enumerate every writable directory a service uses before changing systemd hardening, to verify the hardening permits each one, and to update the static test contract alongside the unit file.
 
 ## [1.4.1] — 2026-04-26
 

@@ -119,3 +119,43 @@ This rule applies whether or not the user explicitly asked for the insecure
 shortcut. "User asked me to" is not a defence. Propose the secure path; if
 the user still wants the insecure one, escalate visibly (commit message,
 ADR, or a refusal back to the user) rather than land it quietly.
+
+## Systemd Hardening Rule — enumerate what the service actually writes
+
+When adding or modifying systemd hardening directives (`ProtectSystem`,
+`ProtectHome`, `ReadWritePaths`, `ReadOnlyPaths`, `InaccessiblePaths`,
+`PrivateTmp`, `RestrictSystemCalls`, `MemoryDenyWriteExecute`, etc.) on a
+service unit:
+
+1. **Enumerate every directory the service writes to at runtime.** Grep the
+   service code for `open(...)` in write modes, `os.makedirs`, `pathlib.write_text`,
+   shell-out paths (any `subprocess.run` that creates files), the spool/cache
+   dirs touched by helpers, and any tmpfiles.d / RuntimeDirectory configuration
+   that creates state directories.
+
+2. **Verify the hardening permits every one of those paths.** Under
+   `ProtectSystem=strict`, every writable path must be in `ReadWritePaths=`
+   (or covered by a `StateDirectory=` / `RuntimeDirectory=` declaration).
+   Missing one creates a regression where the unit looks "secure" in review
+   but breaks essential functionality at runtime — the failure mode is
+   `EROFS` ("Read-only file system") on a filesystem that's actually rw,
+   which is confusing to debug.
+
+3. **Lock the contract with a static test.** For the camera-streamer unit
+   the test lives at `app/camera/tests/unit/test_systemd_hardening.py` and
+   parses the unit file at build time. If you add a new writable path, add
+   it to BOTH the unit's `ReadWritePaths=` AND the test's
+   `REQUIRED_WRITABLE_PATHS` map. CI catches drift in either direction.
+
+4. **Treat hardening changes as sensitive-area changes.** Per the
+   "Sensitive-Area Rules" section above: trust boundaries shifting (which
+   is what a systemd namespace is) require explicit review.
+
+Why this matters: 1.4.0 cameras stuck on a 1.3.0 hardening regression
+(`ReadWritePaths=/data` only, omitting `/var/lib/camera-ota`) couldn't OTA
+out via the user-facing path — every upload failed with EROFS even though
+`/var/lib/camera-ota` was writable on the underlying ext4. Recovery
+required a manual systemd drop-in over SSH followed by an unsigned
+migration SWU build, all because a single-line miss in a `ReadWritePaths=`
+escaped review and the build pipeline. The static test in 1.4.2 prevents
+that class of regression. See CHANGELOG `[1.4.2]`.
