@@ -35,7 +35,7 @@ Buy one set per camera location.
 
 | Item | Spec | Notes |
 |------|------|-------|
-| Raspberry Pi Zero 2W | ARM Cortex-A53, 512MB RAM | The only Zero with WiFi 5GHz + enough CPU for 1080p encoding |
+| Raspberry Pi Zero 2W | ARM Cortex-A53, 512MB RAM | The only Zero with WiFi 2.4GHz + enough CPU for 1080p encoding |
 | PiHut ZeroCam (or RPi Camera Module 3) | CSI ribbon cable, 1080p | Any RPi-compatible CSI camera works. ZeroCam is compact and affordable |
 | CSI ribbon cable | **22-pin to 22-pin** for Zero 2W | The Zero uses a **smaller CSI connector** than the full-size Pi. Most cameras ship with the wrong cable |
 | MicroSD card | 16GB+ Class 10 | Camera OS is small (~112MB). 16GB is more than enough |
@@ -377,7 +377,7 @@ Internet ─── Router ─── Switch ─── RPi 4B Server (wired)
 | Requirement | Detail |
 |-------------|--------|
 | Same LAN | Server and all cameras must be on the same local network |
-| WiFi band | 5GHz preferred for cameras (less interference, more bandwidth) |
+| WiFi band | 2.4GHz preferred for cameras (less interference, more bandwidth) |
 | Bandwidth | ~4 Mbps per 1080p/25fps camera stream |
 | mDNS | Router must allow multicast (most home routers do) |
 | No internet required | The system works fully offline. Internet only needed for OTA updates |
@@ -450,7 +450,7 @@ nmcli connection up "Wired connection 1"
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Choppy live view | WiFi congestion | Move camera closer to AP, or use 5GHz band |
+| Choppy live view | WiFi congestion | Move camera closer to AP, or use 2.4GHz band |
 | High latency (>5s) | HLS segment delay | Expected — HLS has 2-6s latency by design |
 | Low FPS | CPU throttling | Check `vcgencmd measure_temp` — add cooling if >70C |
 | Blocky video | Low bitrate | Increase bitrate in camera config (trade-off: more bandwidth) |
