@@ -20,7 +20,10 @@ class TestGetSettings:
         assert data["clip_duration_seconds"] == 180
         assert data["session_timeout_minutes"] == 30
         assert data["storage_threshold_percent"] == 90
-        assert data["firmware_version"] == "1.0.0"
+        # firmware_version is a live read of /etc/os-release VERSION_ID
+        # via release_version() since 1.4.3 (docs/architecture/versioning.md).
+        # Empty string on CI runners; only assert it's a string.
+        assert isinstance(data["firmware_version"], str)
         assert data["setup_completed"] is False
 
     def test_viewer_can_read_settings(self, logged_in_client):

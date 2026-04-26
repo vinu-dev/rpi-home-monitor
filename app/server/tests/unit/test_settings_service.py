@@ -52,7 +52,13 @@ class TestGetSettings:
         assert result["session_timeout_minutes"] == 30
         assert result["hostname"] == "homemonitor"
         assert result["setup_completed"] is False
-        assert result["firmware_version"] == "1.0.0"
+        # firmware_version is a live read of /etc/os-release VERSION_ID
+        # via release_version() since 1.4.3 (docs/architecture/versioning.md
+        # §C). The persisted Settings.firmware_version dataclass default
+        # is bypassed; the field always reflects the running OS. On CI
+        # runners with no host /etc/os-release VERSION_ID present, the
+        # helper returns "" — we only assert the field is a string.
+        assert isinstance(result["firmware_version"], str)
         # ADR-0017 loop-recording watermarks
         assert result["loop_low_watermark_percent"] == 10
         assert result["loop_hysteresis_percent"] == 5

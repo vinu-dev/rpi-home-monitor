@@ -55,7 +55,10 @@ class TestInfoEndpoint:
         assert response.status_code == 200
         data = response.get_json()
         assert data["hostname"] == "home-monitor"
-        assert data["firmware_version"] == "1.0.0"
+        # firmware_version is a live read of /etc/os-release VERSION_ID
+        # via release_version() since 1.4.3 (docs/architecture/versioning.md).
+        # Empty string on CI runners; only assert it's a string.
+        assert isinstance(data["firmware_version"], str)
         assert data["uptime"]["seconds"] == 7200
 
 
