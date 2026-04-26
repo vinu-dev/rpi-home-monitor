@@ -36,9 +36,12 @@ for arg in "$@"; do
         *)        echo "Unknown flag: $arg" >&2; exit 1 ;;
     esac
 done
-case "$TARGET" in
-    *-prod) [ -z "$SIGN_SWU" ] && SIGN_SWU="--sign" ;;
-esac
+# SWU bundles are always signed since 1.4.1 — the distro sets
+# SWUPDATE_SIGNING="1" for every image (dev and prod), so a dev
+# image will refuse an unsigned bundle just like prod does. The
+# only difference between dev and prod builds is debug-tweaks +
+# tools, NOT the signing layer. See ADR-0014.
+[ -z "$SIGN_SWU" ] && SIGN_SWU="--sign"
 
 KEY_DIR="${KEY_DIR:-$HOME/.monitor-keys}"
 LOCAL_OTA_CERT="$KEY_DIR/ota-signing.crt"
