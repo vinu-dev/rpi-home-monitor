@@ -12,10 +12,12 @@ LICENSE = "AGPL-3.0-only"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=73f1eb20517c55bf9493b7dd6e480788"
 
 # Source files from app/camera/ directory in the repo
-FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:"
+# Plus app/shared/ for cross-package helpers (release_version)
+FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:${THISDIR}/../../../app/shared:"
 
 SRC_URI = " \
     file://camera_streamer/ \
+    file://release_version/release_version.py \
     file://config/camera-streamer.service \
     file://config/camera-hotspot.service \
     file://config/camera-hotspot.sh \
@@ -63,6 +65,12 @@ do_install() {
     install -d ${D}/opt/camera
     cp -r ${WORKDIR}/camera_streamer ${D}/opt/camera/
     install -m 0644 ${WORKDIR}/setup.py ${D}/opt/camera/
+
+    # Shared release_version helper (single source of truth in
+    # app/shared/release_version/; identical copy installed in the
+    # monitor-server image). See docs/architecture/versioning.md.
+    install -m 0644 ${WORKDIR}/release_version.py \
+        ${D}/opt/camera/camera_streamer/release_version.py
 
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default

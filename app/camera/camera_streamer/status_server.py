@@ -231,23 +231,19 @@ def _get_cpu_temp(thermal_path=None):
         return 0.0
 
 
-def _get_firmware_version(sw_versions_path="/etc/sw-versions"):
-    """Read the camera firmware version from /etc/sw-versions.
+def _get_firmware_version(sw_versions_path=None):
+    """Return the product release version for the local status page.
 
-    SWUpdate records each installed bundle as "<component> <version>"
-    lines. The camera image ships only the "home-monitor" row (or
-    "home-camera"); we return the version string from the first line,
-    or empty if nothing is readable.
+    Thin wrapper over the shared ``release_version()`` helper
+    (``/etc/os-release VERSION_ID``). The legacy ``sw_versions_path``
+    parameter is kept for source-level backward compatibility with
+    any out-of-tree caller and is now silently ignored — the
+    helper always reads ``/etc/os-release``. See
+    ``docs/architecture/versioning.md`` for the migration rationale.
     """
-    try:
-        with open(sw_versions_path) as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                    return parts[1]
-    except OSError:
-        pass
-    return ""
+    from camera_streamer.release_version import release_version
+
+    return release_version()
 
 
 def _get_uptime():

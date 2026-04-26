@@ -12,10 +12,12 @@ LICENSE = "AGPL-3.0-only"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/AGPL-3.0-only;md5=73f1eb20517c55bf9493b7dd6e480788"
 
 # Source files from app/server/ directory in the repo
-FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/server:"
+# Plus app/shared/ for cross-package helpers (release_version)
+FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/server:${THISDIR}/../../../app/shared:"
 
 SRC_URI = " \
     file://monitor/ \
+    file://release_version/release_version.py \
     file://config/monitor.service \
     file://config/monitor-hotspot.service \
     file://config/monitor-hotspot.sh \
@@ -58,6 +60,12 @@ do_install() {
     cp -r ${WORKDIR}/monitor ${D}/opt/monitor/
     install -m 0644 ${WORKDIR}/setup.py ${D}/opt/monitor/
     install -m 0644 ${WORKDIR}/requirements.txt ${D}/opt/monitor/
+
+    # Shared release_version helper (single source of truth in
+    # app/shared/release_version/; identical copy installed in the
+    # camera-streamer image). See docs/architecture/versioning.md.
+    install -m 0644 ${WORKDIR}/release_version.py \
+        ${D}/opt/monitor/monitor/release_version.py
 
     # Create data directories (will be on /data partition in production)
     install -d ${D}/opt/monitor/data/recordings

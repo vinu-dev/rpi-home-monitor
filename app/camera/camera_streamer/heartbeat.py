@@ -100,21 +100,23 @@ def _get_memory_percent() -> int:
 
 
 def _get_firmware_version() -> str:
-    """Read the first version string from ``/etc/sw-versions``.
+    """Return the product release version for inclusion in heartbeats.
 
-    The file is written by SWUpdate post-install and lists
-    ``<component> <version>`` pairs. Callers tolerate an empty return
-    (missing file, unreadable, bad format) by reporting ``""``.
+    Thin wrapper over the shared ``release_version()`` helper, which
+    reads ``/etc/os-release VERSION_ID``. Pre-1.4.3 this function
+    read ``/etc/sw-versions`` directly, but that file ships
+    hard-coded ``home-monitor 1.0.0`` on fresh-flashed images and
+    only got rewritten by an OTA post-install hook — meaning every
+    fresh prod card heartbeated the wrong version until its first
+    OTA. See ``docs/architecture/versioning.md`` for the migration.
+
+    Empty string on parse failure preserves the legacy contract:
+    the server records ``""`` and the dashboard renders it as
+    ``unknown`` rather than crashing.
     """
-    try:
-        with open("/etc/sw-versions") as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                    return parts[1]
-    except OSError:
-        pass
-    return ""
+    from camera_streamer.release_version import release_version
+
+    return release_version()
 
 
 def _get_cpu_temp(thermal_path: str | None) -> float:
