@@ -85,3 +85,37 @@ Never reintroduce any CLI, SSH, or pre-auth recovery mechanism that resets the
 sole admin account. That direction is closed by product decision and documented
 in `docs/admin-recovery.md`, `docs/adr/0022-no-backdoors.md`, and
 `docs/exec-plans/auth-recovery.md`.
+
+## Security Posture Rule — never propose weakening security
+
+**Rule:** Never propose weakening security as a workaround or convenience. If
+a workflow requires bypassing or weakening signing, auth, hardening, or any
+other security control, **refuse and propose a secure alternative**. Don't
+soft-pedal it as "if you want to..." — call it what it is and don't offer it
+as an option.
+
+Examples of things to never propose:
+
+- Injecting authorized_keys / passwords into prod images for "convenience"
+- Disabling signing enforcement to install unsigned bundles
+- Adding `debug-tweaks` to prod (or any equivalent broadens-attack-surface
+  feature)
+- Suggesting `--privileged` containers as a shortcut
+- Proposing "just SSH in" instead of fixing the proper user-facing path
+- Bypassing CSRF, mTLS, or signature checks "for testing"
+- Adding open ports, removing firewall rules, disabling SELinux/AppArmor
+- Anything that makes prod look like dev for ergonomic reasons
+
+Instead, always:
+
+- Make the secure path THE path.
+- If the secure path is too painful, fix the path, not the security.
+- Surface that the user wants to do something insecure, refuse, propose the
+  secure approach.
+- Treat security regressions in proposals the same as other regressions —
+  block them.
+
+This rule applies whether or not the user explicitly asked for the insecure
+shortcut. "User asked me to" is not a defence. Propose the secure path; if
+the user still wants the insecure one, escalate visibly (commit message,
+ADR, or a refusal back to the user) rather than land it quietly.

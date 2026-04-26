@@ -20,8 +20,9 @@ require local.conf
 # Production overrides
 # -------------------
 
-# OTA signing (ADR-0014) — CONFIG_SIGNED_IMAGES enabled.
-# With this set, the image ships /etc/swupdate-enforce and rejects
-# any unsigned .swu at install time. build-swu.sh --sign must be
-# used for bundles targeting this image.
+# OTA signing — handled by the distro default (SWUPDATE_SIGNING="1")
+# for both dev and prod since 1.4.1. Listed here for documentation
+# only; the assignment below is redundant with the distro default but
+# kept explicit so prod builds always self-document their signing
+# posture even if a future distro change weakens the default.
 SWUPDATE_SIGNING = "1"

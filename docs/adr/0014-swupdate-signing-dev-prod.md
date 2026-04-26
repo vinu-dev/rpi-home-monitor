@@ -1,6 +1,6 @@
-# ADR-0014: Disable OTA Bundle Signing for Dev Builds
+# ADR-0014: OTA Bundle Signing Policy
 
-**Status:** Accepted
+**Status:** Accepted (revised 2026-04-26 — see "Update — 1.4.1: signing always-on")
 **Date:** 2026-04-13
 
 ## Context
@@ -96,3 +96,40 @@ Detached signatures for non-SWUpdate artifacts can still use different tooling, 
 **Always enable signing, commit a "dev" cert+key to the repo:** The key would be public (anyone could sign malicious bundles for dev devices). Violates the principle of never committing private keys. Rejected.
 
 **Single defconfig with signing disabled permanently:** Would require re-enabling for prod builds via a manual local.conf change with no guardrails. Using `SWUPDATE_SIGNING` is explicit and self-documenting. Rejected.
+
+## Update — 1.4.1: signing always-on
+
+The original split (dev unsigned / prod signed) created an asymmetry that
+the team paid for during 1.4.0 hardware validation: a dev SWU could not
+be installed on a prod-flashed device, and a prod SWU could not be
+exercised on a dev-flashed device without a parallel signing rehearsal.
+Worse, "unsigned dev images" trained reviewers to think of signing as a
+"prod-only thing" — which is the wrong intuition. Signing is a security
+control; it should be the default.
+
+As of 1.4.1, the policy is **signing always-on**. Both dev and prod
+builds:
+
+- compile swupdate with `CONFIG_SIGNED_IMAGES=y` and `CONFIG_SIGALG_CMS=y`
+- ship `/etc/swupdate-public.crt` and `/etc/swupdate-enforce`
+- accept only CMS-signed `.swu` bundles at install time
+
+The only meaningful axis between dev and prod images is now
+`debug-tweaks` + dev tools (gdb, strace, tcpdump, root SSH). Signing,
+auth, hardening posture are identical.
+
+Concretely:
+
+- Distro default flipped to `SWUPDATE_SIGNING ?= "1"` in
+  `meta-home-monitor/conf/distro/home-monitor.conf`.
+- `config/{rpi4b,zero2w}/local.conf` no longer set `SWUPDATE_SIGNING="0"`.
+  The distro default applies.
+- `scripts/build.sh` auto-applies `--sign` to every target (not just
+  `*-prod`).
+- The dev/prod naming on `local.conf.prod` is preserved for clarity but
+  the signing line in `local.conf.prod` is now redundant with the distro
+  default.
+
+The original "Negative" point — "Dev images accept unsigned bundles" —
+no longer applies. Dev developers must run `generate-ota-keys.sh` once
+the same as prod operators do; the cost is small and well-contained.
