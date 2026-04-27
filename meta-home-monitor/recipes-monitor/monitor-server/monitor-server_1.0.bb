@@ -64,7 +64,8 @@ do_install() {
     # Shared release_version helper (single source of truth in
     # app/shared/release_version/; identical copy installed in the
     # camera-streamer image). See docs/architecture/versioning.md.
-    install -m 0644 ${WORKDIR}/release_version.py \
+    # The file:// fetcher preserves the subdir name under WORKDIR.
+    install -m 0644 ${WORKDIR}/release_version/release_version.py \
         ${D}/opt/monitor/monitor/release_version.py
 
     # Create data directories (will be on /data partition in production)
