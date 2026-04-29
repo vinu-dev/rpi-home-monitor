@@ -6,7 +6,13 @@ Policy (per tick, per camera):
     mode == "off"         → recorder stopped.
     mode == "continuous"  → recorder running while camera is paired.
     mode == "schedule"    → recorder running iff now-in-window(schedule, now).
-    mode == "motion"      → treated as "off" (reserved for future motion ADR).
+    mode == "motion"      → recorder running iff a motion event is currently
+                            in progress, OR within `motion_post_roll_seconds`
+                            of its end. Requires a `motion_event_store` to be
+                            wired in (see ADR-0021); without one, motion mode
+                            silently evaluates to False — the same fail-safe
+                            pre-Phase-4 behaviour the docstring used to claim
+                            was the permanent design.
 
 When turning a recorder on, the scheduler also asks the camera to start
 streaming (if `desired_stream_state == "stopped"`), persists the new
