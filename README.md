@@ -6,6 +6,8 @@
 
 [![CI](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml/badge.svg)](https://github.com/vinu-dev/rpi-home-monitor/actions/workflows/test.yml)
 
+> **Disclaimer:** This is a personal, hobbyist project provided **as-is** under the [AGPL-3.0 license](LICENSE). It has **not been professionally tested or audited**, may contain bugs, and **may have unresolved security vulnerabilities**. Do not rely on it to protect critical assets. No warranty is given — use at your own risk.
+
 **A self-hosted home security camera system built on Raspberry Pi.** Open-source alternative to Ring, Tapo, and Nest — with no cloud subscriptions, no vendor lock-in, and complete control over your data.
 
 RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built with the Yocto Project, purpose-built for home surveillance on low-cost hardware.
