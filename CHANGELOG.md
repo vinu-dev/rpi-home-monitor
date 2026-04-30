@@ -4,7 +4,16 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
-(Nothing yet — next release will land here.)
+Documentation-only catch-up between 1.4.3 and the next release. No image-rebuild or behaviour change.
+
+### Documentation
+- **`docs/hardware-setup.md` — Pi Zero 2W WiFi band corrected** ([#197](https://github.com/vinu-dev/rpi-home-monitor/pull/197), closes [#184](https://github.com/vinu-dev/rpi-home-monitor/issues/184)). Three places claimed or implied 5GHz support; the Zero 2W ships 802.11 b/g/n (2.4GHz only). Fixed the shopping-list note, the network-requirements row, and the troubleshooting "use 5GHz band" advice — none of which made sense given the camera hardware. Replaced with the actually-actionable equivalent (move other 2.4GHz devices to 5GHz to free airtime, pick a less-crowded channel).
+- **Motion-mode pre-roll exec plan** ([#202](https://github.com/vinu-dev/rpi-home-monitor/pull/202), tracks [#160](https://github.com/vinu-dev/rpi-home-monitor/issues/160)). Translates the original `docs/exec-plans/motion-detection.md` §D5 decision (3-second H.264 ring buffer with `MOTION_PREROLL_ENABLED` kill switch) into four reviewable implementation phases. Phase 4 is hardware-gated (24h soak + smoke test before flipping the flag default-on). Plan ships now; implementation phases will land as their own PRs.
+- **Recording-scheduler module docstring corrected** ([#203](https://github.com/vinu-dev/rpi-home-monitor/pull/203)). The policy block at the top of `app/server/monitor/services/recording_scheduler.py` still claimed `motion → treated as "off" (reserved for future motion ADR)` — stale since ADR-0021 shipped. The actual code at lines 207–220 evaluates motion via `MotionEventStore.is_camera_active(post_roll_seconds=...)`. Replaced with an accurate paragraph that names the real behaviour, including the fail-safe "no event store wired in → silent False" branch.
+
+### Issue housekeeping
+- **#173 (multi-sensor camera support)** and **#182 (per-camera Image Quality controls)** closed — both shipped end-to-end in 1.4.0; cross-referenced acceptance criteria to merged PRs (#174–#177, #183) in the close comments.
+- **#90 (.local hostname resolution)** split into four child issues with scoped acceptance criteria: [#198](https://github.com/vinu-dev/rpi-home-monitor/issues/198) (Avahi readiness + verify publication), [#199](https://github.com/vinu-dev/rpi-home-monitor/issues/199) (boot-time resolve retry with backoff), [#200](https://github.com/vinu-dev/rpi-home-monitor/issues/200) (mDNS goodbye on hostname change), [#201](https://github.com/vinu-dev/rpi-home-monitor/issues/201) (IP-based fallback / QR on setup completion). Sub-fix 1 (surface IP in UI) was already done in commit `0b632a3`. Each child carries an explicit "why this is risky to autoland" note since they all touch boot ordering, hostname identity, or networking semantics.
 
 ## [1.4.3] — 2026-04-27
 
