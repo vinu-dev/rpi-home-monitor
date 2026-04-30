@@ -36,6 +36,8 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0020 | [Dual-transport OTA (server upload + server-to-camera push)](0020-dual-transport-ota.md)         | Accepted   |
 | 0021 | [Camera-side motion detection](0021-camera-side-motion-detection.md)                             | Accepted   |
 | 0022 | [No backdoors in authentication or recovery](0022-no-backdoors.md)                               | Accepted   |
+| 0023 | [Unified fault framework](0023-unified-fault-framework.md)                                       | Proposed   |
+| 0024 | [Local alert center](0024-local-alert-center.md)                                                 | Proposed   |
 
 ## Writing a new ADR
 
