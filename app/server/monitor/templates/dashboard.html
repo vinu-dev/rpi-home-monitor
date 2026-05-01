@@ -108,38 +108,14 @@
     </template>
 </div>
 
-<!--
-  Tier-3 (Slice 3) — Audit log teaser
-  Five most recent security-relevant events so operators notice a
-  login storm / camera dropout / OTA failure without visiting a
-  separate log page. Admin-gated — viewers simply don't see it.
-  Full log view lives in Settings › Security (future slice).
--->
-<!-- Admin-only: render whenever the viewer has the admin gate, even
-     when the events list is momentarily empty. Gating on
-     `auditEvents.length > 0` as well used to collapse the whole
-     section during the render tick between init (empty array) and
-     the async /audit/events fetch resolving — which presented as
-     "Recent activity broken, nothing shown" even though the API
-     returned data fine. -->
-<div class="section-header" x-show="auditAdmin">
-    Recent activity
-    <a class="text-small" style="float:right;" href="/logs">Full log &rarr;</a>
-</div>
-<div class="log-teaser" x-show="auditAdmin">
-    <template x-if="auditEvents.length === 0">
-        <div class="log-teaser__row">
-            <span class="log-teaser__detail text-muted">No recent activity yet.</span>
-        </div>
-    </template>
-    <template x-for="evt in auditEvents" :key="evt.timestamp + '/' + evt.event">
-        <div class="log-teaser__row" :class="_auditEventClass(evt.event)">
-            <span class="log-teaser__time" x-text="_relativeTime(evt.timestamp)"></span>
-            <span class="log-teaser__event" x-text="_auditEventLabel(evt.event)"></span>
-            <span class="log-teaser__detail" x-text="evt.detail || (evt.user ? 'user ' + evt.user : '')"></span>
-        </div>
-    </template>
-</div>
+<!-- ADR-0025: the dashboard's "Recent activity" audit teaser used to
+     live here (admin-only, 5-row mini-log). Retired because it was a
+     strict duplicate of the alert center inbox at /alerts (#208) +
+     the top-bar bell badge from #133. The bell handles the
+     "did anything happen?" affordance abstractly; /alerts handles
+     the triage detail. The dashboard's role is now strictly Tier-1
+     status strip + Tier-2 tiles + Tier-3 motion events feed (kept
+     for inline-playback) — "Green is quiet" per ADR-0018. -->
 
 <!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
 <div id="cameras-section" class="section-header">
@@ -605,12 +581,10 @@ function dashboardPage() {
         recentEvents: [],
         playingKey: '',
         health: { uptime: '' },
-        auditEvents: [],      // Slice 3 log teaser
-        // Safe default: viewers must never see the admin-only audit
-        // teaser flash before the /audit/events call resolves (#148).
-        // Flipped to true by loadAuditEvents() on HTTP 200, left false
-        // on 403 so the section stays hidden for non-admin roles.
-        auditAdmin: false,
+        // ADR-0025: auditEvents + auditAdmin used to live here, driving
+        // the dashboard "Recent activity" teaser. Retired alongside the
+        // template block above — the bell badge + /alerts inbox replace
+        // the same job without duplication.
         // Mirrors settings.html's isAdmin — resolved from /api/v1/auth/me
         // on load and used to gate destructive UI controls (issue #86).
         // Defaults to false (safe-by-default): UI hides Settings/Delete
@@ -784,58 +758,12 @@ function dashboardPage() {
             } catch(e) {
                 this.recentEvents = [];
             }
-            // Slice 3 log teaser — last 5 audit events (admin only).
-            // Viewers get a 403 here which we silently suppress so the
-            // dashboard still renders cleanly.
-            try {
-                // Fetch more than 5 so we have headroom after filtering
-                // motion events out — those live in the Recent events
-                // feed above; duplicating them in the security-oriented
-                // audit teaser would drown the low-frequency events
-                // operators actually need to notice.
-                var resp = await window.HM.api.get('/api/v1/audit/events?limit=25');
-                var raw = (resp && resp.events) || [];
-                this.auditEvents = raw.filter(function(e) {
-                    return e.event !== 'MOTION_DETECTED' && e.event !== 'MOTION_ENDED';
-                }).slice(0, 5);
-                this.auditAdmin = true;
-            } catch(e) {
-                this.auditEvents = [];
-                this.auditAdmin = false;
-            }
-        },
-
-        // Compact, human-friendly label for a raw audit event code.
-        _auditEventLabel(code) {
-            if (!code) return '';
-            var map = {
-                LOGIN_OK: 'Signed in',
-                LOGIN_FAILED: 'Login failed',
-                LOGOUT: 'Signed out',
-                USER_CREATED: 'User created',
-                USER_DELETED: 'User deleted',
-                PASSWORD_CHANGED: 'Password changed',
-                CAMERA_PAIRED: 'Camera paired',
-                CAMERA_REMOVED: 'Camera removed',
-                CAMERA_OFFLINE: 'Camera went offline',
-                CAMERA_ONLINE: 'Camera came online',
-                CLIP_DELETED: 'Clip deleted',
-                CLIPS_DELETED: 'Clips deleted',
-                OTA_STARTED: 'OTA started',
-                OTA_COMPLETED: 'OTA completed',
-                OTA_FAILED: 'OTA failed',
-                FACTORY_RESET: 'Factory reset',
-                MOTION_DETECTED: 'Motion detected',
-                MOTION_ENDED: 'Motion ended',
-            };
-            return map[code] || code.toLowerCase().replace(/_/g, ' ');
-        },
-
-        _auditEventClass(code) {
-            if (!code) return '';
-            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET') return 'log-teaser__row--bad';
-            if (code === 'LOGIN_FAILED' || code === 'CAMERA_OFFLINE') return 'log-teaser__row--warn';
-            return '';
+            // ADR-0025: the audit-events inline fetch + _auditEventLabel
+            // / _auditEventClass helpers used to live here, populating
+            // the now-retired "Recent activity" teaser. The same data
+            // is available via the bell badge (count) → /alerts (rows
+            // with severity colours and per-user read state). One job
+            // per surface.
         },
 
         playMotionEvent(ev) {

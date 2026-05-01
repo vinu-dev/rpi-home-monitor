@@ -172,6 +172,69 @@ class TestAlertCenterUI:
         with open(stamp, "w") as f:
             f.write("done")
 
+    def test_dashboard_does_not_render_audit_teaser(self, client):
+        """ADR-0025 — the dashboard's audit teaser (admin-only,
+        5-row mini-log) was retired in favour of the bell badge →
+        /alerts flow. The test pins the structural anchors that
+        defined the teaser so neither a markup-only revert nor a
+        state-only revert can slip back in unnoticed.
+
+        Note: the strings "Recent activity" and "auditAdmin" can
+        legitimately appear in code comments documenting the
+        retirement decision; we test the actual *bindings* that
+        would render the surface, not the bare phrases.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # The "Recent events" motion feed STAYS (different job —
+        # inline playback).
+        assert "Recent events" in body
+        # The teaser's Alpine x-show binding is gone.
+        assert 'x-show="auditAdmin"' not in body
+        # The teaser's CSS class is no longer rendered.
+        assert "log-teaser__row" not in body
+        # The Full-log escape hatch link the teaser carried is gone
+        # (it lived only inside the teaser block).
+        assert 'href="/logs">Full log' not in body
+
+    def test_settings_security_tab_links_to_logs_not_inline_table(self, client):
+        """ADR-0025 — the Security tab is now an audit-log *settings*
+        surface, not a viewer. The full archive lives at /logs; the
+        triage view at /alerts; this tab keeps only the admin-initiated
+        clear action + an outbound link.
+
+        Pin the link to /logs and the absence of the inline log
+        table's structural anchors. The tests check actual template
+        bindings rather than bare phrases (e.g. "loadAuditLog" can
+        appear in a code comment without rendering anything).
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Security tab still exists (admin-only).
+        assert "tab === 'security'" in body
+        # Outbound link to /logs.
+        assert 'href="/logs"' in body
+        # Outbound link to /alerts (the triage view).
+        assert 'href="/alerts"' in body
+        # The retired inline table's structural binding is gone.
+        # (The `x-for="(ev, i) in security.events"` was the loop
+        # that rendered every audit row in the table.)
+        assert 'x-for="(ev, i) in security.events"' not in body
+        # The retired tab-load fetch trigger is gone.
+        # (Pre-ADR-0025 the tab onclick was
+        # `tab = 'security'; loadAuditLog()` — now just `tab='security'`.)
+        assert "loadAuditLog()" not in body
+
     def test_topbar_bell_badge_starts_hidden(self, client):
         """The bell icon and badge must default to display:none so an
         unauthed page-load doesn't briefly flash a stale chrome
