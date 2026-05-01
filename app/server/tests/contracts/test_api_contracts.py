@@ -172,6 +172,11 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "image_quality",
     "encoder_max_pixels",
     "board_name",
+    # Per-camera offline-alert mute (#136 + #137). Boolean; default
+    # True. Server-side gate for the alert-center inbox emission;
+    # the dashboard's offline indicator is unaffected. Surfaced so
+    # the Camera Settings modal can render the toggle.
+    "offline_alerts_enabled",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
