@@ -43,8 +43,8 @@ _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 # - Injection via shell-unsafe characters
 _CAMERA_ID_RE = re.compile(r"^cam-[a-z0-9]{1,48}$")
 
-# Stream parameters that should be pushed to the camera (ADR-0015)
-STREAM_PARAMS = {
+# Stream parameters that should be pushed to the camera (ADR-0015).
+STREAM_PARAM_FIELDS = (
     "width",
     "height",
     "fps",
@@ -64,6 +64,22 @@ STREAM_PARAMS = {
     # JSON-encoded value via the existing control channel; camera
     # decodes and applies via Picamera2.set_controls.
     "image_quality",
+)
+STREAM_PARAMS = set(STREAM_PARAM_FIELDS)
+
+STREAM_PARAM_DEFAULTS = {
+    "width": 1920,
+    "height": 1080,
+    "fps": 25,
+    "bitrate": 4000000,
+    "h264_profile": "high",
+    "keyframe_interval": 30,
+    "rotation": 0,
+    "hflip": False,
+    "vflip": False,
+    "motion_sensitivity": 5,
+    "recording_motion_enabled": False,
+    "image_quality": {},
 }
 
 
@@ -85,6 +101,34 @@ def _translate_stream_params_for_wire(params: dict) -> dict:
     if "recording_motion_enabled" in translated:
         translated["motion_detection"] = translated.pop("recording_motion_enabled")
     return translated
+
+
+def _stream_params_from_camera(camera) -> dict:
+    """Return the full server-side stream config for replay to a camera."""
+    params = {}
+    for key in STREAM_PARAM_FIELDS:
+        value = getattr(camera, key, STREAM_PARAM_DEFAULTS[key])
+        if key == "image_quality" and isinstance(value, dict):
+            value = dict(value)
+        params[key] = value
+    return params
+
+
+def _sensor_mode_max_fps(sensor_modes: list[dict]) -> dict[tuple[int, int], int]:
+    """Map each reported sensor resolution to its highest supported fps."""
+    max_by_resolution: dict[tuple[int, int], int] = {}
+    for mode in sensor_modes:
+        try:
+            width = int(mode["width"])
+            height = int(mode["height"])
+            max_fps = int(mode["max_fps"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if width <= 0 or height <= 0 or max_fps <= 0:
+            continue
+        key = (width, height)
+        max_by_resolution[key] = max(max_by_resolution.get(key, 0), max_fps)
+    return max_by_resolution
 
 
 def _validate_image_quality(payload: dict, camera) -> str:
@@ -596,17 +640,9 @@ class CameraService:
         # If we have a pending config push, include it in the response
         response: dict = {"ok": True}
         if had_pending:
-            response["pending_config"] = {
-                "width": camera.width,
-                "height": camera.height,
-                "fps": camera.fps,
-                "bitrate": camera.bitrate,
-                "h264_profile": camera.h264_profile,
-                "keyframe_interval": camera.keyframe_interval,
-                "rotation": camera.rotation,
-                "hflip": camera.hflip,
-                "vflip": camera.vflip,
-            }
+            response["pending_config"] = _translate_stream_params_for_wire(
+                _stream_params_from_camera(camera)
+            )
 
         return response, "", 200
 
@@ -679,6 +715,7 @@ class CameraService:
         sensor_modes: list[dict] = []
         if camera is not None:
             sensor_modes = list(getattr(camera, "sensor_modes", []) or [])
+        sensor_mode_fps = _sensor_mode_max_fps(sensor_modes)
         allowed = {
             "name",
             "location",
@@ -721,11 +758,7 @@ class CameraService:
                 return "fps must be a positive integer"
             # Per-camera fps cap when the sensor's modes are known.
             # Otherwise fall back to the legacy 1-30 bound.
-            if sensor_modes:
-                fps_max = max(int(m["max_fps"]) for m in sensor_modes if "max_fps" in m)
-                if fps > fps_max:
-                    return f"fps must be 1-{fps_max} for this sensor"
-            elif fps > 30:
+            if not sensor_mode_fps and fps > 30:
                 return "fps must be an integer between 1 and 30"
 
         if "name" in data:
@@ -746,15 +779,24 @@ class CameraService:
         # Per-camera (width, height) pair check — only when the sensor's
         # modes have been reported. The pair must be one of the modes
         # the camera advertised. Skipped silently for pre-#173 cameras.
-        if sensor_modes and ("width" in data or "height" in data):
-            current_w = camera.width if camera is not None else None
-            current_h = camera.height if camera is not None else None
-            w = data.get("width", current_w)
-            h = data.get("height", current_h)
-            valid_pairs = {(int(m["width"]), int(m["height"])) for m in sensor_modes}
-            if (w, h) not in valid_pairs:
-                pretty = ", ".join(f"{pw}x{ph}" for pw, ph in sorted(valid_pairs))
-                return f"resolution {w}x{h} not supported by sensor (valid: {pretty})"
+        current_w = camera.width if camera is not None else None
+        current_h = camera.height if camera is not None else None
+        w = data.get("width", current_w)
+        h = data.get("height", current_h)
+
+        if (
+            sensor_mode_fps
+            and ("width" in data or "height" in data)
+            and (w, h) not in sensor_mode_fps
+        ):
+            pretty = ", ".join(f"{pw}x{ph}" for pw, ph in sorted(sensor_mode_fps))
+            return f"resolution {w}x{h} not supported by sensor (valid: {pretty})"
+
+        if sensor_mode_fps and ("fps" in data or "width" in data or "height" in data):
+            fps = data.get("fps", camera.fps if camera is not None else None)
+            fps_max = sensor_mode_fps.get((w, h))
+            if fps_max is not None and fps > fps_max:
+                return f"fps must be 1-{fps_max} for {w}x{h}"
 
         if "bitrate" in data:
             br = data["bitrate"]
