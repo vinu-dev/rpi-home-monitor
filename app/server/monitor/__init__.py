@@ -14,6 +14,7 @@ from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from monitor.logging_config import configure_logging
+from monitor.services.alert_center_service import AlertCenterService
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_ota_client import CameraOTAClient
@@ -180,6 +181,17 @@ def _init_infrastructure(app):
     app.motion_clip_correlator = MotionClipCorrelator(
         app.config["RECORDINGS_DIR"],
         clip_duration_seconds=app.config.get("CLIP_DURATION_SECONDS", 180),
+    )
+
+    # Alert center (ADR-0024) — derive-on-read view over audit, motion,
+    # and per-camera fault sources. Per-user read-state is the only new
+    # persistent surface; lives at /data/config/alert_read_state.json.
+    alert_state_path = os.path.join(app.config["CONFIG_DIR"], "alert_read_state.json")
+    app.alert_center = AlertCenterService(
+        store=app.store,
+        audit_logger=app.audit,
+        motion_event_store=app.motion_event_store,
+        read_state_path=alert_state_path,
     )
 
 
@@ -550,6 +562,7 @@ def _resume_camera_pipelines(app):
 
 def _register_blueprints(app):
     """Register all Flask blueprints."""
+    from monitor.api.alerts import alerts_bp
     from monitor.api.audit import audit_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
@@ -581,6 +594,7 @@ def _register_blueprints(app):
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
+    app.register_blueprint(alerts_bp, url_prefix="/api/v1/alerts")
     app.register_blueprint(motion_events_bp, url_prefix="/api/v1/motion-events")
     # Click-through router at /events/<id>. Mounted at root (not /api/v1)
     # so it can issue user-navigable redirects into /recordings and /live.
