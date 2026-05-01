@@ -61,9 +61,9 @@ Optional:
   -h, --help              Show this help
 
 Examples:
-  $0 --server 192.168.1.245
-  $0 --camera 192.168.1.186
-  $0 --server 192.168.1.245 --camera 192.168.1.186
+  $0 --server <server-ip>
+  $0 --camera <camera-ip>
+  $0 --server <server-ip> --camera <camera-ip>
 EOF
 }
 

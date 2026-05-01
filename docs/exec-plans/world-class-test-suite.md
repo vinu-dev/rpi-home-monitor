@@ -63,7 +63,7 @@ in the 2026-04-18 audit is addressed with real, running automation.
 - Branch: `test/world-class-suite`
 - Commands to resume:
   ```bash
-  cd /c/Users/vinun/rpi-new/rpi-home-monitor
+  cd <workspace>
   git checkout test/world-class-suite
   ```
 - Open risks: none

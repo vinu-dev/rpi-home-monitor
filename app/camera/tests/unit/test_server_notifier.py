@@ -66,7 +66,7 @@ class TestNotifyConfigChange:
 
     def test_skips_when_no_pairing_secret(self):
         config = MagicMock()
-        config.server_ip = "192.168.1.245"
+        config.server_ip = "203.0.113.10"
         pairing = MagicMock()
         pairing.get_pairing_secret.return_value = ""
         notify_config_change(config, pairing)
@@ -75,7 +75,7 @@ class TestNotifyConfigChange:
     def _mock_config():
         """Create a mock config with stream properties."""
         cfg = MagicMock()
-        cfg.server_ip = "192.168.1.245"
+        cfg.server_ip = "203.0.113.10"
         cfg.camera_id = "cam-test01"
         cfg.certs_dir = "/tmp/certs"
         cfg.width = 1920
@@ -109,7 +109,7 @@ class TestNotifyConfigChange:
         assert req.get_header("X-signature")
         assert req.get_header("Content-type") == "application/json"
         assert req.get_method() == "POST"
-        assert "192.168.1.245" in req.full_url
+        assert "203.0.113.10" in req.full_url
 
     @patch("camera_streamer.server_notifier.urllib.request.urlopen")
     def test_sends_stream_config_body(self, mock_urlopen):

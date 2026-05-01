@@ -814,7 +814,7 @@ class TestAcceptHeartbeat:
         running with motion off — no events ever fired.
         """
         cam = _make_camera(
-            id="cam-001", ip="192.168.1.148", recording_motion_enabled=False
+            id="cam-001", ip="203.0.113.20", recording_motion_enabled=False
         )
         cam.hardware_faults = []
         store = MagicMock()

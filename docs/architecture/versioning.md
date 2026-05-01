@@ -448,14 +448,14 @@ Add a unit test for `release_version()` parsing (handles quoted, unquoted, missi
 
 ### Step 6 — hardware verification (on dev boxes)
 
-1. Hot-deploy the changed `camera_streamer/heartbeat.py` + `status_server.py` + `version.py` to `.115` and `.148` (already on 1.4.1-dev-migrate). Restart camera-streamer. Verify the camera's local page shows `1.4.1` instead of `1.0.0`. Verify the server's dashboard updates `firmware_version` to `1.4.1` on the next heartbeat.
-2. On the server (`.245` on 1.4.1), hot-deploy the new helper + settings wiring. Restart `monitor.service`. Verify dashboard footer shows `1.4.1`.
+1. Hot-deploy the changed `camera_streamer/heartbeat.py` + `status_server.py` + `version.py` to two lab cameras already on 1.4.1-dev-migrate. Restart camera-streamer. Verify the camera's local page shows `1.4.1` instead of `1.0.0`. Verify the server's dashboard updates `firmware_version` to `1.4.1` on the next heartbeat.
+2. On the lab server already on 1.4.1, hot-deploy the new helper + settings wiring. Restart `monitor.service`. Verify dashboard footer shows `1.4.1`.
 
 ### Step 7 — full image build + OTA test
 
 1. Cut as 1.4.3.
 2. Build dev + prod on the VM.
-3. OTA `.186` (currently on 1.4.2 prod) to 1.4.3 prod. Verify on the camera's UI: firmware shows `1.4.3`. Verify the server records `firmware_version="1.4.3"` for the camera.
+3. OTA one lab camera currently on 1.4.2 prod to 1.4.3 prod. Verify on the camera's UI: firmware shows `1.4.3`. Verify the server records `firmware_version="1.4.3"` for the camera.
 
 ### Step 8 — fresh-flash test (the bug's original symptom)
 
