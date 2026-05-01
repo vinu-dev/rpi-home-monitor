@@ -132,6 +132,102 @@ class TestProtectedPages:
         response = client.get("/settings")
         assert response.status_code == 200
 
+    def test_alerts_redirects_to_login(self, client):
+        response = client.get("/alerts")
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+
+    def test_alerts_renders_when_authenticated(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/alerts")
+        assert response.status_code == 200
+
+    def test_alerts_renders_for_viewer_role(self, client):
+        # Server-side filter in AlertCenterService gates what the
+        # viewer sees. The page itself must render — admins shouldn't
+        # have a different page; viewers just see fewer rows.
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-002"
+            sess["username"] = "bob"
+            sess["role"] = "viewer"
+        response = client.get("/alerts")
+        assert response.status_code == 200
+
+
+class TestAlertCenterUI:
+    """Frontend regression tests for the alert center (ADR-0024 + #133).
+
+    Pin the structural anchors of the bell badge + inbox so a future
+    refactor that quietly drops them fails loudly. We don't render
+    real alert data here; that path is covered by the AlertCenterService
+    + API tests. We're just asserting the UI scaffold exists.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_done(self, app):
+        stamp = os.path.join(app.config["DATA_DIR"], ".setup-done")
+        with open(stamp, "w") as f:
+            f.write("done")
+
+    def test_topbar_bell_badge_starts_hidden(self, client):
+        """The bell icon and badge must default to display:none so an
+        unauthed page-load doesn't briefly flash a stale chrome
+        element. Same defence-in-depth pattern as #148.
+
+        We render the dashboard (any authed page works — the chrome
+        is in base.html) and pin the inline display:none style.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Bell <a> is hidden until /unread-count returns a number.
+        assert 'id="topbar-alerts"' in body
+        assert "display:none" in body
+        # Badge span is also hidden by default.
+        assert 'id="topbar-alerts-badge"' in body
+        # Polling script is wired in.
+        assert "/api/v1/alerts/unread-count" in body
+
+    def test_alerts_page_renders_filter_chips(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/alerts")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Filter chips for each source the catalogue contains.
+        assert "Faults" in body
+        assert "Audit" in body
+        assert "Motion" in body
+        # Severity filters.
+        assert "Warning" in body
+        assert "Error" in body
+        # Unread-only checkbox.
+        assert "Unread only" in body
+        # Mark-all-read action exists.
+        assert "Mark all read" in body
+        # Wired to the backend API.
+        assert "/api/v1/alerts/" in body
+
+    def test_alerts_page_links_through_to_deep_link(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/alerts")
+        body = response.get_data(as_text=True)
+        # The row's title links via the alert's deep_link field, not a
+        # hard-coded URL. Pin that the template uses :href="alert.deep_link".
+        assert ':href="alert.deep_link"' in body
+
 
 class TestDashboardSensorAwareSettings:
     """The Camera Settings modal builds its resolution dropdown from

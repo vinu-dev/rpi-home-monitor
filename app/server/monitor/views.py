@@ -104,6 +104,26 @@ def events():
     return render_template("events.html")
 
 
+@views_bp.route("/alerts")
+def alerts():
+    """Alert center inbox (ADR-0024). Derive-on-read view over audit,
+    motion, and per-camera fault sources with per-user read state.
+    Backend ships in #208 (`AlertCenterService`). The top-bar bell
+    badge polls `/api/v1/alerts/unread-count` and links here.
+
+    Permission gating happens server-side in
+    ``AlertCenterService.list_alerts(role=...)`` — viewers see only
+    fault- and motion-derived alerts; admins see everything. The page
+    template doesn't try to second-guess the role; it renders whatever
+    the API hands back.
+    """
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    if not _is_authenticated():
+        return redirect(url_for("views.login"))
+    return render_template("alerts.html")
+
+
 @views_bp.route("/logs")
 def logs():
     """Full activity log — security/ops audit events with filters.

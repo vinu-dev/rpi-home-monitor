@@ -35,6 +35,27 @@
                  event timestamps (not the browser's clock). -->
             <span class="top-bar__clock" id="topbar-clock" title="Server time"
                   aria-label="Server time"></span>
+            <!-- Alerts badge (ADR-0024). Bell icon links to the alert
+                 inbox at /alerts. Red dot + unread count appears only
+                 when count > 0; absent (display:none) when 0 so the
+                 chrome is quiet by default. Polled every 30 s by the
+                 inline script below. Hidden until /api/v1/alerts/unread-count
+                 returns a number — defence-in-depth so an unauthed
+                 page render doesn't briefly flash a stale badge
+                 (same lesson as #148). -->
+            <a href="/alerts"
+               class="top-bar__alerts"
+               id="topbar-alerts"
+               title="Alerts"
+               aria-label="Alerts"
+               style="position:relative;display:none;color:inherit;text-decoration:none;margin-right:8px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span id="topbar-alerts-badge"
+                      style="position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#e0245e;color:#fff;font-size:11px;line-height:16px;text-align:center;display:none;font-weight:600;"></span>
+            </a>
             <span class="top-bar__user" id="topbar-username"></span>
             <button class="top-bar__logout" id="btn-logout" type="button">Logout</button>
         </div>
@@ -187,6 +208,48 @@
         sync();
         setInterval(render, 1000);
         setInterval(sync, 5 * 60 * 1000);
+    })();
+    </script>
+    <script>
+    // Alert center nav badge (ADR-0024). Polls /api/v1/alerts/unread-count
+    // every 30 s. The icon stays display:none until the first successful
+    // response so unauthed page-load doesn't flash a stale chrome element
+    // (same defence-in-depth pattern as #148). On 401 we leave it hidden;
+    // the user isn't logged in or doesn't have an active session.
+    (function() {
+        var link = document.getElementById('topbar-alerts');
+        var badge = document.getElementById('topbar-alerts-badge');
+        if (!link || !badge) return;
+
+        function poll() {
+            fetch('/api/v1/alerts/unread-count', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            })
+                .then(function(r) {
+                    if (r.status === 401) {
+                        link.style.display = 'none';
+                        return null;
+                    }
+                    return r.ok ? r.json() : null;
+                })
+                .then(function(d) {
+                    if (!d || typeof d.count !== 'number') return;
+                    link.style.display = 'inline-flex';
+                    if (d.count > 0) {
+                        badge.style.display = 'inline-block';
+                        // Display "99+" past two digits so the badge stays
+                        // readable on the smallest mobile viewport.
+                        badge.textContent = d.count > 99 ? '99+' : String(d.count);
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                })
+                .catch(function() { /* keep last value */ });
+        }
+
+        poll();
+        setInterval(poll, 30 * 1000);
     })();
     </script>
     {% block scripts %}{% endblock %}
