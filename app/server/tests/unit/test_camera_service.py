@@ -828,6 +828,76 @@ class TestAcceptHeartbeat:
         assert code == 200
         assert "pending_config" not in response
 
+    def test_pending_config_replays_motion_and_image_quality_fields(self):
+        """Regression for #206 — pending replay omits new STREAM_PARAMS fields.
+
+        Pre-fix the replay payload was a hard-coded 9-key dict that
+        only covered the original stream block (width/height/fps/
+        bitrate/h264_profile/keyframe_interval/rotation/hflip/vflip).
+        motion_sensitivity, recording_motion_enabled, and image_quality
+        — added in #173/#182 — were never replayed, so an admin who
+        toggled motion or tuned image quality while the camera was
+        offline saw the dashboard show the new values forever while
+        the device kept running the old ones.
+
+        Fix: route both the direct push and the heartbeat replay
+        through the same STREAM_PARAMS + _translate_stream_params_for_wire
+        machinery. Future fields added to STREAM_PARAMS now replay
+        automatically with no further code changes.
+        """
+        cam = _make_camera(
+            config_sync="pending",
+            motion_sensitivity=7,
+            recording_motion_enabled=True,
+            image_quality={"Sharpness": 1.5, "Contrast": 1.2},
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert code == 200
+
+        replay = response["pending_config"]
+        # Old fields still there (no regression on the original path)
+        assert replay["fps"] == cam.fps
+        assert replay["width"] == cam.width
+        assert replay["height"] == cam.height
+        # New fields now replayed
+        assert replay["motion_sensitivity"] == 7
+        assert replay["image_quality"] == {"Sharpness": 1.5, "Contrast": 1.2}
+        # And the wire translation matches the direct-push path:
+        # recording_motion_enabled → motion_detection
+        assert "recording_motion_enabled" not in replay
+        assert replay["motion_detection"] is True
+
+    def test_pending_config_replay_skips_missing_attributes(self):
+        """Pre-#173 firmware-shaped Camera records (no image_quality
+        attribute at all) must not crash the replay path.
+
+        STREAM_PARAMS may grow ahead of older persisted records; the
+        replay builder has to skip attributes the dataclass instance
+        doesn't carry rather than raising AttributeError on every
+        offline reconnect.
+        """
+        cam = _make_camera(config_sync="pending")
+        # Simulate an older Camera record by deleting newer attributes
+        # that may not exist on disk.
+        for missing in ("image_quality", "motion_sensitivity"):
+            if hasattr(cam, missing):
+                delattr(cam, missing)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert code == 200
+        replay = response["pending_config"]
+        # Original fields still replay even when newer ones are absent
+        assert "fps" in replay
+        assert "width" in replay
+        # Missing attrs are silently dropped, not raised
+        assert "image_quality" not in replay
+        assert "motion_sensitivity" not in replay
+
     def test_logs_camera_online_audit_when_was_offline(self):
         cam = _make_camera(status="offline")
         store = MagicMock()

@@ -593,20 +593,25 @@ class CameraService:
                 f"camera {camera_id} reconnected via heartbeat",
             )
 
-        # If we have a pending config push, include it in the response
+        # If we have a pending config push, include it in the response.
+        #
+        # Build the replay payload from ``STREAM_PARAMS`` (the same set
+        # the direct push at update() uses) and apply the same wire
+        # translation. Hand-written subset here used to omit
+        # motion_sensitivity, recording_motion_enabled, and image_quality
+        # — fields added after the original 9-key snapshot — so any
+        # offline update of those settings stayed pending forever
+        # (#206). The fix routes both paths through the same source of
+        # truth so a future field added to STREAM_PARAMS is automatically
+        # replayed on reconnect.
         response: dict = {"ok": True}
         if had_pending:
-            response["pending_config"] = {
-                "width": camera.width,
-                "height": camera.height,
-                "fps": camera.fps,
-                "bitrate": camera.bitrate,
-                "h264_profile": camera.h264_profile,
-                "keyframe_interval": camera.keyframe_interval,
-                "rotation": camera.rotation,
-                "hflip": camera.hflip,
-                "vflip": camera.vflip,
+            replay = {
+                key: getattr(camera, key)
+                for key in STREAM_PARAMS
+                if hasattr(camera, key)
             }
+            response["pending_config"] = _translate_stream_params_for_wire(replay)
 
         return response, "", 200
 
