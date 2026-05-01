@@ -735,10 +735,17 @@ class CameraService:
             "motion_sensitivity",
             # #182 image-quality controls dict
             "image_quality",
+            # #136 per-camera offline alert toggle
+            "offline_alerts_enabled",
         }
         unknown = set(data.keys()) - allowed
         if unknown:
             return f"Unknown fields: {', '.join(sorted(unknown))}"
+
+        if "offline_alerts_enabled" in data and not isinstance(
+            data["offline_alerts_enabled"], bool
+        ):
+            return "offline_alerts_enabled must be a boolean"
 
         if (
             "recording_mode" in data

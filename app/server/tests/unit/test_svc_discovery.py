@@ -176,6 +176,123 @@ class TestCheckOffline:
             assert len(events) >= 1
 
 
+class TestOfflineAlertGating:
+    """Per-camera enable/disable + flap suppression for CAMERA_OFFLINE
+    audits (#136). Status still flips to "offline" on every transition;
+    only the audit emission is gated, which is what the alert center
+    derives from.
+    """
+
+    def _stale_camera(self, app, **camera_overrides):
+        """Helper: register a camera with last_seen 60s ago."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            camera.last_seen = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            for k, v in camera_overrides.items():
+                setattr(camera, k, v)
+            app.store.save_camera(camera)
+            return svc
+
+    def test_offline_alerts_disabled_suppresses_audit(self, app):
+        """An operator silenced this camera's offline alerts. Status
+        must still flip (the dashboard needs to know) but the audit
+        log must stay quiet — so the alert-center inbox stays clean.
+        """
+        with app.app_context():
+            svc = self._stale_camera(app, offline_alerts_enabled=False)
+            svc.check_offline()
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "offline"  # status flipped
+            events = app.audit.get_events(event_type="CAMERA_OFFLINE")
+            assert events == []  # but no audit
+
+    def test_first_offline_emits_audit_and_stamps_camera(self, app):
+        """Baseline — first offline transition emits the audit and
+        records the timestamp on the camera so subsequent flap
+        suppression works.
+        """
+        with app.app_context():
+            svc = self._stale_camera(app)
+            svc.check_offline()
+            camera = app.store.get_camera("cam-001")
+            assert camera.last_offline_alert_at != ""
+            events = app.audit.get_events(event_type="CAMERA_OFFLINE")
+            assert len(events) == 1
+
+    def test_repeat_offline_within_cooldown_suppresses_audit(self, app):
+        """A flaky camera that bounces online↔offline within five
+        minutes should produce *one* alert, not a stream.
+
+        Repro: first offline → audit emitted. Online again. Offline
+        again 30s later. Status flips, but the audit is suppressed
+        because last_offline_alert_at is fresh.
+        """
+        with app.app_context():
+            svc = self._stale_camera(app)
+            svc.check_offline()  # first offline → audit
+            assert len(app.audit.get_events(event_type="CAMERA_OFFLINE")) == 1
+
+            # Camera comes back online (heartbeat lands)
+            camera = app.store.get_camera("cam-001")
+            camera.status = "online"
+            camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            app.store.save_camera(camera)
+
+            # 30s later, offline again
+            camera.last_seen = (datetime.now(UTC) - timedelta(seconds=60)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            app.store.save_camera(camera)
+            svc.check_offline()
+
+            # Status flipped again, but no second audit
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "offline"
+            assert len(app.audit.get_events(event_type="CAMERA_OFFLINE")) == 1
+
+    def test_repeat_offline_after_cooldown_emits_audit(self, app):
+        """If the camera was offline, recovered, and then went
+        offline again *after* the cooldown window, the second offline
+        is a new event worth alerting about.
+        """
+        with app.app_context():
+            from monitor.services.discovery import (
+                OFFLINE_ALERT_COOLDOWN_SECONDS,
+            )
+
+            svc = self._stale_camera(app)
+            # Pretend the first offline alert happened well outside the
+            # cooldown window (so this check counts as "fresh")
+            stale_alert_at = (
+                datetime.now(UTC)
+                - timedelta(seconds=OFFLINE_ALERT_COOLDOWN_SECONDS + 60)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            camera = app.store.get_camera("cam-001")
+            camera.last_offline_alert_at = stale_alert_at
+            app.store.save_camera(camera)
+
+            svc.check_offline()
+
+            events = app.audit.get_events(event_type="CAMERA_OFFLINE")
+            assert len(events) == 1  # new alert fired
+
+    def test_corrupt_last_offline_alert_at_fails_open(self, app):
+        """A garbage timestamp in last_offline_alert_at must not
+        crash the staleness checker — emit the audit and let the
+        operator see something rather than nothing.
+        """
+        with app.app_context():
+            svc = self._stale_camera(app, last_offline_alert_at="not-a-timestamp")
+            svc.check_offline()
+            events = app.audit.get_events(event_type="CAMERA_OFFLINE")
+            assert len(events) == 1
+
+
 class TestGetCameraStatus:
     """Test camera status retrieval."""
 
