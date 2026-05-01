@@ -21,6 +21,12 @@ Query params on GET / and POST /mark-all-read (both share the filter set):
   unread_only  — "1" / "true" / etc. (GET only)
   limit        — 1..200, default 50 (GET only)
   before       — ISO-8601 timestamp; only alerts strictly older
+  sort         — "timestamp" (default) | "importance"   (GET only)
+                 Importance order is the review queue per
+                 docs/specs/r1-review-queue.md (#144): severity DESC,
+                 timestamp DESC. Combine with unread_only=1 for the
+                 triage view — operator scans most-important
+                 unread items first.
 """
 
 from __future__ import annotations
@@ -70,6 +76,12 @@ def list_alerts():
     severity = (request.args.get("severity") or "").strip() or None
     unread_only = _truthy(request.args.get("unread_only"))
     before = (request.args.get("before") or "").strip() or None
+    sort = (request.args.get("sort") or "timestamp").strip()
+    # Defensive: only accept the documented values. An unknown sort
+    # token falls through to the default rather than 400-erroring —
+    # query-string typos shouldn't surface as broken pages.
+    if sort not in ("timestamp", "importance"):
+        sort = "timestamp"
 
     try:
         limit = int(request.args.get("limit", "50"))
@@ -86,6 +98,7 @@ def list_alerts():
         unread_only=unread_only,
         limit=limit,
         before=before,
+        sort=sort,
     )
     unread_count = svc.unread_count(user=user, role=role)
 

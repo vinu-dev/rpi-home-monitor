@@ -41,6 +41,16 @@
         Unread only
     </label>
 
+    <span class="text-small text-muted" style="margin-left:16px;">Sort:</span>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': sortMode === 'timestamp'}"
+            @click="setSort('timestamp')"
+            title="Newest first">Newest</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': sortMode === 'importance'}"
+            @click="setSort('importance')"
+            title="Review queue: severity first, then newest (per docs/specs/r1-review-queue.md)">Review queue</button>
+
     <span style="flex:1;"></span>
 
     <button class="btn btn--secondary btn--small"
@@ -131,6 +141,7 @@ function alertsPage() {
         filterSource: '',     // '' | 'fault' | 'audit' | 'motion'
         filterSeverity: '',   // '' | 'warning' | 'error' | 'critical'
         filterUnreadOnly: false,
+        sortMode: 'timestamp', // 'timestamp' | 'importance' (#144 review queue)
 
         // Inline action state
         markingId: '',
@@ -151,6 +162,13 @@ function alertsPage() {
             this.reload();
         },
 
+        setSort(mode) {
+            // Idempotent — clicking the active sort button re-applies it
+            // rather than toggling off (alerts always have *some* order).
+            this.sortMode = mode === 'importance' ? 'importance' : 'timestamp';
+            this.reload();
+        },
+
         async reload() {
             this.loading = true;
             this.loadError = '';
@@ -158,6 +176,9 @@ function alertsPage() {
             if (this.filterSource) qs.set('source', this.filterSource);
             if (this.filterSeverity) qs.set('severity', this.filterSeverity);
             if (this.filterUnreadOnly) qs.set('unread_only', '1');
+            // sort=timestamp is the API default; only send when non-default
+            // so the URL stays clean for the common path.
+            if (this.sortMode === 'importance') qs.set('sort', 'importance');
             qs.set('limit', '100');
 
             try {

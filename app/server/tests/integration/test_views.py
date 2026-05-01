@@ -228,6 +228,25 @@ class TestAlertCenterUI:
         # hard-coded URL. Pin that the template uses :href="alert.deep_link".
         assert ':href="alert.deep_link"' in body
 
+    def test_alerts_page_has_review_queue_sort_toggle(self, client):
+        """#144 review queue — the alerts page exposes the
+        importance-sort mode as a "Review queue" button alongside
+        "Newest". Pin both the chip text and the API parameter name
+        so a future "tidy-up" doesn't quietly drop the wiring.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/alerts")
+        body = response.get_data(as_text=True)
+        assert ">Review queue<" in body
+        assert ">Newest<" in body
+        # API parameter wiring — sort=importance reaches the backend.
+        assert "sort=importance" in body or "'sort'" in body
+        # Alpine state tracks the current mode.
+        assert "sortMode" in body
+
 
 class TestDashboardSensorAwareSettings:
     """The Camera Settings modal builds its resolution dropdown from
