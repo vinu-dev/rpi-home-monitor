@@ -71,6 +71,13 @@ class TestCatalogue:
         for code in ("OTA_FAILED", "OTA_ROLLBACK", "CAMERA_OFFLINE", "CERT_REVOKED"):
             assert code in ALERT_AUDIT_EVENTS
 
+    def test_audit_catalogue_includes_storage_health_codes(self):
+        """#140 — STORAGE_LOW and RETENTION_RISK plug into the same
+        alert catalogue. Regression: if these were dropped a future
+        storage outage would silently disappear from the inbox."""
+        assert "STORAGE_LOW" in ALERT_AUDIT_EVENTS
+        assert "RETENTION_RISK" in ALERT_AUDIT_EVENTS
+
     def test_fault_severities_exclude_info(self):
         # info-level faults stay on the camera card; not alert-worthy.
         assert "info" not in ALERT_FAULT_SEVERITIES

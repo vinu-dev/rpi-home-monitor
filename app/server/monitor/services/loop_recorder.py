@@ -30,6 +30,13 @@ DEFAULT_LOW_WATERMARK = 10  # percent free
 DEFAULT_HYSTERESIS = 5  # extra percent above low watermark to reclaim
 DEFAULT_LIVE_AGE = 600  # seconds
 
+# Storage-low alert threshold (#140). Emits STORAGE_LOW when free
+# space drops below this percent — a heads-up *before* the auto-FIFO
+# cleanup at low_watermark kicks in. Default 5% above low_watermark
+# so on the shipping (10/5) defaults the alert fires at <15% free,
+# right when cleanup is starting to be likely.
+DEFAULT_STORAGE_LOW_HEADROOM = 5
+
 
 class LoopRecorder:
     """Daemon that prunes oldest segments when disk is low."""
@@ -43,16 +50,25 @@ class LoopRecorder:
         live_age_seconds: int = DEFAULT_LIVE_AGE,
         live_segments_getter: Callable[[], set] | None = None,
         tick_seconds: int = TICK_INTERVAL_SECONDS,
+        storage_low_headroom: int = DEFAULT_STORAGE_LOW_HEADROOM,
     ):
         self._base_dir = Path(base_dir)
         self._audit = audit
         self._low = low_watermark
         self._hys = hysteresis
+        self._low_headroom = storage_low_headroom
         self._live_age = live_age_seconds
         self._live_segments_getter = live_segments_getter
         self._tick = tick_seconds
         self._running = False
         self._thread: threading.Thread | None = None
+        # Edge-detection state for #140 alerts. In-memory deliberately:
+        # if the server restarts with disk already in trouble we WANT
+        # to re-emit the alert as a fresh signal, so persistence here
+        # would harm rather than help (opposite of the per-camera
+        # offline-alert state in #136 which had to span restarts).
+        self._storage_low_active = False
+        self._retention_risk_active = False
 
     # --- Lifecycle --------------------------------------------------------
 
@@ -109,7 +125,24 @@ class LoopRecorder:
             log.warning("LoopRecorder: statvfs failed: %s", exc)
             return 0
 
+        # Edge-detected STORAGE_LOW (#140). Fires once per false→true
+        # transition of "free space below the headroom warning level".
+        # Recovery (true→false) flips the flag silently — no "all
+        # clear" audit per ADR-0024 (CAMERA_ONLINE-style recovery
+        # codes are intentionally NOT in the alert catalogue).
+        storage_low_threshold = self._low + self._low_headroom
+        is_low_now = free_pct < storage_low_threshold
+        if is_low_now and not self._storage_low_active:
+            self._emit_audit(
+                "STORAGE_LOW",
+                f"recordings free space {free_pct:.1f}% < {storage_low_threshold}%",
+            )
+        self._storage_low_active = is_low_now
+
         if free_pct >= self._low:
+            # Above the cleanup watermark — clear retention-risk and
+            # short-circuit the deletion loop.
+            self._retention_risk_active = False
             return 0
 
         target = self._low + self._hys
@@ -134,6 +167,25 @@ class LoopRecorder:
                 continue
             deleted += 1
             self._audit_delete(path, size)
+
+        # Edge-detected RETENTION_RISK (#140). The recorder is actively
+        # auto-deleting clips because we crossed the low watermark; the
+        # user's expected retention is being violated by FIFO. One alert
+        # per crossing, not per deletion — re-arms once we recover.
+        if deleted > 0 and not self._retention_risk_active:
+            try:
+                free_after = self._free_percent()
+            except OSError:
+                free_after = free_pct
+            self._emit_audit(
+                "RETENTION_RISK",
+                (
+                    f"auto-deleting recordings to recover space "
+                    f"({deleted} clips this pass; free now {free_after:.1f}%)"
+                ),
+            )
+            self._retention_risk_active = True
+
         return deleted
 
     # --- Internals --------------------------------------------------------
@@ -185,6 +237,19 @@ class LoopRecorder:
         except OSError:
             return True  # safer to keep
         return age < self._live_age
+
+    def _emit_audit(self, event: str, detail: str) -> None:
+        """Best-effort audit emission for storage health events (#140).
+
+        Defensive: a logging failure must not break the cleanup loop.
+        Logs at DEBUG so a missing audit logger doesn't spam INFO.
+        """
+        if self._audit is None:
+            return
+        try:
+            self._audit.log_event(event, user="system", ip="", detail=detail)
+        except Exception as exc:
+            log.debug("LoopRecorder audit emit %s failed: %s", event, exc)
 
     def _audit_delete(self, path: Path, size: int):
         if self._audit is None:
