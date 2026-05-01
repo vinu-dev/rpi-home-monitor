@@ -67,6 +67,7 @@ def mark_setup_complete(data_dir):
         f.write("1\n")
 
 
+# REQ: SWR-036; RISK: RISK-012; SEC: SC-012; TEST: TC-034
 class WifiSetupServer:
     """HTTP server for camera WiFi and server configuration (first boot).
 

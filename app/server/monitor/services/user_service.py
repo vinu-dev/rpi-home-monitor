@@ -23,6 +23,7 @@ log = logging.getLogger("monitor.services.user_service")
 VALID_ROLES = {"admin", "viewer"}
 
 
+# REQ: SWR-023; RISK: RISK-011; SEC: SC-011; TEST: TC-022
 class UserService:
     """Manages user CRUD operations and password changes."""
 

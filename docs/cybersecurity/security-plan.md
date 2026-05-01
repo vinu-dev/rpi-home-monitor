@@ -19,6 +19,15 @@ compliance with any cybersecurity regulation or standard.
 | SEC-005 | Persistent config and logs | `/data/config`, audit logs, settings, camera registry. | SYS-003, SYS-010 |
 | SEC-006 | Local network and optional VPN access | LAN, mDNS, HTTPS/RTSPS, optional Tailscale. | SYS-001, SYS-004, SWR-020 |
 | SEC-007 | Build and dependency inputs | Python dependencies, Yocto recipes, workflow dependencies, SBOM records. | SYS-012, SWR-019 |
+| SEC-008 | Provisioning and default identity | Setup-complete state, initial admin path, default hostnames, and development credential boundaries. | SYS-013, SYS-024, SWR-021, SWR-054 |
+| SEC-009 | Local settings and WiFi credentials | Time, timezone, WiFi SSID/password, hostname, and network configuration. | SYS-015, SWR-024, SWR-036 |
+| SEC-010 | Removable storage and media paths | USB block devices, selected recording target, live media files, and delete operations. | SYS-016, SYS-026, SWR-027, SWR-029 |
+| SEC-011 | Motion notification media | Motion-event metadata, thumbnails, clips, notification records, and read-state metadata. | SYS-018, SWR-033, SWR-041 |
+| SEC-012 | Live transport proxy | WebRTC/WHEP proxy, HLS playlists, snapshots, and upstream stream endpoints. | SYS-019, SYS-029, SWR-030, SWR-031 |
+| SEC-013 | Release and signing pipeline | Version files, release workflows, SBOM outputs, signing keys, update bundles, and release artifacts. | SYS-023, SYS-028, SWR-046, SWR-047 |
+| SEC-014 | Runtime evidence records | Logs, audit events, faults, health telemetry, and system summaries. | SYS-020, SYS-022, SWR-044, SWR-051 |
+| SEC-015 | Production/development profiles | Dev credentials, production image profile, debug paths, service hardening, and firewall/service exposure. | SYS-024, SYS-030, SWR-049, SWR-050 |
+| SEC-016 | Public API contracts | Server API, camera API, machine-client schemas, and browser/API compatibility records. | SYS-027, SWR-045 |
 
 ## Security Objectives
 
@@ -39,6 +48,12 @@ Security review is required for changes to:
 - firewall, exposed ports, TLS, mDNS, Tailscale, remote access
 - recovery, factory reset, debug access, developer credentials
 - SBOM, dependency, or build pipeline inputs
+- provisioning/setup defaults, hostnames, or device identity
+- USB/media deletion, live media serving, WebRTC proxy, or notification media
+- production/development profile, systemd hardening, firewall, or release
+  promotion behavior
+- logging, fault, audit, or telemetry fields that may contain secrets or
+  personal data
 
 ## Open Questions
 

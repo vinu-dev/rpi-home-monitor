@@ -18,6 +18,7 @@ Status: Draft prepared to support expert regulatory review.
 | `docs/cybersecurity/*` | Security plan, threat model, security risk, SBOM and vulnerability management. | ADRs 0009, 0011, 0014, 0022; `docs/ota-key-management.md` |
 | `docs/verification-validation/*` | Test plan, test cases, report template. | `docs/testing-guide.md`, CI workflows, test suites |
 | `docs/traceability/*` | End-to-end traceability matrix. | New machine-checkable matrix |
+| `docs/quality-records/regulatory-review-gap-assessment.md` | Regulatory-review-style gap assessment and human review queue. | New review record linked to expanded draft artifacts |
 
 ## Existing Docs Retained
 
@@ -35,6 +36,8 @@ maps them into the new quality-record structure.
 | `docs/hardware-setup.md` | Operator hardware setup. | Source for `HWR-*` and manual validation |
 | `docs/release-runbook.md` | Release/update runbook. | Source for OTA verification controls |
 | `docs/ota-key-management.md` | OTA key handling. | Source for `SC-003`, `SC-005`, vulnerability management |
+| `docs/adr/0026-desired-vs-observed-state-reconciliation.md` | Desired-vs-observed camera state design. | Source for `SYS-017`, `SWR-025`, `SWR-026`, `RISK-015` |
+| `docs/adr/0027-rich-motion-notifications.md` | Rich motion notification design. | Source for `SYS-018`, `SWR-033`, `SWR-040`, `SWR-041`, `RISK-016` |
 
 ## Archive Decision
 

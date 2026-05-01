@@ -20,6 +20,7 @@ LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file (smaller disk on Zero 2W)
 LOG_BACKUP_COUNT = 3  # keep 3 rotated files (15 MB total)
 
 
+# REQ: SWR-044; RISK: RISK-020; SEC: SC-020; TEST: TC-041
 def configure_logging(log_level=None):
     """Configure root logger with console + rotating file handlers.
 

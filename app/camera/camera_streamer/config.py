@@ -60,6 +60,7 @@ DEFAULTS = {
 }
 
 
+# REQ: SWR-035; RISK: RISK-012; SEC: SC-012; TEST: TC-033
 class ConfigManager:
     """Load and manage camera configuration."""
 

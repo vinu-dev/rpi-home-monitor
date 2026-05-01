@@ -9,15 +9,15 @@ This Markdown file summarizes the current coverage.
 
 | Area | Coverage status |
 |---|---|
-| User needs | UN-001 through UN-010 are linked to system requirements and tests. |
-| System requirements | SYS-001 through SYS-012 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
-| Software requirements | SWR-001 through SWR-020 each have at least one linked test case. |
-| Hardware requirements | HWR-001 through HWR-008 are linked to architecture and hardware/manual or automated verification. |
-| Architecture | ARCH-001 through ARCH-006, SWA-001 through SWA-010, and HWA-001 through HWA-006 are linked into the matrix. |
-| Safety risk | RISK-001 through RISK-009 each have at least one risk control and verification. |
-| Cybersecurity | THREAT-001 through THREAT-008 and SC-001 through SC-009 are linked to requirements and tests. |
-| Code references | Key safety/security/data/IO/update/config paths have code references and selected annotations. |
-| Tests | TC-001 through TC-020 have linked requirements. |
+| User needs | UN-001 through UN-022 are linked to system requirements and tests. |
+| System requirements | SYS-001 through SYS-030 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
+| Software requirements | SWR-001 through SWR-055 each have at least one linked test case. |
+| Hardware requirements | HWR-001 through HWR-018 are linked to architecture and hardware/manual or automated verification. |
+| Architecture | ARCH-001 through ARCH-015, SWA-001 through SWA-025, and HWA-001 through HWA-012 are linked into the matrix. |
+| Safety risk | RISK-001 through RISK-022 each have at least one risk control and verification. |
+| Cybersecurity | THREAT-001 through THREAT-020 and SC-001 through SC-021 are linked to requirements and tests. |
+| Code references | Key safety/security/data/IO/update/config/build/storage/proxy paths have code references and selected annotations. |
+| Tests | TC-001 through TC-047 have linked requirements. |
 
 ## Matrix Source
 
@@ -50,5 +50,11 @@ python tools/traceability/check_traceability.py
   formal validation result.
 - OPEN QUESTION: Manual hardware smoke evidence is referenced but not attached
   as a release-specific controlled record.
+- OPEN QUESTION: Several rich motion notification controls are currently
+  design-intent draft records and need implementation acceptance before
+  release reliance.
+- OPEN QUESTION: Capacity/performance limits remain draft until hardware
+  profile testing defines camera count, bitrate, retention, and thermal
+  envelopes.
 - REGULATORY REVIEW REQUIRED: Human approval is required before this matrix is
   used as quality-system evidence.

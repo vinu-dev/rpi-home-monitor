@@ -26,6 +26,7 @@ import os
 log = logging.getLogger("camera-streamer.led")
 
 
+# REQ: SWR-042; RISK: RISK-022; TEST: TC-039
 class LedController:
     """Control an LED via sysfs with fail-silent behavior.
 

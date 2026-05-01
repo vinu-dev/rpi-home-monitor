@@ -18,6 +18,8 @@ from monitor.auth import login_required
 
 live_bp = Blueprint("live", __name__)
 
+# REQ: SWR-030; RISK: RISK-014; SEC: SC-014; TEST: TC-027
+
 
 @live_bp.route("/<camera_id>/stream.m3u8", methods=["GET"])
 @login_required

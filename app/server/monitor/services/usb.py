@@ -129,6 +129,7 @@ def is_mounted(mount_point=DEFAULT_MOUNT_POINT) -> bool:
         return False
 
 
+# REQ: SWR-027; RISK: RISK-013; SEC: SC-013; TEST: TC-024
 def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
     """Mount a USB device at the given mount point.
 
@@ -222,6 +223,7 @@ def unmount_device(mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
         return False, str(e)
 
 
+# REQ: SWR-027; RISK: RISK-013; SEC: SC-013; TEST: TC-024
 def format_device(device_path, fstype="ext4", label="HomeMonitor") -> tuple[bool, str]:
     """Format a USB device to ext4.
 

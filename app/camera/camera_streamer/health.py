@@ -18,6 +18,7 @@ import time
 log = logging.getLogger("camera-streamer.health")
 
 
+# REQ: SWR-037; RISK: RISK-022; TEST: TC-035
 class HealthMonitor:
     """Monitor camera system health and report to systemd watchdog.
 

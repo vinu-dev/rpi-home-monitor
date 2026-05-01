@@ -107,6 +107,7 @@ SENSOR_MODES: dict[tuple[int, int], int] = {
 }
 
 
+# REQ: SWR-039; RISK: RISK-007; SEC: SC-002; TEST: TC-037
 class ControlHandler:
     """Handles server control API requests.
 

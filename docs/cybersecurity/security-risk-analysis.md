@@ -13,9 +13,25 @@ Status: Draft prepared to support expert regulatory review.
 | SC-007 | Maintain SBOM and vulnerability management process for runtime, build, and workflow dependencies. | THREAT-007 | SYS-012, SWR-019 | SWA-009 | `sbom/`, dependency manifests | TC-020 | Medium | Draft |
 | SC-008 | Record security and administrative audit events without exposing pre-auth internals. | THREAT-001, THREAT-006 | SYS-010, SWR-009 | SWA-002, ARCH-003 | `audit.py`, `auth.py`, `user_service.py` | TC-011, TC-017 | Medium | Draft |
 | SC-009 | Enforce traceability checks in CI for requirements, risks, security controls, tests, and code annotations. | THREAT-007 | SYS-012, SWR-019 | ARCH-006, SWA-009 | `tools/traceability/check_traceability.py` | TC-020 | Medium | Draft |
+| SC-010 | Gate first-run setup, setup-complete state, initial admin creation, and neutral default identity before normal runtime access. | THREAT-009 | SYS-013, SYS-021, SYS-024, SWR-021, SWR-022, SWR-054 | ARCH-007, SWA-011, SWA-025 | `provisioning_service.py`, `views.py` | TC-021, TC-044 | Medium | Draft |
+| SC-011 | Enforce role-based user lifecycle controls, password policy, last-admin protections, and audit logging. | THREAT-010 | SYS-014, SWR-023 | ARCH-008, SWA-013 | `user_service.py`, `api/users.py`, `auth.py` | TC-022, TC-011 | Medium | Draft |
+| SC-012 | Validate local settings and WiFi inputs, redact credentials, and preserve trustworthy time/network evidence. | THREAT-011 | SYS-015, SWR-024, SWR-035, SWR-036 | SWA-014, SWA-022 | `settings_service.py`, `api/settings.py`, `wifi_setup.py`, `config.py` | TC-023, TC-033, TC-034, TC-041 | Medium | Draft |
+| SC-013 | Restrict removable-storage operations to intended devices and explicit operator actions with safe error handling. | THREAT-012 | SYS-016, SWR-027, SWR-028 | ARCH-009, SWA-015, HWA-008 | `usb.py`, `storage_service.py` | TC-024, TC-025 | Medium | Draft |
+| SC-014 | Canonicalize media paths, constrain live/recording file access, and audit destructive recording operations. | THREAT-013 | SYS-026, SWR-029, SWR-030 | ARCH-009, SWA-016 | `api/recordings.py`, `recordings_service.py`, `api/live.py` | TC-026, TC-027 | Medium | Draft |
+| SC-015 | Minimize rich notification media, enforce local retention/deduplication, and review privacy impact before enabling attachments. | THREAT-014 | SYS-018, SWR-033, SWR-040, SWR-041 | ARCH-012, SWA-020 | `alert_center_service.py`, `motion_clip_correlator.py` | TC-031, TC-038 | Medium | Draft |
+| SC-016 | Restrict live proxy methods and upstreams, require authenticated live access, and document optional remote-access exposure. | THREAT-015 | SYS-019, SYS-029, SWR-031, SWR-052 | ARCH-010, SWA-017, HWA-009 | `api/webrtc.py`, `api/live.py`, `tailscale_service.py` | TC-028, TC-010, TC-044 | Medium | Draft |
+| SC-017 | Protect certificate, pairing, encryption, and OTA key material with restrictive permissions, lifecycle assumptions, and backup/rotation questions. | THREAT-016 | SYS-028, SWR-034, SWR-043 | SWA-021, HWA-010 | `cert_service.py`, `pairing.py`, `encryption.py`, `docs/ota-key-management.md` | TC-032, TC-040, TC-043 | Medium | Draft |
+| SC-018 | Maintain release provenance, version consistency, SBOM evidence, signing separation, and CI/release validation. | THREAT-017, THREAT-016 | SYS-023, SYS-028, SYS-030, SWR-046, SWR-047, SWR-048 | ARCH-013, SWA-024, HWA-010 | `.github/workflows/`, `scripts/` | TC-043, TC-045 | Medium | Draft |
+| SC-019 | Separate production and development profiles, credentials, debug paths, service hardening, and firewall exposure. | THREAT-018, THREAT-009 | SYS-024, SYS-030, SWR-049, SWR-050 | ARCH-014, SWA-025, HWA-009 | Yocto configs, systemd units, firewall configs | TC-044, TC-047 | Medium | Draft |
+| SC-020 | Redact secrets in logs/faults/alerts, normalize evidence metadata, and preserve enough context for incident review. | THREAT-019, THREAT-011, THREAT-014 | SYS-020, SYS-022, SWR-033, SWR-044, SWR-051 | ARCH-015, SWA-018, SWA-023 | `logging_config.py`, `faults.py`, `audit.py`, `system_summary_service.py` | TC-017, TC-029, TC-041, TC-046 | Medium | Draft |
+| SC-021 | Verify public API schema and behavior contracts for server, camera, browser, and automation clients. | THREAT-020 | SYS-027, SWR-045 | SWA-012 | contract test suites | TC-042 | Low | Draft |
 
 ## Open Questions
 
 - OPEN QUESTION: Define required response time for critical vulnerability fixes.
 - OPEN QUESTION: Decide whether security controls need independent manual test
   protocols in addition to automated tests.
+- OPEN QUESTION: Define production key rotation, revocation, and incident
+  disclosure procedures.
+- OPEN QUESTION: Decide whether rich motion media should be disabled by
+  default until a privacy review is complete.

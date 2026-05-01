@@ -68,6 +68,7 @@ def _clip_start_from_dated(dir_date: str, stem: str) -> datetime | None:
         return None
 
 
+# REQ: SWR-040; RISK: RISK-016; SEC: SC-015; TEST: TC-038
 class MotionClipCorrelator:
     """Look up the finalised clip covering a given event timestamp.
 

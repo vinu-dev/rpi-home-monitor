@@ -43,6 +43,12 @@ tests.
 - Code-level traceability annotations were not required by agent instructions
   and were not machine checked.
 - CI did not include a dedicated traceability checker.
+- Initial quality-record draft was too coarse for the current implementation
+  surface. Expanded follow-up coverage added setup/provisioning, user
+  management, settings/time/WiFi, USB/removable storage, media path safety,
+  desired-vs-observed camera state, rich motion notification design, WebRTC
+  proxying, release/SBOM controls, production/development separation, fault
+  evidence, API contracts, and hardware/environment envelopes.
 
 ## Recommended Reorganization
 
@@ -55,6 +61,9 @@ tests.
   source for trace links.
 - Use `tools/traceability/check_traceability.py` and CI to prevent obvious
   orphan IDs, missing tests, and stale code annotations.
+- Use `docs/quality-records/regulatory-review-gap-assessment.md` as the
+  active queue of human review items before any draft artifact is treated as
+  controlled quality-system evidence.
 
 ## Assumptions
 
