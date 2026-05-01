@@ -176,7 +176,13 @@ class TestCameraStateTransitions:
         out = svc.compute_summary()
         assert out["state"] == "amber"
         assert "offline" in out["summary"].lower()
-        assert out["deep_link"].startswith("/")
+        # Deep-link points at /dashboard with the camera id as fragment
+        # so clicking the status strip on the dashboard scrolls to
+        # the offending card without round-tripping through `/` (which
+        # 302s and drops the fragment). Regression for the
+        # "click does nothing" bug reported live.
+        assert out["deep_link"].startswith("/dashboard#camera-")
+        assert cam.id in out["deep_link"]
 
     def test_long_offline_is_red(self):
         cam = _cam(
