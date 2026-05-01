@@ -223,7 +223,10 @@
         </div>
     </template>
     <template x-for="cam in pairedCameras" :key="cam.id">
-        <div class="card camera-card" :data-cam-id="cam.id">
+        <div class="card camera-card"
+             :id="'camera-' + cam.id"
+             :data-cam-id="cam.id"
+             style="scroll-margin-top:80px;">
             <div class="camera-card__info" @click="cam.status === 'online' && (window.location.href = '/live?camera=' + encodeURIComponent(cam.id))" :style="cam.status === 'online' ? 'cursor:pointer' : ''">
                 <div class="camera-card__name" x-text="cam.name || cam.id"></div>
                 <div class="camera-card__location" x-text="cam.location || 'No location set'"></div>

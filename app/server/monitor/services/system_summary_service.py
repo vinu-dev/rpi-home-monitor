@@ -256,11 +256,17 @@ class SystemSummaryService:
             ],
         }
         # Deep-link to the first offline or faulted camera if any,
-        # else the dashboard itself.
-        link = "/"
+        # else the dashboard itself. Use the explicit `/dashboard`
+        # path (not `/`) — the index route 302s to /dashboard which
+        # drops the URL fragment, so `/#camera-X` ends up on
+        # /dashboard with no anchor and the click does nothing.
+        # Pairs with the camera-card `id="camera-<id>"` anchor in
+        # dashboard.html so same-page clicks scroll cleanly without
+        # a navigation round-trip.
+        link = "/dashboard"
         first_problem = offline[0] if offline else (faulted[0] if faulted else None)
         if first_problem is not None:
-            link = "/#camera-" + getattr(first_problem, "id", "")
+            link = "/dashboard#camera-" + getattr(first_problem, "id", "")
         return worst, detail, link
 
     # -- storage ------------------------------------------------------------
