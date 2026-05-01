@@ -14,6 +14,7 @@ Read next:
 - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
 - [`docs/ai/engineering-standards.md`](docs/ai/engineering-standards.md)
 - [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
+- [`docs/ai/medical-traceability.md`](docs/ai/medical-traceability.md)
 - [`docs/ai/design-standards.md`](docs/ai/design-standards.md)
 - [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 - [`docs/exec-plans/template.md`](docs/exec-plans/template.md)
@@ -22,6 +23,7 @@ Core rules:
 - work from an explicit product or operator goal
 - prefer design-level fixes over local patches
 - keep tool adapters short and keep canonical policy in `docs/ai/`
+- maintain requirements, risk, security, test, and code traceability
 - run the right validation for the area you touched
 - do not commit directly to `main`
 
