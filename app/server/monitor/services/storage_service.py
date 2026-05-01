@@ -18,6 +18,7 @@ from monitor.services import usb
 log = logging.getLogger("monitor.storage_service")
 
 
+# REQ: SWR-028; RISK: RISK-013; SEC: SC-013; TEST: TC-025
 class StorageService:
     """Orchestrates USB storage operations across manager, store, and audit.
 

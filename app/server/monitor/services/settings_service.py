@@ -49,6 +49,7 @@ UPDATABLE_FIELDS = {
 }
 
 
+# REQ: SWR-024; RISK: RISK-012; SEC: SC-012; TEST: TC-023
 class SettingsService:
     """Manages system settings and WiFi configuration."""
 

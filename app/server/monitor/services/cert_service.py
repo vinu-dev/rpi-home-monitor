@@ -26,6 +26,7 @@ CHECK_INTERVAL = 7 * 24 * 3600
 EXPIRY_WARNING_DAYS = 30
 
 
+# REQ: SWR-034; RISK: RISK-019; SEC: SC-017; TEST: TC-032
 class CertService:
     """Monitors and renews server TLS certificates.
 

@@ -22,6 +22,7 @@ HOTSPOT_SCRIPT = "/opt/monitor/scripts/monitor-hotspot.sh"
 SERVER_HOSTNAME = "rpi-divinu"
 
 
+# REQ: SWR-021, SWR-054; RISK: RISK-010; SEC: SC-010; TEST: TC-021
 class ProvisioningService:
     """Manages first-boot setup: WiFi, admin password, completion."""
 

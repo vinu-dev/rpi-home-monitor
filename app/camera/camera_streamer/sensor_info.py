@@ -236,6 +236,7 @@ FALLBACK_MODES: tuple[SensorMode, ...] = (
 # ---------------------------------------------------------------
 
 
+# REQ: SWR-053; RISK: RISK-007; TEST: TC-012
 def detect_sensor_capabilities(
     *,
     global_info_factory=None,

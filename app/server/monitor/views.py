@@ -31,6 +31,7 @@ def _is_authenticated():
     return "user_id" in session
 
 
+# REQ: SWR-022; RISK: RISK-010; SEC: SC-010; TEST: TC-021
 @views_bp.route("/")
 def index():
     """Root route — redirect based on setup/auth state."""

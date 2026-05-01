@@ -109,6 +109,7 @@ def _worst(*states: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# REQ: SWR-032; RISK: RISK-015; SEC: SC-020; TEST: TC-029
 class SystemSummaryService:
     """Aggregate signals into the Tier-1 dashboard status strip payload.
 

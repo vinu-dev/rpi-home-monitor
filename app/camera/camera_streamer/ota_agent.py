@@ -53,6 +53,7 @@ OTA_PORT = 8080
 MAX_BUNDLE_SIZE = 500 * 1024 * 1024  # 500MB
 
 
+# REQ: SWR-038; RISK: RISK-004; SEC: SC-003; TEST: TC-036
 class OTAAgent:
     """Camera-side OTA update agent (server→camera push transport).
 

@@ -19,6 +19,8 @@ from monitor.auth import login_required
 
 webrtc_bp = Blueprint("webrtc", __name__)
 
+# REQ: SWR-031; RISK: RISK-017; SEC: SC-016; TEST: TC-028
+
 MEDIAMTX_WHEP = "http://127.0.0.1:8889"
 
 

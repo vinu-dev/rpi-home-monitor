@@ -19,6 +19,8 @@ approval.
 | Contract | API contracts and architecture fitness checks. | `app/server/tests/contracts/`, `app/camera/tests/contracts/` |
 | Workflow/static | CI, shell scripts, doc links, AI adapters, traceability. | `.github/workflows/`, `scripts/ai/`, `tools/traceability/` |
 | Hardware/manual | Device smoke, Yocto parse/build, update, pairing, WiFi, camera sensors. | `scripts/smoke-test.sh`, `docs/hardware-setup.md` |
+| Release/security evidence | Version consistency, SBOM, signing, production profile, service hardening, vulnerability process. | release workflows, `scripts/check_versioning_design.py`, `scripts/generate-sbom.sh` |
+| Regulatory-review draft records | Intended use, requirements, risk, cybersecurity, architecture, traceability, open questions. | `docs/quality-records/regulatory-review-gap-assessment.md` |
 
 ## Entry Criteria
 
@@ -34,9 +36,17 @@ approval.
 - CI is green or documented with accepted blockers.
 - Manual/hardware tests are recorded or explicitly deferred with
   `OPEN QUESTION:` or `REGULATORY REVIEW REQUIRED:`.
+- Production/development profile, release artifact, SBOM, key-management, and
+  hardware-envelope evidence is either attached to the release record or
+  explicitly marked as not executed.
+- Human reviewer confirms that any draft-only planned features, such as rich
+  motion notification media, are not relied on as implemented risk controls
+  until verified.
 
 ## Open Questions
 
 - OPEN QUESTION: Define independent validation responsibilities and approval
   signatures.
 - OPEN QUESTION: Define release-specific test report retention and storage.
+- OPEN QUESTION: Define who may approve manual hardware evidence and residual
+  safety/cybersecurity risk.

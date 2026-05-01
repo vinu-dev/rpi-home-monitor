@@ -24,6 +24,8 @@ from monitor.auth import admin_required, csrf_protect, login_required
 
 recordings_bp = Blueprint("recordings", __name__)
 
+# REQ: SWR-029; RISK: RISK-014; SEC: SC-014; TEST: TC-026
+
 
 def _svc():
     """Get the recordings service from the app."""

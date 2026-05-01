@@ -76,6 +76,7 @@ def get_cpu_serial():
     return ""
 
 
+# REQ: SWR-043; RISK: RISK-002; SEC: SC-017; TEST: TC-040
 class EncryptionManager:
     """Manages LUKS key derivation for camera data encryption.
 
