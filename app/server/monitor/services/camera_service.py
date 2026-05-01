@@ -327,6 +327,12 @@ class CameraService:
                 "image_quality": dict(getattr(c, "image_quality", {}) or {}),
                 "encoder_max_pixels": int(getattr(c, "encoder_max_pixels", 0) or 0),
                 "board_name": getattr(c, "board_name", "") or "",
+                # #137 — surface the per-camera offline-alert mute so
+                # the dashboard's Camera Settings modal can render the
+                # toggle. Default True for legacy records (#136).
+                "offline_alerts_enabled": bool(
+                    getattr(c, "offline_alerts_enabled", True)
+                ),
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics

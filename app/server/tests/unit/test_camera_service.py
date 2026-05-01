@@ -98,6 +98,32 @@ class TestListCameras:
         result = svc.list_cameras()
         assert "rtsp_url" not in result[0]
 
+    def test_includes_offline_alerts_enabled_in_serialisation(self):
+        """#137 — the dashboard's Camera Settings modal needs the
+        per-camera offline-alert mute in the GET payload to render
+        the toggle's initial state correctly. Default True for
+        legacy records that pre-date #136.
+        """
+        cam = _make_camera(offline_alerts_enabled=False)
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        svc = CameraService(store)
+        result = svc.list_cameras()
+        assert result[0]["offline_alerts_enabled"] is False
+
+    def test_offline_alerts_enabled_defaults_true_for_legacy_record(self):
+        """A SimpleNamespace without the field at all (older
+        cameras.json on disk) must round-trip as True so the operator
+        gets the safe default behaviour."""
+        cam = _make_camera()
+        if hasattr(cam, "offline_alerts_enabled"):
+            delattr(cam, "offline_alerts_enabled")
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        svc = CameraService(store)
+        result = svc.list_cameras()
+        assert result[0]["offline_alerts_enabled"] is True
+
 
 class TestAddCamera:
     """Test registering a new pending camera."""
