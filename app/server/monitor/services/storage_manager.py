@@ -39,6 +39,8 @@ class StorageManager:
         reserve_mb: MB to keep free on internal storage.
     """
 
+    # REQ: SWR-007; RISK: RISK-003; SEC: SC-005; TEST: TC-003
+
     def __init__(
         self,
         recordings_dir: str,

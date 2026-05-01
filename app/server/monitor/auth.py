@@ -173,6 +173,7 @@ def _must_change_block() -> bool:
 
 def login_required(f):
     """Decorator: require authenticated session."""
+    # REQ: SWR-001; RISK: RISK-002; SEC: SC-001; TEST: TC-004
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):
@@ -194,6 +195,7 @@ def login_required(f):
 
 def admin_required(f):
     """Decorator: require admin role."""
+    # REQ: SWR-001; RISK: RISK-002; SEC: SC-001; TEST: TC-004
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):
@@ -217,6 +219,7 @@ def admin_required(f):
 
 def csrf_protect(f):
     """Decorator: validate CSRF token on state-changing requests."""
+    # REQ: SWR-002; RISK: RISK-002; SEC: SC-001; TEST: TC-011
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):

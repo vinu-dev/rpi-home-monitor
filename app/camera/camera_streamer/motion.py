@@ -117,6 +117,8 @@ class MotionDetector:
         clock: Injectable time source for deterministic tests.
     """
 
+    # REQ: SWR-014; RISK: RISK-005; TEST: TC-019
+
     def __init__(self, config: MotionConfig | None = None, clock=None):
         self._cfg = config or MotionConfig()
         self._clock = clock or time.time

@@ -87,6 +87,8 @@ class OTAService:
         public_key_path: SWUpdate certificate path for bundle verification.
     """
 
+    # REQ: SWR-010; RISK: RISK-004; SEC: SC-003; TEST: TC-009
+
     def __init__(self, store, audit=None, data_dir="/data", public_key_path=None):
         self._store = store
         self._audit = audit
