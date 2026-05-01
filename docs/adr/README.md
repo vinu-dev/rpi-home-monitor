@@ -40,6 +40,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0024 | [Local alert center](0024-local-alert-center.md)                                                 | Proposed   |
 | 0025 | [Information architecture consolidation](0025-ia-consolidation.md)                               | Proposed   |
 | 0026 | [Desired-vs-observed camera state reconciliation](0026-desired-vs-observed-state-reconciliation.md) | Proposed   |
+| 0027 | [Rich motion notifications](0027-rich-motion-notifications.md)                                   | Proposed   |
 
 ## Writing a new ADR
 
