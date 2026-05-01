@@ -95,6 +95,19 @@ class Camera:
     # Zero 2W to one with higher native res than the encoder supports).
     encoder_max_pixels: int = 0
     board_name: str = ""
+    # Camera offline alerts (#136). Per-camera toggle so an operator
+    # can silence the inbox for a known-flaky / under-maintenance
+    # camera without losing the visual offline indicator on the
+    # dashboard. Default True — alerting is the safe-by-default
+    # state for a security product.
+    offline_alerts_enabled: bool = True
+    # ISO-8601 timestamp (Z) of the last CAMERA_OFFLINE audit event
+    # emitted for this camera. Used to suppress flapping: a quick
+    # online→offline→online→offline bounce should produce one alert
+    # plus one suppressed "still flapping" event, not a stream.
+    # Cleared back to "" on a clean recovery interval (see
+    # OFFLINE_ALERT_COOLDOWN_SECONDS in discovery.py).
+    last_offline_alert_at: str = ""
 
 
 @dataclass

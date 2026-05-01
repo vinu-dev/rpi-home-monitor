@@ -43,6 +43,9 @@ def _make_camera(**overrides):
         "motion_sensitivity": 5,
         "image_controls": {},
         "image_quality": {},
+        # #136 offline alerts
+        "offline_alerts_enabled": True,
+        "last_offline_alert_at": "",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -295,6 +298,33 @@ class TestUpdate:
         assert error == ""
         assert cam.name == "New Name"
         store.save_camera.assert_called_once_with(cam)
+
+    def test_updates_offline_alerts_enabled(self):
+        """#136 — operator can mute offline alerts for a known-flaky
+        camera via Camera Settings. Default is True; we toggle to
+        False and confirm the field persists.
+        """
+        cam = _make_camera(status="online", offline_alerts_enabled=True)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update("cam-001", {"offline_alerts_enabled": False})
+        assert status == 200, error
+        assert cam.offline_alerts_enabled is False
+
+    def test_offline_alerts_enabled_must_be_bool(self):
+        """Defensive — an API client sending {"offline_alerts_enabled":
+        "true"} (string) gets rejected, not silently coerced. The
+        downstream gate uses ``not enabled`` so any truthy non-bool
+        would silently change behaviour.
+        """
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update("cam-001", {"offline_alerts_enabled": "false"})
+        assert status == 400
+        assert "boolean" in error.lower()
 
     def test_returns_404_when_camera_not_found(self):
         store = MagicMock()

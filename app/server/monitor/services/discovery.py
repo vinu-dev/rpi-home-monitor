@@ -31,6 +31,15 @@ OFFLINE_TIMEOUT = 30  # seconds — must match _resume_camera_pipelines in __ini
 # after at most 2 missed heartbeats. This is deliberately tight: users want
 # fast offline detection on a LAN. Transient network blips that kill a single
 # heartbeat are tolerated; two in a row is a real problem worth surfacing.
+
+# Cooldown between repeat CAMERA_OFFLINE alerts for the same camera (#136).
+# Prevents a flaky camera that bounces online↔offline from spamming the
+# inbox: the first transition emits one alert; subsequent offline
+# transitions within the cooldown window flip the camera's status as
+# usual but suppress the audit emission. Picked to match a typical home
+# WiFi instability window — five minutes is short enough to alert again
+# on a real second outage, long enough to absorb a flap storm.
+OFFLINE_ALERT_COOLDOWN_SECONDS = 300
 _MDNS_SERVICE_TYPE = "_rtsp._tcp.local."
 _CAMERA_ID_PREFIX = "cam-"
 
@@ -152,12 +161,62 @@ class DiscoveryService:
                 camera.status = "offline"
                 # Clear streaming flag — we cannot trust stale state (ADR-0016)
                 camera.streaming = False
+
+                # Per-camera alert gating + flap suppression (#136).
+                # Per the spec's acceptance criteria:
+                #   * "support per-camera enable/disable for offline alerts" —
+                #     respect ``camera.offline_alerts_enabled``.
+                #   * "transient heartbeat jitter should not cause flapping
+                #     alerts" — suppress repeat audits within the cooldown.
+                # Both gates are AT THE EMISSION layer, not the status layer.
+                # The dashboard still flips to "offline" immediately on every
+                # transition; we only de-noise the audit feed (and the alert
+                # center derived from it).
+                should_emit = self._should_emit_offline_alert(camera, now)
+                if should_emit:
+                    camera.last_offline_alert_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
                 self._store.save_camera(camera)
-                if self._audit:
+
+                if should_emit and self._audit:
                     self._audit.log_event(
                         "CAMERA_OFFLINE",
                         detail=f"camera {camera.id} offline (last seen {int(elapsed)}s ago)",
                     )
+
+    @staticmethod
+    def _should_emit_offline_alert(camera, now: datetime) -> bool:
+        """Decide whether ``CAMERA_OFFLINE`` should be audited (#136).
+
+        Two gates:
+
+        1. **Per-camera opt-out** — operators silence the inbox for a
+           known-flaky / under-maintenance camera by clearing
+           ``offline_alerts_enabled``. Status still flips offline; the
+           audit (and therefore the alert center inbox) is just quiet.
+
+        2. **Cooldown** — within ``OFFLINE_ALERT_COOLDOWN_SECONDS`` of
+           the previous offline audit for this camera, suppress the
+           repeat. A flaky camera that bounces several times in five
+           minutes produces one inbox row, not five.
+
+        The cooldown timestamp is per-camera state (``last_offline_alert_at``)
+        so it survives server restart without re-spamming on first
+        check after reboot.
+        """
+        if not getattr(camera, "offline_alerts_enabled", True):
+            return False
+        last_str = getattr(camera, "last_offline_alert_at", "") or ""
+        if not last_str:
+            return True
+        try:
+            last_at = datetime.fromisoformat(last_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            # Corrupt timestamp — fail open and emit, log will be ugly
+            # but operator gets the signal.
+            return True
+        elapsed = (now - last_at).total_seconds()
+        return elapsed >= OFFLINE_ALERT_COOLDOWN_SECONDS
 
     def get_camera_status(self, camera_id):
         """Get current status info for a camera."""
