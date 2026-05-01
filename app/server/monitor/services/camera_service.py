@@ -719,12 +719,49 @@ class CameraService:
             fps = data["fps"]
             if not isinstance(fps, int) or fps < 1:
                 return "fps must be a positive integer"
-            # Per-camera fps cap when the sensor's modes are known.
-            # Otherwise fall back to the legacy 1-30 bound.
+            # Per-(width, height) fps cap when the sensor's modes are
+            # known. Pre-#207 this used the global max across all modes,
+            # which let invalid combos through — e.g. an OV5647 1296x972
+            # tops out at ~43 fps but 1920x1080 caps at 30, and the
+            # global-max check accepted fps=43 with width=1920+height=1080
+            # because 43 was a valid number for *some* mode. The camera
+            # then rejected the pushed config and config_sync stuck on
+            # "pending" forever. Match the camera-side
+            # ControlHandler._validate_params() behaviour: cap by the
+            # specific (w, h) the user is selecting.
             if sensor_modes:
-                fps_max = max(int(m["max_fps"]) for m in sensor_modes if "max_fps" in m)
-                if fps > fps_max:
-                    return f"fps must be 1-{fps_max} for this sensor"
+                target_w = data.get(
+                    "width", camera.width if camera is not None else None
+                )
+                target_h = data.get(
+                    "height", camera.height if camera is not None else None
+                )
+                # Find the mode that matches the requested resolution.
+                # If we can't (e.g. user picked an invalid pair — the
+                # resolution check at line ~749 will catch it), fall
+                # back to the global max so we don't double-error on the
+                # same condition.
+                pair_max = None
+                for m in sensor_modes:
+                    if (
+                        int(m.get("width", 0)) == target_w
+                        and int(m.get("height", 0)) == target_h
+                        and "max_fps" in m
+                    ):
+                        pair_max = int(m["max_fps"])
+                        break
+                if pair_max is not None:
+                    if fps > pair_max:
+                        return (
+                            f"fps must be 1-{pair_max} for "
+                            f"{target_w}x{target_h} on this sensor"
+                        )
+                else:
+                    fps_max = max(
+                        int(m["max_fps"]) for m in sensor_modes if "max_fps" in m
+                    )
+                    if fps > fps_max:
+                        return f"fps must be 1-{fps_max} for this sensor"
             elif fps > 30:
                 return "fps must be an integer between 1 and 30"
 

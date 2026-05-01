@@ -1060,7 +1060,14 @@ class TestPerCameraValidation:
         err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
         assert code == 200, err
 
-    def test_ov5647_camera_rejects_47fps(self):
+    def test_ov5647_camera_rejects_47fps_at_1080p(self):
+        """Updated for #207 — fps cap is now per-resolution.
+
+        Pre-#207 the cap was the global max across all modes (43),
+        so fps=47 at any resolution returned the global error.
+        Post-#207 the cap is the max for the *selected* (w, h), so
+        fps=47 at 1920x1080 returns the 1080p-specific cap (30).
+        """
         svc, _ = self._service_with_camera(
             sensor_model="ov5647",
             sensor_modes=[
@@ -1070,7 +1077,86 @@ class TestPerCameraValidation:
         )
         err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
         assert code == 400
-        assert "must be 1-43" in err  # max across modes is 43
+        assert "1-30" in err
+        assert "1920x1080" in err
+
+    def test_ov5647_rejects_43fps_at_1080p_when_only_lower_res_supports_it(self):
+        """Regression for #207 — exact issue repro.
+
+        OV5647 modes: 1296x972 caps at 43; 1920x1080 caps at 30.
+        Pre-fix: fps=43 at 1080p was accepted because 43 is a valid
+        max for *some* mode (1296x972). Post-fix: rejected because the
+        cap belongs to the (1920, 1080) pair specifically.
+        """
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 43})
+        assert code == 400
+        assert "1-30" in err
+
+    def test_ov5647_accepts_43fps_at_1296x972(self):
+        """Companion to the rejection test — same fps, lower res, OK.
+
+        Confirms the per-pair lookup actually picks up the right mode
+        rather than always falling back to a global value.
+        """
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 1296, "height": 972, "fps": 43})
+        assert code == 200, err
+
+    def test_fps_alone_uses_camera_current_resolution(self):
+        """When only fps is being changed, the cap comes from the
+        camera's currently-saved (width, height), not from any
+        arbitrary mode in the list.
+
+        OV5647 saved at 1920x1080. User PUTs only fps=43. Must reject
+        — 1080p tops out at 30 — even though 43 would be valid for
+        1296x972 if they were also changing the resolution.
+        """
+        svc, _ = self._service_with_camera(
+            width=1920,
+            height=1080,
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"fps": 43})
+        assert code == 400
+        assert "1-30" in err
+        assert "1920x1080" in err
+
+    def test_fps_check_with_invalid_resolution_falls_back_to_global_cap(self):
+        """If the requested (w, h) isn't in sensor_modes at all, we
+        can't compute a per-pair cap — fall back to the global max so
+        we don't reject the FPS for the wrong reason. The invalid
+        resolution itself is rejected by the later (w, h) pair check.
+        """
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        # 9999x9999 isn't a valid mode — the (w, h) check will reject
+        # this PUT, but it should reject for resolution, not for fps.
+        err, code = svc.update("cam-001", {"width": 9999, "height": 9999, "fps": 40})
+        assert code == 400
+        # Resolution rejection — not the fps one
+        assert "not supported by sensor" in err
 
     def test_pre_173_camera_keeps_legacy_30fps_cap(self):
         svc, _ = self._service_with_camera(sensor_model="", sensor_modes=[])
