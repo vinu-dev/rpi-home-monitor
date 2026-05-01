@@ -40,6 +40,9 @@ def _make_camera(**overrides):
         "recording_schedule": [],
         "recording_motion_enabled": False,
         "desired_stream_state": "stopped",
+        "motion_sensitivity": 5,
+        "image_controls": {},
+        "image_quality": {},
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -819,6 +822,25 @@ class TestAcceptHeartbeat:
         assert "pending_config" in response
         assert response["pending_config"]["fps"] == 30
 
+    def test_pending_config_replays_all_camera_control_fields(self):
+        """Offline updates must replay the same fields direct pushes send."""
+        cam = _make_camera(
+            config_sync="pending",
+            motion_sensitivity=8,
+            recording_motion_enabled=True,
+            image_quality={"Sharpness": 1.5},
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+        assert code == 200
+        pending = response["pending_config"]
+        assert pending["motion_sensitivity"] == 8
+        assert pending["motion_detection"] is True
+        assert pending["image_quality"] == {"Sharpness": 1.5}
+        assert "recording_motion_enabled" not in pending
+
     def test_no_pending_config_when_synced(self):
         cam = _make_camera(config_sync="synced")
         store = MagicMock()
@@ -1060,7 +1082,7 @@ class TestPerCameraValidation:
         err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
         assert code == 200, err
 
-    def test_ov5647_camera_rejects_47fps(self):
+    def test_ov5647_camera_rejects_fps_above_selected_mode_cap(self):
         svc, _ = self._service_with_camera(
             sensor_model="ov5647",
             sensor_modes=[
@@ -1068,9 +1090,20 @@ class TestPerCameraValidation:
                 {"width": 1296, "height": 972, "max_fps": 43.0},
             ],
         )
-        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
+        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 43})
         assert code == 400
-        assert "must be 1-43" in err  # max across modes is 43
+        assert "must be 1-30 for 1920x1080" in err
+
+    def test_ov5647_camera_accepts_high_fps_on_matching_mode(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="ov5647",
+            sensor_modes=[
+                {"width": 1920, "height": 1080, "max_fps": 30.0},
+                {"width": 1296, "height": 972, "max_fps": 43.0},
+            ],
+        )
+        err, code = svc.update("cam-001", {"width": 1296, "height": 972, "fps": 43})
+        assert code == 200, err
 
     def test_pre_173_camera_keeps_legacy_30fps_cap(self):
         svc, _ = self._service_with_camera(sensor_model="", sensor_modes=[])
