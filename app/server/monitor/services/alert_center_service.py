@@ -65,6 +65,11 @@ ALERT_AUDIT_EVENTS: frozenset[str] = frozenset(
         "CAMERA_OFFLINE",
         "CERT_REVOKED",
         "FIREWALL_BLOCKED",
+        # #140 — storage health alerts emitted by LoopRecorder.tick()
+        # on threshold-crossing edges (not every metrics tick). Distinct
+        # severities so the inbox surfaces them differently.
+        "STORAGE_LOW",
+        "RETENTION_RISK",
     }
 )
 
@@ -88,6 +93,10 @@ _AUDIT_SEVERITY: dict[str, str] = {
     "CAMERA_OFFLINE": "warning",
     "CERT_REVOKED": "critical",
     "FIREWALL_BLOCKED": "warning",
+    # #140
+    "STORAGE_LOW": "warning",  # heads-up before auto-FIFO cleanup
+    "RETENTION_RISK": "error",  # FIFO is actively running; user
+    # retention is being violated
 }
 
 # Severity ordering so the API can sort / filter by "at least this bad."
@@ -548,6 +557,9 @@ def _audit_message(ev: dict) -> str:
         "CAMERA_OFFLINE": "Camera went offline",
         "CERT_REVOKED": "Certificate revoked",
         "FIREWALL_BLOCKED": "Firewall blocked traffic",
+        # #140
+        "STORAGE_LOW": "Recordings storage low",
+        "RETENTION_RISK": "Retention at risk — auto-deleting recordings",
     }
     label = label_map.get(code, code.replace("_", " ").lower().capitalize())
     if detail:
