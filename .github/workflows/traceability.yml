@@ -1,0 +1,49 @@
+name: Traceability
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - "tools/traceability/**"
+      - "docs/intended-use/**"
+      - "docs/requirements/**"
+      - "docs/architecture/**"
+      - "docs/risk/**"
+      - "docs/cybersecurity/**"
+      - "docs/verification-validation/**"
+      - "docs/traceability/**"
+      - "docs/quality-records/**"
+      - "docs/ai/**"
+      - ".github/workflows/traceability.yml"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+  pull_request:
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - "tools/traceability/**"
+      - "docs/intended-use/**"
+      - "docs/requirements/**"
+      - "docs/architecture/**"
+      - "docs/risk/**"
+      - "docs/cybersecurity/**"
+      - "docs/verification-validation/**"
+      - "docs/traceability/**"
+      - "docs/quality-records/**"
+      - "docs/ai/**"
+      - ".github/workflows/traceability.yml"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+
+jobs:
+  traceability:
+    name: Traceability Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/traceability/check_traceability.py
