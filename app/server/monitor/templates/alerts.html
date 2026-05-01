@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts - Home Monitor{% endblock %}
+
+{% block content %}
+<div x-data="alertsPage()" x-init="init()">
+
+<h1 class="page-title">Alerts</h1>
+
+<!-- Filter chips. Source + severity are independent. unread_only is
+     a third orthogonal axis. The "Mark all read" button respects the
+     current filter set, same shape as the API. -->
+<div class="alerts-filters" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="text-small text-muted">Source:</span>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSource === ''}"
+            @click="setFilter('source', '')">All</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSource === 'fault'}"
+            @click="setFilter('source', 'fault')">Faults</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSource === 'audit'}"
+            @click="setFilter('source', 'audit')">Audit</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSource === 'motion'}"
+            @click="setFilter('source', 'motion')">Motion</button>
+
+    <span class="text-small text-muted" style="margin-left:16px;">Severity:</span>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSeverity === ''}"
+            @click="setFilter('severity', '')">Any</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSeverity === 'warning'}"
+            @click="setFilter('severity', 'warning')">≥ Warning</button>
+    <button class="btn btn--secondary btn--small"
+            :class="{'btn--active': filterSeverity === 'error'}"
+            @click="setFilter('severity', 'error')">≥ Error</button>
+
+    <label class="text-small" style="margin-left:16px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" x-model="filterUnreadOnly" @change="reload()">
+        Unread only
+    </label>
+
+    <span style="flex:1;"></span>
+
+    <button class="btn btn--secondary btn--small"
+            x-show="alerts.some(a => !a.is_read)"
+            @click="markAllRead()"
+            :disabled="markingAll">
+        <span x-show="!markingAll">Mark all read</span>
+        <span x-show="markingAll">Marking…</span>
+    </button>
+</div>
+
+<!-- Empty / loading / error states -->
+<template x-if="loading && alerts.length === 0">
+    <div class="alerts-empty text-muted" style="padding:32px;text-align:center;">
+        Loading…
+    </div>
+</template>
+<template x-if="!loading && alerts.length === 0 && !loadError">
+    <div class="alerts-empty text-muted" style="padding:32px;text-align:center;">
+        <span x-text="filterUnreadOnly || filterSource || filterSeverity ? 'No alerts match the current filters.' : 'No alerts. The system is quiet.'"></span>
+    </div>
+</template>
+<template x-if="loadError">
+    <div class="alerts-error text-danger" style="padding:32px;text-align:center;">
+        <span x-text="loadError"></span>
+    </div>
+</template>
+
+<!-- Inbox table. One row per alert. Severity is colour-bar on the
+     left; clicking the message follows the deep_link; the inline
+     ↺ marks read inline so the user doesn't have to navigate to
+     dismiss. -->
+<div class="alerts-list" x-show="alerts.length > 0">
+    <template x-for="alert in alerts" :key="alert.id">
+        <div class="alert-row"
+             :class="{'alert-row--read': alert.is_read, 'alert-row--unread': !alert.is_read}"
+             :style="'border-left:4px solid ' + severityColor(alert.severity) + ';padding:12px 16px;margin-bottom:6px;background:' + (alert.is_read ? 'transparent' : 'rgba(255,255,255,0.03)') + ';display:flex;gap:12px;align-items:flex-start;'">
+
+            <div class="alert-row__main" style="flex:1;min-width:0;">
+                <div class="alert-row__top" style="display:flex;gap:8px;align-items:center;">
+                    <span class="alert-row__source-pill"
+                          :style="'font-size:11px;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:' + severityColor(alert.severity) + ';color:#fff;font-weight:600;'"
+                          x-text="alert.source"></span>
+                    <span class="alert-row__severity text-small text-muted"
+                          x-text="alert.severity"></span>
+                    <span class="alert-row__time text-small text-muted"
+                          x-text="_relativeTime(alert.timestamp)"
+                          :title="alert.timestamp"></span>
+                    <span class="alert-row__subject text-small text-muted"
+                          x-show="alert.subject && alert.subject.id"
+                          x-text="(alert.subject.type === 'camera' ? 'Camera ' : '') + (alert.subject.id || '')"></span>
+                </div>
+                <div class="alert-row__message" style="margin-top:4px;">
+                    <a :href="alert.deep_link"
+                       :style="'color:inherit;text-decoration:none;font-weight:' + (alert.is_read ? '400' : '600') + ';'"
+                       x-text="alert.message"></a>
+                </div>
+                <div class="alert-row__hint text-small text-muted"
+                     x-show="alert.hint"
+                     x-text="alert.hint"
+                     style="margin-top:4px;"></div>
+            </div>
+
+            <button class="alert-row__action btn btn--secondary btn--small"
+                    x-show="!alert.is_read"
+                    @click="markRead(alert.id)"
+                    :disabled="markingId === alert.id"
+                    :title="'Mark this alert as read'"
+                    aria-label="Mark as read">
+                <span x-show="markingId !== alert.id">Mark read</span>
+                <span x-show="markingId === alert.id">…</span>
+            </button>
+        </div>
+    </template>
+</div>
+
+</div>
+
+<script>
+function alertsPage() {
+    return {
+        // Inbox state
+        alerts: [],
+        loading: true,
+        loadError: '',
+
+        // Filters
+        filterSource: '',     // '' | 'fault' | 'audit' | 'motion'
+        filterSeverity: '',   // '' | 'warning' | 'error' | 'critical'
+        filterUnreadOnly: false,
+
+        // Inline action state
+        markingId: '',
+        markingAll: false,
+
+        async init() {
+            await this.reload();
+        },
+
+        setFilter(field, value) {
+            // Toggle off when clicking the active chip a second time
+            // (except for the no-op '' value which is the default).
+            if (field === 'source') {
+                this.filterSource = (this.filterSource === value && value !== '') ? '' : value;
+            } else if (field === 'severity') {
+                this.filterSeverity = (this.filterSeverity === value && value !== '') ? '' : value;
+            }
+            this.reload();
+        },
+
+        async reload() {
+            this.loading = true;
+            this.loadError = '';
+            var qs = new URLSearchParams();
+            if (this.filterSource) qs.set('source', this.filterSource);
+            if (this.filterSeverity) qs.set('severity', this.filterSeverity);
+            if (this.filterUnreadOnly) qs.set('unread_only', '1');
+            qs.set('limit', '100');
+
+            try {
+                var resp = await window.HM.api.get('/api/v1/alerts/?' + qs.toString());
+                this.alerts = (resp && resp.alerts) || [];
+            } catch (err) {
+                this.alerts = [];
+                this.loadError = (err && err.message) || 'Failed to load alerts';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async markRead(alertId) {
+            this.markingId = alertId;
+            try {
+                await window.HM.api.post('/api/v1/alerts/' + encodeURIComponent(alertId) + '/read');
+                // Optimistic update — flip the local row's is_read so the
+                // UI updates without a round-trip; reload() will reconcile
+                // any server-side state we missed.
+                this.alerts = this.alerts.map(function(a) {
+                    if (a.id === alertId) {
+                        return Object.assign({}, a, { is_read: true });
+                    }
+                    return a;
+                });
+            } catch (err) {
+                // Show a toast if the helper is available, otherwise fall
+                // through silently — the user will see "Mark read" still
+                // available and can retry.
+                if (window.HM && window.HM.toast) {
+                    window.HM.toast('Could not mark alert as read', 'error');
+                }
+            } finally {
+                this.markingId = '';
+            }
+        },
+
+        async markAllRead() {
+            this.markingAll = true;
+            var body = {};
+            if (this.filterSource) body.source = this.filterSource;
+            if (this.filterSeverity) body.severity = this.filterSeverity;
+
+            try {
+                var resp = await window.HM.api.post('/api/v1/alerts/mark-all-read', body);
+                // Reload from server so any server-side rules the UI
+                // doesn't model (alerts that aged out, new ones since)
+                // are reflected.
+                await this.reload();
+                if (window.HM && window.HM.toast) {
+                    var n = (resp && typeof resp.marked === 'number') ? resp.marked : 0;
+                    window.HM.toast('Marked ' + n + ' as read', 'success');
+                }
+            } catch (err) {
+                if (window.HM && window.HM.toast) {
+                    window.HM.toast('Could not mark all as read', 'error');
+                }
+            } finally {
+                this.markingAll = false;
+            }
+        },
+
+        severityColor(sev) {
+            var map = {
+                'critical': '#b91c1c',
+                'error': '#e0245e',
+                'warning': '#d97706',
+                'info': '#3b82f6',
+            };
+            return map[sev] || '#6b7280';
+        },
+
+        _relativeTime(iso) {
+            // Same shape the dashboard uses — "just now / 5m ago / 2h ago / Apr 30".
+            // Pulled inline so the alerts page works even before app.js
+            // exports a shared helper.
+            if (!iso) return '';
+            var t = new Date(iso).getTime();
+            if (isNaN(t)) return iso;
+            var elapsed = (Date.now() - t) / 1000;
+            if (elapsed < 60) return 'just now';
+            if (elapsed < 3600) return Math.floor(elapsed / 60) + 'm ago';
+            if (elapsed < 86400) return Math.floor(elapsed / 3600) + 'h ago';
+            if (elapsed < 7 * 86400) return Math.floor(elapsed / 86400) + 'd ago';
+            var d = new Date(iso);
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return months[d.getMonth()] + ' ' + d.getDate();
+        },
+    };
+}
+</script>
+{% endblock %}
