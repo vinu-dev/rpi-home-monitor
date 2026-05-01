@@ -172,6 +172,26 @@ class TestAlertCenterUI:
         with open(stamp, "w") as f:
             f.write("done")
 
+    def test_dashboard_camera_cards_have_id_anchors(self, client):
+        """The Tier-1 status strip's deep_link is `/dashboard#camera-<id>`
+        (per system_summary_service._cameras). For that link to actually
+        scroll to the offending card on click, each paired-camera card
+        must carry `id="camera-<id>"`. Regression test for the live
+        "click does nothing" bug — without the binding the anchor doesn't
+        exist and the click silently does nothing.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        body = response.get_data(as_text=True)
+        # Alpine binding that emits the per-camera id.
+        assert ":id=\"'camera-' + cam.id\"" in body
+        # scroll-margin-top so the scrolled-to card doesn't jam against
+        # the top-bar (~70px tall + a comfortable gap).
+        assert "scroll-margin-top" in body
+
     def test_dashboard_does_not_render_audit_teaser(self, client):
         """ADR-0025 — the dashboard's audit teaser (admin-only,
         5-row mini-log) was retired in favour of the bell badge →
