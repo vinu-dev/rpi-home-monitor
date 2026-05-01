@@ -108,6 +108,30 @@ class Camera:
     # Cleared back to "" on a clean recovery interval (see
     # OFFLINE_ALERT_COOLDOWN_SECONDS in discovery.py).
     last_offline_alert_at: str = ""
+    # Rich motion notifications (#121, ADR-0027). Per-camera rule:
+    #   enabled                       — opt this camera in/out of
+    #                                   browser notifications.
+    #   min_duration_seconds          — drop motion events shorter
+    #                                   than this; sub-second flicker
+    #                                   shouldn't fire a notif.
+    #   coalesce_seconds              — within this window of the
+    #                                   last delivered notif for the
+    #                                   same camera, suppress the
+    #                                   browser surface (event still
+    #                                   lands in the alert-center
+    #                                   inbox).
+    # Defaults baked into the field type so legacy cameras.json
+    # records get safe shipping defaults on first deserialize.
+    notification_rule: dict = field(
+        default_factory=lambda: {
+            "enabled": True,
+            "min_duration_seconds": 3,
+            "coalesce_seconds": 60,
+        }
+    )
+    # ISO-8601 timestamp of the last motion notification delivered
+    # for this camera. Used to enforce the coalesce window.
+    last_notification_at: str = ""
 
 
 @dataclass
@@ -124,6 +148,26 @@ class User:
     failed_logins: int = 0  # consecutive failed login count
     locked_until: str = ""  # ISO timestamp, empty = not locked
     must_change_password: bool = False  # force password change on next login
+    # Rich motion notifications (#121, ADR-0027). Per-user prefs:
+    #   enabled                       — global on/off. Default OFF
+    #                                   per spec ("ship disabled by
+    #                                   default until browser
+    #                                   enrollment is complete").
+    #   cameras                       — partial overrides keyed by
+    #                                   camera_id; values are partial
+    #                                   dicts that override fields of
+    #                                   the camera-level
+    #                                   notification_rule.
+    notification_prefs: dict = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "cameras": {},
+        }
+    )
+    # Cross-session continuity for the polling client — the most
+    # recent timestamp this user's browser confirmed it had delivered
+    # via /notifications/seen. Subsequent polls filter by this.
+    last_notification_seen_at: str = ""
 
 
 @dataclass
