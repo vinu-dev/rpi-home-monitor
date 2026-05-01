@@ -39,6 +39,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0023 | [Unified fault framework](0023-unified-fault-framework.md)                                       | Proposed   |
 | 0024 | [Local alert center](0024-local-alert-center.md)                                                 | Proposed   |
 | 0025 | [Information architecture consolidation](0025-ia-consolidation.md)                               | Proposed   |
+| 0026 | [Desired-vs-observed camera state reconciliation](0026-desired-vs-observed-state-reconciliation.md) | Proposed   |
 
 ## Writing a new ADR
 
