@@ -228,6 +228,27 @@ class TestAlertCenterUI:
         # hard-coded URL. Pin that the template uses :href="alert.deep_link".
         assert ':href="alert.deep_link"' in body
 
+    def test_dashboard_camera_settings_has_offline_alerts_toggle(self, client):
+        """#137 — Camera Settings modal exposes a toggle for the
+        per-camera offline_alerts_enabled flag added in #136.
+        Pin both the visible label and the Alpine binding so a future
+        refactor that quietly drops the toggle fails loudly.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Toggle row label.
+        assert ">Offline alerts<" in body
+        # Bound to editForm.
+        assert 'x-model="editForm.offline_alerts_enabled"' in body
+        # Initial-state and save-payload wiring.
+        assert "offline_alerts_enabled: (typeof cam.offline_alerts_enabled" in body
+        assert "Boolean(this.editForm.offline_alerts_enabled)" in body
+
     def test_alerts_page_has_review_queue_sort_toggle(self, client):
         """#144 review queue — the alerts page exposes the
         importance-sort mode as a "Review queue" button alongside

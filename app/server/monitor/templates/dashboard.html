@@ -490,6 +490,26 @@
                         Recent Events feed (ADR-0021).
                     </div>
                 </div>
+                <!-- Per-camera offline-alert mute (#136 + #137). Backend
+                     field offline_alerts_enabled; default true. Status
+                     still flips to "offline" on the dashboard when this
+                     camera goes silent — only the alert-center inbox
+                     emission is gated. Tooltip on the label explains
+                     the maintenance-mode use case so an operator
+                     doesn't permanently mute by mistake. -->
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"
+                           title="Alert when this camera stops responding. Turn off to silence the inbox during maintenance — the dashboard offline indicator is unaffected.">
+                        <input type="checkbox" x-model="editForm.offline_alerts_enabled">
+                        <span>Offline alerts</span>
+                    </label>
+                    <div class="text-small text-muted" style="margin-top:4px;">
+                        Surface a CAMERA_OFFLINE entry in the alert center
+                        when this camera misses heartbeats. Off silences
+                        the inbox; the offline indicator on the dashboard
+                        is unaffected.
+                    </div>
+                </div>
                 <div class="form-group" :style="editForm.recording_motion_enabled ? '' : 'opacity:0.45; pointer-events:none;'">
                     <label style="display:flex; align-items:baseline; justify-content:space-between;">
                         <span>Motion sensitivity</span>
@@ -1206,6 +1226,14 @@ function dashboardPage() {
                 // /data/config default (ADR-0021).
                 motion_sensitivity: (typeof cam.motion_sensitivity === 'number')
                     ? cam.motion_sensitivity : 5,
+                // #137 — per-camera mute for the alert-center offline
+                // emission. Backend field offline_alerts_enabled defaults
+                // True (safe-by-default for a security product). A
+                // pre-#136 cameras.json record loads with `undefined`
+                // here; treat that as True so the operator's first
+                // legitimate offline event still alerts.
+                offline_alerts_enabled: (typeof cam.offline_alerts_enabled === 'boolean')
+                    ? cam.offline_alerts_enabled : true,
                 resolutionOptions: options,
                 maxFps: this._maxFpsFor(options, pickedRes),
                 // Sensor identity (#173). Empty when the camera hasn't
@@ -1295,6 +1323,8 @@ function dashboardPage() {
                 recording_motion_enabled: Boolean(this.editForm.recording_motion_enabled),
                 motion_sensitivity: Math.max(1, Math.min(10,
                     parseInt(this.editForm.motion_sensitivity) || 5)),
+                // #137 — round-trip the per-camera offline-alert mute.
+                offline_alerts_enabled: Boolean(this.editForm.offline_alerts_enabled),
                 // #182 — only customised image-quality keys travel
                 // (defaults are inferred from the camera's catalogue
                 // and don't need to be persisted).
