@@ -76,14 +76,15 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 17 blueprints.
+        """We expect exactly 18 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
           15 after ADR-0018 Slice 3 added the `audit` read-only API.
           17 after motion-detection work (motion_events API + events_router).
+          18 after ADR-0024 added the `alerts` API (#132).
         """
-        assert len(app.blueprints) == 17
+        assert len(app.blueprints) == 18
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints
