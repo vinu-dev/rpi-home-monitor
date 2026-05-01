@@ -172,6 +172,80 @@ class TestAlertCenterUI:
         with open(stamp, "w") as f:
             f.write("done")
 
+    def test_dashboard_does_not_render_audit_teaser(self, client):
+        """ADR-0025 — the dashboard's audit teaser (admin-only,
+        5-row mini-log) was retired in favour of the bell badge →
+        /alerts flow. The test pins the structural anchors that
+        defined the teaser so neither a markup-only revert nor a
+        state-only revert can slip back in unnoticed.
+
+        Note: the strings "Recent activity" and "auditAdmin" can
+        legitimately appear in code comments documenting the
+        retirement decision; we test the actual *bindings* that
+        would render the surface, not the bare phrases.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # The "Recent events" motion feed STAYS (different job —
+        # inline playback).
+        assert "Recent events" in body
+        # The teaser's Alpine x-show binding is gone.
+        assert 'x-show="auditAdmin"' not in body
+        # The teaser's CSS class is no longer rendered.
+        assert "log-teaser__row" not in body
+        # The Full-log escape hatch link the teaser carried is gone
+        # (it lived only inside the teaser block).
+        assert 'href="/logs">Full log' not in body
+
+    def test_settings_has_no_security_tab(self, client):
+        """ADR-0025 — the Security tab was retired entirely. Settings
+        is for things you configure; an audit log is a viewer, not
+        a setting. The clear-log admin action moved to /logs itself.
+
+        Pin the absence of the tab button binding so a future revert
+        ('I'll just put the audit log back in Settings') fails loudly.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # The tab button binding `@click="tab = 'security'"` is gone.
+        assert "tab = 'security'" not in body
+        # The tab body's gate `tab === 'security'` is gone.
+        assert "tab === 'security'" not in body
+        # The retired inline table's binding is gone.
+        assert 'x-for="(ev, i) in security.events"' not in body
+
+    def test_logs_page_has_admin_only_clear_action(self, client):
+        """ADR-0025 — the admin-only "Clear all entries" affordance
+        lives on /logs itself, contextual to the log it clears.
+        Pin both the affordance presence and that it's gated to
+        admins (via the isAdmin Alpine flag resolved from /auth/me).
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/logs")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Affordance text is on the page.
+        assert "Clear all entries" in body
+        # Gated by isAdmin (the resolved-from-auth-me flag).
+        assert 'x-show="isAdmin && !clearConfirm"' in body
+        # clearLog() method wired.
+        assert "clearLog()" in body
+        # Two-step confirm.
+        assert "Permanently clear?" in body
+
     def test_topbar_bell_badge_starts_hidden(self, client):
         """The bell icon and badge must default to display:none so an
         unauthed page-load doesn't briefly flash a stale chrome

@@ -38,6 +38,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0022 | [No backdoors in authentication or recovery](0022-no-backdoors.md)                               | Accepted   |
 | 0023 | [Unified fault framework](0023-unified-fault-framework.md)                                       | Proposed   |
 | 0024 | [Local alert center](0024-local-alert-center.md)                                                 | Proposed   |
+| 0025 | [Information architecture consolidation](0025-ia-consolidation.md)                               | Proposed   |
 
 ## Writing a new ADR
 
