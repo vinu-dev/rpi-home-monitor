@@ -25,12 +25,14 @@ from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.motion_clip_correlator import MotionClipCorrelator
 from monitor.services.motion_event_store import MotionEventStore
+from monitor.services.notification_policy_service import NotificationPolicyService
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recording_scheduler import RecordingScheduler
 from monitor.services.recordings_service import RecordingsService
 from monitor.services.settings_service import SettingsService
+from monitor.services.snapshot_extractor import SnapshotExtractor
 from monitor.services.storage_manager import StorageManager
 from monitor.services.storage_service import StorageService
 from monitor.services.streaming_service import StreamingService
@@ -192,6 +194,17 @@ def _init_infrastructure(app):
         audit_logger=app.audit,
         motion_event_store=app.motion_event_store,
         read_state_path=alert_state_path,
+    )
+
+    # Notification policy + snapshot extractor (ADR-0027, #128) —
+    # decide which alerts get OS-level browser notifications, and
+    # produce the still-image preview the spec requires.
+    app.notification_policy = NotificationPolicyService(
+        store=app.store,
+        motion_event_store=app.motion_event_store,
+    )
+    app.snapshot_extractor = SnapshotExtractor(
+        recordings_dir=app.config["RECORDINGS_DIR"],
     )
 
 
@@ -567,6 +580,7 @@ def _register_blueprints(app):
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.motion_events import events_router_bp, motion_events_bp
+    from monitor.api.notifications import notifications_bp
     from monitor.api.on_demand import on_demand_bp
     from monitor.api.ota import ota_bp
     from monitor.api.pairing import pairing_bp
@@ -595,6 +609,7 @@ def _register_blueprints(app):
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
     app.register_blueprint(alerts_bp, url_prefix="/api/v1/alerts")
+    app.register_blueprint(notifications_bp, url_prefix="/api/v1/notifications")
     app.register_blueprint(motion_events_bp, url_prefix="/api/v1/motion-events")
     # Click-through router at /events/<id>. Mounted at root (not /api/v1)
     # so it can issue user-navigable redirects into /recordings and /live.
