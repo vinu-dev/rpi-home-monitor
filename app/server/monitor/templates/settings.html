@@ -15,7 +15,11 @@
     <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
     <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
     <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
-    <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'">Security</button>
+    <!-- ADR-0025: "Security" tab retired. Audit-log management
+         (open + clear) lives at /logs itself — the contextually
+         correct surface ("you decide to clear while looking at
+         the log, not while configuring the system"). -->
+
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -1100,48 +1104,11 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     SECURITY TAB (admin only) — ADR-0025
-     -----------------------------------------------------------
-     This tab is now an audit-log *settings* surface, not a viewer.
-     The full audit log lives at /logs (admin-only). The triage view
-     of recent security-relevant events lives at /alerts (admin sees
-     audit alerts; viewers don't). The previous inline log table here
-     duplicated /logs and was retired to keep one job per surface.
-     What lives here now: actions the admin takes ABOUT the audit
-     log itself (open it; clear it). The clear button stays — there
-     is no other UI surface for the admin-initiated truncation
-     workflow added in #147.
-     ═══════════════════════════════════════════════════════════ -->
-<div x-show="isAdmin && tab === 'security'" x-cloak>
-    <div class="settings-section">
-        <div class="settings-section__title">Audit Log</div>
-        <div class="card">
-            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
-                Security-relevant events (login, OTA, camera state changes, settings)
-                are recorded under
-                <code style="font-family:var(--font-mono, monospace);">/data/logs/audit.log</code>
-                and rotate at 50 MB / 90 days.
-                The triage view of recent alerts lives in the
-                <a href="/alerts">alert center</a>; the full archive lives in
-                <a href="/logs">the audit log viewer</a>.
-            </p>
-            <div style="display:flex; gap:var(--space-2); align-items:center; flex-wrap:wrap;">
-                <a href="/logs" class="btn btn--primary">Open audit log →</a>
-                <button class="btn btn--danger"
-                        @click="security.clearConfirm = true"
-                        :disabled="security.clearing"
-                        x-show="!security.clearConfirm">Clear log…</button>
-                <span x-show="security.clearConfirm"
-                      style="display:inline-flex; gap:var(--space-2); align-items:center;">
-                    <span class="text-small" style="color:var(--color-danger);">This cannot be undone. Confirm?</span>
-                    <button class="btn btn--danger" @click="clearAuditLog()" :disabled="security.clearing">Yes, clear</button>
-                    <button class="btn btn--secondary" @click="security.clearConfirm = false">Cancel</button>
-                </span>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- ADR-0025: SECURITY TAB REMOVED. Audit-log management lives at
+     /logs itself (admin-only); the alert-triage view lives at
+     /alerts. Settings is for things you configure, not for viewing
+     activity history. -->
+
 
 </div>
 {% endblock %}
@@ -1193,11 +1160,10 @@ function settingsPage() {
         ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
         _otaPollTimer: null,
 
-        // ADR-0025: dropped events/loading from this state; the inline
-        // log table that consumed them moved to /logs. clearing +
-        // clearConfirm stay — the "Clear log…" button is the only UI
-        // surface for the admin-initiated truncation workflow (#147).
-        security: { clearing: false, clearConfirm: false },
+        // ADR-0025: security state retired entirely. The audit-log
+        // clear-log admin action moved to /logs (contextually
+        // correct), and the inline-table viewer was always /logs's
+        // job. Settings is now strictly for configuration.
 
         async init() {
             try {
@@ -2080,23 +2046,9 @@ function settingsPage() {
             this.loadOtaStatus();
         },
 
-        /* --- Security / Audit log ---
-           ADR-0025: the audit-log loader function retired alongside
-           the inline table that consumed it; the full archive lives
-           at /logs. The clear-log admin action stays — it has no
-           other UI surface and powers the "Clear log…" button (#147). */
-        async clearAuditLog() {
-            this.security.clearing = true;
-            this.security.clearConfirm = false;
-            try {
-                await window.HM.api.del('/api/v1/audit/events');
-                window.HM.toast('Audit log cleared', 'success');
-            } catch(e) {
-                window.HM.toast('Failed to clear audit log', 'error');
-            } finally {
-                this.security.clearing = false;
-            }
-        },
+        /* ADR-0025: audit-log management methods retired from
+           settings.html entirely. The clear-log action now lives
+           on /logs (logs.html) where it's contextually correct. */
     };
 }
 </script>

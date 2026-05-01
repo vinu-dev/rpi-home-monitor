@@ -44,9 +44,8 @@ specific (read-state-aware) one wins.**
 | Top-bar bell badge | "Did anything happen since I last looked?" — count of unread alerts, hidden when zero. | Viewer + admin (count reflects role-aware filter). |
 | `/events` | "Show me the motion archive." | Viewer + admin. |
 | `/recordings` | "Show me clips." | Viewer + admin. |
-| `/logs` | "Investigate the audit trail." | Admin only. |
-| Settings | "Change settings." | Admin only. |
-| Settings → Security tab | "Manage the audit log." Admin actions about the log itself (open it, clear it). **Not** a viewer of the log. | Admin only. |
+| `/logs` | "Investigate the audit trail." Includes the admin-only "Clear all entries" affordance — destructive action lives where the data lives, not in a separate settings tab. | Admin only (route + content). |
+| Settings | "Change settings." Genuine configuration only. | Admin only. |
 | `/live` | "Show the camera now." | Viewer + admin. |
 
 ### What this changes
@@ -56,10 +55,14 @@ specific (read-state-aware) one wins.**
    badge in the top bar handles the *"did anything happen?"*
    affordance abstractly; `/alerts` handles the triage detail.
 
-2. Settings → **Security tab** becomes a *settings* surface for the
-   audit log: the admin can open `/logs` (full archive) or clear
-   the log (`#147`'s truncation flow). The embedded inline log
-   table is removed — that table is `/logs`'s job.
+2. **The Settings → Security tab is removed entirely.** Settings
+   is for things you configure; an audit log is a viewer, not a
+   setting. Putting log-management in Settings was a category
+   error inherited from the original `#147` work. The clear-log
+   admin action moves to **`/logs` itself** — small text-button
+   in the page-section header, two-step confirm, gated by
+   `isAdmin` resolved from `/auth/me`. Destructive action lives
+   where the data lives.
 
 3. The dashboard's **"Recent events" motion feed (Tier-3)** is
    **kept**. It does a different job: inline H.264 playback of

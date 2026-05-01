@@ -202,16 +202,13 @@ class TestAlertCenterUI:
         # (it lived only inside the teaser block).
         assert 'href="/logs">Full log' not in body
 
-    def test_settings_security_tab_links_to_logs_not_inline_table(self, client):
-        """ADR-0025 — the Security tab is now an audit-log *settings*
-        surface, not a viewer. The full archive lives at /logs; the
-        triage view at /alerts; this tab keeps only the admin-initiated
-        clear action + an outbound link.
+    def test_settings_has_no_security_tab(self, client):
+        """ADR-0025 — the Security tab was retired entirely. Settings
+        is for things you configure; an audit log is a viewer, not
+        a setting. The clear-log admin action moved to /logs itself.
 
-        Pin the link to /logs and the absence of the inline log
-        table's structural anchors. The tests check actual template
-        bindings rather than bare phrases (e.g. "loadAuditLog" can
-        appear in a code comment without rendering anything).
+        Pin the absence of the tab button binding so a future revert
+        ('I'll just put the audit log back in Settings') fails loudly.
         """
         with client.session_transaction() as sess:
             sess["user_id"] = "user-001"
@@ -220,20 +217,34 @@ class TestAlertCenterUI:
         response = client.get("/settings")
         assert response.status_code == 200
         body = response.get_data(as_text=True)
-        # Security tab still exists (admin-only).
-        assert "tab === 'security'" in body
-        # Outbound link to /logs.
-        assert 'href="/logs"' in body
-        # Outbound link to /alerts (the triage view).
-        assert 'href="/alerts"' in body
-        # The retired inline table's structural binding is gone.
-        # (The `x-for="(ev, i) in security.events"` was the loop
-        # that rendered every audit row in the table.)
+        # The tab button binding `@click="tab = 'security'"` is gone.
+        assert "tab = 'security'" not in body
+        # The tab body's gate `tab === 'security'` is gone.
+        assert "tab === 'security'" not in body
+        # The retired inline table's binding is gone.
         assert 'x-for="(ev, i) in security.events"' not in body
-        # The retired tab-load fetch trigger is gone.
-        # (Pre-ADR-0025 the tab onclick was
-        # `tab = 'security'; loadAuditLog()` — now just `tab='security'`.)
-        assert "loadAuditLog()" not in body
+
+    def test_logs_page_has_admin_only_clear_action(self, client):
+        """ADR-0025 — the admin-only "Clear all entries" affordance
+        lives on /logs itself, contextual to the log it clears.
+        Pin both the affordance presence and that it's gated to
+        admins (via the isAdmin Alpine flag resolved from /auth/me).
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/logs")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Affordance text is on the page.
+        assert "Clear all entries" in body
+        # Gated by isAdmin (the resolved-from-auth-me flag).
+        assert 'x-show="isAdmin && !clearConfirm"' in body
+        # clearLog() method wired.
+        assert "clearLog()" in body
+        # Two-step confirm.
+        assert "Permanently clear?" in body
 
     def test_topbar_bell_badge_starts_hidden(self, client):
         """The bell icon and badge must default to display:none so an

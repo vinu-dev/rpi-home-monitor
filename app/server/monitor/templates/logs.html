@@ -44,14 +44,39 @@
     </p>
 </div>
 
-<!-- Result count + refresh -->
-<div class="section-header" x-show="!forbidden">
-    <span x-text="headerLabel()"></span>
-    <button class="text-small" style="float:right; background:none; border:none; color:var(--color-accent); cursor:pointer;"
+<!-- Result count + refresh + admin-only clear-log overflow.
+     The "Clear all entries" action lives here, contextual to the
+     log itself, rather than in Settings → Security where it used
+     to live (ADR-0025): you decide to clear while looking at the
+     log, not while configuring the system. Visually demoted —
+     small text-button, right of the refresh — because it's
+     destructive + rare. Two-step confirm to prevent slips. -->
+<div class="section-header" x-show="!forbidden"
+     style="display:flex; align-items:center; gap:8px;">
+    <span x-text="headerLabel()" style="flex:1;"></span>
+    <button class="text-small"
+            style="background:none; border:none; color:var(--color-accent); cursor:pointer;"
             @click="load()" :disabled="loading">
         <span x-show="!loading">Refresh</span>
         <span x-show="loading">Loading...</span>
     </button>
+    <button class="text-small"
+            x-show="isAdmin && !clearConfirm"
+            style="background:none; border:none; color:var(--color-text-muted); cursor:pointer;"
+            @click="clearConfirm = true"
+            :disabled="clearing">
+        Clear all entries
+    </button>
+    <span x-show="clearConfirm"
+          style="display:inline-flex; gap:8px; align-items:center;">
+        <span class="text-small" style="color:var(--color-danger);">Permanently clear?</span>
+        <button class="text-small"
+                style="background:none; border:none; color:var(--color-danger); font-weight:600; cursor:pointer;"
+                @click="clearLog()" :disabled="clearing">Yes, clear</button>
+        <button class="text-small"
+                style="background:none; border:none; color:var(--color-text-muted); cursor:pointer;"
+                @click="clearConfirm = false" :disabled="clearing">Cancel</button>
+    </span>
 </div>
 
 <!-- Empty / error -->
@@ -126,6 +151,15 @@ function logsPage() {
         error: '',
         forbidden: false,
 
+        // Admin role + clear-log confirm flow (ADR-0025).
+        // The route itself doesn't gate by role (it 403s the
+        // /api/v1/audit/events fetch instead), so we resolve role
+        // via /api/v1/auth/me on init and only then expose the
+        // destructive action.
+        isAdmin: false,
+        clearing: false,
+        clearConfirm: false,
+
         async init() {
             // Default window = last 7 days. Admins viewing a production
             // log don't want every entry since install on first paint.
@@ -133,7 +167,40 @@ function logsPage() {
             var weekAgo = new Date(today.getTime() - 7 * 86400000);
             this.fromDate = this._ymd(weekAgo);
             this.toDate = this._ymd(today);
+            // Resolve role so the Clear-all-entries action only
+            // surfaces for admins. Best-effort — a transient failure
+            // simply leaves the action hidden, which is the safe side.
+            try {
+                var me = await window.HM.api.get('/api/v1/auth/me');
+                this.isAdmin = (me && me.role === 'admin');
+            } catch (_) {
+                this.isAdmin = false;
+            }
             await this.load();
+        },
+
+        async clearLog() {
+            // Two-step confirm wiring is in the template; this is the
+            // commit path. Idempotent on the server side: AuditLogger
+            // truncates the file under its lock and writes an
+            // AUDIT_LOG_CLEARED sentinel (#147) so the cleared log
+            // always begins with "who cleared it" — chain of custody
+            // preserved even after a clear.
+            this.clearing = true;
+            try {
+                await window.HM.api.del('/api/v1/audit/events');
+                if (window.HM && window.HM.toast) {
+                    window.HM.toast('Audit log cleared', 'success');
+                }
+                this.clearConfirm = false;
+                await this.load();
+            } catch (e) {
+                if (window.HM && window.HM.toast) {
+                    window.HM.toast('Failed to clear audit log', 'error');
+                }
+            } finally {
+                this.clearing = false;
+            }
         },
 
         async load() {
