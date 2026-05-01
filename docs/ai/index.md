@@ -29,8 +29,9 @@ point back here instead of duplicating the whole handbook.
 3. [`working-agreement.md`](working-agreement.md)
 4. [`engineering-standards.md`](engineering-standards.md)
 5. [`execution-rules.md`](execution-rules.md)
-6. [`design-standards.md`](design-standards.md)
-7. [`validation-and-release.md`](validation-and-release.md)
+6. [`medical-traceability.md`](medical-traceability.md)
+7. [`design-standards.md`](design-standards.md)
+8. [`validation-and-release.md`](validation-and-release.md)
 
 ## Existing System References
 
@@ -44,6 +45,8 @@ point back here instead of duplicating the whole handbook.
 - [`../build-setup.md`](../build-setup.md)
 - [`../hardware-setup.md`](../hardware-setup.md)
 - [`../requirements.md`](../requirements.md)
+- [`../intended-use/intended-use.md`](../intended-use/intended-use.md)
+- [`../traceability/traceability-matrix.md`](../traceability/traceability-matrix.md)
 - [`../releases/`](../releases/)
 - [`../specs/`](../specs/)
 - [`../adr/`](../adr/)
@@ -58,6 +61,14 @@ point back here instead of duplicating the whole handbook.
 
 Every implementation should improve the product toward a clear user-facing or
 operator-facing goal. Agents should not optimize for local code motion alone.
+
+## Traceability Rule
+
+Meaningful code, test, configuration, architecture, dependency, hardware,
+security, or behavior changes must consider and update the traceability
+surface described in [`medical-traceability.md`](medical-traceability.md).
+AI-generated quality records are drafts for expert review and must not be
+treated as regulatory clearance, certification, or approval.
 
 ## Validation
 

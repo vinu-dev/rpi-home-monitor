@@ -23,6 +23,8 @@
 - workflow changes require runbook changes
 - architecture changes require ADR or architecture doc updates
 - avoid copying the same rule into many files
+- meaningful changes require traceability updates per
+  [`medical-traceability.md`](medical-traceability.md)
 
 ## Automation Standards
 
@@ -31,6 +33,8 @@
 - keep operational scripts aligned with real deployed behavior
 - keep generated adapter files machine-rebuilt from the canonical source
 - treat workflow files and shell scripts as production code
+- run `python tools/traceability/check_traceability.py` after changing
+  requirements, risk, security, architecture, tests, or annotated code
 
 ## Design-Level Fix Rule
 

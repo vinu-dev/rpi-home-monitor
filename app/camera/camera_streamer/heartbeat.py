@@ -144,6 +144,8 @@ class HeartbeatSender:
         thermal_path: Optional path to CPU thermal zone file.
     """
 
+    # REQ: SWR-004; RISK: RISK-005; SEC: SC-002; TEST: TC-005
+
     def __init__(
         self,
         config,

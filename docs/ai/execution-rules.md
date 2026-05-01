@@ -31,6 +31,15 @@ A feature is ready for execution only when it has:
 
 If one of these is missing, stop and fill the planning gap first.
 
+## Traceability Readiness Rule
+
+Meaningful changes must be traceable before implementation starts. Read
+[`medical-traceability.md`](medical-traceability.md), then identify the
+affected user needs, requirements, architecture items, risks, security
+controls, and tests. If the relevant IDs do not exist, create draft records
+first and mark unresolved items with `OPEN QUESTION:` or
+`REGULATORY REVIEW REQUIRED:`.
+
 ## Implementation Rules
 
 - Keep work feature-scoped and branch-scoped.
@@ -66,6 +75,7 @@ A feature is not done until:
 - user-facing docs are updated
 - planning docs stay consistent with shipped behavior
 - verification notes exist for any browser/device flow that matters in practice
+- traceability matrix entries and code annotations are updated where meaningful
 
 ## Issue Structure Rule
 

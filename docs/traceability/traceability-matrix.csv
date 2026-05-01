@@ -1,0 +1,25 @@
+User Need,System Requirement,Software Requirement,Hardware Requirement,Architecture,Risk,Risk Control,Security Asset,Security Threat,Security Control,DFMEA,Code Reference,Test Case,Test Result/Status
+UN-001,SYS-001,SWR-006,HWR-003,ARCH-001;SWA-004;HWA-003,HAZ-001;RISK-001,RC-001,SEC-001,THREAT-004,SC-002;SC-004,DFMEA-001,app/server/monitor/services/streaming_service.py;app/camera/camera_streamer/stream.py,TC-001;TC-006,Draft
+UN-002,SYS-002,SWR-006,,SWA-001;SWA-004,HAZ-001;RISK-001,RC-001,SEC-001,,,DFMEA-002,app/server/monitor/views.py;app/server/monitor/services/recordings_service.py,TC-007,Draft
+UN-002,SYS-002,SWR-005,,ARCH-002;SWA-004,HAZ-001;RISK-001,RC-001,SEC-001,,,DFMEA-002,app/server/monitor/services/recording_scheduler.py,TC-002,Draft
+UN-002,SYS-002,SWR-008,,ARCH-005;SWA-004,HAZ-005;RISK-005,RC-005,SEC-001,,,DFMEA-002,app/server/monitor/api/motion_events.py;app/server/monitor/services/motion_event_store.py,TC-019,Draft
+UN-003,SYS-003,SWR-007,HWR-004,ARCH-003;SWA-005;HWA-004,HAZ-003;RISK-003,RC-003,SEC-005,THREAT-005,SC-005,DFMEA-003,app/server/monitor/services/storage_manager.py,TC-003,Draft
+UN-004,SYS-004,SWR-001,,ARCH-001;SWA-002,HAZ-002;RISK-002,RC-002,SEC-002,THREAT-001,SC-001,DFMEA-004,app/server/monitor/auth.py,TC-004,Draft
+UN-004,SYS-004,SWR-002,,ARCH-001;SWA-002,HAZ-002;RISK-002,RC-002,SEC-002,THREAT-001;THREAT-006,SC-001;SC-008,DFMEA-004,app/server/monitor/auth.py;app/server/monitor/services/user_service.py,TC-004;TC-011,Draft
+UN-006,SYS-005,SWR-003,,ARCH-002;SWA-003,HAZ-002;RISK-002,RC-002,SEC-003,THREAT-002,SC-002,DFMEA-005,app/server/monitor/services/pairing_service.py;app/camera/camera_streamer/pairing.py,TC-008;TC-012,Draft
+UN-005,SYS-007,SWR-004,,ARCH-005;SWA-003,HAZ-005;RISK-005,RC-005,SEC-003,THREAT-002,SC-002,DFMEA-005,app/camera/camera_streamer/heartbeat.py;app/server/monitor/services/camera_service.py,TC-005;TC-012,Draft
+UN-006,SYS-006,SWR-011,HWR-007,HWA-002;SWA-007,HAZ-007;RISK-007,RC-007,SEC-003,THREAT-002,SC-002,DFMEA-001,app/server/monitor/services/camera_service.py;app/camera/camera_streamer/board_profile.py,TC-012;TC-018,Draft
+UN-005,SYS-007,SWR-012,HWR-002,ARCH-002;SWA-007;HWA-002,HAZ-001;RISK-001;RISK-008,RC-001;RC-008,SEC-001,,,DFMEA-001,app/camera/camera_streamer/capture.py;app/camera/camera_streamer/lifecycle.py,TC-005;TC-018,Draft
+UN-004,SYS-004,SWR-013,,SWA-007,HAZ-002;RISK-002,RC-002,SEC-002,THREAT-001,SC-001,DFMEA-004,app/camera/camera_streamer/status_server.py,TC-004;TC-015,Draft
+UN-002,SYS-007,SWR-014,,SWA-007,HAZ-005;RISK-005,RC-005,SEC-001,,,DFMEA-007,app/camera/camera_streamer/motion.py,TC-019,Draft
+UN-006,SYS-006,SWR-015,HWR-003,ARCH-001;SWA-008;HWA-003,HAZ-005;RISK-005,RC-005,SEC-006,THREAT-004,SC-004,DFMEA-007,app/server/monitor/services/discovery.py;app/camera/camera_streamer/discovery.py,TC-008,Draft
+UN-007,SYS-009,SWR-010,,ARCH-004;SWA-006,HAZ-004;RISK-004,RC-004,SEC-004,THREAT-003,SC-003,DFMEA-006,app/server/monitor/services/ota_service.py;app/camera/camera_streamer/ota_installer.py,TC-009;TC-013,Draft
+UN-007,SYS-009,SWR-016,HWR-008,ARCH-004;SWA-006;HWA-006,HAZ-004;RISK-004,RC-004,SEC-004,THREAT-003,SC-003,DFMEA-006,app/camera/camera_streamer/release_version.py;app/server/monitor/release_version.py,TC-013;TC-017,Draft
+UN-009,SYS-007,SWR-017,,ARCH-005;SWA-008,HAZ-005;RISK-005;RISK-008,RC-001;RC-005;RC-008,SEC-005,THREAT-006,SC-008,DFMEA-007,app/server/monitor/services/alert_center_service.py,TC-014,Draft
+UN-006,SYS-008,SWR-018,HWR-006,HWA-005,HAZ-006;RISK-006,RC-006,SEC-005,THREAT-008,SC-006,DFMEA-004,app/camera/camera_streamer/factory_reset.py;app/server/monitor/services/factory_reset_service.py,TC-011;TC-015,Draft
+UN-004,SYS-010,SWR-009,HWR-008,ARCH-003;SWA-002;HWA-006,HAZ-002;RISK-002;RISK-005,RC-002;RC-005,SEC-005,THREAT-006,SC-008,DFMEA-004,app/server/monitor/services/audit.py,TC-011;TC-017,Draft
+UN-008,SYS-001,SWR-020,HWR-003,ARCH-001;SWA-010;HWA-003,HAZ-002;RISK-002,RC-002,SEC-006,THREAT-004,SC-004,,app/server/monitor/services/tailscale_service.py,TC-010;TC-016,Draft
+UN-010,SYS-012,SWR-019,,ARCH-006;SWA-009,HAZ-009;RISK-009,RC-009,SEC-007,THREAT-007,SC-007;SC-009,DFMEA-008,tools/traceability/check_traceability.py,TC-020,Draft
+UN-005,SYS-011,,HWR-001,HWA-001,HAZ-008;RISK-008,RC-008,SEC-005,THREAT-005,SC-005,,docs/hardware-setup.md,TC-018,Draft
+UN-006,SYS-011,,HWR-002;HWR-005,HWA-002;HWA-006,HAZ-008;RISK-008,RC-008,SEC-005,THREAT-005,SC-005,,docs/hardware-setup.md;app/camera/tests/unit/test_board_profile.py,TC-018,Draft
+UN-008,SYS-012,SWR-019,,ARCH-006;SWA-009,HAZ-009;RISK-009,RC-009,SEC-007,THREAT-007,SC-007;SC-009,DFMEA-008,.github/workflows/traceability.yml,TC-020,Draft

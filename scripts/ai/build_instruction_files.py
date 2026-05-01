@@ -37,6 +37,7 @@ def render_agents() -> str:
         - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
         - [`docs/ai/engineering-standards.md`](docs/ai/engineering-standards.md)
         - [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
+        - [`docs/ai/medical-traceability.md`](docs/ai/medical-traceability.md)
         - [`docs/ai/design-standards.md`](docs/ai/design-standards.md)
         - [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
         - [`docs/exec-plans/template.md`](docs/exec-plans/template.md)
@@ -45,6 +46,7 @@ def render_agents() -> str:
         - work from an explicit product or operator goal
         - prefer design-level fixes over local patches
         - keep tool adapters short and keep canonical policy in `docs/ai/`
+        - maintain requirements, risk, security, test, and code traceability
         - run the right validation for the area you touched
         - do not commit directly to `main`
 
@@ -80,7 +82,8 @@ def render_claude() -> str:
         2. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
         3. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
         4. [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
-        5. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+        5. [`docs/ai/medical-traceability.md`](docs/ai/medical-traceability.md)
+        6. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 
         Claude-specific notes:
         - respect [`.claude/settings.json`](.claude/settings.json)
@@ -103,6 +106,7 @@ def render_copilot() -> str:
         - follow [`docs/ai/index.md`](../docs/ai/index.md)
         - keep changes scoped and update docs when behavior changes
         - use the correct validation for the area you touched
+        - maintain traceability for meaningful changes
         - do not commit directly to `main`
         - preserve the existing repo architecture
 
@@ -182,6 +186,7 @@ def generated_files() -> dict[str, str]:
             "- Keep adapters short and linked back to canonical docs.\n"
             "- Do not duplicate long policy text across tool-specific files.\n"
             "- Run the repo AI validator after edits.\n"
+            "- Run `python tools/traceability/check_traceability.py` after traceability-affecting edits.\n"
             "- Keep README, changelog, and runbooks aligned with live product behavior.",
         ),
         ".cursor/rules/00-repo-overview.mdc": render_cursor(

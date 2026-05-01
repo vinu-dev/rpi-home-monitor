@@ -97,6 +97,7 @@ def _translate_stream_params_for_wire(params: dict) -> dict:
     name diverges from the camera config key. Most params already
     agree by name (``width``, ``bitrate``, etc.) and pass through.
     """
+    # REQ: SWR-004; RISK: RISK-005; SEC: SC-002; TEST: TC-012
     translated = dict(params)
     if "recording_motion_enabled" in translated:
         translated["motion_detection"] = translated.pop("recording_motion_enabled")
@@ -116,6 +117,7 @@ def _stream_params_from_camera(camera) -> dict:
 
 def _sensor_mode_max_fps(sensor_modes: list[dict]) -> dict[tuple[int, int], int]:
     """Map each reported sensor resolution to its highest supported fps."""
+    # REQ: SWR-011; RISK: RISK-007; TEST: TC-012
     max_by_resolution: dict[tuple[int, int], int] = {}
     for mode in sensor_modes:
         try:

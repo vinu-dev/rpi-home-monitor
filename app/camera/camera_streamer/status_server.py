@@ -191,6 +191,7 @@ def _wrap_https_server(server, config):
     the same LAN who could spoof / inherit the server IP call machine
     endpoints. Now the peer must hold a CA-signed client cert.
     """
+    # REQ: SWR-013; RISK: RISK-002; SEC: SC-001; TEST: TC-004
     cert_path, key_path = _ensure_tls_material(config)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)

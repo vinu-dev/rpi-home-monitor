@@ -205,6 +205,7 @@ class RecordingScheduler:
         single source of truth — a motion event is "active" while it's
         in progress or within ``motion_post_roll_seconds`` of its end.
         """
+        # REQ: SWR-005; RISK: RISK-001; TEST: TC-002
         mode = getattr(camera, "recording_mode", "off")
         if mode == "continuous":
             return True

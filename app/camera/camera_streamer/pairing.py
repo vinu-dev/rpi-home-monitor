@@ -79,6 +79,7 @@ class PairingManager:
         Returns:
             (success, error_message) tuple.
         """
+        # REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-008
         camera_id = self._config.camera_id
         if not camera_id:
             return False, "Camera ID not configured"
@@ -169,6 +170,7 @@ class PairingManager:
         2. TOFU: fetch CA cert from server over HTTP, verify exchange with it.
         3. Last resort: no verification (logs a warning).
         """
+        # REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-012
         # Already have a CA cert from a previous pairing — use it
         if os.path.isfile(self.ca_cert_path):
             ctx = ssl.create_default_context(cafile=self.ca_cert_path)

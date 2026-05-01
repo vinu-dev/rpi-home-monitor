@@ -1,0 +1,14 @@
+# Design FMEA
+
+Status: Draft prepared to support expert regulatory review.
+
+| ID | Function/item | Failure mode | Failure effect | Failure cause | Current controls | Severity | Occurrence | Detection | RPN | Recommended action | Owner/status | Linked requirement | Linked risk | Linked test |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| DFMEA-001 | Camera capture pipeline | Sensor unavailable or unsupported mode selected | No live stream or recording | Overlay mismatch, cable fault, unsupported encoder mode | Board profile filter, hardware fault banner | 8 | 4 | 4 | 128 | Expand hardware smoke matrix by sensor | Owner TBD, Draft | SWR-012, HWR-007 | RISK-001, RISK-007 | TC-005, TC-018 |
+| DFMEA-002 | Recording scheduler | Desired recording state not reconciled | Missing or unexpected recordings | Schedule parsing, motion timing, stream ownership conflict | Unit tests and on-demand coordinator gate | 7 | 4 | 4 | 112 | Add formal schedule boundary tests for DST/timezone | Owner TBD, Draft | SWR-005 | RISK-001 | TC-002, TC-019 |
+| DFMEA-003 | Storage cleanup | Oldest clips not deleted or wrong clips deleted | Disk full or unexpected data loss | Path error, filesystem change, timestamp issue | FIFO cleanup tests, storage stats | 7 | 3 | 4 | 84 | Add manual USB removal validation record | Owner TBD, Draft | SWR-007, HWR-004 | RISK-003 | TC-003 |
+| DFMEA-004 | Authentication | Session or role check bypassed | Unauthorized access | Route missing decorator, CSRF omission | Security tests, auth decorators | 9 | 3 | 3 | 81 | Add architecture fitness check for protected routes | Owner TBD, Draft | SWR-001, SWR-002 | RISK-002 | TC-004, TC-011 |
+| DFMEA-005 | Pairing/trust | Unauthorized camera accepted | Fake video or machine control abuse | PIN misuse, cert validation gap | mTLS pairing tests and control endpoint checks | 9 | 2 | 4 | 72 | Add negative hardware pairing smoke | Owner TBD, Draft | SWR-003, SWR-004 | RISK-002 | TC-008, TC-012 |
+| DFMEA-006 | OTA update | Invalid bundle staged or install state corrupted | Device unavailable or compromised | Missing verification, concurrent update, low space | Bundle checks, busy state, signed SWUpdate | 9 | 2 | 4 | 72 | Preserve release validation artifacts per release | Owner TBD, Draft | SWR-010, SWR-016 | RISK-004 | TC-009, TC-013 |
+| DFMEA-007 | Alert center | Offline/storage alert not raised | Operator unaware of degraded monitoring | Polling bug, missed heartbeat transition | Alert service tests, heartbeat tests | 7 | 3 | 4 | 84 | Add end-to-end UI alert smoke | Owner TBD, Draft | SWR-017 | RISK-005, RISK-008 | TC-014 |
+| DFMEA-008 | Traceability automation | Checker misses orphan or invalid annotation | Unreviewed changes pass CI | Parser too permissive, matrix drift | Dedicated checker and workflow | 6 | 3 | 3 | 54 | Add regression tests for checker itself | Owner TBD, Draft | SWR-019 | RISK-009 | TC-020 |

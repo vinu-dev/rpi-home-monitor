@@ -7,6 +7,7 @@ Core rules:
 - follow [`docs/ai/index.md`](../docs/ai/index.md)
 - keep changes scoped and update docs when behavior changes
 - use the correct validation for the area you touched
+- maintain traceability for meaningful changes
 - do not commit directly to `main`
 - preserve the existing repo architecture
 

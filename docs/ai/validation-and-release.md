@@ -5,6 +5,7 @@
 | Area touched | Required validation |
 |--------------|---------------------|
 | Repository governance, docs, adapters | `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `pre-commit run --all-files` |
+| Requirements, risk, security, traceability, annotated code | `python tools/traceability/check_traceability.py`, `python scripts/ai/check_doc_links.py`, relevant tests |
 | Server Python | `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .` |
 | Camera Python | `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .` |
 | API contract | relevant contract tests |
@@ -41,6 +42,8 @@ If code, docs, and device disagree, the device wins until the repo is updated.
 - test plan
 - deployment impact
 - doc impact
+- traceability impact and unresolved `OPEN QUESTION:` /
+  `REGULATORY REVIEW REQUIRED:` items
 
 ## Branch Protection Recommendation
 
