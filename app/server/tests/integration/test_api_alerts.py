@@ -61,6 +61,39 @@ class TestListAlertsEndpoint:
         assert kwargs["limit"] == 10
         assert kwargs["before"] == "2026-04-30T00:00:00Z"
 
+    def test_sort_importance_passed_through(self, app, logged_in_client):
+        """#144 review queue — `sort=importance` reaches the service
+        layer."""
+        app.alert_center = MagicMock()
+        app.alert_center.list_alerts.return_value = []
+        app.alert_center.unread_count.return_value = 0
+        client = logged_in_client()
+        client.get("/api/v1/alerts/?sort=importance")
+        kwargs = app.alert_center.list_alerts.call_args.kwargs
+        assert kwargs["sort"] == "importance"
+
+    def test_sort_default_is_timestamp(self, app, logged_in_client):
+        """Backwards-compat — clients that don't pass sort still get
+        the inbox newest-first ordering."""
+        app.alert_center = MagicMock()
+        app.alert_center.list_alerts.return_value = []
+        app.alert_center.unread_count.return_value = 0
+        client = logged_in_client()
+        client.get("/api/v1/alerts/")
+        kwargs = app.alert_center.list_alerts.call_args.kwargs
+        assert kwargs["sort"] == "timestamp"
+
+    def test_sort_unknown_falls_back_to_default(self, app, logged_in_client):
+        """Defensive — a garbage sort= value mustn't 400 the page
+        for the user; treat it as the default."""
+        app.alert_center = MagicMock()
+        app.alert_center.list_alerts.return_value = []
+        app.alert_center.unread_count.return_value = 0
+        client = logged_in_client()
+        client.get("/api/v1/alerts/?sort=alphabetical")
+        kwargs = app.alert_center.list_alerts.call_args.kwargs
+        assert kwargs["sort"] == "timestamp"
+
     def test_limit_clamped(self, app, logged_in_client):
         app.alert_center = MagicMock()
         app.alert_center.list_alerts.return_value = []

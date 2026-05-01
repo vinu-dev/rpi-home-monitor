@@ -387,6 +387,138 @@ class TestSorting:
         assert [a["id"] for a in result] == ["motion:mot-new", "motion:mot-old"]
 
 
+class TestImportanceSort:
+    """#144 review queue — `sort=importance` orders by severity DESC,
+    then timestamp DESC. Combined with `unread_only=1` this is the
+    triage view: operator scans most-important unread items first
+    per `r1-review-queue.md`.
+    """
+
+    def _three_severity_setup(self, tmp_path):
+        """Build a fixture covering info, warning, error, critical
+        across the three sources so importance can be unambiguously
+        verified.
+
+        Timestamps deliberately ordered so a pure newest-first sort
+        would put info NEWEST → confirms importance sort is winning,
+        not just stability.
+        """
+        cameras = [
+            _FakeCamera(
+                id="cam-d8ee",
+                hardware_faults=[
+                    # Critical fault, OLDEST timestamp
+                    {
+                        "code": "cert_revoked",
+                        "severity": "critical",
+                        "message": "cert",
+                        "opened_at": "2026-04-30T07:00:00Z",
+                    },
+                    # Warning fault, mid timestamp
+                    {
+                        "code": "h264",
+                        "severity": "warning",
+                        "message": "h264",
+                        "opened_at": "2026-04-30T08:00:00Z",
+                    },
+                ],
+            )
+        ]
+        # Audit error event, newer than the warning, older than the
+        # info motion below.
+        audit_events = [
+            {
+                "timestamp": "2026-04-30T08:30:00Z",
+                "event": "OTA_FAILED",
+                "user": "admin",
+                "ip": "",
+                "detail": "verify failed",
+            }
+        ]
+        # info-severity motion, NEWEST timestamp — proves importance
+        # sort beats timestamp sort.
+        motion_events = [
+            _FakeMotionEvent(
+                id="mot-1",
+                camera_id="cam-d8ee",
+                started_at="2026-04-30T09:00:00Z",
+                ended_at="2026-04-30T09:00:02Z",
+                peak_score=0.07,  # below 0.10 → info severity
+            )
+        ]
+        return _make_service(
+            tmp_path,
+            cameras=cameras,
+            audit_events=audit_events,
+            motion_events=motion_events,
+        )
+
+    def test_importance_sort_orders_by_severity_first(self, tmp_path):
+        svc = self._three_severity_setup(tmp_path)
+        result = svc.list_alerts(user="alice", role="admin", sort="importance")
+        severities = [a["severity"] for a in result]
+        # Expected order: critical, error, warning, info
+        rank_order = ["critical", "error", "warning", "info"]
+        # Verify the severities are in non-increasing rank order
+        ranks = [rank_order.index(s) for s in severities]
+        assert ranks == sorted(ranks)
+        # And the FIRST item is the critical one (the test would pass
+        # with all-info too without this anchor)
+        assert severities[0] == "critical"
+
+    def test_importance_sort_breaks_ties_with_timestamp_desc(self, tmp_path):
+        """Two same-severity alerts: newer one first. Stability
+        guarantees the (severity, -ts) compound order matches what
+        the spec asks for ('rank... using shared importance rules')."""
+        cameras = [
+            _FakeCamera(
+                id="cam-1",
+                hardware_faults=[
+                    {
+                        "code": "older",
+                        "severity": "error",
+                        "message": "older",
+                        "opened_at": "2026-04-30T07:00:00Z",
+                    },
+                    {
+                        "code": "newer",
+                        "severity": "error",
+                        "message": "newer",
+                        "opened_at": "2026-04-30T09:00:00Z",
+                    },
+                ],
+            )
+        ]
+        svc = _make_service(tmp_path, cameras=cameras)
+        result = svc.list_alerts(user="alice", role="admin", sort="importance")
+        ids = [a["id"] for a in result]
+        assert ids == ["fault:cam-1:newer", "fault:cam-1:older"]
+
+    def test_default_sort_unchanged_when_no_sort_param(self, tmp_path):
+        """Backwards-compat regression — clients that don't pass
+        sort= still get the inbox newest-first ordering. The default
+        kwarg path matches the pre-#144 shape."""
+        svc = self._three_severity_setup(tmp_path)
+        result = svc.list_alerts(user="alice", role="admin")
+        timestamps = [a["timestamp"] for a in result]
+        assert timestamps == sorted(timestamps, reverse=True)
+
+    def test_importance_sort_combines_with_unread_only(self, tmp_path):
+        """The "review queue" is `sort=importance + unread_only=1`.
+        Verify both filters compose."""
+        svc = self._three_severity_setup(tmp_path)
+        # Mark the critical one as read; review queue should now
+        # surface error first.
+        svc.mark_read(user="alice", alert_id="fault:cam-d8ee:cert_revoked")
+        result = svc.list_alerts(
+            user="alice", role="admin", sort="importance", unread_only=True
+        )
+        assert all(not a["is_read"] for a in result)
+        # First item in the unread-importance view is now the error,
+        # not the critical (which was marked read).
+        assert result[0]["severity"] == "error"
+
+
 class TestFilters:
     def _two_camera_setup(self, tmp_path):
         cameras = [

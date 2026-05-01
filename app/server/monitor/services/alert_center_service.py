@@ -183,14 +183,23 @@ class AlertCenterService:
         unread_only: bool = False,
         limit: int = 50,
         before: str | None = None,
+        sort: str = "timestamp",
     ) -> list[dict]:
-        """Return alerts visible to ``(user, role)``, newest first.
+        """Return alerts visible to ``(user, role)``, ordered per ``sort``.
 
         Filters and the role-aware permission gate are applied
         server-side. The dashboard / inbox UI may not bypass these
         by sending a different role string — Flask's session/role
         machinery (``admin_required`` / ``login_required``) is the
         binding source of truth at the API layer.
+
+        Sort modes (#144 review queue):
+          ``"timestamp"`` — newest first (default, the inbox view).
+          ``"importance"`` — severity DESC, then timestamp DESC.
+                             This is the *review queue* ordering: the
+                             operator scans the most important
+                             unread items first per the
+                             ``r1-review-queue.md`` spec.
         """
         alerts = self._compute_alerts(role=role)
         alerts = self._apply_read_state(alerts, user=user)
@@ -207,9 +216,16 @@ class AlertCenterService:
         if before:
             alerts = [a for a in alerts if a.timestamp < before]
 
-        # Sort by timestamp descending. A stable sort means same-second
-        # alerts keep source-derived insertion order.
-        alerts.sort(key=lambda a: a.timestamp, reverse=True)
+        if sort == "importance":
+            # Sort by severity rank DESC, then timestamp DESC. A stable
+            # sort means same-rank alerts keep their relative
+            # newest-first order.
+            alerts.sort(key=lambda a: a.timestamp, reverse=True)
+            alerts.sort(key=lambda a: _SEVERITY_ORDER.get(a.severity, 0), reverse=True)
+        else:
+            # Default: newest first. Stable sort preserves source-
+            # derived insertion order on same-second alerts.
+            alerts.sort(key=lambda a: a.timestamp, reverse=True)
 
         if limit > 0:
             alerts = alerts[:limit]
