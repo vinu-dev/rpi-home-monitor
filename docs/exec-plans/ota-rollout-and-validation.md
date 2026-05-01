@@ -25,16 +25,16 @@ This plan is the durable handoff record for the work.
 
 ## Context
 
-- Repo: `C:\Users\vinun\codex\rpi-home-monitor`
+- Repo: `<workspace>`
 - Latest merged doc/status PR: `#52`
 - Latest merged `main` seen during this task: `4d701e9`
 - Current working branch for resumability work: `codex/add-resumption-workflow`
-- Server device: `192.168.1.245`, `root` SSH available
-- Camera device: `192.168.1.186`, `root` SSH available
+- Server device: `<server-ip>`, `root` SSH available
+- Camera device: `<camera-ip>`, `root` SSH available
 - Build VM:
-  - host: `35.197.216.132`
-  - camera workspace: `/home/vinu_emailme/yocto-camera/`
-  - server workspace: `/home/vinu_emailme/yocto-server/`
+  - host: `<build-vm-host>`
+  - camera workspace: `<build-vm-camera-workspace>`
+  - server workspace: `<build-vm-server-workspace>`
 
 ## Plan
 
@@ -58,7 +58,7 @@ This plan is the durable handoff record for the work.
   - scripted dev app deploy flow now exists at `scripts/deploy-dev-app.sh`
   - scripted dev deploy has been validated on live server and camera hardware
   - `scripts/build.sh` has been fixed to work with `oe-init-build-env` under `set -u`
-  - clean production validation workspace created on the build VM at `/home/vinu_emailme/ota-validation`
+  - clean production validation workspace created on the build VM at `<build-vm-validation-workspace>`
   - signed `server-prod` Yocto build completed successfully in the clean validation workspace
   - signed `camera-prod` Yocto build completed successfully in the same clean validation workspace
   - OTA signing material has been rotated from the old Ed25519 assumption to the validated ECDSA P-256 CMS flow
@@ -91,25 +91,25 @@ This plan is the durable handoff record for the work.
   - current branch: `codex/add-resumption-workflow`
   - next PR: not created yet
 - Devices / environments:
-  - server `root@192.168.1.245`
-  - camera `root@192.168.1.186`
-  - build VM `vinu_emailme@35.197.216.132`
+  - server `root@<server-ip>`
+  - camera `root@<camera-ip>`
+  - build VM `<build-vm-user>@<build-vm-host>`
 - Commands to resume:
   - `git status --short --branch`
   - `python scripts/ai/validate_repo_ai_setup.py`
   - `python scripts/ai/check_doc_links.py`
   - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
-  - `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && grep -n SWUPDATE_SIGNING config/rpi4b/local.conf config/zero2w/local.conf"`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh camera-prod"`
-  - `ssh vinu_emailme@35.197.216.132 "tail -n 50 /home/vinu_emailme/ota-validation/camera-prod.log"`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
-  - `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
-  - `ssh root@192.168.1.245 "swupdate -i /data/ota/server-update-1.1.0-20260414.swu"`
-  - `ssh root@192.168.1.186 "swupdate -i /data/ota/camera-update-1.1.0-20260414.swu"`
-  - `ssh root@192.168.1.245 "reboot"`
-  - `ssh root@192.168.1.186 "reboot"`
+  - `bash scripts/deploy-dev-app.sh --server <server-ip> --camera <camera-ip>`
+  - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && grep -n SWUPDATE_SIGNING config/rpi4b/local.conf config/zero2w/local.conf"`
+  - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh server-prod"`
+  - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh camera-prod"`
+  - `ssh <build-vm-user>@<build-vm-host> "tail -n 50 <build-vm-validation-workspace>/camera-prod.log"`
+  - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
+  - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
+  - `ssh root@<server-ip> "swupdate -i /data/ota/server-update-1.1.0-20260414.swu"`
+  - `ssh root@<camera-ip> "swupdate -i /data/ota/camera-update-1.1.0-20260414.swu"`
+  - `ssh root@<server-ip> "reboot"`
+  - `ssh root@<camera-ip> "reboot"`
 - Open risks / blockers:
   - production OTA validation may require long Yocto builds and multiple reboots
   - signed production flow may still expose implementation gaps not visible in dev builds
@@ -124,12 +124,12 @@ This plan is the durable handoff record for the work.
 - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md`
 - `bash -n scripts/deploy-dev-app.sh`
 - `pre-commit run --files scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
-- `bash scripts/deploy-dev-app.sh --server 192.168.1.245 --camera 192.168.1.186`
+- `bash scripts/deploy-dev-app.sh --server <server-ip> --camera <camera-ip>`
 - `pre-commit run --files scripts/build.sh`
-- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh server-prod"`
-- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build.sh camera-prod"`
-- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
-- `ssh vinu_emailme@35.197.216.132 "cd /home/vinu_emailme/ota-validation && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
+- `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh server-prod"`
+- `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh camera-prod"`
+- `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs-20260414093826.ext4.gz --sign"`
+- `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build-swu.sh --target camera --rootfs build-zero2w/tmp-glibc/deploy/images/home-monitor-camera/home-camera-image-prod-home-monitor-camera.rootfs-20260414075047.ext4.gz --sign"`
 
 ## Risks
 

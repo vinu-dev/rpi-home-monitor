@@ -368,7 +368,7 @@ A future per-user zones editor populates `zones`; today it's empty.
    unchanged.
 3. Ship the old libcamera-vid path behind `CAMERA_STREAM_BACKEND=cli`
    fallback; default `picamera2`.
-4. Smoke test on 192.168.1.186 — confirm 1080p25 RTSPS to server with
+4. Smoke test on `<camera-ip>` — confirm 1080p25 RTSPS to server with
    the new backend. Measure CPU + RAM before / after.
 
 ### Phase 2 — Motion detector (camera-side only, events not wired)
@@ -447,7 +447,7 @@ A future per-user zones editor populates `zones`; today it's empty.
 
 ### Phase 6 — Hardware validation
 
-20. Real-hardware smoke (GCE VM → OTA push → Zero 2W 192.168.1.186)
+20. Real-hardware smoke (build VM → OTA push → Zero 2W lab camera)
     with ten synthetic and ten organic walk-through tests. Measure
     false-positive rate across 12 h of a typical room (lights, AC,
     daytime sun-patch).
@@ -461,9 +461,9 @@ A future per-user zones editor populates `zones`; today it's empty.
   recipe or add it; measure image-size delta.
 - **Branch / PR:** `feat/motion-detection` (local, not yet pushed).
 - **Devices / environments:**
-  - Camera: 192.168.1.186 (Zero 2W, IP 192.168.1.186, serial ending d8ee)
-  - Server: 192.168.1.245 (RPi 4B)
-  - Build VM: GCE yocto / europe-west2-c
+  - Camera: `<camera-ip>` (Zero 2W)
+  - Server: `<server-ip>` (RPi 4B)
+  - Build VM: `<build-vm-host>`
 - **Commands to resume:**
   - `git checkout feat/motion-detection`
   - `cd app/camera && python -m pytest tests/ -v`

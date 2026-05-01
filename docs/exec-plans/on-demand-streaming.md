@@ -271,7 +271,7 @@ Files that matter (from the codebase survey):
 
 ### 13. Hardware verification
 
-- [ ] Deploy to `192.168.1.245` (server) + `192.168.1.186` (camera).
+- [ ] Deploy to `<server-ip>` (server) + `<camera-ip>` (camera).
 - [ ] Confirm idle: recording = off, no dashboard open → camera is
   not streaming, `iftop` on server shows zero RTSP traffic from
   camera IP.
@@ -304,10 +304,10 @@ Files that matter (from the codebase survey):
   MVP, dual-encoder deferred).
 - Next step: ADR-0017 draft.
 - Branch: `feat/on-demand-streaming` off `main` @ `f0d941a`.
-- Devices: camera 192.168.1.186, server 192.168.1.245.
+- Devices: camera `<camera-ip>`, server `<server-ip>`.
 - Commands to resume:
   ```bash
-  cd /c/Users/vinun/yocto-cam/rpi-home-monitor
+  cd <workspace>
   git checkout feat/on-demand-streaming
   git log --oneline -5
   ```
@@ -334,8 +334,8 @@ cd app/server && python -m pytest --cov-fail-under=80
 
 Hardware:
 ```bash
-bash scripts/deploy-dev-app.sh --camera 192.168.1.186 --server 192.168.1.245
-ssh root@192.168.1.245 'iftop -i eth0 -f "host 192.168.1.186"'  # idle → ~0
+bash scripts/deploy-dev-app.sh --camera <camera-ip> --server <server-ip>
+ssh root@<server-ip> 'iftop -i eth0 -f "host <camera-ip>"'  # idle → ~0
 # open https://<server>/live/cam-xxx → first-frame measured with
 #   browser devtools network tab
 ```

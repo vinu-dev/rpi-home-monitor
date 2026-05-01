@@ -2,7 +2,7 @@
 
 The encoder ceiling is the safety rail that prevents the streamer
 from offering a sensor mode the V4L2 H.264 hardware can't actually
-allocate buffers for — the bug that bricked .115 when 8 MP IMX219
+allocate buffers for — the bug that bricked a Zero 2W lab camera when 8 MP IMX219
 mode was selected. These tests pin the per-board ceilings and the
 detection fallbacks.
 """
@@ -61,7 +61,7 @@ class TestBoardLookup:
 
 
 class TestEncoderModeFilter:
-    """The filter that bricks .115 if it ever ships back into prod."""
+    """The filter that bricks Zero 2W lab cameras if it ever ships back into prod."""
 
     def test_zero2w_rejects_imx219_8mp_mode(self):
         # IMX219 native 3280x2464 = 8_081_920 pixels. Zero 2W cap is

@@ -191,10 +191,10 @@ pipeline supports it.
 
 ### Phase 4 — Hardware verification
 
-15. Deploy the resulting image to one camera in the lab (`.148`
-    OV5647 ZeroCam — already paired, low-stakes). Wave hand for 5 s,
+15. Deploy the resulting image to one OV5647 ZeroCam in the lab
+    (already paired, low-stakes). Wave hand for 5 s,
     open the event, confirm the saved clip starts ~3 s before the wave.
-16. Repeat on `.115` (IMX219) — sensor differences shouldn't matter,
+16. Repeat on an IMX219 lab camera — sensor differences shouldn't matter,
     but verify.
 17. 24-hour soak: count `.part` files left behind, count abort
     transitions, confirm RAM stays bounded.
@@ -208,8 +208,8 @@ pipeline supports it.
 - **Next step:** Phase 1 step 1 — add config flags. Branch suggestion:
   `feat/160-motion-pre-roll-phase1`.
 - **Branch / PR:** none yet.
-- **Devices / environments:** Lab cameras `.148` (OV5647 ZeroCam) and
-  `.115` (IMX219) for hardware-stage validation. Server `.244`/`.245`
+- **Devices / environments:** OV5647 ZeroCam and IMX219 lab cameras for
+  hardware-stage validation. Lab server
   unchanged — no server image changes needed for Phase 1.
 - **Commands to resume:**
   ```bash
@@ -233,7 +233,7 @@ For each phase:
 - `ruff check . && ruff format --check .`
 - For Phase 4 only:
   ```bash
-  bash scripts/smoke-test.sh 192.168.1.244 <pwd> 192.168.1.148 <pwd>
+  bash scripts/smoke-test.sh <server-ip> <pwd> <camera-ip> <pwd>
   ```
   before and after deploy. Compare the run timing for the live-stream
   startup leg — pre-roll must not regress that path.

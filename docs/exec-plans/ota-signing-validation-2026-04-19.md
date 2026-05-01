@@ -35,7 +35,7 @@ is signed — first install failed on this, now passes.
 
 ## Device under test
 
-Server at 192.168.1.245, running the 0039 build (signed, enforcing).
+Server at `<server-ip>`, running the 0039 build (signed, enforcing).
 Auto-confirm landed cleanly post-reboot — `upgrade_available=0`,
 `boot_count=0`, `swupdate-check.service` active.
 
@@ -113,7 +113,7 @@ After bootstrap the camera ran with `/etc/swupdate-enforce` +
 
 ### Camera Test 1 — signed + hashed (positive)
 
-`POST https://192.168.1.186/api/ota/upload` with
+`POST https://<camera-ip>/api/ota/upload` with
 `camera-update-dev-20260419-0151.swu`:
 ```
 HTTP 200

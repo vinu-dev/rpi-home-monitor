@@ -16,7 +16,7 @@ Invariants under test:
    byte-identical to the first run's output.
 2. Clean auto-detect is the default — produces a single
    ``camera_auto_detect=1`` line and no explicit dtoverlay.
-3. The "stale duplicate" state observed live on .115 (leading-whitespace
+3. The "stale duplicate" state observed live on a lab camera (leading-whitespace
    ``camera_auto_detect=0`` + ``dtoverlay=ov5647`` from RPI_EXTRA_CONFIG,
    plus bare duplicates appended by the original script) heals in a
    single run.
@@ -86,7 +86,7 @@ FIXTURE_CLEAN_YOCTO_BAKE = """
     disable_overscan=1
 """
 
-# Fixture B — .115-style stale state: leading-ws block from the OLD Yocto
+# Fixture B — lab-camera stale state: leading-ws block from the OLD Yocto
 # bake (before this PR), plus bare duplicates appended by the OLD
 # ensure-camera-overlay.sh when its grep failed to match the leading-ws
 # variant.
