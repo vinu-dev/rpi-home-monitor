@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-053; RISK: RISK-001, RISK-007; SEC: SC-004; TEST: TC-001, TC-012, TC-047
 # =============================================================
 # camera-streamer — RTSP streaming service for PiHut ZeroCam
 # Installs from app/camera/ in the repository

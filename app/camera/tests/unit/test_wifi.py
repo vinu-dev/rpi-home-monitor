@@ -1,3 +1,4 @@
+# REQ: SWR-036; RISK: RISK-012; SEC: SC-012; TEST: TC-034
 """Unit tests for camera_streamer.wifi — all nmcli calls are mocked."""
 
 import subprocess

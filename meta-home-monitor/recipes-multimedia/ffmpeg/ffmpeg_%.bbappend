@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-053; RISK: RISK-001, RISK-007; SEC: SC-004; TEST: TC-001, TC-012, TC-047
 # Enable features needed for RTSP streaming with mTLS (ADR-0009)
 #
 # - openssl: TLS support for RTSPS muxer (-tls_cert, -tls_key, -tls_ca_cert)

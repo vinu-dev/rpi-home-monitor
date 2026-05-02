@@ -1,3 +1,4 @@
+# REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-008, TC-012
 """Unit tests for the camera-initiated unpair flow (ADR-0016 sync protocol).
 
 Covers:

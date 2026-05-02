@@ -1,3 +1,4 @@
+# REQ: SWR-008; RISK: RISK-005; SEC: SC-015; TEST: TC-019
 """
 Motion-event store — append-only-with-cap persistence for motion events.
 

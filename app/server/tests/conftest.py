@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """
 Shared fixtures and collection rules for layered monitor-server tests."""
 

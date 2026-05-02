@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQ: SWR-048; RISK: RISK-022; SEC: SC-018; TEST: TC-045, TC-047
 # =============================================================================
 # deploy-dev-app.sh - Safe app-only hot deploy for dev hardware
 #

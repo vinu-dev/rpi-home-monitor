@@ -1,3 +1,4 @@
+# REQ: SWR-020, SWR-050; RISK: RISK-017, RISK-018; SEC: SC-004, SC-019; TEST: TC-010, TC-044
 SUMMARY = "Tailscale mesh VPN client"
 DESCRIPTION = "Zero-config VPN for secure remote access to camera live view"
 HOMEPAGE = "https://tailscale.com"

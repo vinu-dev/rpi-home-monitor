@@ -1,3 +1,4 @@
+# REQ: SWR-055; RISK: RISK-009; SEC: SC-009; TEST: TC-020, TC-045
 """Validate the repository AI operating-system surface."""
 
 from __future__ import annotations

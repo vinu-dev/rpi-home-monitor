@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """Tests for the notifications API (ADR-0027)."""
 
 from unittest.mock import MagicMock

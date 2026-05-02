@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-036, SWR-050; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-034, TC-044
 # camera-hotspot.sh — WiFi hotspot management for camera first-boot setup
 # Usage: camera-hotspot.sh start|stop|status|connect|wipe
 #

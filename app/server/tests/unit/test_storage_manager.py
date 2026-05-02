@@ -1,3 +1,4 @@
+# REQ: SWR-007; RISK: RISK-003; SEC: SC-005; TEST: TC-003
 """Unit tests for StorageManager — FIFO cleanup, stats, dir-change callback."""
 
 import threading

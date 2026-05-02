@@ -16,7 +16,7 @@ This Markdown file summarizes the current coverage.
 | Architecture | ARCH-001 through ARCH-015, SWA-001 through SWA-025, and HWA-001 through HWA-012 are linked into the matrix. |
 | Safety risk | RISK-001 through RISK-022 each have at least one risk control and verification. |
 | Cybersecurity | THREAT-001 through THREAT-020 and SC-001 through SC-021 are linked to requirements and tests. |
-| Code references | Key safety/security/data/IO/update/config/build/storage/proxy paths have code references and selected annotations. |
+| Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation in this update covers 310 of 310 traceable files, excluding vendored minified browser libraries. |
 | Tests | TC-001 through TC-047 have linked requirements. |
 
 ## Matrix Source

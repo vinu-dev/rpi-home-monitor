@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQ: SWR-046, SWR-048; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # =============================================================
 # build-swu.sh — Build SWUpdate (.swu) bundle for OTA updates
 #

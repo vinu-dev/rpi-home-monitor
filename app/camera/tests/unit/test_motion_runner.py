@@ -1,3 +1,4 @@
+# REQ: SWR-014, SWR-008; RISK: RISK-005; TEST: TC-019
 """Unit tests for MotionRunner — frame_reader hook + poster mocked.
 
 Production path reads from a pipe fd fed by ffmpeg; tests inject a

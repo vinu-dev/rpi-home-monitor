@@ -1,3 +1,4 @@
+# REQ: SWR-015; RISK: RISK-005; SEC: SC-004; TEST: TC-008
 """
 Camera discovery service — tracks cameras via mDNS browsing and heartbeats.
 

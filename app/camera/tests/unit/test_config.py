@@ -1,3 +1,4 @@
+# REQ: SWR-035; RISK: RISK-012; SEC: SC-012; TEST: TC-033
 """Tests for camera_streamer.config module."""
 
 import os

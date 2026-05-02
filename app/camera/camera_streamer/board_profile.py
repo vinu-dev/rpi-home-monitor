@@ -1,3 +1,4 @@
+# REQ: SWR-053, SWR-011; RISK: RISK-007, RISK-022; TEST: TC-012, TC-047
 """
 Hardware-aware encoder limits per Pi board.
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-010, SWR-046; RISK: RISK-004, RISK-019; SEC: SC-003, SC-018; TEST: TC-013, TC-043
 # =============================================================
 # swupdate-check.sh — Post-boot health check for A/B OTA (ADR-0008)
 #

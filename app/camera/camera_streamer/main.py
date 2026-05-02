@@ -1,3 +1,4 @@
+# REQ: SWR-012, SWR-037; RISK: RISK-001, RISK-022; TEST: TC-005, TC-035
 """
 Camera streamer entry point.
 

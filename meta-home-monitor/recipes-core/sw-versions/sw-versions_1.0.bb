@@ -1,3 +1,4 @@
+# REQ: SWR-046, SWR-050; RISK: RISK-018, RISK-019; SEC: SC-018, SC-019; TEST: TC-043, TC-044
 SUMMARY = "Software versions file for SWUpdate"
 DESCRIPTION = "Provides /etc/sw-versions for SWUpdate version tracking"
 LICENSE = "MIT"

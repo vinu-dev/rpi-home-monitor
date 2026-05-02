@@ -1,3 +1,4 @@
+# REQ: SWR-012; RISK: RISK-001, RISK-008; TEST: TC-005, TC-018
 """
 Video capture management.
 

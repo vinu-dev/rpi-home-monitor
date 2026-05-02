@@ -1,3 +1,4 @@
+# REQ: SWR-021; RISK: RISK-010; SEC: SC-010; TEST: TC-021
 """
 WiFi hotspot provisioning blueprint — thin HTTP adapter.
 

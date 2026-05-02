@@ -1,3 +1,4 @@
+# REQ: SWR-005, SWR-006; RISK: RISK-001; SEC: SC-002; TEST: TC-002
 """
 Recording service — manages ffmpeg processes for video clip recording.
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-018, SWR-050; RISK: RISK-006, RISK-018; SEC: SC-006, SC-019; TEST: TC-015, TC-044
 # gpio-trigger.sh — Boot-time GPIO jumper detection for provisioning and factory reset
 #
 # Reads two GPIO pins at boot to determine if the operator has placed a jumper:

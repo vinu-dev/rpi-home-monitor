@@ -1,3 +1,4 @@
+# REQ: SWR-023; RISK: RISK-011; SEC: SC-011; TEST: TC-022
 """Tests for the users API."""
 
 from monitor.auth import hash_password

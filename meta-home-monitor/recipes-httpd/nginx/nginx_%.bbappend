@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-031, SWR-050; RISK: RISK-001, RISK-017; SEC: SC-016, SC-019; TEST: TC-001, TC-028, TC-044
 # Enable nginx to start automatically on boot
 SYSTEMD_AUTO_ENABLE = "enable"
 

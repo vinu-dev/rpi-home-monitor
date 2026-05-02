@@ -1,3 +1,4 @@
+# REQ: SWR-023, SWR-025, SWR-033, SWR-045; RISK: RISK-011, RISK-015, RISK-016, RISK-021; SEC: SC-011, SC-015, SC-021; TEST: TC-022, TC-030, TC-031, TC-042
 """
 Data models for the monitoring system.
 

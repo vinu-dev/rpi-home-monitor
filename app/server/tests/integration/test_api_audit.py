@@ -1,3 +1,4 @@
+# REQ: SWR-009; RISK: RISK-020; SEC: SC-008; TEST: TC-017
 """Tests for the audit log API (ADR-0018 Slice 3)."""
 
 from unittest.mock import MagicMock

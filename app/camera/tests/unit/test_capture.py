@@ -1,3 +1,4 @@
+# REQ: SWR-012; RISK: RISK-001; TEST: TC-005
 """Tests for camera_streamer.capture module."""
 
 from unittest.mock import MagicMock, patch

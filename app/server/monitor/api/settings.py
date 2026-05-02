@@ -1,3 +1,4 @@
+# REQ: SWR-024; RISK: RISK-012; SEC: SC-012; TEST: TC-023
 """
 Settings API — thin HTTP adapter.
 

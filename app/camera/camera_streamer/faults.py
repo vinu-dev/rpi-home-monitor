@@ -1,3 +1,4 @@
+# REQ: SWR-051; RISK: RISK-020, RISK-005; SEC: SC-020; TEST: TC-046
 """
 Camera hardware fault codes + helpers.
 

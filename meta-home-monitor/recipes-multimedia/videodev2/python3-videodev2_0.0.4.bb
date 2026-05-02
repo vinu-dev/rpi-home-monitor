@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-053; RISK: RISK-001, RISK-007; SEC: SC-004; TEST: TC-001, TC-012, TC-047
 SUMMARY = "videodev2 — ctypes bindings for Linux V4L2 ioctl / constants"
 DESCRIPTION = "Pure-Python ctypes wrapper over <linux/videodev2.h>. \
 Required by picamera2's H264Encoder on the VC4 (Zero 2W) path — the \

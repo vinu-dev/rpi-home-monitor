@@ -1,3 +1,4 @@
+# REQ: SWR-043; RISK: RISK-002; SEC: SC-017; TEST: TC-040
 """Tests for camera LUKS key derivation (ADR-0010)."""
 
 from unittest.mock import MagicMock, patch

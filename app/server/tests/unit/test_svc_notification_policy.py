@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """Tests for NotificationPolicyService — ADR-0027 #128 Backend/API."""
 
 from __future__ import annotations

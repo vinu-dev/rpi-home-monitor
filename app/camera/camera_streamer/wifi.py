@@ -1,3 +1,4 @@
+# REQ: SWR-036; RISK: RISK-012; SEC: SC-012; TEST: TC-034
 """
 Shared WiFi utilities for camera-streamer.
 

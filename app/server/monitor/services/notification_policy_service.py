@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """
 NotificationPolicyService — derive browser-notification eligibility for
 motion events.

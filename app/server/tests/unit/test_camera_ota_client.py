@@ -1,3 +1,4 @@
+# REQ: SWR-038; RISK: RISK-004; SEC: SC-003; TEST: TC-036
 """Unit tests for CameraOTAClient (ADR-0020)."""
 
 from unittest.mock import MagicMock, patch

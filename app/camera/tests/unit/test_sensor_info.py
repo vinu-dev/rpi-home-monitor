@@ -1,3 +1,4 @@
+# REQ: SWR-053; RISK: RISK-007; TEST: TC-012, TC-047
 """Unit tests for sensor identification + per-sensor mode catalogue.
 
 The detection function is the single source of truth for "which sensor

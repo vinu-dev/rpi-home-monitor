@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Tests for main._handle_signal — SIGTERM must always produce process exit.
 
 A hung ``lifecycle.shutdown()`` (ffmpeg wait, HTTPServer.shutdown blocking

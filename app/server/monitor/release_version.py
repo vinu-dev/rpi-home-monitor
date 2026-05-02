@@ -1,3 +1,4 @@
+# REQ: SWR-016, SWR-046; RISK: RISK-004, RISK-019; SEC: SC-018; TEST: TC-013, TC-043
 """Single image-side release-version helper for camera + server.
 
 Both Yocto recipes (camera-streamer, monitor-server) copy this file

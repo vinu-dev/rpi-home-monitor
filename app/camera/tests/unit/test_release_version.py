@@ -1,3 +1,4 @@
+# REQ: SWR-016, SWR-046; RISK: RISK-004, RISK-019; SEC: SC-018; TEST: TC-013, TC-043
 """Unit tests for the camera-side release_version() helper.
 
 The helper is the single image-side SSOT for the product release

@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-006, SWR-031, SWR-050; RISK: RISK-001, RISK-017; SEC: SC-016, SC-019; TEST: TC-001, TC-028, TC-044
 # MediaMTX on-demand hook for the Home Monitor (ADR-0017).
 #
 # Usage: mediamtx-on-demand.sh <camera_id> <start|stop>

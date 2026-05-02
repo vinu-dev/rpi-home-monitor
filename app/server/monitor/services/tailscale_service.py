@@ -1,3 +1,4 @@
+# REQ: SWR-020; RISK: RISK-017; SEC: SC-004; TEST: TC-010, TC-016
 """
 Tailscale VPN management service.
 

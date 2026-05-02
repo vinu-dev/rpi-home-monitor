@@ -1,3 +1,4 @@
+# REQ: SWR-009; RISK: RISK-020; SEC: SC-008, SC-020; TEST: TC-017
 """
 Security audit logger.
 

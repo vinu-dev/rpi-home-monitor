@@ -75,7 +75,12 @@ A feature is not done until:
 - user-facing docs are updated
 - planning docs stay consistent with shipped behavior
 - verification notes exist for any browser/device flow that matters in practice
-- traceability matrix entries and code annotations are updated where meaningful
+- every traceable source, test, workflow, build, script, configuration, and
+  hardware-interface file has at least one valid `REQ:` annotation
+- each code-level `REQ:` traces through the matrix to a user need, system
+  requirement, and architecture item
+- traceability matrix entries and code annotations are updated
+- `python tools/traceability/check_traceability.py` passes
 
 ## Issue Structure Rule
 

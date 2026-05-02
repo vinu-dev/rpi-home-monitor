@@ -1,3 +1,4 @@
+# REQ: SWR-050; RISK: RISK-018; SEC: SC-019; TEST: TC-044, TC-047
 # NTP server configuration for Home Monitor OS
 # Use drop-in config to avoid conflicting with systemd's own timesyncd.conf
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"

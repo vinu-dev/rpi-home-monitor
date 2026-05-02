@@ -1,3 +1,4 @@
+# REQ: SWR-008, SWR-040; RISK: RISK-005, RISK-016; SEC: SC-015; TEST: TC-019, TC-038
 """
 Motion events API + click-through router.
 

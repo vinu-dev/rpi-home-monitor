@@ -1,3 +1,4 @@
+# REQ: SWR-001, SWR-002; RISK: RISK-002; SEC: SC-001; TEST: TC-004, TC-011
 """
 Security regression tests — adversarial inputs and abuse cases.
 

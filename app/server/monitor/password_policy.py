@@ -1,3 +1,4 @@
+# REQ: SWR-002, SWR-023; RISK: RISK-002, RISK-011; SEC: SC-001, SC-011; TEST: TC-004, TC-022
 """
 Password policy enforcement (ADR-0011, NIST SP 800-63B).
 

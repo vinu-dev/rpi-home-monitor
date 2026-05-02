@@ -1,3 +1,4 @@
+# REQ: SWR-014, SWR-008; RISK: RISK-005; TEST: TC-019
 """
 On-camera motion-detector runtime — connects MotionDetector to the world.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-027, SWR-028; RISK: RISK-013, RISK-003; SEC: SC-013, SC-005; TEST: TC-024, TC-025
 """
 Storage API — USB device management and recording storage.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-036; RISK: RISK-012; SEC: SC-012; TEST: TC-034
 """Tests for camera_streamer.wifi_setup module."""
 
 import os

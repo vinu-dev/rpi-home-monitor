@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012; RISK: RISK-001; SEC: SC-002; TEST: TC-001, TC-005
 """
 RTSP stream manager.
 

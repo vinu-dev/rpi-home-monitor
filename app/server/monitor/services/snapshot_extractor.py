@@ -1,3 +1,4 @@
+# REQ: SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """
 SnapshotExtractor — best-effort frame extraction for motion notifications.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-010, SWR-046; RISK: RISK-004, RISK-019; SEC: SC-003, SC-018; TEST: TC-013, TC-043
 # Home Monitor SWUpdate configuration (ADR-0008, ADR-0014)
 # - Custom defconfig with U-Boot A/B handler and optional CMS certificate verification
 # - conf.d override supplies -k flag so swupdate daemon finds the public cert

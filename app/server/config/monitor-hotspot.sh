@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-021, SWR-024; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-021, TC-023
 # monitor-hotspot.sh — WiFi hotspot management for initial device setup
 # Usage: monitor-hotspot.sh start|stop|status
 #

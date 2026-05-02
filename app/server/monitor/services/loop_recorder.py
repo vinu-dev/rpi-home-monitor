@@ -1,3 +1,4 @@
+# REQ: SWR-005, SWR-006; RISK: RISK-001; SEC: SC-002; TEST: TC-002, TC-001
 """
 Loop recorder (ADR-0017) — keeps the recordings volume under its watermark
 by deleting the oldest completed segments when free space runs low.

@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-030; RISK: RISK-001, RISK-014; SEC: SC-002, SC-014; TEST: TC-001, TC-027
 """Tests for monitor.services.streaming_service (post ADR-0017 rewrite)."""
 
 from unittest.mock import MagicMock, patch

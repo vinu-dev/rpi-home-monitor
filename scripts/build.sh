@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQ: SWR-046, SWR-048; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # =============================================================
 # build.sh — Clone layers, configure, build Yocto images, and
 # package the matching .swu OTA bundles in a single command.

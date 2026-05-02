@@ -1,3 +1,4 @@
+# REQ: SWR-037; RISK: RISK-008, RISK-022; SEC: SC-020; TEST: TC-035
 """Unit tests for monitor.services.health — all platform-specific I/O is mocked."""
 
 from unittest.mock import MagicMock, mock_open, patch

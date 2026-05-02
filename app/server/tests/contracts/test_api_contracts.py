@@ -1,3 +1,4 @@
+# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
 """
 API contract tests — verify exact response field names for every endpoint.
 

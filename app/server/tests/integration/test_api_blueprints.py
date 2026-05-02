@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Tests for API blueprint registration and universal route behaviour.
 
 Every blueprint must be mounted, every protected endpoint must enforce

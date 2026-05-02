@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQ: SWR-047, SWR-034; RISK: RISK-019; SEC: SC-017, SC-018; TEST: TC-032, TC-043, TC-045
 # =============================================================
 # generate-ota-keys.sh — Generate OTA signing keypair
 #

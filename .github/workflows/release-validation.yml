@@ -1,3 +1,4 @@
+# REQ: SWR-048, SWR-055; RISK: RISK-009, RISK-019; SEC: SC-009, SC-018; TEST: TC-045
 name: Release Validation
 
 on:

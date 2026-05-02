@@ -1,3 +1,4 @@
+# REQ: SWR-014; RISK: RISK-005; TEST: TC-019
 """Integration test: recording_mode="motion" → motion event → recorder.
 
 Covers the Phase 4 wiring described in docs/exec-plans/motion-detection.md:

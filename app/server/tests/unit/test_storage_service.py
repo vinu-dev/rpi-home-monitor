@@ -1,3 +1,4 @@
+# REQ: SWR-028; RISK: RISK-013; SEC: SC-013; TEST: TC-025
 """Tests for StorageService — USB storage orchestration layer.
 
 Tests cover all public methods: get_status, list_devices, select_device,
