@@ -3,7 +3,7 @@
 Date: 2026-04-20
 Status: Planned
 Theme: Make detections smarter and the system more connected
-Roadmap source: [roadmap-next-2-releases.md](../roadmap-next-2-releases.md)
+Roadmap source: [roadmap-next-2-releases.md](../planning/roadmap-next-2-releases.md)
 
 ## Goal
 

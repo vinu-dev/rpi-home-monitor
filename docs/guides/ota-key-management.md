@@ -142,11 +142,11 @@ To publish the current local keypair into the repo secrets for maintainer automa
 
 The smoke workflow is:
 
-- [.github/workflows/ota-signing-smoke.yml](../.github/workflows/ota-signing-smoke.yml)
+- [.github/workflows/ota-signing-smoke.yml](../../.github/workflows/ota-signing-smoke.yml)
 
 The emergency recovery workflow is:
 
-- [.github/workflows/ota-key-recovery.yml](../.github/workflows/ota-key-recovery.yml)
+- [.github/workflows/ota-key-recovery.yml](../../.github/workflows/ota-key-recovery.yml)
 
 What it proves:
 

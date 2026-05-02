@@ -7,8 +7,8 @@ coding agents working in this repository.
 
 Before implementing a feature, read in this order:
 
-1. the relevant release plan in `docs/releases/`
-2. the feature spec in `docs/specs/`
+1. the relevant release plan in `docs/history/releases/`
+2. the feature spec in `docs/history/specs/`
 3. any linked ADRs
 4. `docs/ai/working-agreement.md`
 5. `docs/ai/engineering-standards.md`
@@ -23,7 +23,7 @@ Do not start implementation from a roadmap bullet alone.
 A feature is ready for execution only when it has:
 
 - a release assignment
-- a spec under `docs/specs/`
+- a spec under `docs/history/specs/`
 - acceptance criteria
 - explicit non-goals
 - a likely module/file impact list
@@ -98,8 +98,8 @@ instead of hiding the decision inside code review comments.
 
 Never reintroduce any CLI, SSH, or pre-auth recovery mechanism that resets the
 sole admin account. That direction is closed by product decision and documented
-in `docs/admin-recovery.md`, `docs/adr/0022-no-backdoors.md`, and
-`docs/exec-plans/auth-recovery.md`.
+in `docs/guides/admin-recovery.md`, `docs/history/adr/0022-no-backdoors.md`, and
+`docs/archive/exec-plans/auth-recovery.md`.
 
 ## Security Posture Rule — never propose weakening security
 

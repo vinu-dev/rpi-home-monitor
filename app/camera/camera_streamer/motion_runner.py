@@ -18,7 +18,7 @@ Design note — pipe vs FIFO: the runner reads from a Python-owned pipe
 in /tmp, no interaction with ffmpeg's ``-y``/refuse-overwrite logic,
 no race with systemd's PrivateTmp cleanup).
 
-See docs/exec-plans/motion-detection.md.
+See docs/archive/exec-plans/motion-detection.md.
 """
 
 from __future__ import annotations

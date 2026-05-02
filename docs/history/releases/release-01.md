@@ -3,7 +3,7 @@
 Date: 2026-04-20
 Status: Planned
 Theme: Make the system proactive and easier to live with
-Roadmap source: [roadmap-next-2-releases.md](../roadmap-next-2-releases.md)
+Roadmap source: [roadmap-next-2-releases.md](../planning/roadmap-next-2-releases.md)
 
 ## Goal
 
@@ -67,7 +67,7 @@ Notes:
 
 A feature is ready to implement when it has:
 
-- a feature spec under `docs/specs/`
+- a feature spec under `docs/history/specs/`
 - acceptance criteria
 - dependency note
 - likely modules/files to change

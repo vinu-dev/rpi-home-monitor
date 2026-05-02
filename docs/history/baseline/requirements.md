@@ -279,7 +279,7 @@ Camera Node                    Server                          Client
 
 ### 4.7 Partition Scheme (OTA-ready, SWUpdate A/B with U-Boot)
 
-> **Status: Partially implemented.** The partition layout is defined in WKS files, but the full U-Boot/SWUpdate production path is still being validated on hardware. See [update-roadmap.md](./update-roadmap.md) and ADR-0008.
+> **Status: Partially implemented.** The partition layout is defined in WKS files, but the full U-Boot/SWUpdate production path is still being validated on hardware. See [update-roadmap.md](../planning/update-roadmap.md) and ADR-0008.
 
 | Partition | Type | Size (Server) | Size (Camera) | Purpose |
 |-----------|------|---------------|---------------|---------|
@@ -348,7 +348,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-CAM-06: OTA Update Support
 
-> **Status: Partially implemented.** Camera OTA agent and supporting code exist, but the full production update path is not yet fully validated on real hardware. Dev builds intentionally allow signing bypass. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Partially implemented.** Camera OTA agent and supporting code exist, but the full production update path is not yet fully validated on real hardware. Dev builds intentionally allow signing bypass. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - Accept update images pushed from server over HTTPS (mTLS authenticated, ADR-0009)
@@ -449,7 +449,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-SRV-10: OTA Update Management
 
-> **Status: Partially implemented.** Server OTA service and API exist, but the production-grade end-to-end path (signed full-system update, rollback, USB/import validation) is not yet fully proven on real hardware. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Partially implemented.** Server OTA service and API exist, but the production-grade end-to-end path (signed full-system update, rollback, USB/import validation) is not yet fully proven on real hardware. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):
@@ -697,7 +697,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-09: Signed OTA Updates
 
-> **Status: Partially implemented.** The signing design exists, but dev builds may bypass signing and the full production signing path is not yet fully hardware-validated. See [update-roadmap.md](./update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Partially implemented.** The signing design exists, but dev builds may bypass signing and the full production signing path is not yet fully hardware-validated. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Production target: all artifacts signed through the configured OTA signing trust chain (`.swu` via CMS certificate flow, app bundles via detached signatures)
 - Build machine holds private signing key (never on devices)
@@ -753,7 +753,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - Audit logging of all security events
 - Rate limiting on auth endpoints (5 attempts per minute, block after 10 failures)
 - See Section 5.3 (SR-SEC-01 through SR-SEC-10) for detailed security requirements
-- See docs/architecture.md Section 3 for security architecture and threat model
+- See docs/history/baseline/architecture.md Section 3 for security architecture and threat model
 
 ### NFR-04: Storage Efficiency
 

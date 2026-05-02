@@ -3,7 +3,7 @@
 Status: Ready for AI implementation planning
 Priority: P0
 Roadmap Slot: Release Next
-Backlog Source: [market-feature-backlog-100.md](./market-feature-backlog-100.md)
+Backlog Source: [market-feature-backlog-100.md](../planning/market-feature-backlog-100.md)
 Related Issue: [#121](https://github.com/vinu-dev/rpi-home-monitor/issues/121)
 
 ## Problem
@@ -238,8 +238,8 @@ Likely code areas:
 Update if shipped:
 
 - `README.md`
-- `docs/requirements.md`
-- `docs/architecture.md`
+- `docs/history/baseline/requirements.md`
+- `docs/history/baseline/architecture.md`
 - feature backlog / roadmap docs as needed
 
 ## Rollout Notes

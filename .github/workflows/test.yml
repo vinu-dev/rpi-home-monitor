@@ -81,6 +81,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: |
+          python tools/docs/check_doc_map.py
           python scripts/ai/validate_repo_ai_setup.py
           python scripts/ai/check_doc_links.py
           python scripts/ai/check_shell_scripts.py

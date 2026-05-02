@@ -18,7 +18,7 @@ approval.
 | Security | Auth, pairing, encryption, password policy, no-backdoor behavior. | `app/server/tests/security/`, `app/camera/tests/security/` |
 | Contract | API contracts and architecture fitness checks. | `app/server/tests/contracts/`, `app/camera/tests/contracts/` |
 | Workflow/static | CI, shell scripts, doc links, AI adapters, traceability. | `.github/workflows/`, `scripts/ai/`, `tools/traceability/` |
-| Hardware/manual | Device smoke, Yocto parse/build, update, pairing, WiFi, camera sensors. | `scripts/smoke-test.sh`, `docs/hardware-setup.md` |
+| Hardware/manual | Device smoke, Yocto parse/build, update, pairing, WiFi, camera sensors. | `scripts/smoke-test.sh`, `docs/guides/hardware-setup.md` |
 | Release/security evidence | Version consistency, SBOM, signing, production profile, service hardening, vulnerability process. | release workflows, `scripts/check_versioning_design.py`, `scripts/generate-sbom.sh` |
 | Regulatory-review draft records | Intended use, requirements, risk, cybersecurity, architecture, traceability, open questions. | `docs/quality-records/regulatory-review-gap-assessment.md` |
 

@@ -57,7 +57,7 @@ the default path users should depend on.
 Bridge-phase note:
 
 - until the full hardware lab is installed, the repo uses SSH-based hardware validation as an interim step
-- the active hardware lab rollout plan is tracked in [Hardware Lab Rollout](./exec-plans/hardware-lab-rollout.md)
+- the active hardware lab rollout plan is tracked in [Hardware Lab Rollout](../exec-plans/hardware-lab-rollout.md)
 
 ---
 
@@ -72,7 +72,7 @@ Bridge-phase note:
 
 Supporting status documents:
 
-- [Update Roadmap](./update-roadmap.md)
+- [Update Roadmap](../history/planning/update-roadmap.md)
 - [OTA Signing Key Management](./ota-key-management.md)
 
 ---
@@ -292,8 +292,8 @@ If you choose to use it:
 When continuing release work after interruption:
 
 1. read this runbook first
-2. read [Update Roadmap](./update-roadmap.md) for current truth
-3. read the active exec plan in [docs/exec-plans/](./exec-plans/)
+2. read [Update Roadmap](../history/planning/update-roadmap.md) for current truth
+3. read the active exec plan in [docs/exec-plans/](../exec-plans/)
 4. record the exact current state before starting the next long-running step
 
 If a release or OTA task spans multiple sessions, update the active exec plan before stopping.

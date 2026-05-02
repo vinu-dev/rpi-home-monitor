@@ -26,7 +26,7 @@ tutorials. Properties that matter:
 
 Runs in ~2 ms per frame on one Cortex-A53 core. numpy only, no opencv.
 
-See `docs/exec-plans/motion-detection.md` for the design rationale.
+See `docs/archive/exec-plans/motion-detection.md` for the design rationale.
 """
 
 from __future__ import annotations

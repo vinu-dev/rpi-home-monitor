@@ -100,7 +100,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
 | Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
-| OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger (ADR-0020). See `docs/update-roadmap.md` |
+| OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger (ADR-0020). See `docs/history/planning/update-roadmap.md` |
 
 ## Quick Start
 
@@ -146,12 +146,13 @@ Results and coverage reports are available in the [CI workflow](https://github.c
 
 | Document | What's Inside |
 |----------|---------------|
-| [Hardware Setup](docs/hardware-setup.md) | Shopping list, assembly, flashing, first boot, troubleshooting |
-| [Build Setup](docs/build-setup.md) | Build machine requirements, prerequisites, build commands |
-| [Requirements](docs/requirements.md) | User stories, software/security requirements, API specification |
-| [Architecture](docs/architecture.md) | System design, security model, threat analysis, data model |
-| [Development Guide](docs/development-guide.md) | Git workflow, Yocto rules, app conventions, security rules |
-| [Testing Guide](docs/testing-guide.md) | Writing tests, running tests, coverage targets |
+| [Documentation Map](docs/README.md) | Human and AI entrypoint for current docs |
+| [Hardware Setup](docs/guides/hardware-setup.md) | Shopping list, assembly, flashing, first boot, troubleshooting |
+| [Build Setup](docs/guides/build-setup.md) | Build machine requirements, prerequisites, build commands |
+| [Requirements](docs/history/baseline/requirements.md) | Historical product requirements baseline |
+| [Architecture](docs/history/baseline/architecture.md) | Historical system design, security model, threat analysis, data model |
+| [Development Guide](docs/guides/development-guide.md) | Git workflow, Yocto rules, app conventions, security rules |
+| [Testing Guide](docs/guides/testing-guide.md) | Writing tests, running tests, coverage targets |
 
 ## Roadmap
 
@@ -161,7 +162,7 @@ Results and coverage reports are available in the [CI workflow](https://github.c
 
 ## Contributing
 
-Contributions are welcome. Please read the [Development Guide](docs/development-guide.md) before submitting a PR.
+Contributions are welcome. Please read the [Development Guide](docs/guides/development-guide.md) before submitting a PR.
 
 ## License
 

@@ -5,7 +5,7 @@ API contract tests — verify exact response field names for every endpoint.
 These tests catch silent API drift: a renamed field won't break server-side
 tests but will break the frontend. Contract tests make field names explicit.
 
-Layer 4 of the testing pyramid (see docs/development-guide.md Section 3.8).
+Layer 4 of the testing pyramid (see docs/guides/development-guide.md Section 3.8).
 """
 
 import os

@@ -106,10 +106,10 @@ Files that matter (from the codebase survey):
 
 ### Docs
 
-- `docs/adr/0017-on-demand-viewer-driven-streaming.md` — new ADR.
-- `docs/adr/README.md` — new ADR index (none today).
-- `docs/architecture.md` — streaming section update.
-- `docs/requirements.md` — recording-mode requirements.
+- `docs/history/adr/0017-on-demand-viewer-driven-streaming.md` — new ADR.
+- `docs/history/adr/README.md` — new ADR index (none today).
+- `docs/history/baseline/architecture.md` — streaming section update.
+- `docs/history/baseline/requirements.md` — recording-mode requirements.
 
 ## Plan
 
@@ -124,9 +124,9 @@ Files that matter (from the codebase survey):
 
 ### 2. ADR + index
 
-- [x] Write `docs/adr/0017-on-demand-viewer-driven-streaming.md` using
+- [x] Write `docs/history/adr/0017-on-demand-viewer-driven-streaming.md` using
   the format established by 0015 / 0016.
-- [x] Create `docs/adr/README.md` index covering 0001-0017.
+- [x] Create `docs/history/adr/README.md` index covering 0001-0017.
 
 ### 3. Camera firmware
 
@@ -285,8 +285,8 @@ Files that matter (from the codebase survey):
 
 ### 14. Docs
 
-- [ ] Update `docs/architecture.md` streaming section.
-- [ ] Update `docs/requirements.md` with recording-mode behaviour.
+- [ ] Update `docs/history/baseline/architecture.md` streaming section.
+- [ ] Update `docs/history/baseline/requirements.md` with recording-mode behaviour.
 - [ ] ADR-0017 finalised with implementation section pointing at the
   real file paths.
 - [ ] ADR index entry.
@@ -359,7 +359,7 @@ ssh root@<server-ip> 'iftop -i eth0 -f "host <camera-ip>"'  # idle → ~0
    Loop recorder bounds total bytes written to ≈ disk size per retention
    cycle, but raw bitrate is still the same. User accepts this: loop
    policy with size-bounded retention is what they asked for. Document
-   recommended high-endurance card in `docs/hardware-setup.md`.
+   recommended high-endurance card in `docs/guides/hardware-setup.md`.
 4. **Schedule clock drift on camera.** Schedule evaluation is entirely
    server-side; camera isn't asked to know local time. Eliminates
    whole class of clock-skew bugs.
@@ -379,7 +379,7 @@ ssh root@<server-ip> 'iftop -i eth0 -f "host <camera-ip>"'  # idle → ~0
 - [ ] Hardware evidence in the PR: idle `iftop` zero, live
   first-frame ≤ 5 s, schedule window honoured, loop deletion
   observed.
-- [ ] `docs/architecture.md` reflects the new flow.
+- [ ] `docs/history/baseline/architecture.md` reflects the new flow.
 - [ ] No regressions on pair / unpair / config-push.
 
 ---

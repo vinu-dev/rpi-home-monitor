@@ -3,7 +3,7 @@
 **Status**: Proposed — 2026-04-30
 **Relates to**: ADR-0003 (service-layer), ADR-0008 (SWUpdate A/B), ADR-0017 (recording modes), ADR-0018 (dashboard IA), ADR-0022 (no backdoors), ADR-0023 (unified fault framework)
 **Resolves**: the two open design questions in
-[`docs/specs/r1-local-alert-center-and-tailscale-remote-review.md`](../specs/r1-local-alert-center-and-tailscale-remote-review.md)
+[`docs/history/specs/r1-local-alert-center-and-tailscale-remote-review.md`](../specs/r1-local-alert-center-and-tailscale-remote-review.md)
 — "badge + inbox vs banners/cards" and "per-user vs per-household unread state."
 **Unblocks**: #131–#134 (Local alert center work-streams), and the
 "shared notification delivery abstraction" referenced by
@@ -405,7 +405,7 @@ doesn't need to change.
 
 ## References
 
-- Feature spec: [`docs/specs/r1-local-alert-center-and-tailscale-remote-review.md`](../specs/r1-local-alert-center-and-tailscale-remote-review.md)
+- Feature spec: [`docs/history/specs/r1-local-alert-center-and-tailscale-remote-review.md`](../specs/r1-local-alert-center-and-tailscale-remote-review.md)
 - ADR-0018 (dashboard IA — banner discipline)
 - ADR-0023 (fault framework — one of the three alert sources)
 - ADR-0021 (camera-side motion detection — motion events)

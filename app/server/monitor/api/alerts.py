@@ -24,7 +24,7 @@ Query params on GET / and POST /mark-all-read (both share the filter set):
   before       — ISO-8601 timestamp; only alerts strictly older
   sort         — "timestamp" (default) | "importance"   (GET only)
                  Importance order is the review queue per
-                 docs/specs/r1-review-queue.md (#144): severity DESC,
+                 docs/history/specs/r1-review-queue.md (#144): severity DESC,
                  timestamp DESC. Combine with unread_only=1 for the
                  triage view — operator scans most-important
                  unread items first.

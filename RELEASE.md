@@ -95,7 +95,7 @@ Each subcommand is idempotent and refuses to clobber existing state
 
 ## Hardware validation expectations
 
-Per `docs/release-runbook.md` §4.6: a release isn't ready until smoke
+Per `docs/guides/release-runbook.md` §4.6: a release isn't ready until smoke
 tests pass on real hardware (server + at least one camera). Multi-sensor
 acceptance criteria are pinned in `docs/issues/173`-style language and
 must be verified visually on the dashboard for each connected sensor.

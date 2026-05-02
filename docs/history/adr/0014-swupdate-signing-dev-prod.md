@@ -26,7 +26,7 @@ OTA bundle signing is **disabled for dev builds** and **enabled for production b
 - **Production signing design:** implemented in the build/config pipeline
 - **Production signing on real hardware:** not yet fully validated end-to-end
 
-The repo must not describe production OTA signing as fully proven until that hardware validation is complete. See `docs/update-roadmap.md`.
+The repo must not describe production OTA signing as fully proven until that hardware validation is complete. See `docs/history/planning/update-roadmap.md`.
 
 ## Implementation
 

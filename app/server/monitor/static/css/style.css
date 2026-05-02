@@ -914,7 +914,7 @@ select.form-input {
    disclosure, no command, no hint at internal recovery paths.
    Pre-auth surface: we never leak implementation details to
    unauthenticated visitors. The full recovery procedure for
-   operators lives in docs/admin-recovery.md. */
+   operators lives in docs/guides/admin-recovery.md. */
 .forgot-password--minimal {
     margin-top: var(--space-3);
     text-align: center;

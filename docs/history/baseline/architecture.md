@@ -969,12 +969,12 @@ segments when free space falls below the low-watermark (default 10 %)
 until it climbs above `low_watermark + hysteresis` (default +5 %). It
 never deletes the segment currently being written.
 
-Cross-refs: [ADR-0005](adr/0005-webrtc-primary-hls-fallback.md) (live
-transport), [ADR-0015](adr/0015-server-camera-control-channel.md)
+Cross-refs: [ADR-0005](../adr/0005-webrtc-primary-hls-fallback.md) (live
+transport), [ADR-0015](../adr/0015-server-camera-control-channel.md)
 (mTLS + HMAC control channel),
-[ADR-0016](adr/0016-camera-health-heartbeat-protocol.md) (heartbeat
+[ADR-0016](../adr/0016-camera-health-heartbeat-protocol.md) (heartbeat
 payload, now carries `stream_state` + `recording_state`),
-[ADR-0017](adr/0017-on-demand-viewer-driven-streaming.md) (this flow).
+[ADR-0017](../adr/0017-on-demand-viewer-driven-streaming.md) (this flow).
 
 ### 8.1 Clip Segmentation
 

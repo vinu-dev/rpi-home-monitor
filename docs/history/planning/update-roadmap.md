@@ -167,9 +167,9 @@ Production OTA should only be called fully implemented when all of the following
 
 ## 7. References
 
-- [ADR-0008](./adr/0008-swupdate-ab-rollback.md)
-- [ADR-0014](./adr/0014-swupdate-signing-dev-prod.md)
-- [Architecture](./architecture.md)
-- [Requirements](./requirements.md)
-- [Development Guide](./development-guide.md)
-- [Release Operator Runbook](./release-runbook.md)
+- [ADR-0008](../adr/0008-swupdate-ab-rollback.md)
+- [ADR-0014](../adr/0014-swupdate-signing-dev-prod.md)
+- [Architecture](../baseline/architecture.md)
+- [Requirements](../baseline/requirements.md)
+- [Development Guide](../../guides/development-guide.md)
+- [Release Operator Runbook](../../guides/release-runbook.md)

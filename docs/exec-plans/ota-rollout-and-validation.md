@@ -81,7 +81,7 @@ This plan is the durable handoff record for the work.
   - encrypted OTA key backup generated via `scripts/backup-ota-keys.sh`
   - GitHub Actions OTA signing secrets published via `scripts/publish-ota-github-secrets.sh`
   - `swupdate -i` on both live devices reporting successful slot switches
-  - `docs/release-runbook.md` added as the single operator path for release, new VM recovery, and key-loss recovery
+  - `docs/guides/release-runbook.md` added as the single operator path for release, new VM recovery, and key-loss recovery
 - Next step:
   - determine whether the devices are simply on a different network surface or whether the new production images are not joining the LAN
   - if the network surface is gone, use console/recovery access to inspect boot state and rollback behavior
@@ -98,7 +98,7 @@ This plan is the durable handoff record for the work.
   - `git status --short --branch`
   - `python scripts/ai/validate_repo_ai_setup.py`
   - `python scripts/ai/check_doc_links.py`
-  - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
+  - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md scripts/deploy-dev-app.sh docs/guides/development-guide.md docs/history/planning/update-roadmap.md`
   - `bash scripts/deploy-dev-app.sh --server <server-ip> --camera <camera-ip>`
   - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && grep -n SWUPDATE_SIGNING config/rpi4b/local.conf config/zero2w/local.conf"`
   - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh server-prod"`
@@ -123,7 +123,7 @@ This plan is the durable handoff record for the work.
 - `python scripts/ai/check_doc_links.py`
 - `pre-commit run --files docs/ai/working-agreement.md docs/exec-plans/template.md docs/exec-plans/ota-rollout-and-validation.md`
 - `bash -n scripts/deploy-dev-app.sh`
-- `pre-commit run --files scripts/deploy-dev-app.sh docs/development-guide.md docs/update-roadmap.md`
+- `pre-commit run --files scripts/deploy-dev-app.sh docs/guides/development-guide.md docs/history/planning/update-roadmap.md`
 - `bash scripts/deploy-dev-app.sh --server <server-ip> --camera <camera-ip>`
 - `pre-commit run --files scripts/build.sh`
 - `ssh <build-vm-user>@<build-vm-host> "cd <build-vm-validation-workspace> && ./scripts/build.sh server-prod"`

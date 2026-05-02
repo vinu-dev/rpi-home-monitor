@@ -10,7 +10,7 @@ servers with JSON APIs:
 
 Uses a high port (18080) to avoid requiring root on CI.
 
-Layer 4 of the testing pyramid (see docs/development-guide.md Section 3.8).
+Layer 4 of the testing pyramid (see docs/guides/development-guide.md Section 3.8).
 """
 
 import json

@@ -11,3 +11,4 @@ applyTo: "docs/**,README.md,CHANGELOG.md,AGENTS.md,CLAUDE.md"
 - Run the repo AI validator after edits.
 - Run `python tools/traceability/check_traceability.py` after traceability-affecting edits.
 - Keep README, changelog, and runbooks aligned with live product behavior.
+- Use `docs/doc-map.yml` to route docs into current records, guides, history, or archive.

@@ -1,7 +1,7 @@
 # REQ: SWR-014; RISK: RISK-005; TEST: TC-019
 """Integration test: recording_mode="motion" → motion event → recorder.
 
-Covers the Phase 4 wiring described in docs/exec-plans/motion-detection.md:
+Covers the Phase 4 wiring described in docs/archive/exec-plans/motion-detection.md:
 a camera in motion mode should have its recorder started by the next
 RecordingScheduler tick while a motion event is active, and stopped
 after the post-roll grace window closes.

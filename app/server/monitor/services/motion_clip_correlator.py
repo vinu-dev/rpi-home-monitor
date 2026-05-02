@@ -10,7 +10,7 @@ contains the event and return a ``clip_ref`` dict suitable for
 being written live under ``.mp4.part`` and are deliberately ignored.
 Recorder.rename()-on-close is the counterpart discipline.
 
-See docs/exec-plans/motion-detection.md §Click-through router.
+See docs/archive/exec-plans/motion-detection.md §Click-through router.
 """
 
 from __future__ import annotations

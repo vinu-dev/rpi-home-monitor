@@ -1,6 +1,6 @@
 # Exec Plan — Authentication Recovery
 
-**Status:** Accepted. Slice 1 (admin resets other user) shipped. The originally-planned CLI admin-recovery script was removed on review — any documented command that bypasses the admin password is a backdoor regardless of its permission envelope. Admin-forgot recovery is now a hardware factory reset tracked as hardware-refresh work (see [`docs/admin-recovery.md`](../admin-recovery.md)).
+**Status:** Accepted. Slice 1 (admin resets other user) shipped. The originally-planned CLI admin-recovery script was removed on review — any documented command that bypasses the admin password is a backdoor regardless of its permission envelope. Admin-forgot recovery is now a hardware factory reset tracked as hardware-refresh work (see [`docs/guides/admin-recovery.md`](../../guides/admin-recovery.md)).
 **Date:** 2026-04-20 (initial) → 2026-04-20 (revised — removed CLI path)
 **Owner:** vinu-dev
 **Closes:** #99 (slice 1). Slice 2 (self-service reset token) tracked in #99; secrets-at-rest tracked in #101. #100 reframed as hardware factory reset, deferred to hardware work.
@@ -55,11 +55,11 @@ An earlier revision of this plan shipped `scripts/reset-admin-password.py`: a su
 
 **Why rejected.** Even narrowly scoped, a documented command that resets the admin password is a backdoor. Threat-model language aside ("sudo = operator-trusted, same bar as rm -rf"), the practical problem is that a *searchable, discoverable* recovery command on a home-security product normalises the "physical access == easy bypass" mental model. That's a posture we're explicitly rejecting.
 
-**Consequence.** The "sole admin locked out" case has **no software recovery**. It becomes a **hardware factory reset** — a pin-short / button on the server board that wipes `/data` and returns to first-boot. Tracked as hardware-refresh work; documented interim in `docs/admin-recovery.md`.
+**Consequence.** The "sole admin locked out" case has **no software recovery**. It becomes a **hardware factory reset** — a pin-short / button on the server board that wipes `/data` and returns to first-boot. Tracked as hardware-refresh work; documented interim in `docs/guides/admin-recovery.md`.
 
 ### 1c. "Forgot password?" on `/login`
 
-**Never a disclosure.** A pre-auth surface must not leak the existence of recovery paths. The login page shows a single muted line: *"Contact your administrator if you can't sign in."* No command, no mention of SSH, no link to documentation. Full recovery procedure lives in `docs/admin-recovery.md` (in the repo, not served on the device).
+**Never a disclosure.** A pre-auth surface must not leak the existence of recovery paths. The login page shows a single muted line: *"Contact your administrator if you can't sign in."* No command, no mention of SSH, no link to documentation. Full recovery procedure lives in `docs/guides/admin-recovery.md` (in the repo, not served on the device).
 
 ## Slice 2 — deferred (#99 case 2)
 
@@ -90,8 +90,8 @@ Tracked in #101. Not gated by this plan; doesn't change the flows designed here.
    - Unit: `force_change_next_login` toggles `must_change_password`.
    - Integration: admin resetting another user sets the flag; that user's next request returns 403 + `must_change_password: true`; password change completes the unlock.
 3. Manual on-device test: reset another user from Settings, confirm their next request returns `403 { must_change_password: true }`, then confirm a successful password change clears the lock.
-4. Documentation: keep `docs/admin-recovery.md`, the login page, and this plan aligned on "no software recovery for sole-admin lockout."
-5. Update `docs/hardware-setup.md` and `docs/requirements.md` (SR-SRV-xx for recovery).
+4. Documentation: keep `docs/guides/admin-recovery.md`, the login page, and this plan aligned on "no software recovery for sole-admin lockout."
+5. Update `docs/guides/hardware-setup.md` and `docs/history/baseline/requirements.md` (SR-SRV-xx for recovery).
 
 ## Open questions
 

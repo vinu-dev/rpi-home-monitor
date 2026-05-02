@@ -37,7 +37,7 @@ Operationally, this means:
 
 ### Narrow-scoped CLI recovery script (what we shipped and removed)
 
-`scripts/reset-admin-password.py`, sudo-only, single-purpose, audit-logged. Rejected after shipping — see #100 and `docs/exec-plans/auth-recovery.md` §"Slice 1b — rejected on review." The threat it introduced was a lowered sophistication bar for transient-physical-access attackers; the inconvenience it removed was a full factory reset by a sole admin who forgot their password. The latter is rare; the former is every houseguest.
+`scripts/reset-admin-password.py`, sudo-only, single-purpose, audit-logged. Rejected after shipping — see #100 and `docs/archive/exec-plans/auth-recovery.md` §"Slice 1b — rejected on review." The threat it introduced was a lowered sophistication bar for transient-physical-access attackers; the inconvenience it removed was a full factory reset by a sole admin who forgot their password. The latter is rare; the former is every houseguest.
 
 ### Localhost-only HTTP recovery endpoint
 
@@ -68,8 +68,8 @@ A recovery OTP printed at factory-test time, stored in the TPM, displayed on a p
 ## Implementation
 
 - `docs/ai/engineering-standards.md` §"Security: No Backdoors" — operational rule, read by every AI agent working on this repo.
-- `docs/admin-recovery.md` — user-facing procedure. Explicitly lists rejected alternatives so they don't get re-proposed as "simpler" fixes.
-- `docs/exec-plans/auth-recovery.md` §"Slice 1b — rejected on review" — the working example of the rule in action.
+- `docs/guides/admin-recovery.md` — user-facing procedure. Explicitly lists rejected alternatives so they don't get re-proposed as "simpler" fixes.
+- `docs/archive/exec-plans/auth-recovery.md` §"Slice 1b — rejected on review" — the working example of the rule in action.
 - `scripts/reset-admin-password.py` — removed. The absence of the file *is* the enforcement.
 - `app/server/monitor/templates/login.html` — pre-auth surface collapsed to a single line that names nothing.
 
