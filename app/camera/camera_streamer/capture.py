@@ -15,6 +15,7 @@ Checks:
 import logging
 import os
 import subprocess
+import threading
 
 from camera_streamer.faults import (
     FAULT_CAMERA_H264_UNSUPPORTED,
@@ -59,6 +60,14 @@ class CaptureManager:
         # stores them so the dashboard can render severity + code
         # per-fault instead of a single boolean. Empty list = healthy.
         self._faults: list[Fault] = []
+        # External faults raised by other subsystems (e.g. the
+        # boot-time server-name resolver in #199) that don't own a
+        # CaptureManager themselves but want to surface a hardware-fault
+        # entry on the heartbeat. Keyed by ``code`` so adding a fault
+        # with a code already present overwrites — same idempotency
+        # contract as the internal ``check()`` path.
+        self._external_faults: dict[str, Fault] = {}
+        self._faults_lock = threading.Lock()
 
     @property
     def device(self):
@@ -84,14 +93,52 @@ class CaptureManager:
 
     @property
     def faults(self) -> list[Fault]:
-        """Active hardware faults from the last ``check()``.
+        """Active hardware faults from the last ``check()`` plus externals.
 
         Empty list when healthy. Each entry has ``code`` + ``severity``
         + ``message`` (see ``faults.py``). Heartbeat serialises the
         list into the wire payload so the server dashboard can render
         per-fault banners with severity colouring.
+
+        Returns the union of ``check()``-managed internal faults and
+        externally raised faults (``add_fault``/``clear_fault``). The
+        thread-safety boundary lives on ``_external_faults`` only —
+        ``_faults`` is set once during the synchronous startup
+        ``check()`` and is never mutated thereafter, so concurrent
+        readers see a stable list.
         """
-        return list(self._faults)
+        with self._faults_lock:
+            external = list(self._external_faults.values())
+        return list(self._faults) + external
+
+    def add_fault(self, fault: Fault) -> None:
+        """Raise an external fault.
+
+        Idempotent on ``code`` — re-adding the same code overwrites the
+        prior entry rather than duplicating, matching the wire-shape
+        contract that the dashboard expects (one row per fault code).
+
+        Used by long-lived background tasks (e.g. the server-name
+        resolver in #199) to bubble a hardware-fault badge onto the
+        next heartbeat without owning their own fault registry.
+        """
+        if fault is None:
+            return
+        with self._faults_lock:
+            self._external_faults[fault.code] = fault
+
+    def clear_fault(self, code: str) -> None:
+        """Drop an externally raised fault by code. No-op if absent.
+
+        Symmetric counterpart to ``add_fault`` — the resolver clears
+        its own fault on a successful late-resolution so the dashboard
+        badge disappears when the underlying condition recovers,
+        rather than persisting until the camera reboots.
+        """
+        if not code:
+            return
+        with self._faults_lock:
+            self._external_faults.pop(code, None)
 
     def check(self):
         """Validate the camera device exists and is accessible.

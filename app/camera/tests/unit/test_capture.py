@@ -174,3 +174,96 @@ class TestCaptureManager:
         """Default device should be /dev/video0."""
         mgr = CaptureManager()
         assert mgr.device == "/dev/video0"
+
+
+class TestExternalFaults:
+    """Externally-raised fault registry (``add_fault`` / ``clear_fault``).
+
+    Used by long-lived background tasks (the boot-time server resolver
+    in #199, future thermal/storage monitors) to bubble a hardware-fault
+    badge onto the heartbeat without owning their own fault registry.
+    """
+
+    def test_add_fault_appears_in_faults_list(self):
+        from camera_streamer.faults import (
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+            make_fault,
+        )
+
+        mgr = CaptureManager()
+        f = make_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
+        mgr.add_fault(f)
+
+        codes = [x.code for x in mgr.faults]
+        assert FAULT_NETWORK_MDNS_RESOLUTION_FAILED in codes
+
+    def test_add_fault_idempotent_on_code(self):
+        """Re-adding the same code overwrites — one row per code on the wire."""
+        from camera_streamer.faults import (
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+            make_fault,
+        )
+
+        mgr = CaptureManager()
+        mgr.add_fault(make_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED))
+        mgr.add_fault(
+            make_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED, context={"attempts": 5})
+        )
+
+        same_code = [
+            x for x in mgr.faults if x.code == FAULT_NETWORK_MDNS_RESOLUTION_FAILED
+        ]
+        assert len(same_code) == 1
+        # And the latest version's context wins.
+        assert same_code[0].context == {"attempts": 5}
+
+    def test_clear_fault_removes_external_only(self):
+        """clear_fault must NOT touch the internal check()-managed faults."""
+        from camera_streamer.faults import (
+            FAULT_CAMERA_SENSOR_MISSING,
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+            make_fault,
+        )
+
+        # Simulate a check() that ran and raised an internal fault.
+        mgr = CaptureManager()
+        mgr._faults = [make_fault(FAULT_CAMERA_SENSOR_MISSING)]
+        mgr.add_fault(make_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED))
+
+        mgr.clear_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
+
+        codes = [x.code for x in mgr.faults]
+        assert FAULT_CAMERA_SENSOR_MISSING in codes
+        assert FAULT_NETWORK_MDNS_RESOLUTION_FAILED not in codes
+
+    def test_clear_fault_unknown_code_is_noop(self):
+        mgr = CaptureManager()
+        mgr.clear_fault("does-not-exist")  # must not raise
+        assert mgr.faults == []
+
+    def test_add_fault_with_none_is_noop(self):
+        """Defensive: silently ignore None rather than crashing the caller."""
+        mgr = CaptureManager()
+        mgr.add_fault(None)
+        assert mgr.faults == []
+
+    def test_add_fault_empty_string_code_is_noop(self):
+        mgr = CaptureManager()
+        mgr.clear_fault("")  # must not raise
+        assert mgr.faults == []
+
+    def test_external_faults_serialise_to_dicts(self):
+        """The full faults list must round-trip through to_dict() so the
+        heartbeat sender's existing serialisation path works unchanged."""
+        from camera_streamer.faults import (
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+            make_fault,
+        )
+
+        mgr = CaptureManager()
+        mgr.add_fault(make_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED))
+
+        as_dicts = [f.to_dict() for f in mgr.faults]
+        assert as_dicts[0]["code"] == FAULT_NETWORK_MDNS_RESOLUTION_FAILED
+        assert as_dicts[0]["severity"] == "error"
+        assert "didn't resolve" in as_dicts[0]["message"]

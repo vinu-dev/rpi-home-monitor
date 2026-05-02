@@ -22,6 +22,7 @@ import os
 import socket
 import ssl
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -30,6 +31,10 @@ from camera_streamer import led
 from camera_streamer.capture import CaptureManager
 from camera_streamer.control import DEFAULT_STREAM_STATE_PATH, VALID_STREAM_STATES
 from camera_streamer.discovery import DiscoveryService
+from camera_streamer.faults import (
+    FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+    make_fault,
+)
 from camera_streamer.health import HealthMonitor
 from camera_streamer.heartbeat import HeartbeatSender
 from camera_streamer.led import LedController
@@ -63,6 +68,157 @@ def _read_desired_stream_state(path):
     if value in VALID_STREAM_STATES:
         return value
     return "stopped"
+
+
+class _ServerResolver:
+    """Background retry of ``socket.gethostbyname`` for the configured server.
+
+    The previous one-shot resolution in ``_do_connecting`` (issue #199)
+    fired exactly once at boot — if mDNS hadn't published yet (Avahi
+    cold-start, multicast rate-limit, slow DHCP), the camera spent its
+    early life logging a vague warning while heartbeats failed silently
+    until something else triggered a retry. This resolver runs in a
+    daemon thread, retries with exponential backoff capped at
+    ``MAX_BACKOFF_S``, and surfaces a structured ``mdns_resolution_failed``
+    fault on the heartbeat if the deadline expires without success.
+
+    Lifecycle:
+      ``start()`` — kick off the daemon thread (idempotent; safe to
+        call when no work is pending — addresses without a configured
+        server short-circuit).
+      ``stop()``  — set the stop event and join the thread. Must be
+        called from ``CameraLifecycle.shutdown`` so a fast-shutdown
+        path doesn't leak a sleeping retry.
+
+    The resolver does NOT plumb the resolved IP back to anyone — the
+    glibc/nss-mdns resolver caches it internally, and the existing
+    callers (heartbeat, control channel) re-resolve on use. The
+    benefit of running this in the background is purely the early
+    fault surfacing + cache priming.
+    """
+
+    # Retry tuning. The defaults are calibrated for a typical Yocto
+    # boot where Avahi can take 5-20 s to publish; first attempt is
+    # quick, then we back off so we don't burn CPU on a permanent fail.
+    INITIAL_BACKOFF_S = 2.0
+    MAX_BACKOFF_S = 60.0
+    BACKOFF_MULTIPLIER = 2.0
+    # Total wall-clock cap. After this we emit the fault and stop
+    # trying — the user-facing "Server name didn't resolve" badge
+    # tells operators to look at the configured address rather than
+    # waiting indefinitely.
+    DEADLINE_S = 300.0
+
+    def __init__(self, address: str, capture_manager=None):
+        self._address = address or ""
+        self._capture = capture_manager
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._resolved_ip: str | None = None
+
+    @property
+    def resolved_ip(self) -> str | None:
+        """The most recent successful resolution, or None if never resolved."""
+        return self._resolved_ip
+
+    def start(self) -> None:
+        """Launch the resolver thread. No-op if already running or address empty."""
+        if not self._address:
+            log.debug("ServerResolver: no address configured — skipping")
+            return
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run, name="server-resolver", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """Signal the resolver to stop and join the thread.
+
+        Always interruptible — the inner backoff sleep waits on the
+        stop event rather than ``time.sleep``, so shutdown latency is
+        bounded by the OS wake-up rather than the current backoff
+        interval.
+        """
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+
+    def _run(self) -> None:
+        deadline = time.monotonic() + self.DEADLINE_S
+        backoff = self.INITIAL_BACKOFF_S
+        attempts = 0
+        while not self._stop.is_set() and time.monotonic() < deadline:
+            attempts += 1
+            try:
+                ip = socket.gethostbyname(self._address)
+            except socket.gaierror as e:
+                log.debug(
+                    "Resolution attempt %d for '%s' failed: %s — retry in %.1fs",
+                    attempts,
+                    self._address,
+                    e,
+                    backoff,
+                )
+                # Wait the backoff interruptibly. Returns True when
+                # ``stop()`` was called, in which case we exit cleanly
+                # without further retries or fault emission.
+                if self._stop.wait(timeout=backoff):
+                    return
+                backoff = min(backoff * self.BACKOFF_MULTIPLIER, self.MAX_BACKOFF_S)
+                continue
+
+            self._resolved_ip = ip
+            log.info(
+                "Server address resolved after %d attempt(s): %s -> %s",
+                attempts,
+                self._address,
+                ip,
+            )
+            # If we'd previously emitted the fault (e.g. earlier deadline
+            # expired and the network later recovered), clear it so the
+            # heartbeat-visible state transition propagates to the
+            # dashboard without needing a restart.
+            if self._capture is not None:
+                try:
+                    self._capture.clear_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
+                except AttributeError:
+                    # Older CaptureManager stub without the API. Test-only.
+                    pass
+            return
+
+        if self._stop.is_set():
+            return
+
+        # Deadline reached without a successful resolution. Emit the
+        # structured fault so the dashboard surfaces a precise badge
+        # ("Server name didn't resolve") rather than the camera silently
+        # logging warnings while operators wonder why heartbeats are
+        # missing.
+        log.error(
+            "Server address '%s' did not resolve within %.0fs (%d attempts) — "
+            "raising %s fault",
+            self._address,
+            self.DEADLINE_S,
+            attempts,
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+        )
+        if self._capture is not None:
+            try:
+                self._capture.add_fault(
+                    make_fault(
+                        FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
+                        context={
+                            "address": self._address,
+                            "attempts": attempts,
+                            "deadline_s": self.DEADLINE_S,
+                        },
+                    )
+                )
+            except AttributeError:
+                pass
 
 
 class State:
@@ -109,6 +265,11 @@ class CameraLifecycle:
         self._setup_server = None
         self._ota_agent = None
         self._pairing = PairingManager(config)
+        # Background server-name resolver (#199). Replaces the previous
+        # one-shot ``gethostbyname`` warning. Started in ``_do_running``
+        # once the CaptureManager exists (the resolver injects faults
+        # via that), stopped in ``shutdown``.
+        self._server_resolver: _ServerResolver | None = None
 
     @property
     def state(self):
@@ -143,6 +304,13 @@ class CameraLifecycle:
         self._state = State.SHUTDOWN
         log.info("State → shutdown")
 
+        # Stop the server-name resolver before everything else so a
+        # mid-backoff thread doesn't interleave with later teardown
+        # logging (the resolver itself owns no other resources, so
+        # ordering with the rest is don't-care; we just want a clean
+        # join before we report "stopped").
+        if self._server_resolver:
+            self._server_resolver.stop()
         if self._heartbeat:
             self._heartbeat.stop()
         if self._health:
@@ -259,8 +427,11 @@ class CameraLifecycle:
             self._revert_to_setup()
             return False
 
-        if self._config.is_configured:
-            self._resolve_server()
+        # The actual resolution moved to a background retry started in
+        # ``_do_running`` once the CaptureManager exists (the resolver
+        # surfaces a hardware-fault on permanent failure via
+        # ``capture_manager.add_fault``). #199 replaces the previous
+        # one-shot warning here.
 
         return True
 
@@ -297,6 +468,17 @@ class CameraLifecycle:
         # then prefer cameras advertising paired=false as pending candidates.
         self._discovery = DiscoveryService(self._config, pairing_manager=self._pairing)
         self._discovery.start()
+
+        # Background server-name resolver (#199). Started here rather
+        # than in ``_do_connecting`` so it can hand its
+        # ``mdns_resolution_failed`` fault to the CaptureManager
+        # (created in ``_do_validating`` immediately above us) without
+        # threading the dependency through earlier states.
+        if self._config.is_configured and self._config.server_ip:
+            self._server_resolver = _ServerResolver(
+                self._config.server_ip, capture_manager=self._capture
+            )
+            self._server_resolver.start()
 
         # RTSP streaming — on-demand per ADR-0017. The camera only starts
         # streaming on boot if both (a) it is configured/paired AND (b) the
@@ -505,7 +687,15 @@ class CameraLifecycle:
         return False
 
     def _resolve_server(self):
-        """Resolve server address — handles mDNS names like homemonitor.local."""
+        """Legacy one-shot resolver, retained for direct callers/tests.
+
+        Production lifecycle uses ``_ServerResolver`` (started from
+        ``_do_running``) which retries with exponential backoff and
+        surfaces a hardware-fault on permanent failure (#199). This
+        synchronous shim is preserved so older callers/tests that
+        invoke ``_resolve_server`` directly continue to work, but it
+        is no longer wired into the lifecycle flow.
+        """
         addr = self._config.server_ip
         if not addr:
             return
@@ -514,8 +704,7 @@ class CameraLifecycle:
             log.info("Server address resolved: %s -> %s", addr, ip)
         except socket.gaierror:
             log.warning(
-                "Cannot resolve server address '%s' — mDNS may not be ready. "
-                "Will retry when streaming starts.",
+                "Cannot resolve server address '%s' — mDNS may not be ready.",
                 addr,
             )
 
