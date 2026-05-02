@@ -13,10 +13,22 @@ TXT records:
   paired   = true/false
 
 Uses avahi-publish-service which is part of avahi-daemon package.
+
+Readiness contract (issue #198): ``avahi-publish-*`` exits with a
+non-zero return code immediately if avahi-daemon is not yet available
+on the bus, or if the publication is rejected (duplicate name,
+malformed TXT, etc.). Without a brief post-launch readiness check,
+``Popen`` returns successfully and the service believes it is
+advertising while in reality nothing reaches the wire — the exact
+"silent green" failure mode operators reported on cold boot. We poll
+``process.poll()`` for a short window after launch and surface any
+immediate failure (with the child's stderr) instead of pretending all
+is well.
 """
 
 import logging
 import subprocess
+import time
 
 from camera_streamer import wifi
 
@@ -30,6 +42,18 @@ VERSION = "1.0.0"
 class DiscoveryService:
     """Advertise camera via mDNS/Avahi for server auto-discovery."""
 
+    # Total wall-time we wait for an avahi-publish-* helper to confirm
+    # it didn't immediately exit. avahi's failure modes (bus not ready,
+    # duplicate name, bad TXT) all produce an exit within tens of
+    # milliseconds, so 500 ms is comfortably above the noise floor.
+    # Tests override this to 0.0 (see camera test conftest) so the suite
+    # does not pay a half-second per start() call.
+    PUBLISH_READINESS_TIMEOUT_SECONDS = 0.5
+    # Cadence of poll() checks within the readiness window. Smaller than
+    # the timeout so we detect failures quickly without burning a CPU
+    # core on a tight loop.
+    PUBLISH_READINESS_POLL_INTERVAL = 0.05
+
     def __init__(self, config, pairing_manager=None):
         self._config = config
         self._pairing = pairing_manager
@@ -42,7 +66,14 @@ class DiscoveryService:
         return self._process is not None and self._process.poll() is None
 
     def start(self):
-        """Start mDNS advertisement."""
+        """Start mDNS advertisement.
+
+        After spawning the avahi-publish helper we briefly verify the
+        process is still alive — the helper exits immediately if
+        avahi-daemon isn't ready or the publication is rejected, and
+        we'd otherwise log "advertisement started" while nothing was
+        on the wire. See module docstring (issue #198).
+        """
         if self._running:
             return
 
@@ -75,19 +106,32 @@ class DiscoveryService:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
-            log.info(
-                "mDNS advertisement started: %s %s port %d",
-                service_name,
-                SERVICE_TYPE,
-                SERVICE_PORT,
-            )
-            self._start_host_advertisement()
         except FileNotFoundError:
             log.error("avahi-publish-service not found — mDNS disabled")
             self._running = False
+            self._process = None
+            return
         except OSError as e:
             log.error("Failed to start mDNS: %s", e)
             self._running = False
+            self._process = None
+            return
+
+        if not self._verify_publish_alive(self._process, "service"):
+            # _verify_publish_alive logged the actual failure with stderr.
+            # Drop the dead handle so is_advertising returns False and the
+            # outer watchdog can retry on the next supervision tick.
+            self._process = None
+            self._running = False
+            return
+
+        log.info(
+            "mDNS advertisement started: %s %s port %d",
+            service_name,
+            SERVICE_TYPE,
+            SERVICE_PORT,
+        )
+        self._start_host_advertisement()
 
     def _start_host_advertisement(self):
         """Publish the unique camera hostname as an mDNS A record."""
@@ -116,13 +160,58 @@ class DiscoveryService:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
-            log.info(
-                "mDNS hostname advertisement started: %s -> %s", host_label, ip_address
-            )
         except FileNotFoundError:
             log.warning("avahi-publish-address not found — hostname mDNS disabled")
+            return
         except OSError as e:
             log.warning("Failed to start hostname mDNS advertisement: %s", e)
+            return
+
+        if not self._verify_publish_alive(self._host_process, "host"):
+            # Service publication is still good — operators can still find
+            # us by service browse, they just lose the cam-id.local A
+            # record. Don't fail the whole start() here.
+            self._host_process = None
+            return
+
+        log.info(
+            "mDNS hostname advertisement started: %s -> %s", host_label, ip_address
+        )
+
+    def _verify_publish_alive(self, process, label):
+        """Confirm an avahi-publish-* helper survived the first window.
+
+        Returns True if the process is still alive at the deadline.
+        Returns False if it exited within the window — the failure is
+        logged at ERROR with the captured stderr (or ``<no stderr>``)
+        and the caller is expected to drop the handle.
+
+        ``label`` is the short descriptor used in log lines to
+        distinguish service-browse failures from hostname-A-record
+        failures (e.g. ``"service"``, ``"host"``).
+        """
+        deadline = time.monotonic() + self.PUBLISH_READINESS_TIMEOUT_SECONDS
+        while True:
+            rc = process.poll()
+            if rc is not None:
+                stderr_text = ""
+                try:
+                    if process.stderr is not None:
+                        stderr_bytes = process.stderr.read() or b""
+                        stderr_text = stderr_bytes.decode(errors="replace").strip()
+                except (OSError, ValueError):
+                    # stderr already closed / not a real pipe (test mock).
+                    pass
+                log.error(
+                    "avahi-publish-%s exited immediately (rc=%d): %s",
+                    label,
+                    rc,
+                    stderr_text or "<no stderr>",
+                )
+                return False
+            if time.monotonic() >= deadline:
+                return True
+            time.sleep(self.PUBLISH_READINESS_POLL_INTERVAL)
 
     def stop(self):
         """Stop mDNS advertisement."""

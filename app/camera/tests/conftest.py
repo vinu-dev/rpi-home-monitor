@@ -61,6 +61,23 @@ def _camera_skip_mount_check(monkeypatch):
     monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "1")
 
 
+@pytest.fixture(autouse=True)
+def _camera_fast_discovery_readiness(monkeypatch):
+    """Skip the avahi-publish readiness wait by default in unit tests.
+
+    `DiscoveryService.start()` waits up to 500 ms after `Popen` to
+    confirm the avahi-publish helper didn't immediately exit (issue
+    #198). Existing tests mock `process.poll()` to return None, so the
+    wait would just stall the suite. Tests that explicitly verify the
+    readiness behaviour bump this back up via monkeypatch.
+    """
+    from camera_streamer import discovery
+
+    monkeypatch.setattr(
+        discovery.DiscoveryService, "PUBLISH_READINESS_TIMEOUT_SECONDS", 0.0
+    )
+
+
 @pytest.fixture
 def data_dir(tmp_path):
     """Create a temporary /data directory structure for the camera."""
