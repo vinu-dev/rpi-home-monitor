@@ -10,6 +10,7 @@ for platform abstraction.
 
 import logging
 import os
+import socket
 import subprocess
 import time
 
@@ -297,13 +298,41 @@ def get_hostname() -> str:
 
 
 def set_hostname(hostname: str) -> bool:
-    """Set the system hostname and notify NetworkManager and Avahi.
+    """Set the system hostname and notify Avahi with a proper goodbye.
 
     Uses transient hostname (memory-only) so it works on read-only rootfs.
     The hostname is saved to /data/config/hostname for persistence across
     reboots — the lifecycle restores it on every boot.
+
+    mDNS goodbye contract (issue #200, RFC 6762 §10.1): when the
+    hostname changes we MUST broadcast a record with TTL=0 for the
+    previous name so cached resolvers around the network drop the
+    stale entry immediately. The previous implementation did
+    ``systemctl restart avahi-daemon`` which kills the daemon without
+    giving it time to send goodbyes — operators chasing "the old name
+    still resolves" wasted hours on dead leads.
+
+    Approach: hand the new name to avahi-daemon over D-Bus via
+    ``avahi-set-host-name``. The daemon owns the swap, broadcasts the
+    cache-flush for the OLD name's A record (its self-publication),
+    and announces the NEW name in the same transition. No daemon
+    restart, no race with our own avahi-publish-* helpers running
+    inside DiscoveryService.
+
+    The goodbye is best-effort. If ``avahi-set-host-name`` is missing
+    or returns non-zero, we still set the kernel hostname and fall
+    back to a daemon restart so at least the new name reaches the
+    wire. Failure of the goodbye does not block the hostname change.
     """
     try:
+        # Snapshot the previous hostname so we can log the rotation
+        # explicitly. avahi-daemon itself is what knew the old name —
+        # we read socket.gethostname() purely for the log line.
+        try:
+            previous_hostname = socket.gethostname()
+        except OSError:
+            previous_hostname = ""
+
         # Set kernel hostname directly (works on read-only rootfs where
         # hostnamectl --transient is ignored due to static hostname in /etc)
         subprocess.run(["hostname", hostname], capture_output=True, timeout=5)
@@ -315,12 +344,86 @@ def set_hostname(hostname: str) -> bool:
                 f.write(hostname + "\n")
         except OSError:
             pass
-        # Restart avahi so mDNS advertises the new name
-        subprocess.run(
-            ["systemctl", "restart", "avahi-daemon"], capture_output=True, timeout=10
-        )
+
+        if previous_hostname and previous_hostname != hostname:
+            log.info(
+                "mDNS hostname change: %s -> %s (issuing goodbye + announce)",
+                previous_hostname,
+                hostname,
+            )
+        else:
+            log.info("Hostname set to %s (no prior name to flush)", hostname)
+
+        announced = _avahi_set_host_name(hostname)
+        if not announced:
+            # Last-resort fallback: restart the daemon. No goodbye for
+            # the old name, but at least the new name reaches the wire
+            # — strictly preserves the pre-fix behaviour.
+            log.warning(
+                "Falling back to avahi-daemon restart (no mDNS goodbye for %s)",
+                previous_hostname or "<unknown>",
+            )
+            try:
+                subprocess.run(
+                    ["systemctl", "restart", "avahi-daemon"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
+                log.warning("avahi-daemon restart fallback failed: %s", e)
+
         log.info("Hostname set to %s", hostname)
         return True
     except Exception as e:
         log.warning("Failed to set hostname: %s", e)
         return False
+
+
+def _avahi_set_host_name(hostname: str) -> bool:
+    """Tell avahi-daemon to swap to ``hostname`` over D-Bus.
+
+    Returns True on success (daemon accepted the new name and will
+    broadcast the goodbye for the old one + announce the new one).
+    Returns False if the helper is missing, the daemon refused, or
+    the call timed out — caller falls back to a daemon restart.
+
+    Split out from ``set_hostname`` so the test suite can mock just
+    the avahi side of the flow without re-stubbing kernel hostname /
+    persistence calls.
+    """
+    try:
+        result = subprocess.run(
+            ["avahi-set-host-name", hostname],
+            capture_output=True,
+            timeout=5,
+        )
+    except FileNotFoundError:
+        log.warning(
+            "avahi-set-host-name not found — cannot send mDNS goodbye for old name"
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        log.warning("avahi-set-host-name timed out — daemon may be stuck")
+        return False
+    except OSError as e:
+        log.warning("avahi-set-host-name failed: %s", e)
+        return False
+
+    if result.returncode == 0:
+        return True
+
+    # avahi-set-host-name prints diagnostic on stderr — surface it so
+    # operators know whether it was a name conflict, a permissions
+    # issue, or the daemon rejecting the call.
+    detail = (
+        result.stderr.decode(errors="replace").strip()
+        or result.stdout.decode(errors="replace").strip()
+        or "<no output>"
+    )
+    log.warning(
+        "avahi-set-host-name returned %d for %s: %s",
+        result.returncode,
+        hostname,
+        detail,
+    )
+    return False
