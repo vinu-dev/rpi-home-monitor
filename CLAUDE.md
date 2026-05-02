@@ -18,7 +18,10 @@ Start here:
 
 Claude-specific notes:
 - respect [`.claude/settings.json`](.claude/settings.json)
+- do not loosen sensitive-file denies without explicit security review
 - use subagents in [`.claude/agents/`](.claude/agents/) for larger tasks
 - use `docs/doc-map.yml` to avoid treating archived/history docs as current truth
+- use `/memory` to inspect loaded instructions when behavior seems inconsistent
+- keep `CLAUDE.md` concise because it is loaded as project memory
 - keep this file as an adapter, not the full handbook
 - if this file and `docs/ai/` disagree, `docs/ai/` wins

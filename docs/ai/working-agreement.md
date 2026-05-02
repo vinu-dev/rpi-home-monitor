@@ -12,6 +12,37 @@
 - Put canonical policy in `docs/ai/` and the deeper docs it references.
 - Keep tool adapters short.
 - Update docs, scripts, and templates together when workflow behavior changes.
+- Avoid conflicting instructions across `AGENTS.md`, `CLAUDE.md`, Copilot,
+  Cursor, Qodo, local memories, and generated adapters. If two files disagree,
+  update the canonical source and regenerate adapters.
+
+## Task Context Contract
+
+AI agents should start implementation work with four things clear:
+
+- goal: the product, operator, safety, security, or engineering outcome
+- context: the relevant files, docs, issues, logs, examples, or screenshots
+- constraints: architecture, traceability, security, hardware, release, and
+  validation rules
+- done when: tests, checks, behavior, docs, PR, CI, or deployment evidence that
+  must be true before handoff
+
+If any of these are missing but the safe path is obvious, make reasonable
+assumptions, record them, and keep going. Ask for alignment only when the
+missing detail creates a real safety, security, product, or release tradeoff.
+
+## Context Hygiene
+
+- Load the smallest useful set of files first, then expand deliberately.
+- Use `docs/doc-map.yml` and folder `README.md` files to avoid treating archived
+  or historical material as current truth.
+- Keep permanent agent rules concise because many tools load them into every
+  session.
+- Put detailed examples, long investigation notes, and one-off findings in
+  exec plans, quality records, specs, or archive records instead of bloating
+  tool entrypoints.
+- When a tool has a way to inspect loaded memory or rules, use it to debug
+  instruction conflicts before editing more policy.
 
 ## Default Expectations
 

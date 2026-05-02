@@ -36,6 +36,18 @@
 - run `python tools/traceability/check_traceability.py` after changing
   requirements, risk, security, architecture, tests, or annotated code
 
+## Agent Tool Configuration Standards
+
+- Keep `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, Cursor
+  rules, and Qodo workflows as adapters, not separate policy handbooks.
+- Keep path-specific rules short and tied to the files they match.
+- Prefer repo validation, tests, generated adapters, and skills over long
+  prose when a rule must be repeated reliably.
+- Do not add repo-local command automation, hooks, or agent settings that read
+  secrets, weaken security review, or bypass branch protection.
+- Sensitive-file exclusions must be explicit for agent tools that support them.
+  At minimum, deny `.env`, `.env.*`, `secrets/**`, and credential files.
+
 ## Design-Level Fix Rule
 
 Good fixes solve the real constraint:

@@ -31,6 +31,19 @@
 - Path filters must include app code, Yocto layers, configs, workflows, docs,
   scripts, and generated adapters.
 
+## AI Rule Review And Eval Practice
+
+For meaningful changes to AI rules, tool adapters, skills, or agent settings:
+
+- compare the change against current official Codex, Claude Code, and Copilot
+  guidance when tool behavior matters
+- define what improved behavior should be observable
+- run deterministic checks such as adapter freshness, doc links, doc map,
+  traceability checks, and pre-commit
+- for repeatable AI workflows, prefer small eval-style checks that verify the
+  expected outcome, process, style, and efficiency signals
+- document remaining assumptions and tool-specific limitations in the PR
+
 ## Hardware Reality Rule
 
 If code, docs, and device disagree, the device wins until the repo is updated.
