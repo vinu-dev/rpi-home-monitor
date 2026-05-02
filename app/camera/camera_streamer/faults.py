@@ -84,6 +84,13 @@ FAULT_STORAGE_LOW = "storage_low"
 FAULT_STORAGE_UNWRITABLE = "storage_unwritable"
 FAULT_THERMAL_THROTTLING = "thermal_throttling"
 FAULT_NETWORK_SERVER_UNREACHABLE = "network_server_unreachable"
+# Issue #199 — emitted by the boot-time hostname-resolution retry when
+# the configured server address (typically a `.local` mDNS name) fails
+# to resolve within the deadline window. Distinct from
+# ``network_server_unreachable`` (which is "we got an IP, but heartbeats
+# fail") so operators can disambiguate "DNS doesn't know that name" from
+# "the server is down or firewalled".
+FAULT_NETWORK_MDNS_RESOLUTION_FAILED = "mdns_resolution_failed"
 FAULT_OTA_FAILED = "ota_failed"
 
 
@@ -128,6 +135,17 @@ FAULT_DEFAULTS: dict[str, dict[str, str]] = {
         "severity": SEVERITY_ERROR,
         "message": "Server unreachable",
         "hint": "Cannot reach the paired server (heartbeat failing).",
+    },
+    FAULT_NETWORK_MDNS_RESOLUTION_FAILED: {
+        "severity": SEVERITY_ERROR,
+        "message": "Server name didn't resolve",
+        "hint": (
+            "The configured server address could not be resolved via "
+            "mDNS or DNS within the boot-time retry window. Verify the "
+            "server is powered on and reachable at the configured name "
+            "(check Settings → Server) and that .local mDNS traffic is "
+            "not being blocked on the LAN."
+        ),
     },
     FAULT_OTA_FAILED: {
         "severity": SEVERITY_ERROR,
