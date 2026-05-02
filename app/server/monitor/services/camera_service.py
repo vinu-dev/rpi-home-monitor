@@ -115,6 +115,49 @@ def _stream_params_from_camera(camera) -> dict:
     return params
 
 
+def _heartbeat_stream_config_matches(camera, sc: dict) -> bool:
+    """Does the camera's heartbeat-reported ``stream_config`` match stored values?
+
+    Used by ``record_heartbeat`` to detect that a server-pushed
+    pending config has actually landed even when the camera didn't
+    POST the explicit ``/config-notify`` ack — without this hook the
+    bidirectional sync stalls in a "pending forever" loop (issue #231:
+    server-origin applies on the camera don't fire ``notify_config_change``,
+    and the heartbeat path was previously gated by ``not had_pending``,
+    so once we entered ``pending`` there was no exit).
+
+    Conservative comparison: we walk every stream parameter present in
+    ``sc`` and require equality with the stored value. Keys missing
+    from ``sc`` are tolerated — the camera reports only the 9 stream-
+    pipeline fields (width/height/fps/bitrate/h264_profile/keyframe_interval/
+    rotation/hflip/vflip), not motion_sensitivity / image_quality /
+    motion_detection. Cameras whose pending state is gated on those
+    other fields fall through to the camera-side fix in #231 (notify
+    after apply) and don't reach this path.
+
+    The wire alias for ``recording_motion_enabled`` (translated to
+    ``motion_detection`` on the way out by ``_translate_stream_params_for_wire``)
+    is accepted on either name so a future camera that echoes the wire
+    keys back doesn't trip us up.
+    """
+    for key in STREAM_PARAMS:
+        if key == "recording_motion_enabled":
+            if "recording_motion_enabled" in sc:
+                cam_value = sc["recording_motion_enabled"]
+            elif "motion_detection" in sc:
+                cam_value = sc["motion_detection"]
+            else:
+                continue
+        elif key in sc:
+            cam_value = sc[key]
+        else:
+            continue
+        stored = getattr(camera, key, STREAM_PARAM_DEFAULTS.get(key))
+        if cam_value != stored:
+            return False
+    return True
+
+
 def _sensor_mode_max_fps(sensor_modes: list[dict]) -> dict[tuple[int, int], int]:
     """Map each reported sensor resolution to its highest supported fps."""
     # REQ: SWR-011; RISK: RISK-007; TEST: TC-012
@@ -636,16 +679,25 @@ class CameraService:
         # potentially-stale values.
         had_pending = camera.config_sync == "pending"
 
-        if (
-            "stream_config" in data
-            and isinstance(data["stream_config"], dict)
-            and not had_pending
-        ):
+        if "stream_config" in data and isinstance(data["stream_config"], dict):
             sc = data["stream_config"]
-            for key in sc:
-                if key in STREAM_PARAMS:
-                    setattr(camera, key, sc[key])
-            camera.config_sync = "synced"
+            if had_pending:
+                # The camera reports its current config in every heartbeat.
+                # If those values match what we stored as the desired
+                # pending state, the camera HAS applied the server-pushed
+                # config (via _apply_pending_config) — it just didn't
+                # POST an explicit /config-notify ack because that path
+                # only fires for origin="local" applies (#231). Treat
+                # the matching heartbeat as the implicit ack so we exit
+                # the otherwise-stuck-forever pending loop.
+                if _heartbeat_stream_config_matches(camera, sc):
+                    camera.config_sync = "synced"
+                    had_pending = False
+            else:
+                for key in sc:
+                    if key in STREAM_PARAMS:
+                        setattr(camera, key, sc[key])
+                camera.config_sync = "synced"
 
         self._store.save_camera(camera)
 

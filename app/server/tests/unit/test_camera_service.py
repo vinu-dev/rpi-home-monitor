@@ -960,6 +960,192 @@ class TestAcceptHeartbeat:
         assert not error
 
 
+class TestPendingReconciliationFromHeartbeat:
+    """Server-side reconciliation that breaks the stuck-pending loop (#231).
+
+    Before this change the heartbeat path was gated on ``not had_pending``
+    and the only exit from ``pending`` was an explicit
+    ``/config-notify`` POST from the camera — which the camera doesn't
+    fire for server-origin applies, so the loop ran forever:
+
+      camera applies pending_config -> server has no ack -> next heartbeat returns
+      pending_config again -> camera applies again -> ... (every 15s, forever).
+
+    The reconciliation matches the camera's heartbeat-reported
+    stream_config against the server's stored values and treats a full
+    match as an implicit ack.
+    """
+
+    def _basic_payload_with_stream_config(self, **stream_overrides):
+        """Build a heartbeat payload whose stream_config matches the
+        defaults the camera ships with. Tests override individual
+        fields to drift it intentionally."""
+        sc = {
+            "width": 1920,
+            "height": 1080,
+            "fps": 25,
+            "bitrate": 4000000,
+            "h264_profile": "high",
+            "keyframe_interval": 30,
+            "rotation": 0,
+            "hflip": False,
+            "vflip": False,
+        }
+        sc.update(stream_overrides)
+        return {
+            "streaming": True,
+            "cpu_temp": 50.0,
+            "memory_percent": 40,
+            "uptime_seconds": 1000,
+            "stream_config": sc,
+        }
+
+    def test_matching_heartbeat_marks_pending_camera_synced(self):
+        """The whole point: when camera reports values matching server,
+        we exit the pending loop."""
+        cam = _make_camera(
+            config_sync="pending",
+            width=1920,
+            height=1080,
+            fps=25,
+            bitrate=4000000,
+            h264_profile="high",
+            keyframe_interval=30,
+            rotation=0,
+            hflip=False,
+            vflip=False,
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        response, _, code = svc.accept_heartbeat(
+            "cam-001", self._basic_payload_with_stream_config()
+        )
+
+        assert code == 200
+        assert cam.config_sync == "synced"
+        # And critically: stop returning pending_config so the camera
+        # stops re-applying every 15 seconds.
+        assert "pending_config" not in response
+
+    def test_mismatching_heartbeat_keeps_pending(self):
+        """Stale camera (still on old fps) must stay pending so we keep pushing."""
+        cam = _make_camera(config_sync="pending", fps=30)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        # Camera still reports the OLD fps=25 — server wants 30.
+        response, _, code = svc.accept_heartbeat(
+            "cam-001", self._basic_payload_with_stream_config(fps=25)
+        )
+
+        assert code == 200
+        assert cam.config_sync == "pending"
+        assert "pending_config" in response
+        assert response["pending_config"]["fps"] == 30
+
+    def test_synced_camera_unchanged_by_reconciliation(self):
+        """The reconciliation only fires under had_pending — synced state
+        still goes through the original setattr path."""
+        cam = _make_camera(config_sync="synced", fps=15)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        # Heartbeat carries fps=25; the original code path overwrites
+        # camera.fps with what the camera reports (heartbeat is the
+        # source of truth for synced cameras).
+        svc.accept_heartbeat("cam-001", self._basic_payload_with_stream_config(fps=25))
+
+        assert cam.fps == 25
+        assert cam.config_sync == "synced"
+
+    def test_reconciliation_does_not_overwrite_stored_values(self):
+        """Matching reconciliation must NOT touch camera.fps etc — those
+        are already what we stored. Defending against a future refactor
+        that accidentally reintroduces setattr in the pending branch."""
+        cam = _make_camera(
+            config_sync="pending",
+            width=1640,
+            height=1232,
+            fps=30,
+            bitrate=6000000,
+            h264_profile="high",
+            keyframe_interval=30,
+            rotation=180,
+            hflip=True,
+            vflip=True,
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        # Camera reports the same values — should match.
+        response, _, code = svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload_with_stream_config(
+                width=1640,
+                height=1232,
+                fps=30,
+                bitrate=6000000,
+                rotation=180,
+                hflip=True,
+                vflip=True,
+            ),
+        )
+
+        assert code == 200
+        assert cam.config_sync == "synced"
+        assert cam.fps == 30
+        assert cam.width == 1640
+        assert cam.height == 1232
+        assert "pending_config" not in response
+
+    def test_partial_heartbeat_match_does_not_synced(self):
+        """If camera reports 8 of 9 fields matching but one differs,
+        we must NOT mark synced."""
+        cam = _make_camera(
+            config_sync="pending",
+            width=1920,
+            height=1080,
+            fps=25,
+            bitrate=4000000,
+            rotation=0,
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        # Eight match, one (rotation) drifted.
+        svc.accept_heartbeat(
+            "cam-001", self._basic_payload_with_stream_config(rotation=90)
+        )
+
+        assert cam.config_sync == "pending"
+
+    def test_camera_omitting_stream_config_keeps_pending(self):
+        """Old-firmware camera that doesn't report stream_config at all
+        falls through to the camera-side notify-on-apply fix."""
+        cam = _make_camera(config_sync="pending", fps=30)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        payload = {
+            "streaming": True,
+            "cpu_temp": 50.0,
+            "memory_percent": 40,
+            "uptime_seconds": 1000,
+            # No stream_config key at all.
+        }
+        _, _, code = svc.accept_heartbeat("cam-001", payload)
+
+        assert code == 200
+        assert cam.config_sync == "pending"
+
+
 # --- Sensor capabilities (#173) ---
 
 

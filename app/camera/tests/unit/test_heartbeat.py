@@ -338,6 +338,10 @@ class TestHeartbeatSender:
             patch(
                 "camera_streamer.heartbeat.ControlHandler", return_value=mock_handler
             ),
+            # Stub the new server-notify path so the test doesn't try
+            # to reach the network — that's covered by dedicated tests
+            # below.
+            patch("camera_streamer.heartbeat.notify_config_change"),
         ):
             sender._apply_pending_config(pending)
 
@@ -345,6 +349,129 @@ class TestHeartbeatSender:
         call_kwargs = mock_handler.set_config.call_args
         # Verify origin="server" is passed (prevents ping-pong)
         assert call_kwargs.kwargs.get("origin") == "server"
+
+    def test_apply_pending_config_notifies_server_on_success(self):
+        """After a successful apply, the camera must POST /config-notify so
+        the server can mark config_sync=synced — this is the explicit ack
+        that breaks the stuck-pending loop in #231 from the camera side."""
+        cfg = _make_config()
+        stream = MagicMock()
+        pairing = _make_pairing()
+        sender = HeartbeatSender(cfg, pairing, stream_manager=stream)
+
+        pending = {"fps": 30}
+
+        mock_handler = MagicMock()
+        mock_handler.set_config.return_value = ({"applied": True}, "", 200)
+
+        # Capture the thread args so we can assert what would have been
+        # sent without actually starting a real thread.
+        captured = {}
+
+        def fake_thread(**kwargs):
+            captured["target"] = kwargs.get("target")
+            captured["args"] = kwargs.get("args")
+            captured["name"] = kwargs.get("name")
+            captured["daemon"] = kwargs.get("daemon")
+            t = MagicMock()
+            t.start = MagicMock()
+            return t
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.parse_control_request",
+                return_value=(pending, 0, ""),
+            ),
+            patch(
+                "camera_streamer.heartbeat.ControlHandler", return_value=mock_handler
+            ),
+            patch("camera_streamer.heartbeat.notify_config_change") as mock_notify,
+            patch(
+                "camera_streamer.heartbeat.threading.Thread",
+                side_effect=fake_thread,
+            ),
+        ):
+            sender._apply_pending_config(pending)
+
+        # The notify thread was scheduled with the right callable + args.
+        assert captured["target"] is mock_notify
+        assert captured["args"] == (cfg, pairing)
+        assert captured["daemon"] is True
+        assert "config-notify" in captured["name"]
+
+    def test_apply_pending_config_does_not_notify_on_failure(self):
+        """If set_config returned an error, the apply did NOT land —
+        notifying the server would falsely advance config_sync to synced
+        on a failed push."""
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        pending = {"fps": 30}
+
+        mock_handler = MagicMock()
+        # Non-empty error string from set_config means apply failed.
+        mock_handler.set_config.return_value = (None, "rejected: bad fps", 400)
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.parse_control_request",
+                return_value=(pending, 0, ""),
+            ),
+            patch(
+                "camera_streamer.heartbeat.ControlHandler", return_value=mock_handler
+            ),
+            patch("camera_streamer.heartbeat.notify_config_change") as mock_notify,
+            patch("camera_streamer.heartbeat.threading.Thread") as mock_thread_cls,
+        ):
+            sender._apply_pending_config(pending)
+
+        # No notify thread spawned, no notify called.
+        mock_thread_cls.assert_not_called()
+        mock_notify.assert_not_called()
+
+    def test_apply_pending_config_does_not_notify_on_parse_error(self):
+        """A malformed pending payload short-circuits before set_config —
+        the notify path must not fire on this branch either."""
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.parse_control_request",
+                return_value=(None, 0, "schema mismatch"),
+            ),
+            patch("camera_streamer.heartbeat.ControlHandler") as mock_handler_cls,
+            patch("camera_streamer.heartbeat.threading.Thread") as mock_thread_cls,
+        ):
+            sender._apply_pending_config({"fps": "garbage"})
+
+        mock_handler_cls.assert_not_called()
+        mock_thread_cls.assert_not_called()
+
+    def test_notify_thread_failure_does_not_propagate(self):
+        """Threading.Thread itself raising must not break the apply path —
+        the camera should log and continue, not crash the heartbeat loop."""
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        mock_handler = MagicMock()
+        mock_handler.set_config.return_value = ({"applied": True}, "", 200)
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.parse_control_request",
+                return_value=({"fps": 30}, 0, ""),
+            ),
+            patch(
+                "camera_streamer.heartbeat.ControlHandler", return_value=mock_handler
+            ),
+            patch(
+                "camera_streamer.heartbeat.threading.Thread",
+                side_effect=RuntimeError("can't allocate thread"),
+            ),
+        ):
+            # Must not raise
+            sender._apply_pending_config({"fps": 30})
 
     def test_start_stop_thread(self):
         cfg = _make_config()
