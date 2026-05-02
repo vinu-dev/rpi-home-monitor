@@ -31,6 +31,12 @@ CURRENT_SOURCE_PREFIXES = {
     "docs/traceability/",
     "docs/quality-records/",
 }
+REQUIRED_WAYFINDING = {
+    "docs/guides/README.md",
+    "docs/exec-plans/README.md",
+    "docs/history/README.md",
+    "docs/archive/README.md",
+}
 
 
 def parse_doc_map() -> list[dict[str, str]]:
@@ -92,6 +98,10 @@ def main() -> int:
     for prefix in sorted(CURRENT_SOURCE_PREFIXES):
         if prefix not in mapped_paths:
             failures.append(f"Current source prefix missing from doc map: {prefix}")
+
+    for readme in sorted(REQUIRED_WAYFINDING):
+        if not (ROOT / readme).exists():
+            failures.append(f"Required documentation wayfinding file missing: {readme}")
 
     for markdown_file in DOCS.glob("*.md"):
         if markdown_file.name not in ALLOWED_TOP_LEVEL_MARKDOWN:
