@@ -17,6 +17,13 @@
       "Read(**)"
     ],
     "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./**/credentials.json)",
+      "Read(./**/*_key.pem)",
+      "Read(./**/*_private.pem)",
       "Bash(git push --force*:*)",
       "Bash(git reset --hard*:*)",
       "Bash(rm -rf /*:*)"

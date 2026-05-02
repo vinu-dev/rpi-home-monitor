@@ -4,5 +4,6 @@ description = "Review a change for correctness, regressions, and missing validat
 prompt = """
 Review for bugs, design regressions, stale docs, missing tests, and workflow drift.
 Treat docs and deploy paths as product artifacts.
+Check that agent-facing rule changes stay concise, non-conflicting, and validated.
 Prefer concrete findings with file references and missing validation evidence.
 """

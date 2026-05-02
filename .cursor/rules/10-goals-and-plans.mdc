@@ -9,6 +9,7 @@ alwaysApply: true
 # Goals And Plans
 
 - Start from the user or operator outcome, not just the local code change.
+- Keep the goal, context, constraints, and done condition explicit.
 - For larger or riskier work, use `docs/exec-plans/template.md`.
 - Treat `docs/history/` and `docs/archive/` as context, not current source of truth.
 - Prefer design-level fixes over symptom patches.
