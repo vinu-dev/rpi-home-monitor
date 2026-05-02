@@ -7,19 +7,28 @@
 <h1 class="page-title">Settings</h1>
 
 <!-- Settings Tab Bar -->
-<div class="settings-tabs" x-show="isAdmin">
-    <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
-    <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
-    <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="tab = 'tailscale'">Tailscale</button>
-    <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
-    <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
-    <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
-    <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
+<div class="settings-tabs">
+    <!-- Admin-only configuration tabs. Viewers don't see these — they
+         get the Notifications tab below as their only Settings
+         surface (their own per-user prefs are personal, not system). -->
+    <template x-if="isAdmin">
+        <span style="display:contents;">
+            <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
+            <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
+            <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="tab = 'tailscale'">Tailscale</button>
+            <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
+            <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
+            <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
+            <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
+        </span>
+    </template>
+    <!-- Notifications tab is per-user — visible to admins AND viewers
+         (#129, ADR-0027). Each user manages their own browser-
+         notification opt-in here; admins additionally see the
+         camera-level defaults inside the panel. -->
+    <button class="settings-tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'; loadNotificationPrefs()">Notifications</button>
     <!-- ADR-0025: "Security" tab retired. Audit-log management
-         (open + clear) lives at /logs itself — the contextually
-         correct surface ("you decide to clear while looking at
-         the log, not while configuring the system"). -->
-
+         (open + clear) lives at /logs itself. -->
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -950,7 +959,135 @@
 <!-- ═══════════════════════════════════════════════════════════
      NON-ADMIN: System Info + Change Password only
      ��═════════════════════════════════════════════════��════════ -->
-<div x-show="!isAdmin" x-cloak>
+<!-- ═══════════════════════════════════════════════════════════
+     NOTIFICATIONS TAB (visible to admin + viewer — #129, ADR-0027)
+     -----------------------------------------------------------
+     Per-user controls (everyone). Per-camera defaults gated by
+     isAdmin inside the panel — viewers can override defaults for
+     themselves but can't change the camera-level baseline.
+     ═══════════════════════════════════════════════════════════ -->
+<div x-show="tab === 'notifications'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Browser notifications</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Get a desktop notification when motion is detected on a camera you opted into.
+                Notifications fire while a Home Monitor tab is open in this browser.
+                Unread items are always visible in the
+                <a href="/alerts">alert center</a> — these are just the
+                ones the system surfaces immediately.
+            </p>
+
+            <div class="info-row">
+                <span class="info-row__label">Browser permission</span>
+                <span class="info-row__value">
+                    <span x-show="notify.permission === 'granted'" class="text-success">Granted</span>
+                    <span x-show="notify.permission === 'denied'" class="text-danger">Denied — re-enable in your browser's site settings</span>
+                    <span x-show="notify.permission === 'default'" class="text-muted">Not requested</span>
+                    <span x-show="notify.permission === 'unsupported'" class="text-muted">Not supported on this browser</span>
+                    <button class="btn btn--secondary btn--small"
+                            x-show="notify.permission === 'default'"
+                            @click="requestNotificationPermission()"
+                            style="margin-left:var(--space-2);">Request permission</button>
+                </span>
+            </div>
+
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Notify me</span>
+                <span class="info-row__value">
+                    <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox"
+                               x-model="notify.prefs.enabled"
+                               @change="saveNotificationPrefs()">
+                        <span x-text="notify.prefs.enabled ? 'On' : 'Off'"
+                              :class="notify.prefs.enabled ? 'text-success' : 'text-muted'"></span>
+                    </label>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-section" x-show="notify.prefs.enabled && notify.cameras.length > 0">
+        <div class="settings-section__title">Per-camera</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Mute notifications for individual cameras without affecting other users.
+                Defaults come from the camera's setting (admin-managed) below.
+            </p>
+            <template x-for="cam in notify.cameras" :key="cam.id">
+                <div class="info-row">
+                    <span class="info-row__label">
+                        <span x-text="cam.name || cam.id"></span>
+                        <span class="text-small text-muted" x-show="cam.location" x-text="' · ' + cam.location"></span>
+                    </span>
+                    <span class="info-row__value">
+                        <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox"
+                                   :checked="effectiveCameraEnabled(cam)"
+                                   @change="setCameraOverride(cam.id, 'enabled', $event.target.checked)">
+                            <span x-text="effectiveCameraEnabled(cam) ? 'On' : 'Off'"
+                                  :class="effectiveCameraEnabled(cam) ? 'text-success' : 'text-muted'"></span>
+                        </label>
+                    </span>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <div class="settings-section" x-show="notify.permission === 'granted' && notify.prefs.enabled">
+        <div class="settings-section__title">Test</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Fire a synthetic notification so you can verify your browser's look-and-feel
+                before relying on it for real motion events.
+            </p>
+            <button class="btn btn--secondary" @click="fireTestNotification()">Send a test notification</button>
+        </div>
+    </div>
+
+    <div class="settings-section" x-show="isAdmin && notify.cameras.length > 0">
+        <div class="settings-section__title">Camera defaults <span class="text-small text-muted">(admin)</span></div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Default notification rule for each camera. Anyone can override above for themselves;
+                this is the baseline.
+            </p>
+            <template x-for="cam in notify.cameras" :key="cam.id">
+                <div class="info-row" style="display:block;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="info-row__label">
+                            <strong x-text="cam.name || cam.id"></strong>
+                        </span>
+                        <label class="text-small" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox"
+                                   :checked="cam.notification_rule && cam.notification_rule.enabled !== false"
+                                   @change="setCameraDefault(cam.id, 'enabled', $event.target.checked)">
+                            <span>Allow notifications</span>
+                        </label>
+                    </div>
+                    <div style="display:flex; gap:var(--space-3); margin-top:var(--space-2); flex-wrap:wrap;">
+                        <label class="text-small" style="flex:1; min-width:140px;">
+                            Min duration (s)
+                            <input type="number" min="1" max="60"
+                                   class="form-input"
+                                   :value="(cam.notification_rule && cam.notification_rule.min_duration_seconds) || 3"
+                                   @change="setCameraDefault(cam.id, 'min_duration_seconds', parseInt($event.target.value))">
+                        </label>
+                        <label class="text-small" style="flex:1; min-width:140px;">
+                            Coalesce (s)
+                            <input type="number" min="10" max="600"
+                                   class="form-input"
+                                   :value="(cam.notification_rule && cam.notification_rule.coalesce_seconds) || 60"
+                                   @change="setCameraDefault(cam.id, 'coalesce_seconds', parseInt($event.target.value))">
+                        </label>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<div x-show="!isAdmin && tab !== 'notifications'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">System Info</div>
         <div class="card">
@@ -2049,6 +2186,136 @@ function settingsPage() {
         /* ADR-0025: audit-log management methods retired from
            settings.html entirely. The clear-log action now lives
            on /logs (logs.html) where it's contextually correct. */
+
+        /* === Browser notifications (#129, ADR-0027) === */
+
+        /* Alpine state for the Notifications tab. Loaded lazily on
+           first tab activation; subsequent visits reuse cached
+           state. Two-way bound to the form controls.
+             permission: live read-only mirror of the browser's
+               Notification.permission state (granted/denied/default
+               or 'unsupported' if the API is missing — old browsers
+               or non-secure contexts).
+             prefs: per-user preferences from /notifications/prefs.
+             cameras: full camera list from /api/v1/cameras (with
+               admin-only fields stripped for viewers, per the
+               existing API contract). Used to render per-camera
+               override rows + admin's camera-defaults section. */
+        notify: { permission: 'default', prefs: { enabled: false, cameras: {} }, cameras: [] },
+
+        async loadNotificationPrefs() {
+            // Resolve current permission state. The Notifications API
+            // is window-scoped, so this works without any granted
+            // capability — just reads the user's existing answer.
+            this.notify.permission =
+                (typeof Notification === 'undefined') ? 'unsupported' : Notification.permission;
+            try {
+                var resp = await window.HM.api.get('/api/v1/notifications/prefs');
+                this.notify.prefs = (resp && resp.prefs) || { enabled: false, cameras: {} };
+            } catch(e) {
+                this.notify.prefs = { enabled: false, cameras: {} };
+            }
+            try {
+                var cams = await window.HM.api.get('/api/v1/cameras');
+                this.notify.cameras = Array.isArray(cams) ? cams : [];
+            } catch(e) {
+                this.notify.cameras = [];
+            }
+        },
+
+        async requestNotificationPermission() {
+            if (typeof Notification === 'undefined') {
+                this.notify.permission = 'unsupported';
+                return;
+            }
+            try {
+                var p = await Notification.requestPermission();
+                this.notify.permission = p;
+                if (p === 'granted') {
+                    window.HM.toast('Notifications enabled', 'success');
+                } else if (p === 'denied') {
+                    window.HM.toast('Notifications denied — check your browser site settings', 'error');
+                }
+            } catch(e) {
+                // Some browsers throw rather than rejecting; treat as denied.
+                this.notify.permission = 'denied';
+            }
+        },
+
+        async saveNotificationPrefs() {
+            try {
+                var resp = await window.HM.api.put(
+                    '/api/v1/notifications/prefs',
+                    { enabled: !!this.notify.prefs.enabled }
+                );
+                this.notify.prefs = (resp && resp.prefs) || this.notify.prefs;
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save', 'error');
+            }
+        },
+
+        /* Per-user override of the camera-level rule. The effective
+           value is `camera.notification_rule[field]` unless the user
+           has set their own override in `prefs.cameras[cam_id]`. */
+        effectiveCameraEnabled(cam) {
+            var override = (this.notify.prefs.cameras || {})[cam.id];
+            if (override && typeof override.enabled === 'boolean') return override.enabled;
+            var camRule = cam.notification_rule || {};
+            return camRule.enabled !== false;  // default true
+        },
+
+        async setCameraOverride(camId, field, value) {
+            var cams = Object.assign({}, this.notify.prefs.cameras || {});
+            var entry = Object.assign({}, cams[camId] || {});
+            entry[field] = value;
+            cams[camId] = entry;
+            try {
+                var resp = await window.HM.api.put(
+                    '/api/v1/notifications/prefs',
+                    { cameras: cams }
+                );
+                this.notify.prefs = (resp && resp.prefs) || this.notify.prefs;
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save', 'error');
+                // Re-load to show server's truth.
+                this.loadNotificationPrefs();
+            }
+        },
+
+        /* Camera-level default rule edit (admin only). Pushes the
+           change through PUT /api/v1/cameras/<id> which already
+           accepts `notification_rule` per the model. */
+        async setCameraDefault(camId, field, value) {
+            var cam = this.notify.cameras.find(function(c) { return c.id === camId; });
+            if (!cam) return;
+            var rule = Object.assign(
+                { enabled: true, min_duration_seconds: 3, coalesce_seconds: 60 },
+                cam.notification_rule || {}
+            );
+            rule[field] = value;
+            try {
+                await window.HM.api.put(
+                    '/api/v1/cameras/' + encodeURIComponent(camId),
+                    { notification_rule: rule }
+                );
+                cam.notification_rule = rule;
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save', 'error');
+                this.loadNotificationPrefs();
+            }
+        },
+
+        fireTestNotification() {
+            if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+                window.HM.toast('Notifications are not currently allowed', 'error');
+                return;
+            }
+            new Notification('Home Monitor', {
+                body: 'Test notification — your setup is working.',
+                icon: '/static/images/logo.svg',
+                tag: 'home-monitor-test',
+            });
+        },
     };
 }
 </script>

@@ -335,6 +335,18 @@ class CameraService:
                 "offline_alerts_enabled": bool(
                     getattr(c, "offline_alerts_enabled", True)
                 ),
+                # #129 — surface the per-camera notification rule so
+                # the Notifications tab can render the camera-defaults
+                # editor (admin) and the per-user override panel (all).
+                # Default rule for legacy records (#128).
+                "notification_rule": dict(
+                    getattr(c, "notification_rule", None)
+                    or {
+                        "enabled": True,
+                        "min_duration_seconds": 3,
+                        "coalesce_seconds": 60,
+                    }
+                ),
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -745,6 +757,10 @@ class CameraService:
             "image_quality",
             # #136 per-camera offline alert toggle
             "offline_alerts_enabled",
+            # #129 per-camera notification rule (ADR-0027). Admins
+            # set the camera-level baseline; per-user overrides live
+            # in user.notification_prefs.cameras{}.
+            "notification_rule",
         }
         unknown = set(data.keys()) - allowed
         if unknown:
@@ -754,6 +770,23 @@ class CameraService:
             data["offline_alerts_enabled"], bool
         ):
             return "offline_alerts_enabled must be a boolean"
+
+        if "notification_rule" in data:
+            rule = data["notification_rule"]
+            if not isinstance(rule, dict):
+                return "notification_rule must be an object"
+            if "enabled" in rule and not isinstance(rule["enabled"], bool):
+                return "notification_rule.enabled must be a boolean"
+            for k, lo, hi in (
+                ("min_duration_seconds", 1, 60),
+                ("coalesce_seconds", 10, 600),
+            ):
+                if k in rule:
+                    v = rule[k]
+                    if not isinstance(v, int) or isinstance(v, bool):
+                        return f"notification_rule.{k} must be an integer"
+                    if v < lo or v > hi:
+                        return f"notification_rule.{k} must be {lo}..{hi}"
 
         if (
             "recording_mode" in data

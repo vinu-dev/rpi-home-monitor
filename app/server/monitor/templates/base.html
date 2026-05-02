@@ -252,6 +252,98 @@
         setInterval(poll, 30 * 1000);
     })();
     </script>
+
+    <script>
+    // Browser notifications poller (#129, ADR-0027). Same 30s
+    // cadence as the bell badge so we don't double the request
+    // rate. Fires `new Notification(...)` for surfaceable motion
+    // alerts the user opted into and that this browser hasn't
+    // already delivered. Web Notifications API only — no service
+    // worker, no Web Push, no cloud relay (per ADR-0027 §"Why not
+    // Web Push").
+    //
+    // Permission state is the gate: if the user hasn't granted it,
+    // we skip the fetch entirely (no point fetching what we can't
+    // surface). The Settings → Notifications panel is where the
+    // request is made.
+    (function() {
+        if (typeof Notification === 'undefined') return;
+
+        function poll() {
+            if (Notification.permission !== 'granted') return;
+
+            fetch('/api/v1/notifications/pending', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            })
+                .then(function(r) {
+                    return r.ok ? r.json() : null;
+                })
+                .then(function(d) {
+                    if (!d || !Array.isArray(d.alerts) || d.alerts.length === 0) return;
+                    var ids = [];
+                    d.alerts.forEach(function(n) {
+                        try {
+                            var note = new Notification('Motion: ' + (n.camera_name || n.camera_id), {
+                                body: humaniseTime(n.started_at) + ' · ' +
+                                      (n.duration_seconds || '?') + 's',
+                                // Snapshot URL falls back to the project
+                                // logo when ffmpeg couldn't extract one
+                                // (motion-mode pre-roll race per ADR-0027).
+                                icon: n.snapshot_url || '/static/images/logo.svg',
+                                // OS-level dedupe: same alert_id replaces
+                                // any pending notification with this tag.
+                                tag: n.alert_id,
+                            });
+                            // Click → land on the event detail.
+                            note.onclick = function() {
+                                window.focus();
+                                if (n.deep_link) window.location.href = n.deep_link;
+                                note.close();
+                            };
+                            ids.push(n.alert_id);
+                        } catch (e) {
+                            // Some browsers throw on Notification ctor
+                            // when the page is hidden + the user agent
+                            // is being conservative. Skip silently — the
+                            // alert is still in the inbox.
+                        }
+                    });
+                    if (ids.length) {
+                        // Tell the server this browser delivered them
+                        // so subsequent polls don't re-fire.
+                        var csrfToken = (document.cookie.match(/csrf_token=([^;]+)/) || [])[1];
+                        fetch('/api/v1/notifications/seen', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': csrfToken || '',
+                            },
+                            body: JSON.stringify({ alert_ids: ids }),
+                        }).catch(function() { /* best-effort */ });
+                    }
+                })
+                .catch(function() { /* polling is best-effort */ });
+        }
+
+        function humaniseTime(iso) {
+            if (!iso) return '';
+            var t = new Date(iso).getTime();
+            if (isNaN(t)) return iso;
+            var elapsed = (Date.now() - t) / 1000;
+            if (elapsed < 60) return 'just now';
+            if (elapsed < 3600) return Math.floor(elapsed / 60) + 'm ago';
+            return Math.floor(elapsed / 3600) + 'h ago';
+        }
+
+        // Same 30s cadence as the bell badge. Stagger the FIRST
+        // call by 5s so the dashboard render isn't competing with
+        // an extra fetch on first paint.
+        setTimeout(poll, 5 * 1000);
+        setInterval(poll, 30 * 1000);
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
