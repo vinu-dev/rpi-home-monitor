@@ -2,7 +2,7 @@
 
 **Status**: Proposed — 2026-05-01
 **Resolves**: the two open questions in
-[`docs/specs/r1-rich-motion-notifications.md`](../specs/r1-rich-motion-notifications.md)
+[`docs/history/specs/r1-rich-motion-notifications.md`](../specs/r1-rich-motion-notifications.md)
 **Unblocks**: #121 (umbrella), #127 (Release 01), #128 (Backend/API),
 #129 (Frontend/UI), #130 (Verification/Docs)
 **Relates to**: ADR-0021 (camera-side motion detection), ADR-0024
@@ -434,7 +434,7 @@ in front of `.148`'s ZeroCam).
 ## References
 
 - Issue #121 (umbrella) + sub-issues #127, #128, #129, #130
-- Spec: [`docs/specs/r1-rich-motion-notifications.md`](../specs/r1-rich-motion-notifications.md)
+- Spec: [`docs/history/specs/r1-rich-motion-notifications.md`](../specs/r1-rich-motion-notifications.md)
 - ADR-0021 (motion detection — events this consumes)
 - ADR-0024 (alert center — the persistent surface this layers on top of)
 - ADR-0023 (fault framework — referenced for "shared alerting abstraction" intent)

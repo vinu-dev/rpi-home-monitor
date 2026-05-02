@@ -9,6 +9,7 @@ alwaysApply: true
 # Repo Overview
 
 - Read `AGENTS.md` first.
+- Start docs navigation at `docs/README.md` and `docs/doc-map.yml`.
 - Treat `docs/ai/` as the canonical AI operating system.
 - Keep tool adapters short and linked back to `docs/ai/`.
 - Work toward a clear product goal and success criteria.

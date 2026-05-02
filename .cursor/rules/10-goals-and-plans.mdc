@@ -10,5 +10,6 @@ alwaysApply: true
 
 - Start from the user or operator outcome, not just the local code change.
 - For larger or riskier work, use `docs/exec-plans/template.md`.
+- Treat `docs/history/` and `docs/archive/` as context, not current source of truth.
 - Prefer design-level fixes over symptom patches.
 - Note assumptions when the requested goal is underspecified.

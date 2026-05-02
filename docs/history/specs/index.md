@@ -6,7 +6,7 @@ be able to pick up a spec from here and work without inventing product behavior.
 
 ## How To Use This Directory
 
-- start from the relevant release plan under `docs/releases/`
+- start from the relevant release plan under `docs/history/releases/`
 - read the feature spec before creating or taking an issue
 - treat the spec as the execution contract unless a newer ADR or approved issue
   explicitly overrides it

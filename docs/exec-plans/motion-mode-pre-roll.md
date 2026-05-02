@@ -10,7 +10,7 @@ clicks an event row to open a clip whose first frame is "an empty
 scene where the action just ended."
 
 Implements the **D5a decision** already recorded in
-[`docs/exec-plans/motion-detection.md` §D5](motion-detection.md), which
+[`docs/archive/exec-plans/motion-detection.md` ?D5](../archive/exec-plans/motion-detection.md), which
 chose a 3-second H.264 ring buffer with a `MOTION_PREROLL_ENABLED=false`
 kill switch. The decision pre-dates ADR-0021 (Picamera2 became the
 shipped backend, which makes `CircularOutput` available); this plan
@@ -120,7 +120,7 @@ pipeline supports it.
    post-roll.
 3. A `pre_roll_seconds` field on the persisted motion event (currently
    absent from the JSON in `/data/config/motion_events.json` — see
-   `docs/exec-plans/motion-detection.md` §D6 record schema; this adds
+   `docs/archive/exec-plans/motion-detection.md` §D6 record schema; this adds
    one optional integer field, default `0` for backward compat).
 4. Correlator + UI awareness that the clip's `offset_seconds` for a
    motion event is `pre_roll_seconds`, not `0`.
@@ -267,7 +267,7 @@ For each phase:
 ## References
 
 - Issue #160 — the user-visible bug
-- `docs/exec-plans/motion-detection.md` §D5 — the original decision
+- `docs/archive/exec-plans/motion-detection.md` §D5 — the original decision
 - ADR-0017 — recording modes, on-demand streaming
 - ADR-0021 — camera-side motion detection (the shipped pipeline this
   hooks into)

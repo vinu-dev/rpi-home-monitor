@@ -482,7 +482,7 @@ MicroSD cards degrade with writes. Signs of failure:
 
 ### 8.3 Firmware Updates (OTA)
 
-> **Current status:** dev builds are the primary tested update path right now. Production signing and full production OTA validation are not yet fully proven on real hardware. See [update-roadmap.md](./update-roadmap.md).
+> **Current status:** dev builds are the primary tested update path right now. Production signing and full production OTA validation are not yet fully proven on real hardware. See [update-roadmap.md](../history/planning/update-roadmap.md).
 
 ```bash
 # Production build: sign the update

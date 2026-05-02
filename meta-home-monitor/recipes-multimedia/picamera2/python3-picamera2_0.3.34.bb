@@ -5,7 +5,7 @@ Pi camera pipeline: dual-stream capture (main + lores) plus hardware \
 H.264 encoding. For the Zero 2W camera node we use H264Encoder + \
 FileOutput writing into an ffmpeg -c copy RTSPS pusher, with a lores \
 YUV stream consumed by the motion detector. See ADR-0021 and \
-docs/exec-plans/motion-detection.md."
+docs/archive/exec-plans/motion-detection.md."
 HOMEPAGE = "https://github.com/raspberrypi/picamera2"
 LICENSE = "BSD-2-Clause"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=6541a38108b5accb25bd55a14e76086d"

@@ -6,9 +6,12 @@ agentic product development. This file is the short, tool-neutral
 entrypoint for any coding agent.
 
 Canonical source of truth:
+- [`docs/README.md`](docs/README.md)
+- [`docs/doc-map.yml`](docs/doc-map.yml)
 - [`docs/ai/index.md`](docs/ai/index.md)
 
 Read next:
+- [`docs/README.md`](docs/README.md)
 - [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
 - [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
 - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
@@ -28,7 +31,7 @@ Core rules:
 - do not commit directly to `main`
 
 Key validation:
-- repo governance: `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
+- repo governance: `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
 - server: `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .`
 - camera: `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .`
 - Yocto: `bitbake -p` and VM build for affected images

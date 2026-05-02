@@ -4,12 +4,21 @@
 
 | Area | Purpose | Key docs | Required validation |
 |------|---------|----------|---------------------|
-| `app/server/` | Flask server, API, dashboard, auth, OTA | `docs/architecture.md`, `docs/testing-guide.md` | `pytest app/server/tests/ -v`, lint |
-| `app/camera/` | camera runtime, pairing, WiFi setup, HTTPS status UI | `docs/architecture.md`, `docs/testing-guide.md` | `pytest app/camera/tests/ -v`, lint |
-| `meta-home-monitor/` | Yocto distro, recipes, image policy | `docs/development-guide.md`, `docs/build-setup.md` | `bitbake -p`, VM build |
-| `config/` | committed Yocto build configs | `docs/build-setup.md` | parse/build for affected image |
-| `scripts/` | build, smoke, deploy, ops helpers | `docs/development-guide.md` | syntax + live verification if operational |
-| `docs/` | system of record | all docs | doc review + validator |
+| `app/server/` | Flask server, API, dashboard, auth, OTA | `docs/history/baseline/architecture.md`, `docs/guides/testing-guide.md` | `pytest app/server/tests/ -v`, lint |
+| `app/camera/` | camera runtime, pairing, WiFi setup, HTTPS status UI | `docs/history/baseline/architecture.md`, `docs/guides/testing-guide.md` | `pytest app/camera/tests/ -v`, lint |
+| `meta-home-monitor/` | Yocto distro, recipes, image policy | `docs/guides/development-guide.md`, `docs/guides/build-setup.md` | `bitbake -p`, VM build |
+| `config/` | committed Yocto build configs | `docs/guides/build-setup.md` | parse/build for affected image |
+| `scripts/` | build, smoke, deploy, ops helpers | `docs/guides/development-guide.md` | syntax + live verification if operational |
+| `docs/` | system of record | `docs/README.md`, `docs/doc-map.yml`, controlled records | doc map + link + traceability validators |
+
+## Documentation Routing
+
+- `docs/README.md`: human and AI front door.
+- `docs/doc-map.yml`: machine-readable documentation map.
+- `docs/guides/`: practical operator and developer guides.
+- `docs/history/`: ADRs, release plans, feature specs, planning records, and historical baselines.
+- `docs/archive/`: completed records retained for context but not current truth.
+- `docs/exec-plans/`: active resumable plans and the execution-plan template only.
 
 ## Sub-Routing
 

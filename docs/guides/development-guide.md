@@ -255,7 +255,7 @@ These rules apply to ALL code, whether application or recipe:
 - **Admin-only endpoints** must check role. A viewer hitting an admin endpoint gets 403, not a different error.
 - **When adding a new endpoint:**
   1. Add to the blueprint in `app/server/monitor/api/`
-  2. Update `docs/requirements.md` (SR-SRV-12: REST API section)
+  2. Update `docs/history/baseline/requirements.md` (SR-SRV-12: REST API section)
   3. Add auth decorator and role check
   4. Add audit log entry for state-changing operations
 
@@ -399,7 +399,7 @@ These decisions are deliberate. Do not change them without an ADR:
 
 ### 3.8 Testing Rules
 
-**Full details: [`docs/testing-guide.md`](testing-guide.md)** — setup, writing tests, running tests, coverage reports, examples, checklists.
+**Full details: [`docs/guides/testing-guide.md`](testing-guide.md)** — setup, writing tests, running tests, coverage reports, examples, checklists.
 
 #### 5-Layer Testing Pyramid
 
@@ -464,7 +464,7 @@ npx playwright test --project=smoke
 - **For app changes:** Use `scripts/deploy-dev-app.sh` on a dev image. It preserves permissions and validates services after deploy.
 - **For recipe changes:** Full bitbake build + parse check required.
 - **API testing:** OpenAPI specs and Schemathesis are required for documented endpoints.
-- **Security testing:** Run through the threat model checklist (docs/architecture.md Section 3.1) for any change that touches auth, networking, or data storage.
+- **Security testing:** Run through the threat model checklist (docs/history/baseline/architecture.md Section 3.1) for any change that touches auth, networking, or data storage.
 
 ---
 
@@ -506,15 +506,15 @@ When changing one, check if the others need updating:
 
 | Change | Also update |
 |--------|-------------|
-| New API endpoint | `docs/requirements.md` (API section), `app/server/monitor/__init__.py` (blueprint registration) |
+| New API endpoint | `docs/history/baseline/requirements.md` (API section), `app/server/monitor/__init__.py` (blueprint registration) |
 | New package in image | Appropriate packagegroup `.bb`, verify parse with `bitbake -p` |
 | New Python dependency | `app/<app>/requirements.txt`, check `bitbake -s` for Yocto availability |
 | New systemd service | Recipe `.bb` (SYSTEMD_SERVICE), `app/<app>/config/` |
 | Distro feature change | `meta-home-monitor/conf/distro/home-monitor.conf`, may affect all images |
-| Partition layout change | `meta-home-monitor/wic/*.wks`, `docs/architecture.md` (Section 5) |
+| Partition layout change | `meta-home-monitor/wic/*.wks`, `docs/history/baseline/architecture.md` (Section 5) |
 | New image package | Packagegroup, NOT image .bb directly |
 | Version bump | Distro config, `app/*/setup.py`, git tag, release notes |
-| Security-relevant change | `docs/architecture.md` (threat model), `docs/requirements.md` (security section) |
+| Security-relevant change | `docs/history/baseline/architecture.md` (threat model), `docs/history/baseline/requirements.md` (security section) |
 
 ---
 
@@ -574,9 +574,9 @@ When changing one, check if the others need updating:
 - **Self-hosted operators generate and own their own OTA signing keypair.**
 - **The signing private key is never committed to git.** It lives in `~/.monitor-keys/` on the build machine only.
 - **Rollback:** If a new rootfs fails to boot 3 times, the device automatically rolls back. Never disable this.
-- **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/update-roadmap.md`.
-- **OTA key backup/recovery:** use [`docs/ota-key-management.md`](ota-key-management.md) and the `backup-ota-keys.sh` / `restore-ota-keys.sh` scripts.
-- **Release/recovery operator flow:** use [`docs/release-runbook.md`](release-runbook.md) for normal release, new VM recovery, and lost-key recovery paths.
+- **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/history/planning/update-roadmap.md`.
+- **OTA key backup/recovery:** use [`docs/guides/ota-key-management.md`](ota-key-management.md) and the `backup-ota-keys.sh` / `restore-ota-keys.sh` scripts.
+- **Release/recovery operator flow:** use [`docs/guides/release-runbook.md`](release-runbook.md) for normal release, new VM recovery, and lost-key recovery paths.
 
 ### 6.3 Secrets Management
 
@@ -606,15 +606,15 @@ When changing one, check if the others need updating:
 
 | Change type | Documentation required |
 |---|---|
-| New feature | Update `docs/requirements.md` (add user need or SW requirement) |
-| New API endpoint | Update `docs/requirements.md` (SR-SRV-12 API section) |
-| Architecture change | Update `docs/architecture.md` |
-| Security change | Update threat model in `docs/architecture.md` Section 3 |
+| New feature | Update `docs/history/baseline/requirements.md` (add user need or SW requirement) |
+| New API endpoint | Update `docs/history/baseline/requirements.md` (SR-SRV-12 API section) |
+| Architecture change | Update `docs/history/baseline/architecture.md` |
+| Security change | Update threat model in `docs/history/baseline/architecture.md` Section 3 |
 | New Yocto recipe/package | Update `README.md` (if it affects build) |
 | Build process change | Update `README.md` and `scripts/build.sh` |
-| New dev workflow | Update this file (`docs/development-guide.md`) |
-| OTA key backup / rotation process | `docs/ota-key-management.md` |
-| Release / operator recovery flow | `docs/release-runbook.md` |
+| New dev workflow | Update this file (`docs/guides/development-guide.md`) |
+| OTA key backup / rotation process | `docs/guides/ota-key-management.md` |
+| Release / operator recovery flow | `docs/guides/release-runbook.md` |
 
 ### 7.2 Documentation Style
 
@@ -679,7 +679,7 @@ Since this is a public GitHub repository:
 [ ] Validate all user input
 [ ] Add contract test in tests/test_api_contracts.py (exact field names)
 [ ] Add integration test in tests/test_api_<domain>.py
-[ ] Update docs/requirements.md (SR-SRV-12 API section)
+[ ] Update docs/history/baseline/requirements.md (SR-SRV-12 API section)
 [ ] Test with curl
 [ ] Commit on a feature branch, open PR
 ```
@@ -720,7 +720,7 @@ Since this is a public GitHub repository:
 [ ] Assess severity (critical/high/medium/low)
 [ ] Create security/ branch (don't disclose details in branch name)
 [ ] Fix the vulnerability
-[ ] Update threat model in docs/architecture.md if needed
+[ ] Update threat model in docs/history/baseline/architecture.md if needed
 [ ] Test the fix
 [ ] Open PR with security label
 [ ] After merge: update all deployed devices via OTA

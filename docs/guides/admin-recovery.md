@@ -27,7 +27,7 @@ The recovery path is a **hardware factory reset** — a physical button / pin-sh
 Implementation status: **planned, not yet shipped.** Tracked with the hardware-refresh work. Until the physical reset lands, the transitional path is:
 
 - Unplug the device.
-- Remove the SD card, reflash the OS image (`docs/build-setup.md`), and put it back. WiFi / admin / cameras all need to be set up again as if it were a new device.
+- Remove the SD card, reflash the OS image (`docs/guides/build-setup.md`), and put it back. WiFi / admin / cameras all need to be set up again as if it were a new device.
 - Any video recordings on the `/data` partition or USB drive are preserved or wiped depending on whether you reformatted those separately — treat this as a full reset.
 
 This is deliberately painful. Forgetting the admin password on a security device should be an uncommon event; "accidentally" triggering it on a live deployment requires physical access, which is already the trust boundary.
@@ -42,4 +42,4 @@ This is deliberately painful. Forgetting the admin password on a security device
 
 ## Security model
 
-`docs/exec-plans/auth-recovery.md` is the design record. Short version: admin-assisted reset is in-app and audited; admin-alone reset is hardware-only. Anything in between is a backdoor, regardless of how narrow the permission envelope is.
+`docs/archive/exec-plans/auth-recovery.md` is the design record. Short version: admin-assisted reset is in-app and audited; admin-alone reset is hardware-only. Anything in between is a backdoor, regardless of how narrow the permission envelope is.

@@ -8,6 +8,8 @@ import re
 from build_instruction_files import ROOT, generated_files
 
 REQUIRED_CANONICAL = [
+    "docs/README.md",
+    "docs/doc-map.yml",
     "docs/ai/index.md",
     "docs/ai/mission-and-goals.md",
     "docs/ai/repo-map.md",
@@ -30,6 +32,7 @@ REQUIRED_CANONICAL = [
     "scripts/ai/build_instruction_files.py",
     "scripts/ai/check_doc_links.py",
     "scripts/ai/check_shell_scripts.py",
+    "tools/docs/check_doc_map.py",
 ]
 
 EXPECTED_CURSOR = {
@@ -75,6 +78,7 @@ CI_REQUIRED_PATHS = {
     "pyproject.toml",
 }
 CI_REQUIRED_SNIPPETS = {
+    "python tools/docs/check_doc_map.py",
     "python scripts/ai/validate_repo_ai_setup.py",
     "python scripts/ai/check_doc_links.py",
     "python scripts/ai/check_shell_scripts.py",

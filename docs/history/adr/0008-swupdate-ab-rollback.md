@@ -4,7 +4,7 @@
 Accepted (implementation in progress)
 
 ## Context
-The partition layout (WKS files) provisions A/B root partitions on both server and camera. Since this ADR was first drafted, parts of the OTA stack have been implemented, but the full production-grade update path is still incomplete and not yet fully validated on real hardware. The repo uses this ADR as the target architecture; see `docs/update-roadmap.md` for current status.
+The partition layout (WKS files) provisions A/B root partitions on both server and camera. Since this ADR was first drafted, parts of the OTA stack have been implemented, but the full production-grade update path is still incomplete and not yet fully validated on real hardware. The repo uses this ADR as the target architecture; see `docs/history/planning/update-roadmap.md` for current status.
 
 ### Hardware (measured 2026-04-11)
 

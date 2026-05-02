@@ -7,8 +7,8 @@ All notable changes to RPi Home Monitor are documented here.
 Documentation-only catch-up between 1.4.3 and the next release. No image-rebuild or behaviour change.
 
 ### Documentation
-- **`docs/hardware-setup.md` — Pi Zero 2W WiFi band corrected** ([#197](https://github.com/vinu-dev/rpi-home-monitor/pull/197), closes [#184](https://github.com/vinu-dev/rpi-home-monitor/issues/184)). Three places claimed or implied 5GHz support; the Zero 2W ships 802.11 b/g/n (2.4GHz only). Fixed the shopping-list note, the network-requirements row, and the troubleshooting "use 5GHz band" advice — none of which made sense given the camera hardware. Replaced with the actually-actionable equivalent (move other 2.4GHz devices to 5GHz to free airtime, pick a less-crowded channel).
-- **Motion-mode pre-roll exec plan** ([#202](https://github.com/vinu-dev/rpi-home-monitor/pull/202), tracks [#160](https://github.com/vinu-dev/rpi-home-monitor/issues/160)). Translates the original `docs/exec-plans/motion-detection.md` §D5 decision (3-second H.264 ring buffer with `MOTION_PREROLL_ENABLED` kill switch) into four reviewable implementation phases. Phase 4 is hardware-gated (24h soak + smoke test before flipping the flag default-on). Plan ships now; implementation phases will land as their own PRs.
+- **`docs/guides/hardware-setup.md` — Pi Zero 2W WiFi band corrected** ([#197](https://github.com/vinu-dev/rpi-home-monitor/pull/197), closes [#184](https://github.com/vinu-dev/rpi-home-monitor/issues/184)). Three places claimed or implied 5GHz support; the Zero 2W ships 802.11 b/g/n (2.4GHz only). Fixed the shopping-list note, the network-requirements row, and the troubleshooting "use 5GHz band" advice — none of which made sense given the camera hardware. Replaced with the actually-actionable equivalent (move other 2.4GHz devices to 5GHz to free airtime, pick a less-crowded channel).
+- **Motion-mode pre-roll exec plan** ([#202](https://github.com/vinu-dev/rpi-home-monitor/pull/202), tracks [#160](https://github.com/vinu-dev/rpi-home-monitor/issues/160)). Translates the original `docs/archive/exec-plans/motion-detection.md` §D5 decision (3-second H.264 ring buffer with `MOTION_PREROLL_ENABLED` kill switch) into four reviewable implementation phases. Phase 4 is hardware-gated (24h soak + smoke test before flipping the flag default-on). Plan ships now; implementation phases will land as their own PRs.
 - **Recording-scheduler module docstring corrected** ([#203](https://github.com/vinu-dev/rpi-home-monitor/pull/203)). The policy block at the top of `app/server/monitor/services/recording_scheduler.py` still claimed `motion → treated as "off" (reserved for future motion ADR)` — stale since ADR-0021 shipped. The actual code at lines 207–220 evaluates motion via `MotionEventStore.is_camera_active(post_roll_seconds=...)`. Replaced with an accurate paragraph that names the real behaviour, including the fail-safe "no event store wired in → silent False" branch.
 
 ### Issue housekeeping
@@ -124,7 +124,7 @@ hardening, and a mobile-UI polish pass. No breaking API changes.
 - **Live View height cap** ([#98](https://github.com/vinu-dev/rpi-home-monitor/pull/98), [#97](https://github.com/vinu-dev/rpi-home-monitor/pull/97)) — player capped at 70vh with player controls; fits laptop viewports without scrolling.
 - **Dashboard "N recent system events" strip** ([#102](https://github.com/vinu-dev/rpi-home-monitor/pull/102)) — now clears when the user visits `/logs` instead of hanging around until page reload.
 - **Server-deploy script now ships `reset-admin-password.py`** ([#108](https://github.com/vinu-dev/rpi-home-monitor/pull/108)) under `/opt/monitor/scripts/` so on-device recovery uses the same code the CI tests exercise.
-- **Release planning + local-first roadmap docs landed** (`docs/roadmap-next-2-releases.md`, `docs/specs/r1-*.md`).
+- **Release planning + local-first roadmap docs landed** (`docs/history/planning/roadmap-next-2-releases.md`, `docs/history/specs/r1-*.md`).
 
 ### Fixed
 - **Motion-mode recordings — clip spawning race** ([#94](https://github.com/vinu-dev/rpi-home-monitor/pull/94)) — scheduler now wakes on motion event + correlator accepts clips that start just after the event timestamp.
@@ -175,7 +175,7 @@ a round of release-readiness security fixes.
 - **USB "In use" state** — active backing device shows the badge + eject hint instead of a clickable Use button.
 - **`build-swu.sh` post-substitution check** — aborts if any `@@PLACEHOLDER@@` markers survived sed substitution.
 - **Recordings page supports flat-layout clips** — loop-recorder clips (`<cam>/YYYYMMDD_HHMMSS.mp4`) now listable via `get_dates_with_clips`, `list_clips`, `get_clip_path`.
-- **Signed-OTA validation record** — `docs/exec-plans/ota-signing-validation-2026-04-19.md` captures the 6/6 on-hardware tests.
+- **Signed-OTA validation record** — `docs/archive/exec-plans/ota-signing-validation-2026-04-19.md` captures the 6/6 on-hardware tests.
 
 ### Changed
 - **OTA bundle staging is atomic** — `shutil.move` swapped for `os.replace` via a per-request temp path. Concurrent uploads against the same filename no longer risk corruption.

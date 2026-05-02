@@ -1,6 +1,6 @@
 # Exec Plan — Camera-Side Motion Detection
 
-**Status:** Shipped (Phase 2). See [ADR-0021](../adr/0021-camera-side-motion-detection.md) for the formal decision record.
+**Status:** Shipped (Phase 2). See [ADR-0021](../../history/adr/0021-camera-side-motion-detection.md) for the formal decision record.
 **Date:** 2026-04-19 (proposal) → 2026-04-20 (shipped)
 **Owner:** vinu-dev
 
@@ -442,7 +442,7 @@ A future per-user zones editor populates `zones`; today it's empty.
 24. Dashboard tile badge + 24-h event count.
 25. Events list page (or panel) with per-row click-through to
     `/events/<id>` (see Phase 5a).
-26. Documentation: update `docs/architecture.md` §8 and §8.0.1 tables;
+26. Documentation: update `docs/history/baseline/architecture.md` §8 and §8.0.1 tables;
     mark ADR-0017 "motion slot reserved" note as implemented.
 
 ### Phase 6 — Hardware validation
@@ -456,7 +456,7 @@ A future per-user zones editor populates `zones`; today it's empty.
 ## Resumption
 
 - **Current status:** design proposal written; awaiting sign-off on D1–D7.
-- **Last completed step:** `docs/exec-plans/motion-detection.md` committed.
+- **Last completed step:** `docs/archive/exec-plans/motion-detection.md` committed.
 - **Next step:** Phase 1 — confirm Picamera2 is in the camera Yocto
   recipe or add it; measure image-size delta.
 - **Branch / PR:** `feat/motion-detection` (local, not yet pushed).

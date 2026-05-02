@@ -53,13 +53,13 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
    `Rejected` / `Superseded by ADR-XXXX` if the decision is reversed
    later.
 5. Update the index table above in the same commit.
-6. Link the ADR from the relevant code or doc (`docs/architecture.md`,
+6. Link the ADR from the relevant code or doc (`docs/history/baseline/architecture.md`,
    module docstrings, etc.) so readers can find it from the surface
    they're reading.
 
 ## See also
 
-- [`docs/ai/index.md`](../ai/index.md) — AI-assistant entrypoint
-- [`docs/architecture.md`](../architecture.md) — current system picture
-- [`docs/exec-plans/`](../exec-plans/) — multi-session execution plans
+- [`docs/ai/index.md`](../../ai/index.md) — AI-assistant entrypoint
+- [`docs/history/baseline/architecture.md`](../baseline/architecture.md) — current system picture
+- [`docs/exec-plans/`](../../exec-plans/) — multi-session execution plans
   that implement ADRs

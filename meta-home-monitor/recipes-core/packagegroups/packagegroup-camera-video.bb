@@ -2,7 +2,7 @@
 SUMMARY = "Video/camera packages for Zero 2W camera node"
 DESCRIPTION = "FFmpeg, libcamera + Python bindings, Picamera2, and numpy \
 for dual-stream video capture and on-device motion detection via the \
-H.264 encoder's motion-vector output (docs/exec-plans/motion-detection.md \
+H.264 encoder's motion-vector output (docs/archive/exec-plans/motion-detection.md \
 §D1, Phase 2). libcamera's PACKAGECONFIG[pycamera] is enabled via a \
 meta-home-monitor bbappend so the pycamera Python bindings get built."
 LICENSE = "MIT"

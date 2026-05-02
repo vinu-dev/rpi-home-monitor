@@ -267,7 +267,7 @@ class StreamingService:
         Idempotent: if a recorder is already alive, this is a no-op.
         Segment directory structure: <recordings_dir>/<cam_id>/YYYYMMDD_HHMMSS.mp4
 
-        Partial-write discipline (docs/exec-plans/motion-detection.md):
+        Partial-write discipline (docs/archive/exec-plans/motion-detection.md):
         ffmpeg writes each segment as ``<stem>.mp4.part`` and appends the
         finished filename to ``.segments.log`` on clean close. A finaliser
         thread (started per cam on first use) tails that log and renames

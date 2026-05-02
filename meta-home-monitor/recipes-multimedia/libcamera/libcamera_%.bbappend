@@ -7,5 +7,5 @@
 # which *requires* those bindings — without this append the
 # `import libcamera` inside picamera2 fails at start-up.
 #
-# See docs/exec-plans/motion-detection.md §Phase-2 for the design.
+# See docs/archive/exec-plans/motion-detection.md §Phase-2 for the design.
 PACKAGECONFIG:append = " pycamera"

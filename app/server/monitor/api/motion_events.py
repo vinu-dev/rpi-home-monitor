@@ -9,7 +9,7 @@ Two responsibilities:
 
 2. ``GET /events/<event_id>`` — HTML redirect router that applies the
    "clip on disk -> Recordings, otherwise Live" rule from
-   docs/exec-plans/motion-detection.md. No session auth — an authenticated
+   docs/archive/exec-plans/motion-detection.md. No session auth — an authenticated
    session is already enforced by the surrounding pages; this route
    only issues a 302 and never reveals event content by itself.
 """

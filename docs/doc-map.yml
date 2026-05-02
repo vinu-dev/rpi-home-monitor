@@ -1,0 +1,142 @@
+# Documentation map for humans and AI agents.
+# Status values: active, controlled-draft, historical, archived, template.
+
+- path: docs/README.md
+  title: Documentation Front Door
+  type: front-door
+  status: active
+  audience: [human, ai]
+  source_of_truth: true
+  notes: Start here before loading deeper documentation.
+
+- path: docs/ai/
+  title: AI Operating System
+  type: agent-policy
+  status: active
+  audience: [ai, human]
+  source_of_truth: true
+  validates_with:
+    - python scripts/ai/validate_repo_ai_setup.py
+
+- path: docs/intended-use/
+  title: Intended Use And User Needs
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [UN]
+
+- path: docs/requirements/
+  title: Requirements
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [SYS, SWR, HWR]
+
+- path: docs/architecture/
+  title: Architecture
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [ARCH, SWA, HWA]
+
+- path: docs/risk/
+  title: Safety Risk
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [HAZ, RISK, RC, DFMEA]
+
+- path: docs/cybersecurity/
+  title: Cybersecurity
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [SEC, THREAT, SC]
+
+- path: docs/verification-validation/
+  title: Verification And Validation
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  ids: [TC]
+
+- path: docs/traceability/
+  title: Traceability
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+  validates_with:
+    - python tools/traceability/check_traceability.py
+
+- path: docs/quality-records/
+  title: Quality Records
+  type: controlled-record
+  status: controlled-draft
+  audience: [human, ai, regulatory-review]
+  source_of_truth: true
+
+- path: docs/guides/
+  title: Human Guides
+  type: guide
+  status: active
+  audience: [human, ai]
+  source_of_truth: false
+  notes: Practical operator and developer guides.
+
+- path: docs/exec-plans/
+  title: Active Execution Plans
+  type: active-plan
+  status: active
+  audience: [human, ai]
+  source_of_truth: false
+  notes: Only active resumable plans and the template belong here.
+
+- path: docs/history/adr/
+  title: Architecture Decision Records
+  type: design-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+
+- path: docs/history/specs/
+  title: Feature Specs
+  type: design-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+
+- path: docs/history/releases/
+  title: Release Plans
+  type: design-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+
+- path: docs/history/baseline/
+  title: Historical Baselines
+  type: design-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+
+- path: docs/history/planning/
+  title: Planning History
+  type: planning-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+
+- path: docs/archive/
+  title: Archived Records
+  type: archive
+  status: archived
+  audience: [human, ai]
+  source_of_truth: false
+  notes: Do not use as current truth without a current record link.

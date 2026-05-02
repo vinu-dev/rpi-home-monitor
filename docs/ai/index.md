@@ -35,21 +35,23 @@ point back here instead of duplicating the whole handbook.
 
 ## Existing System References
 
-- [`../architecture.md`](../architecture.md)
+- [`../README.md`](../README.md) — human and AI documentation front door
+- [`../doc-map.yml`](../doc-map.yml) — machine-readable documentation map
+- [`../history/baseline/architecture.md`](../history/baseline/architecture.md)
 - [`../architecture/versioning.md`](../architecture/versioning.md) — single
   source of truth for product release versions; `/etc/os-release` is the
   image-side SSOT and `release_version()` is the only allowed reader. CI
   guards this in `scripts/check_versioning_design.py`.
-- [`../development-guide.md`](../development-guide.md)
-- [`../testing-guide.md`](../testing-guide.md)
-- [`../build-setup.md`](../build-setup.md)
-- [`../hardware-setup.md`](../hardware-setup.md)
-- [`../requirements.md`](../requirements.md)
+- [`../guides/development-guide.md`](../guides/development-guide.md)
+- [`../guides/testing-guide.md`](../guides/testing-guide.md)
+- [`../guides/build-setup.md`](../guides/build-setup.md)
+- [`../guides/hardware-setup.md`](../guides/hardware-setup.md)
+- [`../history/baseline/requirements.md`](../history/baseline/requirements.md)
 - [`../intended-use/intended-use.md`](../intended-use/intended-use.md)
 - [`../traceability/traceability-matrix.md`](../traceability/traceability-matrix.md)
-- [`../releases/`](../releases/)
-- [`../specs/`](../specs/)
-- [`../adr/`](../adr/)
+- [`../history/releases/`](../history/releases/)
+- [`../history/specs/`](../history/specs/)
+- [`../history/adr/`](../history/adr/)
 
 ## Adapter Rule
 

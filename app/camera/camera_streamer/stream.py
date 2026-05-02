@@ -40,7 +40,7 @@ log = logging.getLogger("camera-streamer.stream")
 INITIAL_BACKOFF = 2
 MAX_BACKOFF = 60
 
-# Motion detection (docs/exec-plans/motion-detection.md). ffmpeg tees a
+# Motion detection (docs/archive/exec-plans/motion-detection.md). ffmpeg tees a
 # downsampled grayscale stream to the write end of an os.pipe() at ~5 fps;
 # MotionRunner reads frames from the read end. Using a pipe fd (not a
 # disk FIFO) sidesteps ffmpeg's refuse-to-overwrite logic and the various

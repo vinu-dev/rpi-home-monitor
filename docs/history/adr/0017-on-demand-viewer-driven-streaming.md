@@ -315,4 +315,4 @@ server) which is the shipping design.
 | Camera tests                        | `app/camera/tests/unit/test_control.py`, `test_stream.py`, `test_heartbeat.py` |
 | Server tests (new + updated)        | `app/server/tests/unit/test_streaming.py`, `test_recording_scheduler.py`, `test_loop_recorder.py`, `test_on_demand_coordinator.py` |
 | Integration tests                   | `app/server/tests/integration/test_on_demand_flow.py` (new)                |
-| Docs                                | `docs/architecture.md`, `docs/requirements.md`, `docs/exec-plans/on-demand-streaming.md` |
+| Docs                                | `docs/history/baseline/architecture.md`, `docs/history/baseline/requirements.md`, `docs/exec-plans/on-demand-streaming.md` |

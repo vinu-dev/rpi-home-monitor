@@ -83,6 +83,6 @@ authentication, recovery, or privileged-access feature:
 A rejected backdoor, even a narrowly-scoped one, is documented in
 `docs/exec-plans/*.md` under a "rejected on review" section so the
 decision and reasoning survive to the next engineer who has the same
-idea. See [`docs/admin-recovery.md`](../admin-recovery.md) and
-[`docs/exec-plans/auth-recovery.md`](../exec-plans/auth-recovery.md)
+idea. See [`docs/guides/admin-recovery.md`](../guides/admin-recovery.md) and
+[`docs/archive/exec-plans/auth-recovery.md`](../archive/exec-plans/auth-recovery.md)
 for the working example.

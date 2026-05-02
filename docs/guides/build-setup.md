@@ -153,7 +153,7 @@ Prod configs **inherit** the dev config via `require local.conf` and override
 only the signing policy. That way a change to machine/kernel settings in the
 dev `local.conf` propagates to prod automatically — no drift between the two.
 `build.sh server-prod` / `camera-prod` / `all-prod` select the prod layer.
-See [ADR-0014](adr/0014-swupdate-signing-dev-prod.md) for the signing contract
+See [ADR-0014](../history/adr/0014-swupdate-signing-dev-prod.md) for the signing contract
 and [OTA Key Management](ota-key-management.md) for the per-user keypair policy.
 
 The `home-monitor-camera` machine in `meta-home-monitor/conf/machine/`

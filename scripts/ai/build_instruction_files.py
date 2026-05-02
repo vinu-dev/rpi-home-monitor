@@ -30,9 +30,12 @@ def render_agents() -> str:
         entrypoint for any coding agent.
 
         Canonical source of truth:
+        - [`docs/README.md`](docs/README.md)
+        - [`docs/doc-map.yml`](docs/doc-map.yml)
         - [`docs/ai/index.md`](docs/ai/index.md)
 
         Read next:
+        - [`docs/README.md`](docs/README.md)
         - [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
         - [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
         - [`docs/ai/working-agreement.md`](docs/ai/working-agreement.md)
@@ -52,7 +55,7 @@ def render_agents() -> str:
         - do not commit directly to `main`
 
         Key validation:
-        - repo governance: `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
+        - repo governance: `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
         - server: `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .`
         - camera: `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .`
         - Yocto: `bitbake -p` and VM build for affected images
@@ -76,19 +79,23 @@ def render_claude() -> str:
 
         This file is the Claude-specific entrypoint for the repository.
         The canonical, tool-neutral source of truth lives in
-        [`docs/ai/index.md`](docs/ai/index.md).
+        [`docs/ai/index.md`](docs/ai/index.md), with navigation metadata in
+        [`docs/doc-map.yml`](docs/doc-map.yml).
 
         Start here:
-        1. [`docs/ai/index.md`](docs/ai/index.md)
-        2. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
-        3. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
-        4. [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
-        5. [`docs/ai/medical-traceability.md`](docs/ai/medical-traceability.md)
-        6. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
+        1. [`docs/README.md`](docs/README.md)
+        2. [`docs/doc-map.yml`](docs/doc-map.yml)
+        3. [`docs/ai/index.md`](docs/ai/index.md)
+        4. [`docs/ai/mission-and-goals.md`](docs/ai/mission-and-goals.md)
+        5. [`docs/ai/repo-map.md`](docs/ai/repo-map.md)
+        6. [`docs/ai/execution-rules.md`](docs/ai/execution-rules.md)
+        7. [`docs/ai/medical-traceability.md`](docs/ai/medical-traceability.md)
+        8. [`docs/ai/validation-and-release.md`](docs/ai/validation-and-release.md)
 
         Claude-specific notes:
         - respect [`.claude/settings.json`](.claude/settings.json)
         - use subagents in [`.claude/agents/`](.claude/agents/) for larger tasks
+        - use `docs/doc-map.yml` to avoid treating archived/history docs as current truth
         - keep this file as an adapter, not the full handbook
         - if this file and `docs/ai/` disagree, `docs/ai/` wins
         """
@@ -104,6 +111,7 @@ def render_copilot() -> str:
         Read [`AGENTS.md`](../AGENTS.md) first.
 
         Core rules:
+        - start from [`docs/README.md`](../docs/README.md) and [`docs/doc-map.yml`](../docs/doc-map.yml)
         - follow [`docs/ai/index.md`](../docs/ai/index.md)
         - keep changes scoped and update docs when behavior changes
         - use the correct validation for the area you touched
@@ -188,13 +196,15 @@ def generated_files() -> dict[str, str]:
             "- Do not duplicate long policy text across tool-specific files.\n"
             "- Run the repo AI validator after edits.\n"
             "- Run `python tools/traceability/check_traceability.py` after traceability-affecting edits.\n"
-            "- Keep README, changelog, and runbooks aligned with live product behavior.",
+            "- Keep README, changelog, and runbooks aligned with live product behavior.\n"
+            "- Use `docs/doc-map.yml` to route docs into current records, guides, history, or archive.",
         ),
         ".cursor/rules/00-repo-overview.mdc": render_cursor(
             "Repo-wide overview and source-of-truth rules.",
             ["**/*"],
             "# Repo Overview\n\n"
             "- Read `AGENTS.md` first.\n"
+            "- Start docs navigation at `docs/README.md` and `docs/doc-map.yml`.\n"
             "- Treat `docs/ai/` as the canonical AI operating system.\n"
             "- Keep tool adapters short and linked back to `docs/ai/`.\n"
             "- Work toward a clear product goal and success criteria.\n"
@@ -207,6 +217,7 @@ def generated_files() -> dict[str, str]:
             "# Goals And Plans\n\n"
             "- Start from the user or operator outcome, not just the local code change.\n"
             "- For larger or riskier work, use `docs/exec-plans/template.md`.\n"
+            "- Treat `docs/history/` and `docs/archive/` as context, not current source of truth.\n"
             "- Prefer design-level fixes over symptom patches.\n"
             "- Note assumptions when the requested goal is underspecified.\n",
             always=True,

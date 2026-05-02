@@ -4,6 +4,7 @@
 Read [`AGENTS.md`](../AGENTS.md) first.
 
 Core rules:
+- start from [`docs/README.md`](../docs/README.md) and [`docs/doc-map.yml`](../docs/doc-map.yml)
 - follow [`docs/ai/index.md`](../docs/ai/index.md)
 - keep changes scoped and update docs when behavior changes
 - use the correct validation for the area you touched

@@ -11,23 +11,23 @@ tests.
 
 | Area | Summary | Existing evidence |
 |---|---|---|
-| Server source | Flask app, API blueprints, templates, services, models, JSON store, audit, OTA, recording, alerts. | `app/server/monitor/`, `app/server/tests/`, `docs/architecture.md` |
+| Server source | Flask app, API blueprints, templates, services, models, JSON store, audit, OTA, recording, alerts. | `app/server/monitor/`, `app/server/tests/`, `docs/history/baseline/architecture.md` |
 | Camera source | Python camera runtime, pairing, capture, stream, motion, OTA agent, status UI, WiFi setup, hardware overlay scripts. | `app/camera/camera_streamer/`, `app/camera/config/`, `app/camera/tests/` |
 | Shared/release code | Shared release version reader and version consistency checks. | `app/shared/`, `VERSION`, `scripts/check_versioning_design.py` |
-| Yocto and hardware | Custom distro, server/camera image recipes, machine configs, SWUpdate assets. | `meta-home-monitor/`, `config/`, `swupdate/`, `docs/build-setup.md` |
-| Documentation | Requirements, architecture, ADRs, release docs, specs, hardware setup, testing guide, AI operating rules. | `docs/requirements.md`, `docs/architecture.md`, `docs/adr/`, `docs/specs/`, `docs/ai/` |
+| Yocto and hardware | Custom distro, server/camera image recipes, machine configs, SWUpdate assets. | `meta-home-monitor/`, `config/`, `swupdate/`, `docs/guides/build-setup.md` |
+| Documentation | Requirements, architecture, ADRs, release docs, specs, hardware setup, testing guide, AI operating rules. | `docs/history/baseline/requirements.md`, `docs/history/baseline/architecture.md`, `docs/history/adr/`, `docs/history/specs/`, `docs/ai/` |
 | CI/CD | PR CI, nightly, release validation, OTA signing checks, shell/workflow lint, coverage gates. | `.github/workflows/` |
-| Security docs | Auth hardening, mTLS pairing, no-backdoor policy, OTA signing, key management, connectivity/privacy constraints. | `docs/adr/0009-camera-pairing-mtls.md`, `docs/adr/0011-auth-hardening.md`, `docs/adr/0022-no-backdoors.md`, `docs/ota-key-management.md` |
-| Risk/safety docs | ADRs contain risk reasoning, but no unified hazard analysis, DFMEA, or risk-control verification matrix existed before this change. | `docs/adr/`, `docs/exec-plans/` |
+| Security docs | Auth hardening, mTLS pairing, no-backdoor policy, OTA signing, key management, connectivity/privacy constraints. | `docs/history/adr/0009-camera-pairing-mtls.md`, `docs/history/adr/0011-auth-hardening.md`, `docs/history/adr/0022-no-backdoors.md`, `docs/guides/ota-key-management.md` |
+| Risk/safety docs | ADRs contain risk reasoning, but no unified hazard analysis, DFMEA, or risk-control verification matrix existed before this change. | `docs/history/adr/`, `docs/exec-plans/` |
 
 ## Useful Existing Artifacts
 
-- Existing requirements baseline: `docs/requirements.md`.
-- Existing architecture baseline: `docs/architecture.md` and `docs/adr/`.
-- Existing validation baseline: `docs/testing-guide.md`, PR CI, coverage gates, contract tests, security tests.
+- Existing requirements baseline: `docs/history/baseline/requirements.md`.
+- Existing architecture baseline: `docs/history/baseline/architecture.md` and `docs/history/adr/`.
+- Existing validation baseline: `docs/guides/testing-guide.md`, PR CI, coverage gates, contract tests, security tests.
 - Existing security posture: no-backdoor rule, mTLS pairing, signed OTA, CSRF/session hardening, firewall configs, LUKS design.
-- Existing release and update evidence: `RELEASE.md`, `docs/release-runbook.md`, `docs/ota-key-management.md`.
-- Existing hardware and operator setup evidence: `docs/hardware-setup.md`, `docs/build-setup.md`.
+- Existing release and update evidence: `RELEASE.md`, `docs/guides/release-runbook.md`, `docs/guides/ota-key-management.md`.
+- Existing hardware and operator setup evidence: `docs/guides/hardware-setup.md`, `docs/guides/build-setup.md`.
 
 ## Gaps Found
 

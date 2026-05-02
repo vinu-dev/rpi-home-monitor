@@ -38,7 +38,7 @@ DEFAULTS = {
     "CAMERA_ID": "",
     "ADMIN_USERNAME": "admin",  # default username
     "ADMIN_PASSWORD": "",  # salt:hash (PBKDF2-SHA256)
-    # Motion detection (docs/exec-plans/motion-detection.md). When true,
+    # Motion detection (docs/archive/exec-plans/motion-detection.md). When true,
     # the streaming ffmpeg tees a downsampled grayscale stream to a FIFO
     # and MotionRunner drives the detector off it. Events are POSTed to
     # the paired server via HMAC. Requires numpy on-device.

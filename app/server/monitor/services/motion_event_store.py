@@ -10,7 +10,7 @@ Thread-safe: a single lock guards both in-memory state and the file
 write. Reads are served from memory; writes persist to disk atomically
 (tempfile + os.replace).
 
-See `docs/exec-plans/motion-detection.md`.
+See `docs/archive/exec-plans/motion-detection.md`.
 """
 
 from __future__ import annotations
@@ -203,7 +203,7 @@ class MotionEventStore:
 
         Used by ``RecordingScheduler`` to decide whether motion-mode
         cameras should have their recorder running this tick. See
-        docs/exec-plans/motion-detection.md §Phase 4.
+        docs/archive/exec-plans/motion-detection.md §Phase 4.
 
         Args:
             camera_id: Which camera to test.
