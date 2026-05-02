@@ -385,3 +385,195 @@ class TestSetHostname:
         # Verify we tried to open the persistence file path
         open_calls = [str(c) for c in mock_open.call_args_list]
         assert any("/data/config/hostname" in c for c in open_calls)
+
+
+class TestSetHostnameMdnsGoodbye:
+    """Verify the mDNS goodbye path on hostname change (issue #200, RFC 6762 §10.1).
+
+    The daemon-restart shortcut used previously kills avahi-daemon
+    before it can broadcast cache-flush records for the OLD hostname,
+    so cached resolvers around the network keep the old name
+    resolvable for its full TTL window. ``avahi-set-host-name`` swaps
+    the daemon's owned name in-place: goodbye for old + announce for
+    new in one atomic transition.
+    """
+
+    def _ok(self):
+        """Stand-in for a successful subprocess.run result."""
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    def _err(self, rc=1, stderr=b"D-Bus error: AccessDenied\n"):
+        return MagicMock(returncode=rc, stdout=b"", stderr=stderr)
+
+    def test_calls_avahi_set_host_name_with_new_name(self, tmp_path):
+        """The new name must be handed to avahi-daemon via the D-Bus helper."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            return self._ok()
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-old"),
+        ):
+            assert set_hostname("rpi-new") is True
+
+        # The D-Bus helper was invoked with the new name.
+        assert ["avahi-set-host-name", "rpi-new"] in runs, runs
+
+    def test_does_not_restart_avahi_when_set_host_name_succeeds(self, tmp_path):
+        """The whole point of the fix: no daemon restart when goodbye succeeded."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            return self._ok()
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-old"),
+        ):
+            set_hostname("rpi-new")
+
+        commands = [c[0] for c in runs]
+        assert "avahi-set-host-name" in commands
+        # No fallback restart should fire on the happy path.
+        for cmd in runs:
+            assert cmd[:2] != ["systemctl", "restart"], (
+                f"unexpected daemon restart on success path: {cmd}"
+            )
+
+    def test_falls_back_to_daemon_restart_when_set_host_name_returns_nonzero(
+        self, tmp_path
+    ):
+        """Daemon refused → still publish the new name (without goodbye)."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            if cmd[0] == "avahi-set-host-name":
+                return self._err(rc=2, stderr=b"name conflict\n")
+            return self._ok()
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-old"),
+        ):
+            assert set_hostname("rpi-new") is True
+
+        commands = [c for c in runs]
+        assert ["avahi-set-host-name", "rpi-new"] in commands
+        assert ["systemctl", "restart", "avahi-daemon"] in commands
+
+    def test_falls_back_when_set_host_name_missing(self, tmp_path):
+        """No avahi-set-host-name binary → fallback to daemon restart."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            if cmd[0] == "avahi-set-host-name":
+                raise FileNotFoundError(2, "No such file")
+            return self._ok()
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-old"),
+        ):
+            set_hostname("rpi-new")
+
+        assert ["systemctl", "restart", "avahi-daemon"] in runs
+
+    def test_falls_back_when_set_host_name_times_out(self, tmp_path):
+        """Daemon stuck → still set the new name and try the restart fallback."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            if cmd[0] == "avahi-set-host-name":
+                raise subprocess.TimeoutExpired(cmd, 5)
+            return self._ok()
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-old"),
+        ):
+            assert set_hostname("rpi-new") is True
+
+        assert ["systemctl", "restart", "avahi-daemon"] in runs
+
+    def test_logs_old_to_new_rotation(self, tmp_path, caplog):
+        """The rotation log line must include both the old and new name for debug."""
+        import logging as _logging
+
+        with (
+            patch(
+                "camera_streamer.wifi.subprocess.run",
+                return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+            ),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch(
+                "camera_streamer.wifi.socket.gethostname", return_value="rpi-old-d8ee"
+            ),
+            caplog.at_level(_logging.INFO, logger="camera-streamer.wifi"),
+        ):
+            set_hostname("rpi-new-a5cf")
+
+        rotation_lines = [
+            r.message for r in caplog.records if "mDNS hostname change" in r.message
+        ]
+        assert any(
+            "rpi-old-d8ee" in line and "rpi-new-a5cf" in line for line in rotation_lines
+        ), rotation_lines
+
+    def test_no_rotation_log_when_unchanged(self, tmp_path, caplog):
+        """Idempotent set (same name) should log a different message — no goodbye dance implied."""
+        import logging as _logging
+
+        with (
+            patch(
+                "camera_streamer.wifi.subprocess.run",
+                return_value=MagicMock(returncode=0, stdout=b"", stderr=b""),
+            ),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch("camera_streamer.wifi.socket.gethostname", return_value="rpi-same"),
+            caplog.at_level(_logging.INFO, logger="camera-streamer.wifi"),
+        ):
+            set_hostname("rpi-same")
+
+        for r in caplog.records:
+            assert "mDNS hostname change" not in r.message, r.message
+
+    def test_socket_gethostname_failure_does_not_break_path(self, tmp_path):
+        """socket.gethostname() failures fall through — the change still proceeds."""
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+        with (
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch(
+                "camera_streamer.wifi.socket.gethostname",
+                side_effect=OSError("EFAULT"),
+            ),
+        ):
+            assert set_hostname("rpi-new") is True
+
+        # Even with no prior name, we still hand the new name to avahi.
+        assert ["avahi-set-host-name", "rpi-new"] in runs
