@@ -172,6 +172,75 @@ class TestAlertCenterUI:
         with open(stamp, "w") as f:
             f.write("done")
 
+    def test_settings_notifications_tab_visible_to_admin(self, client):
+        """ADR-0027 / #129 — Settings has a Notifications tab in
+        the admin tab bar. Pin both the button and the tab body
+        gate so a future "tidy-up" can't quietly drop them.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Tab button.
+        assert "tab === 'notifications'" in body
+        assert "Notifications</button>" in body or "Notifications<" in body
+        # Tab body has the per-user controls.
+        assert "Browser notifications" in body
+        assert "Notify me" in body
+        # Permission state surfaced.
+        assert "notify.permission === 'granted'" in body
+        assert "notify.permission === 'denied'" in body
+        # Test-notification button.
+        assert "fireTestNotification()" in body
+        # Camera defaults section is admin-only.
+        assert "isAdmin && notify.cameras.length" in body
+
+    def test_settings_notifications_tab_visible_to_viewer(self, client):
+        """Notifications are personal — viewers can manage their
+        own prefs even though they don't see the admin tab bar.
+        Pin that the panel renders for non-admin too.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-002"
+            sess["username"] = "bob"
+            sess["role"] = "viewer"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        # Tab button is in the always-visible part of the tab bar
+        # (the admin-only template-block excludes it). The tab body
+        # is gated by tab=='notifications', not by isAdmin, so it
+        # appears for the viewer when they click the button.
+        assert "Notifications</button>" in body or "Notifications<" in body
+        # Per-camera defaults section IS admin-only — verify it's
+        # gated.
+        assert 'x-show="isAdmin && notify.cameras.length' in body
+
+    def test_base_html_polls_notifications_pending(self, client):
+        """The polling-and-fire-Notification logic must be wired
+        in base.html so the bell-badge poller's neighbour fires
+        OS-level notifications when permission is granted. Pin the
+        fetch URL + the gate.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        # Any authed page renders base.html — use dashboard.
+        response = client.get("/dashboard")
+        body = response.get_data(as_text=True)
+        # Permission gate (skip fetch entirely if not granted).
+        assert "Notification.permission !== 'granted'" in body
+        # Fetch URL.
+        assert "/api/v1/notifications/pending" in body
+        # OS-level dedupe via tag.
+        assert "tag: n.alert_id" in body
+        # Mark-seen round trip so the same alert doesn't re-fire.
+        assert "/api/v1/notifications/seen" in body
+
     def test_dashboard_camera_cards_have_id_anchors(self, client):
         """The Tier-1 status strip's deep_link is `/dashboard#camera-<id>`
         (per system_summary_service._cameras). For that link to actually

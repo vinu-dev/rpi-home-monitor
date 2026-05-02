@@ -177,6 +177,11 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # the dashboard's offline indicator is unaffected. Surfaced so
     # the Camera Settings modal can render the toggle.
     "offline_alerts_enabled",
+    # Per-camera notification rule (#129 / ADR-0027). Dict with
+    # {enabled, min_duration_seconds, coalesce_seconds}. The
+    # camera-level baseline; per-user overrides live separately
+    # in user.notification_prefs.cameras{}.
+    "notification_rule",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
