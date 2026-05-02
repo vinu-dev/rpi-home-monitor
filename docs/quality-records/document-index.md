@@ -19,6 +19,7 @@ Status: Draft prepared to support expert regulatory review.
 | `docs/verification-validation/*` | Test plan, test cases, report template. | `docs/guides/testing-guide.md`, CI workflows, test suites |
 | `docs/traceability/*` | End-to-end traceability matrix. | New machine-checkable matrix |
 | `docs/quality-records/regulatory-review-gap-assessment.md` | Regulatory-review-style gap assessment and human review queue. | New review record linked to expanded draft artifacts |
+| `docs/README.md`, `docs/doc-map.yml` | Human and AI documentation routing. | Front door and machine-readable map for current docs, guides, history, and archive |
 
 ## Existing Docs Retained
 
@@ -28,6 +29,10 @@ execution records. This index maps them into the quality-record structure.
 
 | Existing doc | Keep as | Quality-record relation |
 |---|---|---|
+| `docs/guides/README.md` | Guide folder index. | Helps humans and agents find practical instructions |
+| `docs/exec-plans/README.md` | Active execution plan index. | Helps distinguish active plans from archived records |
+| `docs/history/README.md` | Historical record index. | Prevents historical context from being mistaken for current source of truth |
+| `docs/archive/README.md` | Archive index. | Explains archived-record handling and review cautions |
 | `docs/history/baseline/requirements.md` | Historical product requirements baseline. | Source for `UN-*`, `SYS-*`, `SWR-*`, `HWR-*` |
 | `docs/history/baseline/architecture.md` | Main system/software architecture narrative. | Source for `ARCH-*`, `SWA-*`, `HWA-*` |
 | `docs/history/adr/` | Decision records. | Supporting rationale for architecture, risk, and security controls |

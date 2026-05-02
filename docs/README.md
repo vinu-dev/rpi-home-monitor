@@ -50,7 +50,8 @@ programmatic checks:
 
 ## Human Guides
 
-Use [`guides/`](guides/) for practical operating and development material:
+Use [`guides/README.md`](guides/README.md) for practical operating and
+development material:
 
 - [`guides/hardware-setup.md`](guides/hardware-setup.md)
 - [`guides/build-setup.md`](guides/build-setup.md)
@@ -62,8 +63,9 @@ Use [`guides/`](guides/) for practical operating and development material:
 
 ## History
 
-Use [`history/`](history/) for design history and planning records that inform
-the current controlled records but are not themselves the first place to edit:
+Use [`history/README.md`](history/README.md) for design history and planning
+records that inform the current controlled records but are not themselves the
+first place to edit:
 
 - [`history/adr/`](history/adr/)
 - [`history/specs/`](history/specs/)
@@ -73,9 +75,9 @@ the current controlled records but are not themselves the first place to edit:
 
 ## Active And Archived Plans
 
-Use [`exec-plans/`](exec-plans/) only for active, resumable implementation
-plans and the template. Completed plans and field records live in
-[`archive/exec-plans/`](archive/exec-plans/).
+Use [`exec-plans/README.md`](exec-plans/README.md) only for active, resumable
+implementation plans and the template. Completed plans and field records live
+under [`archive/README.md`](archive/README.md).
 
 ## Rules For AI Agents
 

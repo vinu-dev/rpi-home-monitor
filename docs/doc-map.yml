@@ -88,7 +88,7 @@
   status: active
   audience: [human, ai]
   source_of_truth: false
-  notes: Practical operator and developer guides.
+  notes: Practical operator and developer guides. Start with docs/guides/README.md.
 
 - path: docs/exec-plans/
   title: Active Execution Plans
@@ -96,7 +96,15 @@
   status: active
   audience: [human, ai]
   source_of_truth: false
-  notes: Only active resumable plans and the template belong here.
+  notes: Only active resumable plans and the template belong here. Start with docs/exec-plans/README.md.
+
+- path: docs/history/
+  title: History
+  type: design-history
+  status: historical
+  audience: [human, ai]
+  source_of_truth: false
+  notes: Historical context and design memory. Start with docs/history/README.md.
 
 - path: docs/history/adr/
   title: Architecture Decision Records
@@ -139,4 +147,4 @@
   status: archived
   audience: [human, ai]
   source_of_truth: false
-  notes: Do not use as current truth without a current record link.
+  notes: Do not use as current truth without a current record link. Start with docs/archive/README.md.
