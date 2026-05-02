@@ -11,6 +11,7 @@ for platform abstraction.
 import logging
 import os
 import socket
+import struct
 import subprocess
 import time
 
@@ -356,11 +357,24 @@ def set_hostname(hostname: str) -> bool:
 
         announced = _avahi_set_host_name(hostname)
         if not announced:
-            # Last-resort fallback: restart the daemon. No goodbye for
-            # the old name, but at least the new name reaches the wire
-            # — strictly preserves the pre-fix behaviour.
+            # avahi-set-host-name needs D-Bus access to
+            # org.freedesktop.Avahi.Server.SetHostName, which is gated
+            # to root + user `avahi` by default — the camera-streamer
+            # service runs as user `camera` and gets "Access denied"
+            # (#233). The daemon-restart fallback alone doesn't send a
+            # goodbye, leaving stale `<old>.local` cache entries on the
+            # LAN. Send the goodbye directly via raw multicast UDP
+            # before restarting the daemon — multicast/5353 is
+            # privilege-free and satisfies #200's contract regardless
+            # of avahi's D-Bus policy.
+            if previous_hostname and previous_hostname != hostname:
+                _broadcast_mdns_goodbye(
+                    previous_hostname, get_ip_address() or "0.0.0.0"
+                )
+
             log.warning(
-                "Falling back to avahi-daemon restart (no mDNS goodbye for %s)",
+                "Falling back to avahi-daemon restart for new-name announce "
+                "(direct goodbye sent for %s if reachable)",
                 previous_hostname or "<unknown>",
             )
             try:
@@ -427,3 +441,135 @@ def _avahi_set_host_name(hostname: str) -> bool:
         detail,
     )
     return False
+
+
+# ---------------------------------------------------------------------------
+# Raw mDNS goodbye broadcast (#233)
+#
+# When avahi-set-host-name is unavailable (no D-Bus permission, daemon down)
+# we need a privilege-free path to flush cached `<old>.local` bindings on the
+# LAN. RFC 6762 §10.1 specifies a record with TTL=0; §10.2 specifies the
+# cache-flush bit (high bit of the CLASS field) which forces resolvers to
+# replace any existing matching records rather than merge with them. A single
+# multicast UDP packet to 224.0.0.251:5353 carrying such a record satisfies
+# the contract — and multicast send to a link-local group requires no special
+# privilege.
+# ---------------------------------------------------------------------------
+
+# RFC 6762 §3 — IPv4 mDNS group + port.
+_MDNS_GROUP_IPV4 = "224.0.0.251"
+_MDNS_PORT = 5353
+# RFC 6762 §11 — link-scoped multicast TTL must be 255.
+_MDNS_TTL = 255
+
+
+def _broadcast_mdns_goodbye(hostname: str, ip_address: str) -> bool:
+    """Send a goodbye packet (TTL=0, cache-flush) for ``<hostname>.local``.
+
+    Best-effort: multicast UDP gives no delivery acknowledgement, so we
+    send twice ~1s apart per RFC 6762 §10's redundancy recommendation.
+    Returns True if both sends went through, False on construction or
+    socket errors. The caller logs and continues regardless — the
+    goodbye is a hint to LAN caches, not a guarantee.
+
+    The IP in the RDATA matters less than the cache-flush bit + TTL=0
+    (which together tell resolvers to drop the binding). We pass the
+    current IP when we have it for protocol cleanliness; ``0.0.0.0`` is
+    accepted as a "we don't know" fallback.
+    """
+    if not hostname:
+        return False
+    label = hostname.removesuffix(".local").rstrip(".")
+    if not label:
+        return False
+
+    try:
+        ip_packed = socket.inet_aton(ip_address)
+    except OSError:
+        log.warning("mDNS goodbye: invalid IP %r — skipping", ip_address)
+        return False
+
+    try:
+        packet = _build_mdns_goodbye_packet(label, ip_packed)
+    except ValueError as e:
+        log.warning("mDNS goodbye: cannot build packet for %s: %s", label, e)
+        return False
+
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, _MDNS_TTL)
+        # Two transmissions ~1s apart so a single dropped packet doesn't
+        # leave the LAN with stale cache entries — same redundancy
+        # avahi-daemon uses internally for goodbyes.
+        sock.sendto(packet, (_MDNS_GROUP_IPV4, _MDNS_PORT))
+        time.sleep(1)
+        sock.sendto(packet, (_MDNS_GROUP_IPV4, _MDNS_PORT))
+        log.info("mDNS goodbye broadcast for %s.local (rdata=%s)", label, ip_address)
+        return True
+    except OSError as e:
+        log.warning("mDNS goodbye send failed for %s.local: %s", label, e)
+        return False
+    finally:
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
+def _build_mdns_goodbye_packet(label: str, ip_packed: bytes) -> bytes:
+    """Wire-format a DNS response for ``<label>.local`` with TTL=0.
+
+    Layout per RFC 1035 §4 / RFC 6762 §10:
+
+        Header (12 bytes)
+          Transaction ID = 0
+          Flags          = 0x8400  (QR=1 response, AA=1 authoritative)
+          QDCOUNT        = 0
+          ANCOUNT        = 1
+          NSCOUNT        = 0
+          ARCOUNT        = 0
+
+        Answer
+          NAME      = <label>.<local>.<root>     (length-prefixed labels)
+          TYPE      = 1                          (A)
+          CLASS     = 0x8001                     (IN | cache-flush)
+          TTL       = 0                          (goodbye)
+          RDLENGTH  = 4
+          RDATA     = ip_packed                  (4 bytes IPv4)
+
+    Raises ValueError if any label exceeds the 63-byte DNS limit or
+    contains characters outside ASCII (avahi's mDNS doesn't apply
+    Punycode).
+    """
+    header = struct.pack(
+        ">HHHHHH",
+        0x0000,  # Transaction ID — 0 for unsolicited mDNS responses.
+        0x8400,  # Flags: QR=1, AA=1, OPCODE=0, RCODE=0.
+        0,  # QDCOUNT
+        1,  # ANCOUNT
+        0,  # NSCOUNT
+        0,  # ARCOUNT
+    )
+
+    name_section = b""
+    for part in (label, "local"):
+        try:
+            encoded = part.encode("ascii")
+        except UnicodeEncodeError as e:
+            raise ValueError(f"non-ASCII DNS label: {part!r}") from e
+        if not encoded:
+            raise ValueError(f"empty DNS label: {part!r}")
+        if len(encoded) > 63:
+            raise ValueError(f"DNS label exceeds 63 bytes: {part!r}")
+        name_section += bytes([len(encoded)]) + encoded
+    name_section += b"\x00"  # Root label terminator.
+
+    # TYPE=1 (A), CLASS=0x8001 (IN | cache-flush), TTL=0, RDLENGTH=4.
+    answer_meta = struct.pack(">HHIH", 1, 0x8001, 0, 4)
+
+    if len(ip_packed) != 4:
+        raise ValueError(f"IPv4 RDATA must be 4 bytes, got {len(ip_packed)}")
+
+    return header + name_section + answer_meta + ip_packed
