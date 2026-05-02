@@ -1,3 +1,4 @@
+# REQ: SWR-037, SWR-032; RISK: RISK-008, RISK-022; SEC: SC-020; TEST: TC-035, TC-029
 """
 System health monitor — collects server metrics.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-037; RISK: RISK-008, RISK-022; SEC: SC-020; TEST: TC-035
 """Tests for the health monitoring service."""
 
 from collections import namedtuple

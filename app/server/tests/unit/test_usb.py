@@ -1,3 +1,4 @@
+# REQ: SWR-027; RISK: RISK-013; SEC: SC-013; TEST: TC-024
 """Tests for monitor.services.usb — USB storage detection and management."""
 
 import json

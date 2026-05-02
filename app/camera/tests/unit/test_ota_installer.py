@@ -1,3 +1,4 @@
+# REQ: SWR-038, SWR-010; RISK: RISK-004; SEC: SC-003; TEST: TC-036, TC-013
 """Unit tests for camera-side OTA installer client."""
 
 import io

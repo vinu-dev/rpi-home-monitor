@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Unit tests for camera control handler (ADR-0015)."""
 
 import time

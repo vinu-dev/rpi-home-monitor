@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-050; RISK: RISK-001, RISK-018; SEC: SC-019; TEST: TC-001, TC-005, TC-044
 [Unit]
 Description=Camera RTSP Streamer
 # camera-hotspot.service (oneshot) completes in ~6s and signals either:

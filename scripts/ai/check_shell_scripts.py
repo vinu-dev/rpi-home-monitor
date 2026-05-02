@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# REQ: SWR-055; RISK: RISK-009; SEC: SC-009; TEST: TC-020, TC-045
 """Enforce baseline shell conventions for repository scripts."""
 
 from __future__ import annotations

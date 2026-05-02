@@ -1,3 +1,4 @@
+# REQ: SWR-012; RISK: RISK-001; TEST: TC-005
 """Tests for CameraLifecycle state machine."""
 
 from types import SimpleNamespace

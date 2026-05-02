@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Tests for camera_streamer package structure."""
 
 import camera_streamer

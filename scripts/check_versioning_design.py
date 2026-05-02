@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# REQ: SWR-046, SWR-048; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 """Static guards for the versioning SSOT design (1.4.3).
 
 The "single source of truth" policy lives in

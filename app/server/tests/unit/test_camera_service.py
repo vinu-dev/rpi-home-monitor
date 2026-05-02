@@ -1,3 +1,4 @@
+# REQ: SWR-004, SWR-011, SWR-026; RISK: RISK-005, RISK-007, RISK-015; SEC: SC-002; TEST: TC-012, TC-030
 """Tests for the camera management service."""
 
 from types import SimpleNamespace

@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Property-based tests for camera cryptographic primitives (camera_streamer.encryption).
 
 Properties under test:

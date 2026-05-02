@@ -1,3 +1,4 @@
+# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
 """
 Tests for application factory helpers: secret key persistence
 and default admin user creation.

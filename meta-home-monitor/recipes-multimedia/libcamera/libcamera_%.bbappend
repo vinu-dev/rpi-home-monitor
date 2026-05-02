@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-053; RISK: RISK-001, RISK-007; SEC: SC-004; TEST: TC-001, TC-012, TC-047
 # Enable libcamera Python bindings (libcamera-pycamera package).
 #
 # The upstream meta-openembedded libcamera recipe (meta-multimedia) gates

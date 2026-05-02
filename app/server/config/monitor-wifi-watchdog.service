@@ -1,3 +1,4 @@
+# REQ: SWR-021, SWR-024; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-021, TC-023
 [Unit]
 Description=Home Monitor WiFi Watchdog — fallback to setup hotspot if WiFi fails
 Documentation=https://github.com/vinu-dev/rpi-home-monitor

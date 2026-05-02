@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016, RISK-020; SEC: SC-015, SC-020; TEST: TC-031
 """
 Notification center API — pending pull / mark-seen / per-user prefs.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-015; RISK: RISK-005; SEC: SC-004; TEST: TC-008
 """
 mDNS service advertisement via Avahi.
 

@@ -1,3 +1,4 @@
+# REQ: SWR-040; RISK: RISK-016; SEC: SC-015; TEST: TC-038
 """Unit tests for MotionClipCorrelator."""
 
 from __future__ import annotations

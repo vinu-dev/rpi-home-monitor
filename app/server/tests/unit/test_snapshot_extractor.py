@@ -1,3 +1,4 @@
+# REQ: SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """Tests for SnapshotExtractor — ADR-0027 §Snapshot pipeline."""
 
 from __future__ import annotations

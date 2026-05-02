@@ -1,3 +1,4 @@
+# REQ: SWR-053, SWR-050; RISK: RISK-007, RISK-022; SEC: SC-019; TEST: TC-012, TC-047
 [Unit]
 Description=Ensure camera sensor overlay in config.txt
 DefaultDependencies=no

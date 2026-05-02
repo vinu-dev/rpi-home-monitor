@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-021, SWR-049; RISK: RISK-010, RISK-018; SEC: SC-010, SC-019; TEST: TC-021, TC-044
 # =============================================================
 # first-boot-setup.sh — Create /data directory structure
 #

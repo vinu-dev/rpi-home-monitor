@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-012, SWR-053; RISK: RISK-001, RISK-007; SEC: SC-004; TEST: TC-001, TC-012, TC-047
 SUMMARY = "Picamera2 — next-generation Python library for Raspberry Pi cameras"
 DESCRIPTION = "High-level Python wrapper over libcamera that exposes the \
 Pi camera pipeline: dual-stream capture (main + lores) plus hardware \

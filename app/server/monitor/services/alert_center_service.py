@@ -1,3 +1,4 @@
+# REQ: SWR-017, SWR-033; RISK: RISK-005, RISK-016, RISK-020; SEC: SC-008, SC-015, SC-020; TEST: TC-014, TC-031
 """
 AlertCenterService — derive-on-read view over existing event sources.
 

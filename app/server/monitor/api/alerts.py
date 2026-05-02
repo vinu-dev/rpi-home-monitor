@@ -1,3 +1,4 @@
+# REQ: SWR-017, SWR-033; RISK: RISK-005, RISK-016; SEC: SC-008, SC-015; TEST: TC-014, TC-031
 """
 Alert center API — list, mark-read, unread-count.
 

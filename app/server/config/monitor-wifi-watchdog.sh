@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-021, SWR-024; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-021, TC-023
 # monitor-wifi-watchdog.sh — Fallback to setup hotspot if WiFi fails
 #
 # Runs once at boot after network-online.target.

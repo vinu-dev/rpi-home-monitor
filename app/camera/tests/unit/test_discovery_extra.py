@@ -1,3 +1,4 @@
+# REQ: SWR-015; RISK: RISK-005; SEC: SC-004; TEST: TC-008
 """Additional discovery tests for coverage."""
 
 from unittest.mock import MagicMock, patch

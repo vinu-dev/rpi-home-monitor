@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-053, SWR-050; RISK: RISK-007, RISK-022; SEC: SC-019; TEST: TC-012, TC-047
 # =============================================================================
 # ensure-camera-overlay.sh — Reconcile /boot/config.txt with sensor policy
 #

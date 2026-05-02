@@ -1,3 +1,4 @@
+# REQ: SWR-038, SWR-050; RISK: RISK-004, RISK-018; SEC: SC-003, SC-019; TEST: TC-036, TC-044
 [Unit]
 Description=Camera OTA Installer (root-privileged swupdate wrapper)
 # Must run after /data is mounted (bundle lives under /var/lib which

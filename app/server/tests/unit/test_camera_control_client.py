@@ -1,3 +1,4 @@
+# REQ: SWR-039; RISK: RISK-007; SEC: SC-002; TEST: TC-037
 """Unit tests for CameraControlClient (ADR-0015)."""
 
 import pytest

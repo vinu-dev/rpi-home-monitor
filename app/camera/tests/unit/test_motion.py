@@ -1,3 +1,4 @@
+# REQ: SWR-014; RISK: RISK-005; TEST: TC-019
 """Unit tests for the MotionDetector.
 
 Frames are fabricated deterministically so every transition is exactly

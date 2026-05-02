@@ -1,3 +1,4 @@
+# REQ: SWR-038, SWR-010; RISK: RISK-004, RISK-019; SEC: SC-003, SC-018; TEST: TC-036, TC-013
 """
 OTA install dispatcher (client half of the trigger-file protocol).
 

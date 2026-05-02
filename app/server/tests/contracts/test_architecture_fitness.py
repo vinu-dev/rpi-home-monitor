@@ -1,3 +1,4 @@
+# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
 """Architecture fitness functions — enforce ADR constraints via static AST analysis.
 
 These tests parse Python source files and assert structural invariants that

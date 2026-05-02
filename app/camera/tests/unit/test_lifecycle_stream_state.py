@@ -1,3 +1,4 @@
+# REQ: SWR-012; RISK: RISK-001; TEST: TC-005
 """Unit tests for camera lifecycle helpers.
 
 Focuses on the boot-time decision of whether to start streaming

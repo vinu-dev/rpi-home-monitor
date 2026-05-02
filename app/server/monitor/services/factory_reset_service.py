@@ -1,3 +1,4 @@
+# REQ: SWR-018; RISK: RISK-006; SEC: SC-006; TEST: TC-015
 """
 Factory reset service — wipes all user data and returns to first-boot state.
 

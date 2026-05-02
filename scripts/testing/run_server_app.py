@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Launch a local HTTPS server instance for browser and contract testing."""
 
 from __future__ import annotations

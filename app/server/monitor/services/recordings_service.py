@@ -1,3 +1,4 @@
+# REQ: SWR-029; RISK: RISK-014; SEC: SC-014; TEST: TC-026
 """
 Recordings service — orchestrates clip queries and deletion.
 

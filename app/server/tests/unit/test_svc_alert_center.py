@@ -1,3 +1,4 @@
+# REQ: SWR-017, SWR-033; RISK: RISK-005, RISK-016; SEC: SC-008, SC-015; TEST: TC-014, TC-031
 """Tests for AlertCenterService — ADR-0024 derive-on-read alert center."""
 
 from __future__ import annotations

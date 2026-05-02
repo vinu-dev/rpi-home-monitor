@@ -1,3 +1,4 @@
+# REQ: SWR-050; RISK: RISK-018; SEC: SC-019; TEST: TC-044
 """Static regression tests for camera-streamer systemd hardening.
 
 Filed in response to a 1.4.0 → 1.4.1 OTA blocker on three cameras

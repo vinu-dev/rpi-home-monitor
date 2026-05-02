@@ -1,3 +1,4 @@
+# REQ: SWR-001, SWR-002; RISK: RISK-002; SEC: SC-001; TEST: TC-004, TC-011
 """Property-based tests for authentication primitives (monitor.auth).
 
 Hypothesis drives the inputs so that invariants hold across the entire

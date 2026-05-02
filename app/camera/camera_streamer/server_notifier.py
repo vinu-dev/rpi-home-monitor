@@ -1,3 +1,4 @@
+# REQ: SWR-004, SWR-026; RISK: RISK-005, RISK-015; SEC: SC-002; TEST: TC-005, TC-030
 """
 Notify the paired server when camera stream config changes locally.
 

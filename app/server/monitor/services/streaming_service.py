@@ -1,3 +1,4 @@
+# REQ: SWR-006, SWR-030; RISK: RISK-001, RISK-014; SEC: SC-002, SC-014; TEST: TC-001, TC-027
 """
 Streaming service — per-camera snapshot extraction + recorder ownership (ADR-0017).
 

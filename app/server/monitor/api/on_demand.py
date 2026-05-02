@@ -1,3 +1,4 @@
+# REQ: SWR-052; RISK: RISK-001, RISK-017; SEC: SC-016; TEST: TC-001, TC-028
 """
 On-demand coordinator (ADR-0017) — localhost-only Flask blueprint.
 

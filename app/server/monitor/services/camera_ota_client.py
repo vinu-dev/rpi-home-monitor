@@ -1,3 +1,4 @@
+# REQ: SWR-038; RISK: RISK-004, RISK-019; SEC: SC-003, SC-018; TEST: TC-036
 """
 Camera OTA client — streams .swu bundles to a camera's OTA agent.
 

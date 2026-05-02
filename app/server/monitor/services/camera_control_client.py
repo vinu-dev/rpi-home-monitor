@@ -1,3 +1,4 @@
+# REQ: SWR-039; RISK: RISK-002, RISK-007, RISK-015; SEC: SC-002; TEST: TC-037
 """
 Camera control client — pushes configuration to cameras via their control API.
 

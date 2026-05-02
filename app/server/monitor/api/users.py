@@ -1,3 +1,4 @@
+# REQ: SWR-023; RISK: RISK-011; SEC: SC-011; TEST: TC-022
 """
 User management API — thin HTTP adapter.
 

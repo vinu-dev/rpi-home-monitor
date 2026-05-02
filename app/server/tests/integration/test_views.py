@@ -1,3 +1,4 @@
+# REQ: SWR-022; RISK: RISK-010; SEC: SC-010; TEST: TC-021
 """
 Tests for view routes — HTML page serving and redirects.
 """

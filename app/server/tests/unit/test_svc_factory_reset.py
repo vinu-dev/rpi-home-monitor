@@ -1,3 +1,4 @@
+# REQ: SWR-018; RISK: RISK-006; SEC: SC-006; TEST: TC-015
 """Unit tests for FactoryResetService — wipe data and return to first-boot."""
 
 from unittest.mock import MagicMock, patch

@@ -1,3 +1,4 @@
+# REQ: SWR-012, SWR-053; RISK: RISK-001, RISK-007; TEST: TC-005, TC-012
 """
 Picamera2-based capture backend (ADR-0021 target).
 

@@ -1,3 +1,4 @@
+# REQ: SWR-032; RISK: RISK-015; SEC: SC-020; TEST: TC-029
 """
 Unit tests for SystemSummaryService (ADR-0018).
 

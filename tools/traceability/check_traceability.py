@@ -49,8 +49,36 @@ CONTROLLED_DOC_ROOTS = [
     ROOT / "docs/traceability",
     ROOT / "docs/quality-records",
 ]
-CODE_ROOTS = [ROOT / "app", ROOT / "scripts", ROOT / "tools"]
-CODE_SUFFIXES = {".py", ".sh", ".service", ".conf", ".yml", ".yaml"}
+CODE_ROOTS = [
+    ROOT / "app",
+    ROOT / "scripts",
+    ROOT / "tools",
+    ROOT / ".github",
+    ROOT / "meta-home-monitor",
+    ROOT / "config",
+    ROOT / "swupdate",
+]
+CODE_SUFFIXES = {
+    ".bb",
+    ".bbappend",
+    ".conf",
+    ".css",
+    ".html",
+    ".inc",
+    ".js",
+    ".py",
+    ".service",
+    ".sh",
+    ".toml",
+    ".yaml",
+    ".yml",
+}
+EXCLUDED_CODE_PATTERNS = [
+    re.compile(r"/__pycache__/"),
+    re.compile(r"^app/server/monitor/static/js/(?:alpine|hls|htmx)\.min\.js$"),
+]
+REQUIREMENT_PREFIXES = {"SYS", "SWR", "HWR"}
+ARCHITECTURE_PREFIXES = {"ARCH", "SWA", "HWA"}
 
 
 def prefix_of(identifier: str) -> str:
@@ -137,29 +165,71 @@ def row_has_any(
     return any(prefix_of(identifier) == prefix for identifier in identifiers)
 
 
-def collect_code_annotations() -> tuple[dict[str, set[Path]], list[str]]:
-    refs: dict[str, set[Path]] = defaultdict(set)
-    malformed: list[str] = []
+def is_traceable_code_file(path: Path) -> bool:
+    if not path.is_file() or path.suffix not in CODE_SUFFIXES:
+        return False
+    rel = path.relative_to(ROOT).as_posix()
+    return not any(pattern.search(rel) for pattern in EXCLUDED_CODE_PATTERNS)
+
+
+def collect_traceable_code_files() -> list[Path]:
+    files: list[Path] = []
     for root in CODE_ROOTS:
         if not root.exists():
             continue
-        for path in root.rglob("*"):
-            if not path.is_file() or path.suffix not in CODE_SUFFIXES:
-                continue
-            try:
-                text = read_text(path)
-            except UnicodeDecodeError:
-                continue
-            for match in ANNOTATION_RE.finditer(text):
-                ids = ids_in_text(match.group(1))
-                if not ids:
-                    malformed.append(
-                        f"{path.relative_to(ROOT)} has annotation without valid ID: "
-                        f"{match.group(0)!r}"
-                    )
-                for identifier in ids:
-                    refs[identifier].add(path)
-    return refs, malformed
+        files.extend(path for path in root.rglob("*") if is_traceable_code_file(path))
+    return sorted(set(files))
+
+
+def collect_code_annotations() -> tuple[
+    dict[str, set[Path]], dict[Path, set[str]], list[str]
+]:
+    refs: dict[str, set[Path]] = defaultdict(set)
+    req_refs_by_file: dict[Path, set[str]] = defaultdict(set)
+    malformed: list[str] = []
+    for path in collect_traceable_code_files():
+        try:
+            text = read_text(path)
+        except UnicodeDecodeError:
+            continue
+        for match in ANNOTATION_RE.finditer(text):
+            ids = ids_in_text(match.group(1))
+            if not ids:
+                malformed.append(
+                    f"{path.relative_to(ROOT)} has annotation without valid ID: "
+                    f"{match.group(0)!r}"
+                )
+            for identifier in ids:
+                refs[identifier].add(path)
+                if (
+                    match.group(0).startswith("REQ:")
+                    and prefix_of(identifier) in REQUIREMENT_PREFIXES
+                ):
+                    req_refs_by_file[path].add(identifier)
+    return refs, req_refs_by_file, malformed
+
+
+def requirement_trace_complete(requirement_id: str, rows: list[dict[str, str]]) -> bool:
+    req_columns = [
+        "User Need",
+        "System Requirement",
+        "Software Requirement",
+        "Hardware Requirement",
+    ]
+    rows_for_req = [
+        row
+        for row in rows
+        if any(requirement_id in ids_in_text(row.get(col, "")) for col in req_columns)
+    ]
+    return any(
+        row_has_any(row, ["User Need"], "UN")
+        and row_has_any(row, ["System Requirement"], "SYS")
+        and any(
+            prefix_of(identifier) in ARCHITECTURE_PREFIXES
+            for identifier in ids_in_text(row.get("Architecture", ""))
+        )
+        for row in rows_for_req
+    )
 
 
 def main() -> int:
@@ -177,7 +247,8 @@ def main() -> int:
     by_column = matrix_ids_by_column(rows)
     matrix_ids = set().union(*by_column.values()) if by_column else set()
 
-    code_refs, malformed_annotations = collect_code_annotations()
+    traceable_code_files = collect_traceable_code_files()
+    code_refs, req_refs_by_file, malformed_annotations = collect_code_annotations()
     failures.extend(malformed_annotations)
 
     for identifier in sorted(set(doc_refs) | matrix_ids | set(code_refs)):
@@ -278,10 +349,28 @@ def main() -> int:
     if not code_refs:
         warnings.append("No code-level traceability annotations found")
 
+    for path in traceable_code_files:
+        if not req_refs_by_file.get(path):
+            failures.append(
+                f"Traceable code file without REQ annotation: {path.relative_to(ROOT)}"
+            )
+
+    for path, req_ids in sorted(
+        req_refs_by_file.items(), key=lambda item: str(item[0].relative_to(ROOT))
+    ):
+        for requirement_id in sorted(req_ids):
+            if not requirement_trace_complete(requirement_id, rows):
+                failures.append(
+                    f"{path.relative_to(ROOT)} REQ {requirement_id} does not trace "
+                    "to user need, system requirement, and architecture"
+                )
+
     print("Traceability check")
     print(f"- Defined IDs: {len(known)}")
     print(f"- Matrix rows: {len(rows)}")
     print(f"- Code annotation IDs: {len(code_refs)}")
+    print(f"- Traceable code files: {len(traceable_code_files)}")
+    print(f"- Code files with REQ annotations: {len(req_refs_by_file)}")
     if warnings:
         print("\nWarnings:")
         for item in warnings:

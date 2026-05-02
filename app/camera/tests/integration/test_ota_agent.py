@@ -1,3 +1,4 @@
+# REQ: SWR-038; RISK: RISK-004; SEC: SC-003; TEST: TC-036
 """Tests for OTAAgent — server→camera push endpoint.
 
 The agent delegates all install work to the root-privileged

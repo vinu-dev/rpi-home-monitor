@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Integration tests for ensure-camera-overlay.sh.
 
 The script reconciles ``/boot/config.txt`` to a canonical "managed block"

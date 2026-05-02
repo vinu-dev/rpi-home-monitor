@@ -1,3 +1,4 @@
+# REQ: SWR-052; RISK: RISK-001, RISK-017; SEC: SC-016; TEST: TC-001, TC-028
 """Unit tests for the on-demand coordinator blueprint (ADR-0017)."""
 
 from unittest.mock import MagicMock

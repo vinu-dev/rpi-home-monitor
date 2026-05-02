@@ -1,3 +1,4 @@
+# REQ: SWR-008; RISK: RISK-005; SEC: SC-015; TEST: TC-019
 """Unit tests for MotionEventStore."""
 
 from __future__ import annotations

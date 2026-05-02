@@ -1,3 +1,4 @@
+# REQ: SWR-027, SWR-028; RISK: RISK-013; SEC: SC-013; TEST: TC-024, TC-025
 """Tests for the storage API.
 
 Tests exercise the HTTP endpoints which now delegate to StorageService.

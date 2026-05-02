@@ -1,3 +1,4 @@
+# REQ: SWR-035; RISK: RISK-012; SEC: SC-012; TEST: TC-033
 """Tests for monitor.logging_config module."""
 
 import logging

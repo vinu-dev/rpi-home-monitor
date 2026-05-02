@@ -1,3 +1,4 @@
+# REQ: SWR-035; RISK: RISK-012; SEC: SC-012; TEST: TC-033
 """Unit tests for logging_config.configure_logging().
 
 Key invariant: the picamera2 named logger must be clamped to WARNING

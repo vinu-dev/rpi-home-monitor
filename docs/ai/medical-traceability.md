@@ -57,7 +57,14 @@ Use these ID families:
 
 ## Code-Level Annotations
 
-Add concise annotations where meaningful:
+Every traceable code, test, workflow, build, script, configuration, and
+hardware-interface file must contain at least one concise `REQ:` annotation.
+Those requirements must be present in the traceability matrix and must trace
+back to at least one user need, one system requirement, and one architecture
+item. The automated checker enforces this for the traceable repository roots
+declared in `tools/traceability/check_traceability.py`.
+
+Use concise annotations:
 
 - `REQ: SWR-###`
 - `RISK: RISK-###`
@@ -67,7 +74,9 @@ Add concise annotations where meaningful:
 Annotate safety-critical logic, security-critical logic, data processing,
 I/O, state machines, alarms, fault handling, authentication, authorization,
 cryptography, update mechanisms, configuration handling, and hardware
-interfaces. Do not annotate every line.
+interfaces. Do not annotate every line, and do not use annotations as a
+substitute for updating the controlled requirement, architecture, risk,
+security, verification, and matrix records.
 
 ## Pull Request Expectations
 
@@ -78,6 +87,8 @@ Every PR must:
 - add or update tests
 - run traceability checks
 - document assumptions and open questions
+
+Do not merge if `python tools/traceability/check_traceability.py` fails.
 
 If an existing repository rule conflicts with this discipline, preserve
 safety, avoid behavior breakage, document the conflict, and add:

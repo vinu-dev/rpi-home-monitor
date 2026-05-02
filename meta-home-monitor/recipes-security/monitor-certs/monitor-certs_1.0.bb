@@ -1,3 +1,4 @@
+# REQ: SWR-034, SWR-043; RISK: RISK-002, RISK-019; SEC: SC-017; TEST: TC-032, TC-040
 # =============================================================
 # monitor-certs — First-boot CA and TLS certificate generation
 # =============================================================

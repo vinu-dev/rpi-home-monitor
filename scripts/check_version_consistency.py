@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# REQ: SWR-046, SWR-048; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 """Verify the release version is consistent across the repo.
 
 Single source of truth: ``VERSION`` at the repo root. Every other

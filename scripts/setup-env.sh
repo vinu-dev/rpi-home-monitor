@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQ: SWR-048, SWR-055; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 # =============================================================
 # setup-env.sh — Set up a fresh Ubuntu machine for Yocto builds
 #

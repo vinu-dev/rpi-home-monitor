@@ -1,3 +1,4 @@
+# REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Unit tests for recorder segment-completion helpers.
 
 Historical: ``finalize_completed_segments`` renamed ``.mp4.part`` files
