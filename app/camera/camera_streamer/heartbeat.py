@@ -26,6 +26,7 @@ import urllib.error
 import urllib.request
 
 from camera_streamer.control import ControlHandler, parse_control_request
+from camera_streamer.server_notifier import notify_config_change
 
 log = logging.getLogger("camera-streamer.heartbeat")
 
@@ -408,7 +409,18 @@ class HeartbeatSender:
             log.warning("Failed to send SIGTERM to self: %s", exc)
 
     def _apply_pending_config(self, pending: dict) -> None:
-        """Apply a pending stream config pushed back by the server."""
+        """Apply a pending stream config pushed back by the server.
+
+        On a successful apply we POST an explicit ack to
+        ``/api/v1/cameras/config-notify`` via ``notify_config_change``.
+        Without this the server has no way to detect that the
+        server-origin push has landed (the local-UI flow in
+        ``status_server`` only notifies on ``origin="local"``), so the
+        bidirectional sync stalls in ``pending`` forever and the
+        dashboard badge never returns to ``synced`` (issue #231). The
+        notify is fire-and-forget — failures are logged but do not
+        block the apply itself.
+        """
         log.info("Applying pending config from server heartbeat response: %s", pending)
         try:
             body = json.dumps(pending).encode()
@@ -420,7 +432,26 @@ class HeartbeatSender:
             result, error, _ = handler.set_config(params, request_id=0, origin="server")
             if error:
                 log.warning("Failed to apply pending config: %s", error)
-            else:
-                log.info("Pending config applied: %s", result)
+                return
+            log.info("Pending config applied: %s", result)
+            self._notify_server_of_apply()
         except Exception as exc:
             log.warning("Exception applying pending config: %s", exc)
+
+    def _notify_server_of_apply(self) -> None:
+        """Fire-and-forget POST to /config-notify so the server can mark synced.
+
+        Spawned on a daemon thread because the server might be slow,
+        unreachable, or returning a transient 5xx — we never want to
+        block the heartbeat loop on the ack path. Same threading
+        pattern the local-UI flow uses in ``status_server``.
+        """
+        try:
+            threading.Thread(
+                target=notify_config_change,
+                args=(self._config, self._pairing),
+                daemon=True,
+                name="config-notify-after-apply",
+            ).start()
+        except Exception as exc:
+            log.warning("Failed to spawn config-notify thread: %s", exc)
