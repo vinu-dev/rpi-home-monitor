@@ -121,7 +121,13 @@ class TestSetup:
 
 
 class TestConnecting:
-    """Test CONNECTING state — WiFi + server resolution."""
+    """Test CONNECTING state — WiFi waiting only.
+
+    The synchronous ``_resolve_server`` call was removed in #199 — the
+    blocking gethostbyname is now driven by the background
+    ``_ServerResolver`` started in ``_do_running``. ``_do_connecting``
+    just waits for WiFi and falls through; no resolution call here.
+    """
 
     def test_success(self):
         config = _make_config()
@@ -135,9 +141,15 @@ class TestConnecting:
             result = lc._do_connecting()
 
         assert result is True
-        mock_resolve.assert_called_once()
+        # _do_connecting must NOT block on resolution any more — the
+        # retry resolver runs in _do_running. Calling it here would
+        # reintroduce the boot-time hang #199 fixes.
+        mock_resolve.assert_not_called()
 
-    def test_skips_resolve_when_unconfigured(self):
+    def test_does_not_call_resolve_when_unconfigured(self):
+        """Unconfigured camera also doesn't call the legacy shim
+        (the new resolver is started later in _do_running and is
+        gated on is_configured + server_ip)."""
         config = _make_config(is_configured=False)
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
@@ -312,6 +324,63 @@ class TestRunning:
 
         MockStream.return_value.start.assert_not_called()
 
+    @patch("camera_streamer.lifecycle._ServerResolver")
+    @patch("camera_streamer.lifecycle.led")
+    @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.StreamManager")
+    @patch("camera_streamer.lifecycle.DiscoveryService")
+    def test_starts_server_resolver(
+        self,
+        MockDiscovery,
+        MockStream,
+        MockStatus,
+        MockHealth,
+        mock_led,
+        MockResolver,
+        tmp_path,
+    ):
+        """The background server-name resolver must be wired in
+        _do_running with the configured server_ip + the (already-
+        created) CaptureManager (#199)."""
+        config = _make_config(is_configured=True, server_ip="rpi-divinu.local")
+        platform = _make_platform()
+        lc = CameraLifecycle(config, platform, lambda: True)
+        lc._capture = MagicMock()
+
+        lc._do_running()
+
+        MockResolver.assert_called_once_with(
+            "rpi-divinu.local", capture_manager=lc._capture
+        )
+        MockResolver.return_value.start.assert_called_once()
+
+    @patch("camera_streamer.lifecycle._ServerResolver")
+    @patch("camera_streamer.lifecycle.led")
+    @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.StreamManager")
+    @patch("camera_streamer.lifecycle.DiscoveryService")
+    def test_does_not_start_resolver_when_unconfigured(
+        self,
+        MockDiscovery,
+        MockStream,
+        MockStatus,
+        MockHealth,
+        mock_led,
+        MockResolver,
+    ):
+        """An unconfigured camera has no server to resolve — don't spin
+        up a doomed retry thread that will only emit a misleading fault."""
+        config = _make_config(is_configured=False)
+        platform = _make_platform()
+        lc = CameraLifecycle(config, platform, lambda: True)
+        lc._capture = MagicMock()
+
+        lc._do_running()
+
+        MockResolver.assert_not_called()
+
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
@@ -359,6 +428,10 @@ class TestShutdown:
         lc._stream = MagicMock()
         lc._status_server = MagicMock()
         lc._discovery = MagicMock()
+        # The boot-time server-name resolver (#199) joins on shutdown
+        # so a mid-backoff thread can't outlive the rest of the
+        # process. Verify it's actually stopped.
+        lc._server_resolver = MagicMock()
 
         lc.shutdown()
 
@@ -367,6 +440,7 @@ class TestShutdown:
         lc._stream.stop.assert_called_once()
         lc._status_server.stop.assert_called_once()
         lc._discovery.stop.assert_called_once()
+        lc._server_resolver.stop.assert_called_once()
 
     def test_handles_none_services(self):
         """Shutdown should work even if services were never started."""
