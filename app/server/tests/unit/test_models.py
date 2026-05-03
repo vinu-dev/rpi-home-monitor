@@ -90,12 +90,13 @@ class TestSettings:
         assert d["timezone"] == "Europe/Dublin"
         assert isinstance(d, dict)
         # 9 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
-        # + 1 motion-detection post-roll (Phase 4)
-        assert len(d) == 18
+        # + 1 motion-detection post-roll (Phase 4) + 1 TOTP 2FA policy (#238)
+        assert len(d) == 19
         assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
         assert d["motion_post_roll_seconds"] == 10
+        assert d["require_2fa_for_remote"] is False
 
 
 class TestClip:

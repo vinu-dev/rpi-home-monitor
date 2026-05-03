@@ -77,7 +77,7 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 19 blueprints.
+        """We expect exactly 21 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -85,8 +85,9 @@ class TestBlueprintRegistration:
           17 after motion-detection work (motion_events API + events_router).
           18 after ADR-0024 added the `alerts` API (#132).
           19 after ADR-0027 added the `notifications` API (#128).
+          21 after #238 added TOTP 2FA (auth_totp + users_totp blueprints).
         """
-        assert len(app.blueprints) == 19
+        assert len(app.blueprints) == 21
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints
