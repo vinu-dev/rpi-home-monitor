@@ -23,6 +23,11 @@ the reasoning behind a decision.
 | [`baseline/`](baseline/) | Historical baseline architecture and requirements |
 | [`planning/`](planning/) | Roadmaps and planning notes |
 
+Current planning handoffs:
+
+- [`planning/agentry-smoke-test-state.md`](planning/agentry-smoke-test-state.md)
+  records the active Agentry integration smoke-test state.
+
 ## Editing Rules
 
 - Do not edit history to make current behavior true.

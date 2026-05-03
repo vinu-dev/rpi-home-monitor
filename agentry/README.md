@@ -74,13 +74,16 @@ work.
 
 This repo is configured to use alternating model perspectives:
 
-- Architect: Claude Code via `npx @anthropic-ai/claude-code`
-- Implementer: Codex
-- Tester: Codex mini
-- Reviewer: Claude Code via `npx @anthropic-ai/claude-code`
+- Architect: Claude Code via `npx @anthropic-ai/claude-code --model opus`
+- Implementer: Codex via `npx @openai/codex -m gpt-5.4`
+- Tester: Codex via `npx @openai/codex -m gpt-5.4`
+- Reviewer: Claude Code via `npx @anthropic-ai/claude-code --model opus`
 
 Researcher and Release are disabled by default. Enable them only when you want
 new autonomous issue discovery or release automation.
+
+`opus` is the Claude Code alias for the latest Opus model. Keep this alias
+instead of pinning a dated Claude model unless a rollback is intentional.
 
 ## Start
 
@@ -113,6 +116,10 @@ completed or stale records.
 The start scripts install Agentry from the Git ref pinned in the script. To
 upgrade intentionally, update that ref or set `AGENTRY_INSTALL_REF`, delete
 `.venv/`, and rerun the start script.
+
+On Windows, stop any running Agentry process before changing the pin. The venv
+cannot replace `agentry\.venv\Scripts\agentry.exe` while an old supervisor is
+still using it.
 
 ## Remove
 
