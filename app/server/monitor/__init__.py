@@ -39,6 +39,7 @@ from monitor.services.storage_service import StorageService
 from monitor.services.streaming_service import StreamingService
 from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
+from monitor.services.totp_service import TotpService
 from monitor.services.user_service import UserService
 from monitor.store import Store
 
@@ -263,6 +264,9 @@ def _init_services(app):
 
     # User service — user CRUD + password management
     app.user_service = UserService(store=app.store, audit=app.audit)
+
+    # TOTP service — two-factor authentication (issue #238)
+    app.totp_service = TotpService(secret_key=app.config["SECRET_KEY"], issuer="Home Monitor")
 
     # Recordings service — clip queries, deletion, audit
     app.recordings_service = RecordingsService(
@@ -578,6 +582,7 @@ def _register_blueprints(app):
     """Register all Flask blueprints."""
     from monitor.api.alerts import alerts_bp
     from monitor.api.audit import audit_bp
+    from monitor.api.auth_totp import auth_totp_bp, users_totp_bp
     from monitor.api.cameras import cameras_bp
     from monitor.api.live import live_bp
     from monitor.api.motion_events import events_router_bp, motion_events_bp
@@ -598,6 +603,8 @@ def _register_blueprints(app):
     app.register_blueprint(views_bp)
     app.register_blueprint(setup_bp, url_prefix="/api/v1/setup")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
+    app.register_blueprint(auth_totp_bp, url_prefix="/api/v1/auth/totp")
+    app.register_blueprint(users_totp_bp, url_prefix="/api/v1/users")
     app.register_blueprint(cameras_bp, url_prefix="/api/v1/cameras")
     app.register_blueprint(recordings_bp, url_prefix="/api/v1/recordings")
     app.register_blueprint(live_bp, url_prefix="/api/v1/live")

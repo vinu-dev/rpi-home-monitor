@@ -46,6 +46,8 @@ UPDATABLE_FIELDS = {
     # ADR-0017: loop recording watermarks
     "loop_low_watermark_percent",
     "loop_hysteresis_percent",
+    # Issue #238: TOTP 2FA policy
+    "require_2fa_for_remote",
 }
 
 
@@ -82,6 +84,7 @@ class SettingsService:
             "tailscale_has_auth_key": bool(settings.tailscale_auth_key),
             "loop_low_watermark_percent": settings.loop_low_watermark_percent,
             "loop_hysteresis_percent": settings.loop_hysteresis_percent,
+            "require_2fa_for_remote": settings.require_2fa_for_remote,
         }
 
     def update_settings(
@@ -106,6 +109,15 @@ class SettingsService:
         errors = self._validate(data)
         if errors:
             return errors[0], 400
+
+        # Guard: prevent enabling require_2fa_for_remote without TOTP on the requesting admin
+        if data.get("require_2fa_for_remote") is True:
+            from flask import session
+            user_id = session.get("user_id")
+            if user_id:
+                user = self._store.get_user(user_id)
+                if not user or not user.totp_enabled:
+                    return "You must enroll in two-factor authentication before requiring it for remote access", 400
 
         settings = self._store.get_settings()
         for key, value in data.items():
