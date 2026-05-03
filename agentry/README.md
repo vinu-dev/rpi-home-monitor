@@ -1,81 +1,120 @@
-# `agentry/` — local Agentry installation for this repo
+# `agentry/` - Local Agentry Installation
 
-This folder is the gtest-style "fetched dependency" for [Agentry](https://github.com/vinu-dev/agentry). It's how the orchestrator runs against THIS repo. Each target repo gets its own copy.
+This folder is the repo-local Agentry dependency for this target repository.
+Each target repo gets its own copy.
 
-## What's in here
+## What Is In Here
 
-| File | Purpose | Committed? |
-|------|---------|-----------|
-| `config.yml` | Picks which LLM CLI handles each role (Claude / Codex / etc.) and the timeouts | yes |
-| `start.ps1` / `start.sh` | The entry point. Run this every time you want Agentry running. Creates `.venv/` and installs Agentry on first run. | yes |
-| `.env.example` | Template for your secrets (GITHUB_TOKEN etc.) | yes |
-| `.gitignore` | Ignores the next four entries | yes |
-| `.env` | Your actual secrets — copied from `.env.example` and filled in by you | **no, gitignored** |
-| `.venv/` | Python venv with Agentry pip-installed; auto-created on first run | **no, gitignored** |
-| `logs/` | Per-role agent stdout, one timestamped file per run | **no, gitignored** |
-| `state/` | Runtime state | **no, gitignored** |
+| Path | Purpose | Commit? |
+|------|---------|---------|
+| `config.yml` | Role roster, model/CLI assignment, timeouts, run mode | yes |
+| `start.ps1` / `start.sh` | Entry points for start, GUI, configure, stop | yes |
+| `.env.example` | Secrets template | yes |
+| `.gitignore` | Ignores local runtime files | yes |
+| `.env` | Real secrets | no |
+| `.venv/` | Repo-local Agentry Python venv | no |
+| `logs/` | Per-role stdout logs | no |
+| `state/` | Runtime sessions and role continuity notes | no |
+| `worktrees/` | Per-role git worktrees when enabled | no |
 
-## Where role rule files live
+## Role Rules
 
-NOT here. They live at the **standard target-repo location**:
+Project-specific role rules live here:
 
+```text
+docs/ai/roles/
+  researcher.md
+  architect.md
+  implementer.md
+  tester.md
+  reviewer.md
+  release.md
 ```
-<this-repo>/docs/ai/roles/
-├── researcher.md
-├── architect.md
-├── implementer.md
-├── tester.md
-├── reviewer.md
-└── release.md
-```
 
-Edit those for project-specific instructions per role. The prompts in `agentry/config.yml` already point at them.
+Edit those files for project behavior. The prompts in `agentry/config.yml`
+point at them.
 
-## How to use
+## Machine Setup
 
-### One time per machine
-Install Python, Node.js, Claude Code, Codex CLI:
+Run once per machine:
 
 ```powershell
-# Windows
 iwr -useb https://raw.githubusercontent.com/vinu-dev/agentry/main/scripts/install-deps.ps1 | iex
 ```
 
 ```bash
-# Linux
 curl -fsSL https://raw.githubusercontent.com/vinu-dev/agentry/main/scripts/install-deps.sh | bash
 ```
 
-Then authenticate the LLM CLIs (browser flow):
+Then authenticate the LLM CLIs you plan to use:
 
-```
-claude login
+```bash
+npx --yes @anthropic-ai/claude-code login
 codex login
 ```
 
-### One time per repo (this folder)
-1. Copy `.env.example` to `.env` and fill in `GITHUB_TOKEN`
-2. Edit `config.yml` — pick which CLI handles each role
-3. Edit `../docs/ai/roles/*.md` if you want project-specific role instructions
-
-### Every time you want Agentry running
+## Configure Without Starting Agents
 
 ```powershell
-# Windows
+.\agentry\start.ps1 configure --target . --defaults
+.\agentry\start.ps1 gui --target .
+```
+
+```bash
+./agentry/start.sh configure --target . --defaults
+./agentry/start.sh gui --target .
+```
+
+Default mode is `pipeline`: existing GitHub labels move through the pipeline,
+but Researcher does not create new issues. Use `manual` when you want no roles
+to start. Use `autonomous` only when Researcher should be allowed to create new
+work.
+
+## Model Routing For This Repo
+
+This repo is configured to use alternating model perspectives:
+
+- Architect: Claude Code via `npx @anthropic-ai/claude-code`
+- Implementer: Codex
+- Tester: Codex mini
+- Reviewer: Claude Code via `npx @anthropic-ai/claude-code`
+
+Researcher and Release are disabled by default. Enable them only when you want
+new autonomous issue discovery or release automation.
+
+## Start
+
+```powershell
 .\agentry\start.ps1
 ```
 
 ```bash
-# Linux
 ./agentry/start.sh
 ```
 
-Foreground. Ctrl-C to stop. Close the terminal to stop. Reboot kills it. **No service.** Run the script again when you want it running again.
+Foreground only. Ctrl-C, closing the terminal, or rebooting stops it. There is
+no background service by default.
 
-## To upgrade Agentry
+## Stop
 
-Delete `.venv/` and run `start.ps1` / `start.sh` again. The venv is recreated and pulls the latest from GitHub.
+```powershell
+.\agentry\start.ps1 stop --target . --all
+```
 
-## To remove Agentry from this repo
+```bash
+./agentry/start.sh stop --target . --all
+```
 
-Just delete this `agentry/` folder. Optionally also delete `docs/ai/roles/` (or keep them — they're useful project documentation regardless of whether Agentry is running).
+Stop is conservative: Agentry kills only currently running session PIDs, not
+completed or stale records.
+
+## Upgrade
+
+The start scripts install Agentry from the Git ref pinned in the script. To
+upgrade intentionally, update that ref or set `AGENTRY_INSTALL_REF`, delete
+`.venv/`, and rerun the start script.
+
+## Remove
+
+Delete this `agentry/` folder. Optionally keep or delete `docs/ai/roles/`
+depending on whether you want to preserve the project role documentation.
