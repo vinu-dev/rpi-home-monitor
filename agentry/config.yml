@@ -8,6 +8,14 @@
 #   - distilled per-issue log writing
 #   - session-continuity write
 #
+# Agentry's check-in protocol: when an agent's stall_min or total_min
+# threshold hits, the orchestrator sends an AGENTRY-CHECKIN: message via
+# stdin (stream-json input mode for claude). The agent must reply with one
+# of STATUS:WORKING / STATUS:DONE / STATUS:BLOCKED <reason> /
+# STATUS:NEEDMORETIME N — the orchestrator extends the budget, accepts
+# completion, or stops the agent based on the reply. Killing is the LAST
+# resort, only used when the agent fails to respond to the check-in.
+#
 # Agentry's branch model: ONE shared `feature/<id>-<slug>` branch per issue.
 # Architect creates it, Implementer/Tester/Reviewer rebase on `origin/main`
 # at the start of THEIR cycle and add their commits. Branch protection on
@@ -16,17 +24,47 @@
 # The rule file at docs/ai/roles/<role>.md is for PROJECT-SPECIFIC guidance
 # only (mission, anti-goals, validation matrix, sensitive paths, traceability,
 # review criteria). The orchestrator workflow lives here in the prompt.
+#
+# Expensive LLM runs are gated by cheap scheduler checks:
+#   trigger.issue_labels -> run only when a matching open issue exists
+#   trigger.pr_labels    -> run only when a matching open PR exists
+# Run mode defaults to pipeline: Agentry processes existing GitHub labels but
+# does not create new research issues unless the operator explicitly switches
+# to autonomous mode and enables researcher.
+#
+# This target intentionally alternates provider perspectives:
+#   - Claude Code via npx handles design and review judgment
+#   - Codex via npx handles implementation and test execution
+#   - Researcher and release stay disabled until the operator enables them
+# Swap cli/args per role for Claude, Codex, local Llama/Ollama, or wrappers.
 
 target_repo: vinu-dev/rpi-home-monitor
+mode: pipeline                        # manual | pipeline | autonomous
+isolate_worktrees: true              # one git worktree per role for safe parallelism
+
+automation:
+  auto_merge: false                   # human/code-owner merge by default
+  stop_when_queue_empty: false        # foreground process waits for future work
+
+research:
+  allow_create_issues: false          # researcher off unless autonomous
+  max_open_ready_for_design: 3
 
 agents:
 
   researcher:
-    cli: claude
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
-    interval_min: 60
+    enabled: false                    # enable only for autonomous discovery
+    cli: npx                          # agentry resolves npx.cmd on Windows
+    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4-mini", "--dangerously-bypass-approvals-and-sandbox"]
+    # Research is intentionally scheduled, not startup-triggered: it is the
+    # highest-token role and should not run every time the host reboots.
+    run_on_start: false
+    interval_min: 1440
     total_min: 30
     stall_min: 30        # = total_min: no stall-kill, only total-timeout safety
+    max_sessions: 1
+    token_budget: 20000
+    checkin_response_seconds: 90
     prompt: |
       You are the Researcher in a parallel multi-agent pipeline. Other roles
       (architect, implementer, tester, reviewer, release) run concurrently.
@@ -83,6 +121,24 @@ agents:
       - Don't open issues requiring regulatory clearance, hardware
         redesign, or major architecture rework — those need humans.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/researcher.md for:
@@ -94,11 +150,16 @@ agents:
       If that file is missing, exit with error.
 
   architect:
-    cli: claude
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    cli: npx                          # Claude Code design; agentry resolves npx.cmd on Windows
+    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    trigger:
+      issue_labels: ["ready-for-design"]
     interval_min: 5
     total_min: 30
     stall_min: 30        # = total_min
+    max_sessions: 1
+    token_budget: 25000
+    checkin_response_seconds: 90
     prompt: |
       You are the Architect in a parallel multi-agent pipeline. Other roles
       run concurrently with you.
@@ -158,6 +219,24 @@ agents:
       - Don't change docs/ai/ (canonical policy).
       - Never push to main.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/architect.md for:
@@ -170,29 +249,39 @@ agents:
       If that file is missing, exit with error.
 
   implementer:
-    cli: claude                       # claude.cmd on Windows
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    cli: npx                          # Codex implementation; agentry resolves npx.cmd on Windows
+    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4", "--dangerously-bypass-approvals-and-sandbox"]
+    trigger:
+      issue_labels: ["changes-requested", "tests-failed", "ready-for-implementation"]
     interval_min: 5
     total_min: 60
     stall_min: 60        # = total_min
+    max_sessions: 1
+    token_budget: 60000
+    checkin_response_seconds: 90
     prompt: |
       You are the Implementer in a parallel multi-agent pipeline. Other
       roles run concurrently with you.
 
       ## Workflow (universal)
 
-      INPUT: Issues labeled `ready-for-implementation` or `tests-failed`
-      (oldest first; tests-failed takes priority).
+      INPUT: Issues labeled `changes-requested`, `tests-failed`, or
+      `ready-for-implementation` (oldest first; changes-requested and
+      tests-failed take priority).
 
       STEPS:
       1. Read agentry/state/sessions/implementer/latest.md if it exists.
       2. Pick the oldest:
+           gh issue list --label changes-requested --state open --json number,title --jq 'sort_by(.number)[0]'
            gh issue list --label tests-failed --state open --json number,title --jq 'sort_by(.number)[0]'
            gh issue list --label ready-for-implementation --state open --json number,title --jq 'sort_by(.number)[0]'
-         Tests-failed first if both have items. Exit 0 if neither.
-      3. If tests-failed: read the failure from the issue + the relevant
-         agentry/logs/issues/<id>-<slug>/tester.log entry so you know what
-         to fix.
+         Changes-requested first, then tests-failed, then ready-for-implementation.
+         Exit 0 if none exist.
+      3. If changes-requested: read the PR review/comment findings and the
+         relevant agentry/logs/issues/<id>-<slug>/reviewer.log entry. If
+         tests-failed: read the failure from the issue + the relevant
+         agentry/logs/issues/<id>-<slug>/tester.log entry. Use that context
+         to fix only the requested scope.
       4. Switch to the shared feature branch and rebase:
            slug=<from spec filename>
            git fetch origin
@@ -211,7 +300,9 @@ agents:
            git commit -m "[<id>] impl: <one-line>"
            git push origin "feature/<id>-${slug}" --force-with-lease
       9. Move label + comment:
-           if tests-failed:
+           if changes-requested:
+             gh issue edit <id> --add-label ready-for-test --remove-label changes-requested
+           elif tests-failed:
              gh issue edit <id> --add-label ready-for-test --remove-label tests-failed
            else:
              gh issue edit <id> --add-label ready-for-test --remove-label ready-for-implementation
@@ -230,6 +321,24 @@ agents:
       - Hardware-only behavior → write what unit/integration tests you can,
         let Tester decide on `needs-hardware-verification`.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/implementer.md for:
@@ -242,11 +351,16 @@ agents:
       If that file is missing, exit with error.
 
   tester:
-    cli: claude
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    cli: npx                          # Codex validation; agentry resolves npx.cmd on Windows
+    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4-mini", "--dangerously-bypass-approvals-and-sandbox"]
+    trigger:
+      issue_labels: ["ready-for-test"]
     interval_min: 5
     total_min: 30
     stall_min: 30        # = total_min
+    max_sessions: 1
+    token_budget: 30000
+    checkin_response_seconds: 90
     prompt: |
       You are the Tester in a parallel multi-agent pipeline. Other roles run
       concurrently with you.
@@ -273,10 +387,16 @@ agents:
       5. Run the relevant rows. Skip any the host cannot run (e.g.,
          Yocto bitbake on Windows) and note skips in the PR body.
       6. ALL GREEN:
-           gh pr create --base main --head "feature/<id>-${slug}" \
-             --title "[<id>] <title>" --body "<see template in tester.md>"
-           gh pr edit <pr> --add-label ready-for-review
-           gh issue edit <id> --remove-label ready-for-test
+           pr=$(gh pr list --head "feature/<id>-${slug}" --state open --json number --jq '.[0].number')
+           if [ -z "$pr" ]; then
+             gh pr create --base main --head "feature/<id>-${slug}" \
+               --title "[<id>] <title>" --body "<see template in tester.md>"
+             pr=$(gh pr list --head "feature/<id>-${slug}" --state open --json number --jq '.[0].number')
+           fi
+           gh label create agent-approved --color 0e8a16 --force
+           gh label create pr-open --color 1d76db --force
+           gh pr edit <pr> --add-label ready-for-review --remove-label blocked --remove-label agent-approved
+           gh issue edit <id> --add-label pr-open --remove-label ready-for-test
            gh issue comment <id> --body "Tests passed; PR #<pr> opened."
          ANY RED:
            gh issue edit <id> --add-label tests-failed --remove-label ready-for-test
@@ -296,6 +416,24 @@ agents:
       - Don't lower coverage thresholds.
       - One issue per run.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/tester.md for:
@@ -308,11 +446,16 @@ agents:
       If that file is missing, exit with error.
 
   reviewer:
-    cli: claude
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    cli: npx                          # Claude Code review; agentry resolves npx.cmd on Windows
+    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    trigger:
+      pr_labels: ["ready-for-review"]
     interval_min: 5
     total_min: 20
     stall_min: 20        # = total_min
+    max_sessions: 1
+    token_budget: 25000
+    checkin_response_seconds: 90
     prompt: |
       You are the Reviewer in a parallel multi-agent pipeline. Other roles
       run concurrently with you.
@@ -347,12 +490,26 @@ agents:
          - traceability
          - repo policy compliance
       6. APPROVE:
-           gh pr review <n> --approve --body "<concise summary>"
-           gh pr edit <n> --remove-label ready-for-review
+           gh label create agent-approved --color 0e8a16 --force
+           gh pr review <n> --approve --body "Agentry review outcome: APPROVED\n\n<concise summary>"
+           gh pr edit <n> --add-label agent-approved --remove-label ready-for-review --remove-label blocked
+         If `gh pr review` fails or GitHub refuses self-review, use
+         `gh pr comment <n> --body "Agentry review outcome: APPROVED\n\n<concise summary>"`.
+         The verified comment plus `agent-approved` is the canonical Agentry
+         approval signal. Still add `agent-approved`, remove `ready-for-review`
+         and `blocked`, verify with `gh pr view`, and leave the linked issue's
+         `pr-open` label in place until the PR or issue closes.
          (Do NOT click merge — code-owner human merges.)
          BLOCK (any item failed):
-           gh pr review <n> --request-changes --body "<itemized issues>"
-           gh pr edit <n> --add-label blocked --remove-label ready-for-review
+           gh label create agent-approved --color 0e8a16 --force
+           gh pr review <n> --request-changes --body "Agentry review outcome: REQUEST CHANGES\n\n<itemized issues>"
+           gh pr edit <n> --remove-label agent-approved --add-label blocked --remove-label ready-for-review
+           gh issue edit <id> --add-label changes-requested --add-label pr-open --remove-label ready-for-test
+           gh issue comment <id> --body "<short review-fix summary and PR link>"
+         If `gh pr review` fails, use `gh pr comment <n> --body "<REQUEST
+         CHANGES: ...>"`, then perform the same PR and issue label updates.
+         Verify the PR no longer has `ready-for-review` or `agent-approved`
+         and the issue has `changes-requested` plus `pr-open`.
       7. Append distilled cycle entry to
          agentry/logs/issues/<id>-<slug>/reviewer.log
       8. Overwrite session summary. Exit 0.
@@ -365,6 +522,24 @@ agents:
         block.
       - Don't dismiss prior human reviews.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/reviewer.md for:
@@ -376,11 +551,17 @@ agents:
       If that file is missing, exit with error.
 
   release:
-    cli: claude
-    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    enabled: false                    # enable when the repo has a release plan
+    cli: npx                          # agentry resolves npx.cmd on Windows
+    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4-mini", "--dangerously-bypass-approvals-and-sandbox"]
+    trigger:
+      issue_labels: ["release-approved"]
     interval_min: 1440
     total_min: 60
     stall_min: 60        # = total_min
+    max_sessions: 1
+    token_budget: 30000
+    checkin_response_seconds: 90
     prompt: |
       You are the Release Engineer in a parallel multi-agent pipeline. Other
       roles run concurrently with you.
@@ -405,6 +586,24 @@ agents:
       - Never bypass hardware sign-off.
       - Never release if any blocker is open in scope.
 
+      ## Check-in protocol (universal — read carefully)
+
+      The orchestrator may send a check-in message during your run. If you
+      receive a user message starting with "AGENTRY-CHECKIN:", reply
+      IMMEDIATELY (before continuing other work) with EXACTLY ONE LINE in
+      one of these forms:
+
+        STATUS:WORKING
+        STATUS:DONE
+        STATUS:BLOCKED <one-line reason>
+        STATUS:NEEDMORETIME <integer minutes>
+
+      After replying, continue your work normally if WORKING or
+      NEEDMORETIME. The orchestrator parses the FIRST STATUS: line in your
+      reply and decides whether to extend your time, accept your
+      completion, or stop you. Killing is the LAST resort, only used when
+      you fail to respond to the check-in.
+
       ## Project specifics
 
       Read docs/ai/roles/release.md for:
@@ -416,8 +615,21 @@ agents:
       If that file is missing, exit with error.
 
 # Paths the Reviewer's rule file should treat as block-worthy.
-# Customize per your project — these are placeholders.
 sensitive_paths:
   - "**/auth/**"
   - "**/secrets/**"
   - "**/.github/workflows/**"
+  - "app/server/**/auth/**"
+  - "app/server/monitor/services/**"
+  - "app/camera/camera_streamer/lifecycle.py"
+  - "app/camera/**/wifi*"
+  - "app/camera/**/pairing*"
+  - "meta-home-monitor/**"
+  - "config/**"
+  - "scripts/build.sh"
+  - "scripts/setup-env.sh"
+  - "docs/cybersecurity/**"
+  - "docs/risk/**"
+  - "AGENTS.md"
+  - "CLAUDE.md"
+  - ".github/copilot-instructions.md"

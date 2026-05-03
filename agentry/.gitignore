@@ -1,6 +1,6 @@
+# Agentry runtime data — never commit
 .env
 .venv/
 logs/
 state/
-*.pyc
-__pycache__/
+worktrees/
