@@ -1,162 +1,78 @@
-# Tester
+# Tester — project-specific guidance for `vinu-dev/rpi-home-monitor`
 
-Runs the project's validation matrix against the Implementer's commits on
-the shared feature branch. If green, opens the PR to `main`. If red,
-labels the issue `tests-failed`.
+This file describes WHAT to validate in this repo. The HOW (picking issues,
+rebasing the feature branch, opening the PR, label transitions) lives in
+agentry's bundled prompt — see `agentry/config.yml`.
 
-## Project context
+## Validation matrix (per `docs/ai/validation-and-release.md`)
 
-Validation matrix in `docs/ai/validation-and-release.md`. Server coverage
-floor `--cov-fail-under=85`, camera floor 80. Branch protection on `main`
-requires linear history, code-owner approval, and all conversations
-resolved.
+Inspect the diff against `main` (`git diff --name-only origin/main...HEAD`)
+and run the rows that apply:
 
-## Trigger
+| Path | Validators |
+|---|---|
+| `app/server/**` | `pytest app/server/tests/ -v --cov=app/server --cov-fail-under=85`<br>`ruff check .`<br>`ruff format --check .` |
+| `app/camera/**` | `pytest app/camera/tests/ -v --cov=app/camera --cov-fail-under=80`<br>`ruff check .`<br>`ruff format --check .` |
+| Repo governance / docs | `python scripts/ai/validate_repo_ai_setup.py`<br>`python scripts/ai/check_doc_links.py`<br>`python scripts/ai/check_shell_scripts.py`<br>`pre-commit run --all-files` |
+| Traceability touched | `python tools/traceability/check_traceability.py` |
+| `meta-home-monitor/**`, `config/**` (Yocto) | `bitbake -p` |
+| `scripts/**`, `.github/workflows/**` | `bash -n <script>`, `shellcheck <script>` |
 
-GitHub issues labeled `ready-for-test` (oldest first).
+## Coverage thresholds (do NOT lower)
 
-## Steps per invocation
+- server: `--cov-fail-under=85`
+- camera: `--cov-fail-under=80`
 
-1. **Session continuity.** Read `agentry/state/sessions/tester/latest.md`
-   if it exists.
+## When the host can't run a row
 
-2. **Pick the oldest:**
-   ```
-   gh issue list --label ready-for-test --state open --json number,title --jq 'sort_by(.number)[0]'
-   ```
-   Exit 0 if none.
+- **Yocto** (`bitbake -p`): if the orchestrator host has no Yocto SDK
+  (typically true on Windows), SKIP and note in the PR body:
+  `Yocto bitbake parse skipped — host has no SDK; Yocto verification
+  needed in Linux build env before merge.`
+- **Hardware acceptance criteria**: SKIP locally, label the PR
+  `needs-hardware-verification`. The human reviewer or a hardware-attached
+  tester run handles it.
 
-3. **Switch to the feature branch and rebase:**
-   ```
-   slug=<from spec filename for that issue>
-   git fetch origin
-   git switch "feature/<id>-${slug}"
-   git rebase origin/main
-   ```
-   Conflict on rebase → label issue `merge-conflict`, comment with the
-   conflicting paths, exit 0. (Implementer's next pickup will resolve.)
+## PR body template
 
-4. **Determine which validation rows apply** by inspecting the diff
-   against `main`:
-   ```
-   git diff --name-only origin/main...HEAD
-   ```
-   Map paths to rows (per `validation-and-release.md`):
-   - `app/server/**` → server Python row
-   - `app/camera/**` → camera Python row
-   - `meta-home-monitor/**`, `config/**` → Yocto row
-   - `docs/ai/**`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-*` → governance
-   - `scripts/**`, `.github/workflows/**` → workflow / shell
-   - traceability-relevant files → traceability row
+Open the PR with this body:
 
-5. **Run the relevant rows** (skip ones the host can't run; note skips):
+```
+Closes #<id>
 
-   Server Python:
-   ```
-   pytest app/server/tests/ -v --cov=app/server --cov-fail-under=85
-   ruff check .
-   ruff format --check .
-   ```
-   Camera Python:
-   ```
-   pytest app/camera/tests/ -v --cov=app/camera --cov-fail-under=80
-   ruff check .
-   ruff format --check .
-   ```
-   Repo governance:
-   ```
-   python scripts/ai/validate_repo_ai_setup.py
-   python scripts/ai/check_doc_links.py
-   python scripts/ai/check_shell_scripts.py
-   pre-commit run --all-files
-   ```
-   Traceability (when relevant): `python tools/traceability/check_traceability.py`
-   Yocto: `bitbake -p` if SDK present; else note "skipped — no Yocto SDK on host"
-   Workflow / shell: `bash -n <script>`, `shellcheck <script>`
-   Hardware: SKIP locally; flag PR with `needs-hardware-verification`
+## Summary
+<one paragraph from the spec's Goal>
 
-6. **All green path:**
-   ```
-   gh pr create --base main --head "feature/<id>-${slug}" \
-     --title "[<id>] <title>" \
-     --body "<see template below>"
-   gh pr edit <pr-num> --add-label ready-for-review
-   gh issue edit <id> --remove-label ready-for-test
-   gh issue comment <id> --body "Tests passed; PR #<pr-num> opened."
-   ```
+## Spec
+`docs/history/specs/<id>-<slug>.md`
 
-   PR body template:
-   ```
-   Closes #<id>
-
-   ## Summary
-   <one paragraph from the spec's Goal>
-
-   ## Spec
-   `docs/history/specs/<id>-<slug>.md`
-
-   ## Validation evidence
-   - <command 1>: PASS
-   - <command 2>: PASS
-   - coverage: server <pct>% / camera <pct>%
-   - skipped: <bitbake / hardware> (reason)
-
-   ## Deployment impact
-   <copy from the spec>
-
-   ## Traceability
-   <updated IDs / matrix entries>
-
-   ## Out of scope
-   <copy from the spec>
-   ```
-
-7. **Any red path:**
-   - Replace label `ready-for-test` with `tests-failed`.
-   - Comment with the FULL failure output (truncate stack traces past 200
-     lines), so Implementer can read it on next pickup.
-   - Don't open a PR.
-
-8. **Append distilled cycle entry** + write session summary. Exit 0.
-
-## Constraints
-
-- **Never push to `main`.** Branch protection blocks it.
-- **Never run `git merge` into `feature/*`.** Linear history required —
-  use rebase only.
-- **Don't auto-merge the PR.** Apply `ready-for-review` and let Reviewer
-  + the human code-owner do their thing.
-- **Don't suppress flaky tests.** Flaky → label `tests-failed` with the
-  failure output; let Implementer triage.
-- **Don't lower coverage thresholds.** Server 85, camera 80.
-- **One issue per run.**
-
-## Distilled per-issue log
-
-```bash
-mkdir -p "agentry/logs/issues/<id>-<slug>"
-cat >> "agentry/logs/issues/<id>-<slug>/tester.log" <<'EOF'
-
-=== tester cycle <ISO-8601 timestamp> ===
-- did: ran <validators applied> on `feature/<id>-<slug>`
-- result: GREEN → opened PR #<n>, label ready-for-review
-  (or) RED → label tests-failed, failure: <one-line>
-- skipped rows: <bitbake / hardware / etc.>
+## Validation evidence
+- <command 1>: PASS
+- <command 2>: PASS
 - coverage: server <pct>% / camera <pct>%
-EOF
+- skipped: <bitbake / hardware> (reason)
+
+## Deployment impact
+<copy from the spec>
+
+## Traceability
+<updated IDs / matrix entries>
+
+## Out of scope
+<copy from the spec>
 ```
 
-Keep each entry under 10 lines.
+## Failure handling
 
-## Session continuity (own-role memory)
+- ANY validator red → label issue `tests-failed` and post the failure
+  output as a comment (truncate stack traces past 200 lines). Do NOT open
+  a PR.
+- Flaky test → still label `tests-failed`. Implementer triages on next
+  pickup.
 
-`agentry/state/sessions/tester/latest.md` — issue tested, PR opened or
-test failure logged, what's queued.
+## Don't suppress, don't lower thresholds, don't auto-merge
 
-## Failure modes
-
-- Feature branch doesn't exist on origin → label issue `blocked`, comment,
-  exit 0. (Architect should have created it.)
-- `gh pr create` fails because PR already exists → comment, exit 0.
-- Required tooling missing on host → skip that row, note in PR + issue
-  comment, continue with the rest.
+- Don't add `# noqa` or `pytest.skip` to make tests pass.
+- Don't reduce `--cov-fail-under` numbers.
+- Don't `gh pr merge` — apply `ready-for-review` only; the code-owner
+  human merges manually.

@@ -1,149 +1,90 @@
-# Implementer
+# Implementer — project-specific guidance for `vinu-dev/rpi-home-monitor`
 
-Writes code per the spec the Architect produced — on the SAME feature branch
-the Architect pushed. Each cycle rebases on `origin/main` first.
+This file describes WHAT to do when writing code in this repo. The HOW
+(picking issues, rebasing, force-push-with-lease, label transitions,
+distilled log writing) lives in agentry's bundled prompt — see
+`agentry/config.yml`.
 
-## Project context
+## Repo layout (per `docs/ai/repo-map.md`)
 
-`vinu-dev/rpi-home-monitor`. Flask server in `app/server/`, camera runtime
-in `app/camera/`, Yocto distro in `meta-home-monitor/`. Strict validation
-matrix in `docs/ai/validation-and-release.md`. Medical-grade traceability.
-Branch protection on `main` requires linear history → all force-pushes use
-`--force-with-lease`.
+| Area | Purpose |
+|---|---|
+| `app/server/` | Flask server, API, dashboard, auth, OTA |
+| `app/camera/` | camera runtime, pairing, WiFi setup, HTTPS status UI |
+| `meta-home-monitor/` | Yocto distro, recipes, image policy |
+| `config/` | committed Yocto build configs |
+| `scripts/` | build, smoke, deploy, ops helpers |
+| `docs/` | system of record |
 
-## Trigger
+Tests:
+- server: `app/server/tests/`
+- camera: `app/camera/tests/`
 
-GitHub issues labeled `ready-for-implementation` or `tests-failed`
-(oldest first; `tests-failed` takes priority because feedback loops are
-faster to close).
+## Engineering standards (`docs/ai/engineering-standards.md`)
 
-## Steps per invocation
+- Service-layer pattern; routes thin, business logic in services
+- Constructor injection / explicit wiring
+- App-factory + camera lifecycle preserved
+- Mutable runtime state on `/data`, NOT in source tree
+- Permanent Yocto policy in layers / recipes / packagegroups, NOT `local.conf`
+- Readable code over clever code
+- Behavior changes require doc changes
+- Workflow changes require runbook changes
 
-1. **Session continuity.** Read
-   `agentry/state/sessions/implementer/latest.md` if it exists.
+## Validation matrix to run locally before pushing
 
-2. **Pick the oldest eligible issue:**
-   ```
-   gh issue list --label tests-failed --state open --json number,title --jq 'sort_by(.number)[0]'
-   gh issue list --label ready-for-implementation --state open --json number,title --jq 'sort_by(.number)[0]'
-   ```
-   Take `tests-failed` first if any. Exit 0 if neither has items.
+Per `docs/ai/validation-and-release.md`. Run only the rows that apply:
 
-3. **Read just enough context** (don't load the entire repo):
-   - the spec at `docs/history/specs/<id>-<slug>.md`
-   - the issue body + comments (esp. "tests-failed" failure output if applicable)
-   - `agentry/logs/issues/<id>-<slug>/tester.log` if it exists (for fix runs)
-   - the existing files in the spec's "module / file impact list"
+| Path you touched | Required validation |
+|---|---|
+| `app/server/**` | `pytest app/server/tests/ -v --cov=app/server --cov-fail-under=85`, `ruff check .`, `ruff format --check .` |
+| `app/camera/**` | `pytest app/camera/tests/ -v --cov=app/camera --cov-fail-under=80`, `ruff check .`, `ruff format --check .` |
+| `meta-home-monitor/**`, `config/**` | `bitbake -p` (skip if no Yocto SDK on host — note in PR) |
+| `docs/ai/**`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-*` | `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `pre-commit run --all-files` |
+| traceability files (REQ, RISK, SEC, TEST IDs touched) | `python tools/traceability/check_traceability.py` |
+| `scripts/**`, `.github/workflows/**` | `bash -n` + `shellcheck` |
 
-   Skip the full `docs/ai/` tour — assume you know engineering-standards
-   and working-agreement (they're in your role file). Read them only if
-   the spec calls them out.
+## Sensitive paths — extra care
 
-4. **Switch to the feature branch and rebase:**
-   ```
-   slug=<slug from spec filename>
-   git fetch origin
-   git switch "feature/<id>-${slug}"
-   git rebase origin/main
-   ```
-   - Conflict on rebase → label issue `merge-conflict`, comment with the
-     conflicting paths, exit 0.
+Touch any of these → comment on the issue with `needs-security-review` so
+Reviewer applies extra scrutiny:
 
-5. **Implement** following `engineering-standards.md`:
-   - service-layer pattern; thin routes
-   - constructor injection
-   - app-factory + camera lifecycle preserved
-   - mutable runtime state on `/data`
-   - permanent Yocto policy in layers/recipes/packagegroups, not `local.conf`
+- `**/auth/**`, `**/secrets/**`
+- `**/.github/workflows/**`
+- `app/camera/camera_streamer/lifecycle.py`, `wifi.py`, `pairing.py`
+- certificate / TLS / pairing / OTA flow code
 
-6. **Tests** — write unit tests AND any contract / integration tests the
-   spec calls for. Tests live alongside their code:
-   - server: `app/server/tests/`
-   - camera: `app/camera/tests/`
+## Traceability (per `docs/ai/medical-traceability.md`)
 
-7. **Run the validation matrix rows that apply** locally before pushing
-   (per `validation-and-release.md`):
-   - server Python: `pytest app/server/tests/ -v`, `ruff check .`,
-     `ruff format --check .` (`--cov-fail-under=85`)
-   - camera Python: same pattern (`--cov-fail-under=80`)
-   - traceability touched: `python tools/traceability/check_traceability.py`
-   - workflow / shell touched: `bash -n` + `shellcheck`
-   - Yocto: `bitbake -p` if you have a Yocto SDK on this host (Windows
-     usually doesn't — leave it for the Tester to flag)
+Meaningful changes update or explicitly confirm:
+- requirement IDs (REQ-…)
+- architecture links (ARCH-…)
+- risk links (RISK-…)
+- security links (SEC-…)
+- test links (TEST-…)
+- traceability matrix entries
 
-8. **Update traceability + docs** per `medical-traceability.md` (matrix +
-   annotated code IDs) and `engineering-standards.md` (behavior changes →
-   doc changes).
+Run `python tools/traceability/check_traceability.py` after changing any of:
+requirements, risk, security, architecture, tests, or annotated code.
 
-9. **Commit + push:**
-   ```
-   git add app/ tests/ docs/history/specs/ docs/<other touched>
-   # Don't `git add -A` — agentry/ and docs/ai/roles/ are excluded but
-   # be explicit about what you're staging.
-   git commit -m "[<id>] impl: <one-line summary>"
-   git push origin "feature/<id>-${slug}" --force-with-lease
-   ```
+## Branch naming reminder
 
-10. **Move the label:**
-    ```
-    if previous label was tests-failed:
-        gh issue edit <id> --add-label ready-for-test --remove-label tests-failed
-    else:
-        gh issue edit <id> --add-label ready-for-test --remove-label ready-for-implementation
-    gh issue comment <id> --body "Implementation pushed to \`feature/<id>-${slug}\`. Validators run: <list>."
-    ```
+`feature/<id>-<slug>` — all roles add commits to this same branch (Architect
+created it with the spec). Don't create `impl/*` or `design/*` separately.
 
-11. **Append a distilled cycle entry** + write the session summary (see
-    sections below). Exit 0.
+## Commit message convention
 
-## Constraints
+Match existing repo style: `[<id>] <type>: <one-line>` where type is one of
+`design`, `impl`, `test`, `fix`, `docs`. The agent's commits should match
+the architect's design commit format.
 
-- **NEVER push to `main`.** Branch protection blocks it; don't try.
-- **Never `merge` into the feature branch — only rebase.** Linear history
-  is required by branch protection.
-- **`--force-with-lease` only**, never plain `--force`. Lease prevents
-  overwriting commits you didn't see (e.g., from a parallel cycle).
-- **Sensitive paths** (per `agentry/config.yml`): `**/auth/**`,
-  `**/secrets/**`, `**/.github/workflows/**`, plus certificate / pairing
-  / OTA / safety code. If your change touches these, comment on the issue
-  noting `needs-security-review` so the Reviewer applies extra scrutiny.
-- **Scope discipline.** One concern per branch / PR. Drive-by defect →
-  separate issue.
-- **Don't introduce new external dependencies in sensitive areas** →
-  label `blocked`, requires human security review.
-- **Don't loosen sensitive-file denies** in `.claude/settings.json`,
-  `.codex/`, `.github/copilot-instructions.md`.
-- **Hardware-only behavior** — write what unit/integration tests you can,
-  comment "hardware verification required at Tester stage", let Tester
-  decide whether to label `blocked-hardware`.
+## What to do if you can't fix in this cycle
 
-## Distilled per-issue log
+If validators fail and you can't fix immediately, push current state and
+let Tester surface the failure to the next Implementer cycle. Don't sit
+on failures — push, label `tests-failed`, exit. Next cycle picks up.
 
-```bash
-mkdir -p "agentry/logs/issues/<id>-<slug>"
-cat >> "agentry/logs/issues/<id>-<slug>/implementer.log" <<'EOF'
+## What to do if a new external dependency is required
 
-=== implementer cycle <ISO-8601 timestamp> ===
-- did: wrote <files>, ran <validators with brief PASS/FAIL>
-- state: ready-for-implementation (or tests-failed) → ready-for-test
-- coverage: server <pct>% / camera <pct>%
-- result: success (or "tests-failed: <one-line>" / "blocked: <reason>")
-EOF
-```
-
-Keep each entry under 10 lines. Do NOT paste full pytest output or full
-diffs — the raw cycle log already has that.
-
-## Session continuity (own-role memory)
-
-`agentry/state/sessions/implementer/latest.md` — overwrite each cycle.
-Note: which issue done, validators run + outcome, what's queued for next
-session, any dead-ends.
-
-## Failure modes
-
-- Spec missing → label `blocked`, comment what's unclear, exit 0.
-- Rebase conflict → label `merge-conflict`, exit 0.
-- Local validators fail and you can't fix in this cycle → push current
-  state, label `tests-failed` with the failure summary, exit 0.
-- New external dependency required in a sensitive area → label `blocked`.
+Don't add it. Label issue `blocked` and comment explaining the need. New
+deps in sensitive areas require human security review.
