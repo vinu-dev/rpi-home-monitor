@@ -151,7 +151,7 @@ agents:
 
   architect:
     cli: npx                          # Claude Code design; agentry resolves npx.cmd on Windows
-    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "opus", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     trigger:
       issue_labels: ["ready-for-design"]
     interval_min: 5
@@ -352,14 +352,14 @@ agents:
 
   tester:
     cli: npx                          # Codex validation; agentry resolves npx.cmd on Windows
-    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4-mini", "--dangerously-bypass-approvals-and-sandbox"]
+    args: ["--yes", "@openai/codex", "exec", "-m", "gpt-5.4", "--dangerously-bypass-approvals-and-sandbox"]
     trigger:
       issue_labels: ["ready-for-test"]
     interval_min: 5
-    total_min: 30
-    stall_min: 30        # = total_min
+    total_min: 60
+    stall_min: 60        # = total_min
     max_sessions: 1
-    token_budget: 30000
+    token_budget: 80000
     checkin_response_seconds: 90
     prompt: |
       You are the Tester in a parallel multi-agent pipeline. Other roles run
@@ -447,7 +447,7 @@ agents:
 
   reviewer:
     cli: npx                          # Claude Code review; agentry resolves npx.cmd on Windows
-    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
+    args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "opus", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     trigger:
       pr_labels: ["ready-for-review"]
     interval_min: 5
