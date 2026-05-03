@@ -13,7 +13,7 @@ and run the rows that apply:
 |---|---|
 | `app/server/**` | `pytest app/server/tests/ -v --cov=app/server --cov-fail-under=85`<br>`ruff check .`<br>`ruff format --check .` |
 | `app/camera/**` | `pytest app/camera/tests/ -v --cov=app/camera --cov-fail-under=80`<br>`ruff check .`<br>`ruff format --check .` |
-| Repo governance / docs | `python scripts/ai/validate_repo_ai_setup.py`<br>`python scripts/ai/check_doc_links.py`<br>`python scripts/ai/check_shell_scripts.py`<br>`pre-commit run --all-files` |
+| Any code change / repo governance / docs | `python tools/docs/check_doc_map.py`<br>`python scripts/ai/validate_repo_ai_setup.py`<br>`python scripts/ai/check_doc_links.py`<br>`python scripts/ai/check_shell_scripts.py`<br>`python scripts/check_version_consistency.py`<br>`python scripts/check_versioning_design.py`<br>`pre-commit run --all-files` |
 | Traceability touched | `python tools/traceability/check_traceability.py` |
 | `meta-home-monitor/**`, `config/**` (Yocto) | `bitbake -p` |
 | `scripts/**`, `.github/workflows/**` | `bash -n <script>`, `shellcheck <script>` |
@@ -49,6 +49,15 @@ Closes #<id>
 ## Validation evidence
 - <command 1>: PASS
 - <command 2>: PASS
+- python tools/docs/check_doc_map.py: PASS
+- python scripts/ai/validate_repo_ai_setup.py: PASS
+- python scripts/ai/check_doc_links.py: PASS
+- python scripts/ai/check_shell_scripts.py: PASS
+- python scripts/check_version_consistency.py: PASS
+- python scripts/check_versioning_design.py: PASS
+- pre-commit run --all-files: PASS
+- ruff check .: PASS
+- ruff format --check .: PASS
 - coverage: server <pct>% / camera <pct>%
 - skipped: <bitbake / hardware> (reason)
 
@@ -69,6 +78,9 @@ Closes #<id>
   a PR.
 - Flaky test → still label `tests-failed`. Implementer triages on next
   pickup.
+
+Missing local tooling is not a pass. Install reasonable Python tools such as
+`pre-commit`; otherwise mark the row as blocked and do not claim green.
 
 ## Don't suppress, don't lower thresholds, don't auto-merge
 
