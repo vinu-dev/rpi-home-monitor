@@ -183,7 +183,10 @@ class User:
     role: str = "viewer"  # admin | viewer
     created_at: str = ""
     last_login: str | None = None
-    totp_secret: str = ""  # TOTP secret for 2FA (ADR-0011, future)
+    totp_secret: str = ""  # TOTP secret for 2FA (ADR-0011, issue #238)
+    totp_enabled: bool = False  # whether TOTP is active for this user
+    recovery_code_hashes: list[str] = field(default_factory=list)  # bcrypt hashes of single-use recovery codes
+    last_totp_step: int = 0  # anti-replay: last accepted TOTP step number
     failed_logins: int = 0  # consecutive failed login count
     locked_until: str = ""  # ISO timestamp, empty = not locked
     must_change_password: bool = False  # force password change on next login
@@ -246,6 +249,9 @@ class Settings:
     # scene (the person walking out of frame, the gate closing, etc.).
     # Bump up for "I want 30 s of aftermath"; shrink to trim storage.
     motion_post_roll_seconds: int = 10
+    # TOTP 2FA policy (issue #238). When enabled, sessions from Tailscale
+    # Funnel IPs must present a TOTP code after password verification.
+    require_2fa_for_remote: bool = False
     webhook_destinations: list[WebhookDestination] = field(default_factory=list)
     webhook_delivery_history_retention_days: int = 30
 

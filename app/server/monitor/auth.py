@@ -311,7 +311,59 @@ def login():
     user.last_login = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     store.save_user(user)
 
-    # Create session
+    # Check if 2FA is required for this user or based on policy
+    totp_svc = getattr(current_app, "totp_service", None)
+    settings = store.get_settings()
+
+    # Determine if this is a remote request
+    require_2fa_remote = settings and settings.require_2fa_for_remote
+    is_remote = False
+    if require_2fa_remote and totp_svc:
+        from monitor.services.request_origin import classify
+        is_remote = classify(ip) != "lan"
+
+    # Guard: non-enrolled user cannot login remotely if policy is ON
+    if require_2fa_remote and is_remote and not user.totp_enabled:
+        if audit:
+            audit.log_event(
+                "LOGIN_BLOCKED",
+                user=username,
+                ip=ip,
+                detail="remote policy requires 2FA; user not enrolled",
+            )
+        return jsonify({
+            "error": "Two-factor authentication is required for remote access. Please enroll on the local network first.",
+            "remote_2fa_enrollment_required": True,
+        }), 403
+
+    # 2FA required if: user has it enabled OR (remote policy is on AND this is remote)
+    totp_required = user.totp_enabled or (require_2fa_remote and is_remote)
+
+    if totp_required and totp_svc:
+        # Issue a challenge token; don't create session yet
+        challenge_token = totp_svc.issue_challenge_token(user.id, require_remote=is_remote)
+
+        if audit:
+            detail = "password OK, 2FA required"
+            if is_remote:
+                detail += " (remote policy)"
+            audit.log_event("LOGIN_PASSWORD_OK_2FA_REQUIRED", user=username, ip=ip, detail=detail)
+
+        response = jsonify({
+            "challenge": "totp",
+            "challenge_token": challenge_token,
+        })
+        response.set_cookie(
+            "totp_challenge",
+            challenge_token,
+            max_age=300,  # 5 minutes
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+        )
+        return response, 200
+
+    # Create session (no 2FA required)
     session.clear()
     session["user_id"] = user.id
     session["username"] = user.username
