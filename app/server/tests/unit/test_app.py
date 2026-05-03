@@ -64,6 +64,9 @@ class TestBlueprintRegistration:
     def test_settings_blueprint_registered(self, app):
         assert "settings" in app.blueprints
 
+    def test_webhooks_blueprint_registered(self, app):
+        assert "webhooks" in app.blueprints
+
     def test_users_blueprint_registered(self, app):
         assert "users" in app.blueprints
 
@@ -77,7 +80,7 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 19 blueprints.
+        """We expect exactly 20 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -85,8 +88,9 @@ class TestBlueprintRegistration:
           17 after motion-detection work (motion_events API + events_router).
           18 after ADR-0024 added the `alerts` API (#132).
           19 after ADR-0027 added the `notifications` API (#128).
+          20 after outbound webhook management added the `webhooks` API (#239).
         """
-        assert len(app.blueprints) == 19
+        assert len(app.blueprints) == 20
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints

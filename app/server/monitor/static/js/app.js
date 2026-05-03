@@ -1,4 +1,4 @@
-// REQ: SWR-022, SWR-032; RISK: RISK-010, RISK-015; SEC: SC-010, SC-020; TEST: TC-021, TC-029
+// REQ: SWR-022, SWR-032, SWR-056; RISK: RISK-010, RISK-015, RISK-017, RISK-020, RISK-021; SEC: SC-010, SC-020, SC-021; TEST: TC-021, TC-029, TC-042, TC-048
 /**
  * Home Monitor OS — Dashboard JavaScript
  *
@@ -24,6 +24,9 @@
         },
         put: function(url, body) {
             return _request('PUT', url, body);
+        },
+        patch: function(url, body) {
+            return _request('PATCH', url, body);
         },
         del: function(url) {
             return _request('DELETE', url, null);

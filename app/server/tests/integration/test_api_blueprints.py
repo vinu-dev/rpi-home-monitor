@@ -31,6 +31,9 @@ class TestBlueprintRegistration:
     def test_settings_blueprint(self, app):
         assert "settings" in app.blueprints
 
+    def test_webhooks_blueprint(self, app):
+        assert "webhooks" in app.blueprints
+
     def test_users_blueprint(self, app):
         assert "users" in app.blueprints
 
@@ -73,6 +76,8 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/recordings/latest",
     "/api/v1/live/cam-test/stream.m3u8",
     "/api/v1/settings",
+    "/api/v1/webhooks",
+    "/api/v1/webhooks/deliveries",
     "/api/v1/users",
     "/api/v1/ota/status",
     "/api/v1/system/health",
@@ -107,6 +112,29 @@ _STATE_CHANGING_ROUTES = [
     ("PUT", "/api/v1/settings", {"hostname": "x"}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "x", "password": "y"}),
+    (
+        "POST",
+        "/api/v1/webhooks",
+        {
+            "url": "https://hooks.example.com",
+            "auth_type": "none",
+            "event_classes": ["motion"],
+            "enabled": True,
+        },
+    ),
+    (
+        "PUT",
+        "/api/v1/webhooks/wh-test",
+        {
+            "url": "https://hooks.example.com",
+            "auth_type": "none",
+            "event_classes": ["motion"],
+            "enabled": True,
+        },
+    ),
+    ("PATCH", "/api/v1/webhooks/wh-test/enabled", {"enabled": True}),
+    ("POST", "/api/v1/webhooks/wh-test/test", {}),
+    ("DELETE", "/api/v1/webhooks/wh-test", None),
     ("POST", "/api/v1/users", {"username": "u1", "password": "password1234"}),
     ("DELETE", "/api/v1/users/user-nobody", None),
     ("PUT", "/api/v1/users/user-nobody/password", {"new_password": "newpass1234"}),

@@ -1,4 +1,4 @@
-# REQ: SWR-001, SWR-045; RISK: RISK-002, RISK-021; SEC: SC-001, SC-021; TEST: TC-004, TC-042
+# REQ: SWR-001, SWR-045, SWR-056, SWR-057; RISK: RISK-002, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-012, SC-020, SC-021; TEST: TC-004, TC-042, TC-048, TC-049
 """
 RPi Home Monitor - Server Application
 
@@ -40,6 +40,7 @@ from monitor.services.streaming_service import StreamingService
 from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
 from monitor.services.user_service import UserService
+from monitor.services.webhook_delivery_service import WebhookDeliveryService
 from monitor.store import Store
 
 log = logging.getLogger("monitor")
@@ -202,6 +203,11 @@ def _init_infrastructure(app):
     # produce the still-image preview the spec requires.
     app.notification_policy = NotificationPolicyService(
         store=app.store,
+        motion_event_store=app.motion_event_store,
+    )
+    app.webhook_delivery_service = WebhookDeliveryService(
+        store=app.store,
+        audit=app.audit,
         motion_event_store=app.motion_event_store,
     )
     app.snapshot_extractor = SnapshotExtractor(
@@ -590,6 +596,7 @@ def _register_blueprints(app):
     from monitor.api.storage import storage_bp
     from monitor.api.system import system_bp
     from monitor.api.users import users_bp
+    from monitor.api.webhooks import webhooks_bp
     from monitor.api.webrtc import webrtc_bp
     from monitor.auth import auth_bp
     from monitor.provisioning import provisioning_bp as setup_bp
@@ -603,6 +610,7 @@ def _register_blueprints(app):
     app.register_blueprint(live_bp, url_prefix="/api/v1/live")
     app.register_blueprint(system_bp, url_prefix="/api/v1/system")
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
+    app.register_blueprint(webhooks_bp, url_prefix="/api/v1/webhooks")
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")

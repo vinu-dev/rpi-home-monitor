@@ -8,28 +8,28 @@ Outbound webhook delivery for motion events and system alerts.
 
 ## Goal
 
-Operators can register one or more outbound webhook destinations (URL, optional bearer or HMAC secret, optional custom headers) and route selected event classes — motion events, camera-offline, storage-low, OTA outcomes — to them. Each webhook posts a stable JSON payload that includes camera id, event type, severity, timestamp, snapshot URL (when applicable), and a signature header so the receiver can verify the request originated from this server. Delivery is best-effort with a short bounded retry budget; failures surface in the audit log so the operator can see when a downstream automation went silent. This unlocks Home Assistant, Node-RED, n8n, and custom-script integration without committing to a heavy MQTT broker dependency on day one.
+Operators can register one or more outbound webhook destinations (URL, optional bearer or HMAC secret, optional custom headers) and route selected event classes - motion events, camera-offline, storage-low, OTA outcomes - to them. Each webhook posts a stable JSON payload that includes camera id, event type, severity, timestamp, snapshot URL (when applicable), and a signature header so the receiver can verify the request originated from this server. Delivery is best-effort with a short bounded retry budget; failures surface in the audit log so the operator can see when a downstream automation went silent. This unlocks Home Assistant, Node-RED, n8n, and custom-script integration without committing to a heavy MQTT broker dependency on day one.
 
-This closes market-backlog items #73 ("Generic webhook actions", P1 W3) and #82 ("Local REST API for automation clients", P1 W2) per `docs/history/planning/market-feature-backlog-100.md`. The feature fits the mission of being a "trustworthy, self-hosted" product that "feels like a real product" — a self-hosted appliance without clean machine-readable outbound channels forces operators to reverse-engineer one.
+This closes market-backlog items #73 ("Generic webhook actions", P1 W3) and #82 ("Local REST API for automation clients", P1 W2) per `docs/history/planning/market-feature-backlog-100.md`. The feature fits the mission of being a "trustworthy, self-hosted" product that "feels like a real product" - a self-hosted appliance without clean machine-readable outbound channels forces operators to reverse-engineer one.
 
 ## Context
 
 Existing code this feature must build on:
 
-- `app/server/monitor/services/notification_policy_service.py` — already classifies and filters motion events per-user and per-camera; webhook delivery becomes a third "channel" alongside in-app alerts and browser-push notifications, in the same service-layer pattern (ADR-0003).
-- `app/server/monitor/services/alert_center_service.py` — catalogs user-visible alerts from audit events, motion events, and camera faults. The same event classes that feed the alert center (motion end, camera offline, storage low, OTA outcomes) feed webhook delivery.
-- `app/server/monitor/services/audit.py` (`AuditLogger`) — webhook delivery outcomes (success, 4xx, 5xx, circuit-break) are logged here; this gives operators visibility into downstream failures.
-- `app/server/monitor/models.py` — the `Settings` dataclass carries system-wide configuration. Webhook destinations list and delivery policy belong here.
-- `app/server/monitor/api/` — admin-only CRUD endpoints for webhook management land in a new blueprint or extend an existing settings blueprint.
-- `app/server/monitor/templates/` — settings UI for list, add, edit, delete, test-fire, recent-delivery view.
-- `app/server/monitor/__init__.py:119` — app-factory pattern (ADR-0001) wires services into the Flask app.
-- ADR-0003 (service-layer pattern) — webhook delivery service is a pure business-logic service; routes are thin HTTP adapters.
+- `app/server/monitor/services/notification_policy_service.py` - already classifies and filters motion events per-user and per-camera; webhook delivery becomes a third "channel" alongside in-app alerts and browser-push notifications, in the same service-layer pattern (ADR-0003).
+- `app/server/monitor/services/alert_center_service.py` - catalogs user-visible alerts from audit events, motion events, and camera faults. The same event classes that feed the alert center (motion end, camera offline, storage low, OTA outcomes) feed webhook delivery.
+- `app/server/monitor/services/audit.py` (`AuditLogger`) - webhook delivery outcomes (success, 4xx, 5xx, circuit-break) are logged here; this gives operators visibility into downstream failures.
+- `app/server/monitor/models.py` - the `Settings` dataclass carries system-wide configuration. Webhook destinations list and delivery policy belong here.
+- `app/server/monitor/api/` - admin-only CRUD endpoints for webhook management land in a new blueprint or extend an existing settings blueprint.
+- `app/server/monitor/templates/` - settings UI for list, add, edit, delete, test-fire, recent-delivery view.
+- `app/server/monitor/__init__.py:119` - app-factory pattern (ADR-0001) wires services into the Flask app.
+- ADR-0003 (service-layer pattern) - webhook delivery service is a pure business-logic service; routes are thin HTTP adapters.
 
 ## User-Facing Behavior
 
-### Primary path — register a webhook destination
+### Primary path - register a webhook destination
 
-1. Admin opens Settings → Integrations → Webhooks.
+1. Admin opens Settings -> Integrations -> Webhooks.
 2. Page shows existing webhook destinations (list, with edit/delete buttons) and an "Add webhook" button.
 3. Admin clicks "Add webhook". A form appears with fields:
    - **URL** (required): HTTPS endpoint. HTTP is rejected with a server-side guard and UI validation ("HTTPS only").
@@ -44,9 +44,9 @@ Existing code this feature must build on:
    - At least one event class is selected.
 5. On success, the destination is stored in `Settings.webhook_destinations`. Audit event `WEBHOOK_REGISTERED` is written with the URL (but not the secret), IP, and user.
 6. Form shows "Saved. Test this webhook?" with a "Send test event" button.
-7. Admin clicks "Send test event" to fire a synthetic payload (event type `test`, all fields populated with dummy data). Delivery attempt is logged. If it succeeds (2xx), show "✓ Test delivered successfully"; if it fails, show the HTTP status and first 200 chars of response body.
+7. Admin clicks "Send test event" to fire a synthetic payload (event type `test`, all fields populated with dummy data). Delivery attempt is logged. If it succeeds (2xx), show "OK Test delivered successfully"; if it fails, show the HTTP status and first 200 chars of response body.
 
-### Primary path — event delivery
+### Primary path - event delivery
 
 When a motion event ends, a camera goes offline, storage drops below threshold, or an OTA completes:
 
@@ -64,7 +64,7 @@ When a motion event ends, a camera goes offline, storage drops below threshold, 
 5. On success (2xx response), log `WEBHOOK_DELIVERY_SUCCESS` with the URL and response time.
 6. If all destinations are down for a duration (e.g., 5 consecutive failures per destination), emit an audit event `WEBHOOK_DELIVERY_DEGRADED` to alert the operator via the alert center.
 
-### Primary path — manage webhooks
+### Primary path - manage webhooks
 
 - **Edit**: Admin clicks edit, modifies fields, submits. URL, secret, and headers are re-validated. Audit `WEBHOOK_UPDATED`.
 - **Delete**: Admin clicks delete, gets a confirmation modal showing the URL and listing how many events would be lost (0 for a disabled webhook, best-effort count for an active one). On confirm, audit `WEBHOOK_DELETED` and remove from the list.
@@ -73,13 +73,13 @@ When a motion event ends, a camera goes offline, storage drops below threshold, 
 
 ### Failure states (must be designed, not just unit-tested)
 
-- Webhook URL is down → payload queued, retried 3 times with Fibonacci backoff, then logged as failed. Audit log shows `WEBHOOK_DELIVERY_FAILED:5xx`.
-- Secret not provided when auth method is "Bearer" → form validation rejects on the client; server rejects during save.
-- Destination deleted while a delivery is in-flight → in-flight request completes (no-op if response arrives after deletion), but no retry is attempted.
-- Payload too large to send (e.g., > 64 KB with embedded snapshot) → truncate snapshot field or fall back to snapshot URL without embedding. Log a warning audit event `WEBHOOK_DELIVERY_TRUNCATED`.
-- Webhook destination is misconfigured (e.g., 404, 403) → delivery fails permanently after 3 attempts. Operator can see this in the "Recent deliveries" view and the audit log.
-- Network isolation (e.g., no internet, Firewall rule blocks the destination) → timeout after 10s, trigger retry. After 3 failures, record `WEBHOOK_DELIVERY_FAILED` with reason "timeout/unreachable".
-- SSRF attempt (e.g., admin registers `http://127.0.0.1:22`) → server-side guard rejects non-routable IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1, fc00::/7) with a clear error ("Webhook URL must be reachable from your network; local/private IPs are not allowed").
+- Webhook URL is down -> payload queued, retried 3 times with Fibonacci backoff, then logged as failed. Audit log shows `WEBHOOK_DELIVERY_FAILED:5xx`.
+- Secret not provided when auth method is "Bearer" -> form validation rejects on the client; server rejects during save.
+- Destination deleted while a delivery is in-flight -> in-flight request completes (no-op if response arrives after deletion), but no retry is attempted.
+- Payload too large to send (e.g., > 64 KB with embedded snapshot) -> truncate snapshot field or fall back to snapshot URL without embedding. Log a warning audit event `WEBHOOK_DELIVERY_TRUNCATED`.
+- Webhook destination is misconfigured (e.g., 404, 403) -> delivery fails permanently after 3 attempts. Operator can see this in the "Recent deliveries" view and the audit log.
+- Network isolation (e.g., no internet, Firewall rule blocks the destination) -> timeout after 10s, trigger retry. After 3 failures, record `WEBHOOK_DELIVERY_FAILED` with reason "timeout/unreachable".
+- SSRF attempt (e.g., admin registers `http://127.0.0.1:22`) -> server-side guard rejects non-routable IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1, fc00::/7) with a clear error ("Webhook URL must be reachable from your network; local/private IPs are not allowed").
 
 ## Acceptance Criteria
 
@@ -129,7 +129,7 @@ Each bullet is testable; verification mechanism noted in brackets.
 ## Non-Goals
 
 - Inbound webhooks / external triggers (separate concern).
-- Per-user webhook routing — system-level destinations only in v1.
+- Per-user webhook routing - system-level destinations only in v1.
 - User-supplied payload templating beyond a fixed JSON schema.
 - TLS pinning to specific receiver CAs. Standard CA chain verification only.
 - Full MQTT broker support (market-backlog item #72; webhook-first keeps surface small).
@@ -141,21 +141,21 @@ Each bullet is testable; verification mechanism noted in brackets.
 
 **New code:**
 
-- `app/server/monitor/services/webhook_delivery_service.py` — outbound queue, bounded retry (Fibonacci backoff, max 3), HMAC-SHA256 signing, per-destination concurrency cap (1 in-flight), secret masking in logs. Pure business logic, no Flask imports.
-- `app/server/monitor/api/webhooks.py` (new blueprint) — admin-only endpoints:
-  - `POST /api/v1/webhooks` — register destination
-  - `PUT /api/v1/webhooks/<id>` — edit destination
-  - `DELETE /api/v1/webhooks/<id>` — delete destination
-  - `PATCH /api/v1/webhooks/<id>/enabled` — toggle enabled state
-  - `POST /api/v1/webhooks/<id>/test` — send test payload
-  - `GET /api/v1/webhooks/deliveries` — recent delivery log (list, paginated)
-- `app/server/tests/unit/test_webhook_service.py` — service-layer unit tests covering validation, signing, retry logic, secret masking.
-- `app/server/tests/integration/test_webhook_delivery.py` — end-to-end tests: event trigger → delivery, retry behavior, concurrency cap, audit logging.
-- `app/server/tests/integration/test_webhook_ssrf.py` — SSRF guard tests (private IPs rejected).
+- `app/server/monitor/services/webhook_delivery_service.py` - outbound queue, bounded retry (Fibonacci backoff, max 3), HMAC-SHA256 signing, per-destination concurrency cap (1 in-flight), secret masking in logs. Pure business logic, no Flask imports.
+- `app/server/monitor/api/webhooks.py` (new blueprint) - admin-only endpoints:
+  - `POST /api/v1/webhooks` - register destination
+  - `PUT /api/v1/webhooks/<id>` - edit destination
+  - `DELETE /api/v1/webhooks/<id>` - delete destination
+  - `PATCH /api/v1/webhooks/<id>/enabled` - toggle enabled state
+  - `POST /api/v1/webhooks/<id>/test` - send test payload
+  - `GET /api/v1/webhooks/deliveries` - recent delivery log (list, paginated)
+- `app/server/tests/unit/test_webhook_service.py` - service-layer unit tests covering validation, signing, retry logic, secret masking.
+- `app/server/tests/integration/test_webhook_delivery.py` - end-to-end tests: event trigger -> delivery, retry behavior, concurrency cap, audit logging.
+- `app/server/tests/integration/test_webhook_ssrf.py` - SSRF guard tests (private IPs rejected).
 
 **Modified code:**
 
-- `app/server/monitor/models.py` — add to `Settings`:
+- `app/server/monitor/models.py` - add to `Settings`:
   - `webhook_destinations: list[WebhookDestination] = field(default_factory=list)`
   - `webhook_delivery_history_retention_days: int = 30`
   - New dataclass `WebhookDestination`:
@@ -169,15 +169,15 @@ Each bullet is testable; verification mechanism noted in brackets.
     - `created_at: str` (ISO-8601 Z)
     - `last_delivery_at: str | None = None`
     - `consecutive_failures: int = 0` (reset on success; used for degradation detection)
-- `app/server/monitor/services/notification_policy_service.py` — call into `webhook_delivery_service.enqueue()` in addition to (not instead of) the existing browser-notification path. No change to the primary logic.
-- `app/server/monitor/services/alert_center_service.py` — same: hook webhook delivery at alert emission time.
-- `app/server/monitor/services/audit.py` — new audit event constants:
+- `app/server/monitor/services/notification_policy_service.py` - call into `webhook_delivery_service.enqueue()` in addition to (not instead of) the existing browser-notification path. No change to the primary logic.
+- `app/server/monitor/services/alert_center_service.py` - same: hook webhook delivery at alert emission time.
+- `app/server/monitor/services/audit.py` - new audit event constants:
   - `WEBHOOK_REGISTERED`, `WEBHOOK_UPDATED`, `WEBHOOK_DELETED`, `WEBHOOK_ENABLED`, `WEBHOOK_DISABLED`
   - `WEBHOOK_DELIVERY_SUCCESS`, `WEBHOOK_DELIVERY_FAILED`, `WEBHOOK_DELIVERY_TRUNCATED`, `WEBHOOK_DELIVERY_DEGRADED`
   - Event detail must NOT include plaintext secrets; only "auth_type" is logged.
-- `app/server/monitor/templates/settings.html` — new "Integrations → Webhooks" card (list, add, edit, delete, test, recent deliveries).
-- `app/server/monitor/static/css/style.css` — minor additions for table and form styling.
-- `app/server/monitor/__init__.py` — wire `WebhookDeliveryService` into the app-factory; register new blueprint.
+- `app/server/monitor/templates/settings.html` - new "Integrations -> Webhooks" card (list, add, edit, delete, test, recent deliveries).
+- `app/server/monitor/static/css/style.css` - minor additions for table and form styling.
+- `app/server/monitor/__init__.py` - wire `WebhookDeliveryService` into the app-factory; register new blueprint.
 
 **Dependencies:**
 
@@ -196,7 +196,7 @@ Pulled from `docs/ai/validation-and-release.md`:
 |--------------|---------------------|
 | Server Python | `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .` |
 | API contract | new contract tests for `/api/v1/webhooks/*` (CRUD, auth, SSRF) |
-| Frontend / templates | browser-level check on `/settings` Integrations → Webhooks card |
+| Frontend / templates | browser-level check on `/settings` Integrations -> Webhooks card |
 | Security-sensitive path | SSRF guard tests, secret masking tests, audit scrubbing tests |
 | Requirements / risk / security / traceability | `python tools/traceability/check_traceability.py`, `python scripts/ai/check_doc_links.py` |
 | Hardware behavior | deploy + `scripts/smoke-test.sh` row covering webhook registration, event delivery, failure recovery |
@@ -214,13 +214,13 @@ ISO 14971-lite framing. Hazards specific to this change:
 
 | ID | Hazard | Severity | Probability | Risk control |
 |----|--------|----------|-------------|--------------|
-| HAZ-239-1 | Admin misconfigures webhook auth (e.g., no secret when Bearer is selected) → delivery fails silently and operator doesn't know. | Minor (operational) | Medium | RC-239-1: UI enforces required fields based on auth method (client-side); server-side validation also enforces. Settings UI shows "Recent deliveries" with HTTP status. |
-| HAZ-239-2 | Webhook secret is logged in plaintext in audit log → credential exposure. | Major (security) | Low | RC-239-2: secrets never passed to audit.log_event(); only "auth_type: bearer" is logged. Contract test enforces it. |
-| HAZ-239-3 | Admin registers webhook to a private IP (127.0.0.1, 192.168.x.x) → SSRF attack vector to local services. | Major (security) | Low | RC-239-3: server-side SSRF guard rejects non-routable IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1, fc00::/7) with a clear error. Tested explicitly. |
-| HAZ-239-4 | Webhook destination down for days → operator doesn't notice, downstream automation stays silent. | Minor (operational, depends on automation use case) | Medium | RC-239-4: audit log surfaces `WEBHOOK_DELIVERY_FAILED` events; after 5 consecutive failures per destination, emit `WEBHOOK_DELIVERY_DEGRADED`. Settings UI shows "Recent deliveries" with failure counts. |
-| HAZ-239-5 | Retry storm if webhook destination is slow (e.g., replies after 30s) → server spawns many concurrent requests, exhausts memory / FD limits. | Moderate (operational) | Low | RC-239-5: per-destination concurrency cap of 1 in-flight request; short timeout of 10s per request; Fibonacci backoff (5s, 8s, 13s) prevents cascade. |
-| HAZ-239-6 | Large snapshot embedded in JSON payload → out-of-memory on webhook server or payload too large to send. | Minor (depends on receiver capability) | Low | RC-239-6: max snapshot size configurable; payload truncated with audit warning if > 64 KB. Implementer to decide: embed or link-only (snapshot URL without base64 embedding). |
-| HAZ-239-7 | Webhook destination replies with a redirect (302 → another URL) → SSRF via redirect chain. | Minor (security) | Low | RC-239-7: max 2 redirects; fail if more are attempted. Audit log notes redirect endpoints. |
+| HAZ-239-1 | Admin misconfigures webhook auth (e.g., no secret when Bearer is selected) -> delivery fails silently and operator doesn't know. | Minor (operational) | Medium | RC-239-1: UI enforces required fields based on auth method (client-side); server-side validation also enforces. Settings UI shows "Recent deliveries" with HTTP status. |
+| HAZ-239-2 | Webhook secret is logged in plaintext in audit log -> credential exposure. | Major (security) | Low | RC-239-2: secrets never passed to audit.log_event(); only "auth_type: bearer" is logged. Contract test enforces it. |
+| HAZ-239-3 | Admin registers webhook to a private IP (127.0.0.1, 192.168.x.x) -> SSRF attack vector to local services. | Major (security) | Low | RC-239-3: server-side SSRF guard rejects non-routable IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1, fc00::/7) with a clear error. Tested explicitly. |
+| HAZ-239-4 | Webhook destination down for days -> operator doesn't notice, downstream automation stays silent. | Minor (operational, depends on automation use case) | Medium | RC-239-4: audit log surfaces `WEBHOOK_DELIVERY_FAILED` events; after 5 consecutive failures per destination, emit `WEBHOOK_DELIVERY_DEGRADED`. Settings UI shows "Recent deliveries" with failure counts. |
+| HAZ-239-5 | Retry storm if webhook destination is slow (e.g., replies after 30s) -> server spawns many concurrent requests, exhausts memory / FD limits. | Moderate (operational) | Low | RC-239-5: per-destination concurrency cap of 1 in-flight request; short timeout of 10s per request; Fibonacci backoff (5s, 8s, 13s) prevents cascade. |
+| HAZ-239-6 | Large snapshot embedded in JSON payload -> out-of-memory on webhook server or payload too large to send. | Minor (depends on receiver capability) | Low | RC-239-6: max snapshot size configurable; payload truncated with audit warning if > 64 KB. Implementer to decide: embed or link-only (snapshot URL without base64 embedding). |
+| HAZ-239-7 | Webhook destination replies with a redirect (302 -> another URL) -> SSRF via redirect chain. | Minor (security) | Low | RC-239-7: max 2 redirects; fail if more are attempted. Audit log notes redirect endpoints. |
 
 Reference `docs/risk/` for the existing architecture risk register; this spec adds rows.
 
@@ -235,7 +235,7 @@ Threat-model deltas (Implementer fills `THREAT-` / `SC-` IDs):
   - Never logged in plaintext; audit events log only the auth type ("bearer", "hmac").
   - Never returned in API responses after creation (only "***" redacted marker).
 - **Adds** short-lived signed delivery payloads (HMAC-SHA256). Signature key is derived from Flask `SECRET_KEY` via HKDF (distinct sub-key, never reuses the session key directly).
-- **Sensitive paths touched:** `**/auth/**` (no direct change, but webhook delivery affects session/event surface), `**/secrets/**` (yes, new webhook-secret storage). Per `docs/ai/roles/architect.md` these need extra scrutiny — flagged here.
+- **Sensitive paths touched:** `**/auth/**` (no direct change, but webhook delivery affects session/event surface), `**/secrets/**` (yes, new webhook-secret storage). Per `docs/ai/roles/architect.md` these need extra scrutiny - flagged here.
 - **Audit:** every webhook registration, edit, delete, enable, disable, and delivery outcome is auditable (events listed above). Audit must NEVER carry plaintext secrets.
 - **Outbound network security:** each request times out after 10s; retry budget is fixed (3 attempts, Fibonacci backoff); per-destination concurrency is capped at 1. This prevents the server from being used as a vector to DDoS external services.
 - **SSRF control:** webhook URL must be HTTPS and must not resolve to a private/loopback IP. Validated on registration and on edit.
@@ -244,23 +244,23 @@ Threat-model deltas (Implementer fills `THREAT-` / `SC-` IDs):
 
 Placeholder IDs (Implementer fills concrete numbers in `docs/traceability/traceability-matrix.md`):
 
-- `UN-239` — User need: "I want to integrate my home-monitor alerts with Home Assistant / Node-RED / n8n without being locked into a single notification method."
-- `SYS-239` — System requirement: "The system shall support outbound webhook delivery of selected event classes (motion, offline, storage, OTA) to operator-registered destinations with optional authentication (bearer, HMAC)."
-- `SWR-239-A` … `SWR-239-F` — Software requirements (one per functional area: registration, delivery, retry, auth, security, audit).
-- `SWA-239` — Software architecture item: "Webhook delivery service in service-layer; Flask blueprint for CRUD; payload schema versioned; audit logging for all delivery outcomes."
-- `HAZ-239-1` … `HAZ-239-7` — listed above.
-- `RISK-239-1` … `RISK-239-7` — one per hazard.
-- `RC-239-1` … `RC-239-7` — one per risk control.
+- `UN-239` - User need: "I want to integrate my home-monitor alerts with Home Assistant / Node-RED / n8n without being locked into a single notification method."
+- `SYS-239` - System requirement: "The system shall support outbound webhook delivery of selected event classes (motion, offline, storage, OTA) to operator-registered destinations with optional authentication (bearer, HMAC)."
+- `SWR-239-A` ... `SWR-239-F` - Software requirements (one per functional area: registration, delivery, retry, auth, security, audit).
+- `SWA-239` - Software architecture item: "Webhook delivery service in service-layer; Flask blueprint for CRUD; payload schema versioned; audit logging for all delivery outcomes."
+- `HAZ-239-1` ... `HAZ-239-7` - listed above.
+- `RISK-239-1` ... `RISK-239-7` - one per hazard.
+- `RC-239-1` ... `RC-239-7` - one per risk control.
 - `SEC-239-A` (webhook secret confidentiality), `SEC-239-B` (HMAC payload integrity), `SEC-239-C` (SSRF guard), `SEC-239-D` (audit completeness), `SEC-239-E` (outbound request rate limiting).
 - `THREAT-239-1` (credential exposure via logs), `THREAT-239-2` (SSRF via webhook URL), `THREAT-239-3` (webhook secret in audit), `THREAT-239-4` (DoS vector via webhook delivery).
-- `SC-239-1` … `SC-239-N` — controls mapping to the threats above.
-- `TC-239-AC-1` … `TC-239-AC-20` — one test case per acceptance criterion above.
+- `SC-239-1` ... `SC-239-N` - controls mapping to the threats above.
+- `TC-239-AC-1` ... `TC-239-AC-20` - one test case per acceptance criterion above.
 
 ## Deployment Impact
 
 - Yocto rebuild needed: **no** (no new external dependencies).
-- OTA path: standard server image OTA. Migration on first boot of the new image: existing `Settings` records load with the new default (`webhook_destinations = []`, `webhook_delivery_history_retention_days = 30`) — dataclass defaults handle this.
-- Hardware verification: yes — required. Register a webhook, trigger a motion event, verify delivery in audit log and "Recent deliveries" UI. Add to `scripts/smoke-test.sh`.
+- OTA path: standard server image OTA. Migration on first boot of the new image: existing `Settings` records load with the new default (`webhook_destinations = []`, `webhook_delivery_history_retention_days = 30`) - dataclass defaults handle this.
+- Hardware verification: yes - required. Register a webhook, trigger a motion event, verify delivery in audit log and "Recent deliveries" UI. Add to `scripts/smoke-test.sh`.
 - Default state on upgrade: no webhooks registered; no delivery attempted. No operator impact on upgrade day.
 
 ## Open Questions
@@ -283,7 +283,7 @@ Placeholder IDs (Implementer fills concrete numbers in `docs/traceability/tracea
 - Preserve service-layer pattern (ADR-0003): routes thin, business logic in `WebhookDeliveryService`.
 - Preserve modular monolith (ADR-0006): webhook delivery is a background queue + service, not a separate daemon.
 - `/data` is the only place mutable runtime state lives (webhook destinations, delivery history).
-- Do not block event processing on webhook delivery — use a background thread pool.
+- Do not block event processing on webhook delivery - use a background thread pool.
 - Secret handling: never log plaintext; never return plaintext in API responses after creation; only return redacted ("***") marker.
 - SSRF guard is non-negotiable: reject private/loopback IPs on registration.
 - Audit must surface delivery failures so operators can debug missing automations.

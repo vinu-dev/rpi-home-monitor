@@ -1,4 +1,4 @@
-# REQ: SWR-003, SWR-004, SWR-011, SWR-026; RISK: RISK-002, RISK-005, RISK-007, RISK-015; SEC: SC-002; TEST: TC-008, TC-012, TC-030
+# REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-057; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-017, RISK-020; SEC: SC-002, SC-020; TEST: TC-008, TC-012, TC-030, TC-049
 """
 Camera management API.
 
@@ -435,16 +435,6 @@ def camera_motion_event():
     # closes, without waiting for the 60 s tick.
     _nudge_scheduler(camera_id)
 
-    current_app.audit.log_event(
-        event="MOTION_ENDED",
-        user="camera",
-        ip=request.remote_addr or "",
-        detail=(
-            f"{camera_id} event={event_id} "
-            f"duration={data.get('duration_seconds', 0.0):.1f}s"
-        ),
-    )
-
     # Auto-attach clip_ref when the event ends so the dashboard can
     # know immediately whether a saved clip covers this motion. The
     # correlator filters on finalised .mp4 (ignoring .mp4.part), so it
@@ -461,6 +451,19 @@ def camera_motion_event():
     except Exception:
         # Correlator is a side-effect; never fail the response on its account.
         pass
+    try:
+        current_app.webhook_delivery_service.enqueue_motion_event(event_id)
+    except Exception:
+        pass
+    current_app.audit.log_event(
+        event="MOTION_ENDED",
+        user="camera",
+        ip=request.remote_addr or "",
+        detail=(
+            f"{camera_id} event={event_id} "
+            f"duration={data.get('duration_seconds', 0.0):.1f}s"
+        ),
+    )
     return jsonify({"message": "Event closed", "event_id": event_id}), 200
 
 

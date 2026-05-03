@@ -8,12 +8,14 @@ tests but will break the frontend. Contract tests make field names explicit.
 Layer 4 of the testing pyramid (see docs/guides/development-guide.md Section 3.8).
 """
 
+import json
 import os
 import time
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
 from monitor.models import Camera, User
+from monitor.services.webhook_delivery_service import HttpResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -487,6 +489,21 @@ SETTINGS_FIELDS = {
     "firmware_version",
 }
 
+WEBHOOK_DESTINATION_FIELDS = {
+    "id",
+    "url",
+    "auth_type",
+    "secret_configured",
+    "custom_header_names",
+    "custom_header_count",
+    "event_classes",
+    "enabled",
+    "created_at",
+    "last_delivery_at",
+    "consecutive_failures",
+    "degraded",
+}
+
 
 class TestSettingsGetContract:
     """GET /api/v1/settings."""
@@ -518,6 +535,142 @@ class TestSettingsUpdateContract:
         )
         data = resp.get_json()
         _assert_fields(data, {"error"})
+
+
+class TestWebhooksListContract:
+    """GET /api/v1/webhooks."""
+
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        app.webhook_delivery_service.create_destination(
+            {
+                "url": "https://hooks.example.com/inbound",
+                "auth_type": "none",
+                "event_classes": ["motion"],
+                "enabled": True,
+            }
+        )
+        resp = client.get("/api/v1/webhooks")
+        data = resp.get_json()
+        _assert_fields(data, {"destinations"})
+        assert isinstance(data["destinations"], list)
+        _assert_fields(data["destinations"][0], WEBHOOK_DESTINATION_FIELDS)
+
+
+class TestWebhooksCreateContract:
+    """POST /api/v1/webhooks."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.post(
+            "/api/v1/webhooks",
+            json={
+                "url": "https://hooks.example.com/inbound",
+                "auth_type": "none",
+                "event_classes": ["motion"],
+                "enabled": True,
+            },
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"destination"})
+        _assert_fields(data["destination"], WEBHOOK_DESTINATION_FIELDS)
+
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.post(
+            "/api/v1/webhooks",
+            json={"url": "https://127.0.0.1/hook", "event_classes": ["motion"]},
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
+class TestWebhooksTestContract:
+    """POST /api/v1/webhooks/<id>/test."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        app.webhook_delivery_service._http_client = lambda url, body, headers, timeout: (
+            HttpResult(
+                202,
+                {},
+                "accepted",
+                url,
+            )
+        )
+        destination, _error, _status = app.webhook_delivery_service.create_destination(
+            {
+                "url": "https://hooks.example.com/inbound",
+                "auth_type": "none",
+                "event_classes": ["motion"],
+                "enabled": True,
+            }
+        )
+        resp = client.post(f"/api/v1/webhooks/{destination['id']}/test", json={})
+        data = resp.get_json()
+        _assert_fields(data, {"delivery"})
+        _assert_has_fields(
+            data["delivery"],
+            {
+                "destination_id",
+                "event_type",
+                "status_code",
+                "latency_ms",
+                "delivered",
+                "attempt",
+                "will_retry",
+                "error",
+                "response_excerpt",
+                "timestamp",
+                "url",
+            },
+        )
+
+
+class TestWebhooksDeliveriesContract:
+    """GET /api/v1/webhooks/deliveries."""
+
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        app.audit.log_event(
+            "WEBHOOK_DELIVERY_SUCCESS",
+            detail=json.dumps(
+                {
+                    "destination_id": "wh-1",
+                    "event_type": "test",
+                    "status_code": 202,
+                    "latency_ms": 12,
+                    "delivered": True,
+                    "attempt": 1,
+                    "will_retry": False,
+                    "error": "",
+                    "response_excerpt": "accepted",
+                    "timestamp": "2026-05-03T12:00:00Z",
+                    "url": "https://hooks.example.com/inbound",
+                }
+            ),
+        )
+        resp = client.get("/api/v1/webhooks/deliveries")
+        data = resp.get_json()
+        _assert_fields(data, {"deliveries", "count"})
+        assert isinstance(data["deliveries"], list)
+        _assert_has_fields(
+            data["deliveries"][0],
+            {
+                "destination_id",
+                "event_type",
+                "status_code",
+                "latency_ms",
+                "delivered",
+                "attempt",
+                "will_retry",
+                "error",
+                "response_excerpt",
+                "timestamp",
+                "url",
+                "audit_event",
+            },
+        )
 
 
 # ===========================================================================

@@ -1,4 +1,4 @@
-# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
+# REQ: SWR-045, SWR-056, SWR-057; RISK: RISK-020, RISK-021; SEC: SC-020, SC-021; TEST: TC-042, TC-048, TC-049
 """Tests for data models."""
 
 from dataclasses import asdict
@@ -90,12 +90,14 @@ class TestSettings:
         assert d["timezone"] == "Europe/Dublin"
         assert isinstance(d, dict)
         # 9 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
-        # + 1 motion-detection post-roll (Phase 4)
-        assert len(d) == 18
+        # + 1 motion post-roll + 2 outbound webhook settings
+        assert len(d) == 20
         assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
         assert d["motion_post_roll_seconds"] == 10
+        assert d["webhook_destinations"] == []
+        assert d["webhook_delivery_history_retention_days"] == 30
 
 
 class TestClip:

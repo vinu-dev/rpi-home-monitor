@@ -19,7 +19,7 @@ Reviewed areas:
 - Safety risk: HAZ-001 through HAZ-022, RISK-001 through RISK-022, RC-001 through RC-022
 - DFMEA: DFMEA-001 through DFMEA-021
 - Cybersecurity: SEC-001 through SEC-016, THREAT-001 through THREAT-020, SC-001 through SC-021
-- Verification: TC-001 through TC-047
+- Verification: TC-001 through TC-049
 - Traceability automation and code annotation baseline
 
 ## Review Findings

@@ -4,7 +4,7 @@
 import json
 import threading
 
-from monitor.models import Camera, Settings, User
+from monitor.models import Camera, Settings, User, WebhookDestination
 from monitor.store import Store
 
 
@@ -195,6 +195,30 @@ class TestSettingsStore:
         settings = store.get_settings()
         # Empty dict creates Settings with all defaults
         assert settings.timezone == "Europe/Dublin"
+
+    def test_round_trips_webhook_destinations(self, data_dir):
+        store = Store(str(data_dir / "config"))
+        settings = Settings(
+            webhook_destinations=[
+                WebhookDestination(
+                    id="wh-123",
+                    url="https://hooks.example.com/inbound",
+                    auth_type="hmac",
+                    secret="super-secret",
+                    custom_headers={"X-Env": "test"},
+                    event_classes=("motion", "storage_low"),
+                )
+            ]
+        )
+        store.save_settings(settings)
+
+        loaded = store.get_settings()
+        assert len(loaded.webhook_destinations) == 1
+        assert loaded.webhook_destinations[0].id == "wh-123"
+        assert loaded.webhook_destinations[0].event_classes == (
+            "motion",
+            "storage_low",
+        )
 
 
 class TestAtomicWrite:

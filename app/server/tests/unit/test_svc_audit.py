@@ -220,3 +220,29 @@ class TestConcurrency:
         assert errors == []
         events = logger.get_events(limit=100)
         assert len(events) == 20
+
+
+class TestListeners:
+    """Test best-effort audit listeners."""
+
+    def test_listener_receives_logged_entry(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        seen = []
+        logger.add_listener(lambda entry: seen.append(entry))
+
+        logger.log_event("WEBHOOK_DELIVERY_SUCCESS", detail='{"status_code":200}')
+
+        assert len(seen) == 1
+        assert seen[0]["event"] == "WEBHOOK_DELIVERY_SUCCESS"
+
+    def test_listener_failure_does_not_break_logging(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+
+        def _boom(_entry):
+            raise RuntimeError("boom")
+
+        logger.add_listener(_boom)
+        logger.log_event("TEST_EVENT")
+
+        events = logger.get_events(limit=10)
+        assert events[0]["event"] == "TEST_EVENT"

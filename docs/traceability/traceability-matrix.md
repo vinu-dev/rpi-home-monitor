@@ -10,14 +10,14 @@ This Markdown file summarizes the current coverage.
 | Area | Coverage status |
 |---|---|
 | User needs | UN-001 through UN-022 are linked to system requirements and tests. |
-| System requirements | SYS-001 through SYS-030 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
-| Software requirements | SWR-001 through SWR-055 each have at least one linked test case. |
+| System requirements | SYS-001 through SYS-031 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
+| Software requirements | SWR-001 through SWR-057 each have at least one linked test case. |
 | Hardware requirements | HWR-001 through HWR-018 are linked to architecture and hardware/manual or automated verification. |
 | Architecture | ARCH-001 through ARCH-015, SWA-001 through SWA-025, and HWA-001 through HWA-012 are linked into the matrix. |
 | Safety risk | RISK-001 through RISK-022 each have at least one risk control and verification. |
 | Cybersecurity | THREAT-001 through THREAT-020 and SC-001 through SC-021 are linked to requirements and tests. |
-| Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation in this update covers 310 of 310 traceable files, excluding vendored minified browser libraries. |
-| Tests | TC-001 through TC-047 have linked requirements. |
+| Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation in this update covers 316 of 316 traceable files, excluding vendored minified browser libraries. |
+| Tests | TC-001 through TC-049 have linked requirements. |
 
 ## Matrix Source
 

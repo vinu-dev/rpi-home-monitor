@@ -267,6 +267,8 @@ a:hover { text-decoration: underline; }
 .badge--online { background: var(--color-success); color: var(--color-bg); }
 .badge--offline { background: #555; color: #ccc; }
 .badge--pending { background: var(--color-warning); color: var(--color-bg); }
+.badge--ok { background: var(--color-success); color: var(--color-bg); }
+.badge--warn { background: var(--color-warning); color: var(--color-bg); }
 .badge--streaming { background: rgba(46,204,113,0.15); color: var(--color-success); border: 1px solid var(--color-success); }
 .badge--not-streaming { background: rgba(80,80,80,0.15); color: #888; border: 1px solid #555; }
 
@@ -1006,6 +1008,24 @@ select.form-input {
     font-size: var(--text-xs);
     color: var(--color-text-dim);
     margin-top: var(--space-1);
+}
+
+.webhook-checkboxes {
+    display: grid;
+    gap: var(--space-2);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.webhook-checkbox {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.webhook-delivery-table td {
+    vertical-align: top;
 }
 
 /* --- WiFi Network Item --- */

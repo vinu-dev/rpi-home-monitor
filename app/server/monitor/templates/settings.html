@@ -1,4 +1,4 @@
-{# REQ: SWR-023, SWR-024, SWR-027, SWR-010; RISK: RISK-011, RISK-012, RISK-013, RISK-004; SEC: SC-011, SC-012, SC-013, SC-003; TEST: TC-022, TC-023, TC-024, TC-009 #}
+{# REQ: SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
 {% extends "base.html" %}
 
 {% block title %}Settings - Home Monitor{% endblock %}
@@ -20,6 +20,7 @@
             <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
             <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
             <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
+            <button class="settings-tab" :class="{ active: tab === 'webhooks' }" @click="tab = 'webhooks'; loadWebhooks()">Webhooks</button>
             <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
         </span>
     </template>
@@ -1088,6 +1089,211 @@
     </div>
 </div>
 
+<div x-show="isAdmin && tab === 'webhooks'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Outbound webhooks</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Send selected motion, offline, storage, and OTA events to Home Assistant, Node-RED,
+                n8n, or another HTTPS receiver. Secrets stay write-only in the UI, and every delivery
+                attempt is recorded in the audit log.
+            </p>
+
+            <template x-if="webhooks.destinations.length === 0">
+                <div class="text-small text-muted">No webhook destinations configured yet.</div>
+            </template>
+
+            <div class="user-table-wrap" x-show="webhooks.destinations.length > 0">
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>Destination</th>
+                            <th>Events</th>
+                            <th>Auth</th>
+                            <th>Status</th>
+                            <th style="width:240px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="dest in webhooks.destinations" :key="dest.id">
+                            <tr>
+                                <td>
+                                    <div style="font-weight:600;" x-text="dest.url"></div>
+                                    <div class="text-small text-muted" x-show="dest.custom_header_count > 0">
+                                        <span x-text="dest.custom_header_count"></span> custom header(s)
+                                        <span x-show="dest.custom_header_names && dest.custom_header_names.length > 0"
+                                              x-text="' · ' + dest.custom_header_names.join(', ')"></span>
+                                    </div>
+                                </td>
+                                <td class="text-small" x-text="(dest.event_classes || []).map(webhookEventLabel).join(', ')"></td>
+                                <td>
+                                    <span class="badge" :class="dest.auth_type === 'hmac' ? 'badge--pending' : (dest.auth_type === 'bearer' ? 'badge--warn' : 'badge--offline')" x-text="dest.auth_type"></span>
+                                </td>
+                                <td>
+                                    <div class="text-small">
+                                        <span class="badge" :class="dest.enabled ? 'badge--ok' : 'badge--offline'" x-text="dest.enabled ? 'enabled' : 'paused'"></span>
+                                        <span class="badge badge--warn" x-show="dest.degraded" style="margin-left:6px;">degraded</span>
+                                    </div>
+                                    <div class="text-small text-muted" style="margin-top:6px;">
+                                        Failures: <span x-text="dest.consecutive_failures || 0"></span>
+                                        <span x-show="dest.last_delivery_at" x-text="' · last attempt ' + formatLocalTime(dest.last_delivery_at)"></span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                                        <label class="text-small" style="display:inline-flex; gap:6px; align-items:center; cursor:pointer;">
+                                            <input type="checkbox"
+                                                   :checked="dest.enabled"
+                                                   @change="toggleWebhookEnabled(dest, $event.target.checked)">
+                                            <span x-text="dest.enabled ? 'Enabled' : 'Paused'"></span>
+                                        </label>
+                                        <button type="button" class="btn btn--secondary btn--small" @click="editWebhook(dest)">Edit</button>
+                                        <button type="button" class="btn btn--secondary btn--small" @click="sendWebhookTest(dest)">Test</button>
+                                        <button type="button" class="btn btn--danger btn--small" @click="deleteWebhook(dest)">Delete</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section__title" x-text="webhooks.editingId ? 'Edit destination' : 'Add destination'"></div>
+        <div class="card">
+            <form @submit.prevent="submitWebhook()">
+                <div class="form-group">
+                    <label for="webhook-url">Destination URL</label>
+                    <input id="webhook-url"
+                           type="url"
+                           class="form-input"
+                           placeholder="https://automation.example/hooks/home-monitor"
+                           x-model.trim="webhooks.form.url">
+                    <span class="form-hint">HTTPS only. Local/private IPs are rejected.</span>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="webhook-auth-type">Authentication</label>
+                        <select id="webhook-auth-type" class="form-input" x-model="webhooks.form.auth_type">
+                            <option value="none">None</option>
+                            <option value="bearer">Bearer token</option>
+                            <option value="hmac">HMAC-SHA256</option>
+                        </select>
+                    </div>
+                    <div class="form-group" x-show="webhooks.form.auth_type !== 'none'">
+                        <label for="webhook-secret">Secret</label>
+                        <input id="webhook-secret"
+                               type="password"
+                               class="form-input"
+                               x-model.trim="webhooks.form.secret"
+                               placeholder="Enter secret">
+                        <span class="form-hint" x-show="webhooks.editingId">Leave blank to keep the existing secret.</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Event routing</label>
+                    <div class="webhook-checkboxes">
+                        <label class="webhook-checkbox">
+                            <input type="checkbox" value="motion" x-model="webhooks.form.event_classes">
+                            <span>Motion events</span>
+                        </label>
+                        <label class="webhook-checkbox">
+                            <input type="checkbox" value="camera_offline" x-model="webhooks.form.event_classes">
+                            <span>Camera offline</span>
+                        </label>
+                        <label class="webhook-checkbox">
+                            <input type="checkbox" value="storage_low" x-model="webhooks.form.event_classes">
+                            <span>Storage health</span>
+                        </label>
+                        <label class="webhook-checkbox">
+                            <input type="checkbox" value="ota_outcome" x-model="webhooks.form.event_classes">
+                            <span>OTA outcomes</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="webhook-headers">Custom headers</label>
+                    <textarea id="webhook-headers"
+                              class="form-input"
+                              rows="4"
+                              placeholder="X-Env: prod&#10;X-Webhook-Source: home-monitor"
+                              x-model="webhooks.form.custom_headers_text"></textarea>
+                    <span class="form-hint">One `Name: value` pair per line. Reserved headers cannot be overridden.</span>
+                    <label class="text-small text-muted"
+                           x-show="webhooks.editingId && webhooks.editingDestination && webhooks.editingDestination.custom_header_count > 0"
+                           style="display:inline-flex; gap:8px; align-items:center; margin-top:8px;">
+                        <input type="checkbox" x-model="webhooks.form.clear_headers">
+                        <span>Clear existing custom headers</span>
+                    </label>
+                </div>
+
+                <div class="info-row" style="border-bottom:none; padding-left:0; padding-right:0;">
+                    <span class="info-row__label">Enabled</span>
+                    <span class="info-row__value">
+                        <label style="display:inline-flex; gap:8px; align-items:center; cursor:pointer;">
+                            <input type="checkbox" x-model="webhooks.form.enabled">
+                            <span x-text="webhooks.form.enabled ? 'On' : 'Paused'"></span>
+                        </label>
+                    </span>
+                </div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:var(--space-3);">
+                    <button type="submit" class="btn btn--primary" :disabled="webhooks.saving">
+                        <span x-text="webhooks.saving ? 'Saving...' : (webhooks.editingId ? 'Save webhook' : 'Add webhook')"></span>
+                    </button>
+                    <button type="button" class="btn btn--secondary" @click="resetWebhookForm()">Reset</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section__title">Recent deliveries</div>
+        <div class="card">
+            <template x-if="webhooks.deliveries.length === 0">
+                <div class="text-small text-muted">No delivery attempts recorded yet.</div>
+            </template>
+            <div class="user-table-wrap" x-show="webhooks.deliveries.length > 0">
+                <table class="user-table webhook-delivery-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Event</th>
+                            <th>Destination</th>
+                            <th>Status</th>
+                            <th>Latency</th>
+                            <th>Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="delivery in webhooks.deliveries" :key="delivery.timestamp + ':' + delivery.destination_id + ':' + delivery.attempt">
+                            <tr>
+                                <td class="text-small" x-text="formatLocalTime(delivery.timestamp)"></td>
+                                <td class="text-small" x-text="webhookEventLabel(delivery.event_type)"></td>
+                                <td class="text-small" x-text="delivery.url"></td>
+                                <td class="text-small">
+                                    <span class="badge"
+                                          :class="delivery.delivered ? 'badge--ok' : (delivery.will_retry ? 'badge--warn' : 'badge--offline')"
+                                          x-text="delivery.delivered ? 'delivered' : (delivery.status_code ? ('HTTP ' + delivery.status_code) : 'error')"></span>
+                                </td>
+                                <td class="text-small" x-text="delivery.latency_ms ? (delivery.latency_ms + ' ms') : '--'"></td>
+                                <td class="text-small text-muted">
+                                    <span x-text="delivery.error || delivery.response_excerpt || '--'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div x-show="!isAdmin && tab !== 'notifications'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">System Info</div>
@@ -1286,6 +1492,23 @@ function settingsPage() {
         storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false, mountPath: '', spaceDetail: '', oldestSegment: '', newestSegment: '', lowWatermark: 10, hysteresis: 5, loopSaving: false },
 
         recording: { cameras: [], timezone: '', DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'] },
+        webhooks: {
+            loading: false,
+            saving: false,
+            destinations: [],
+            deliveries: [],
+            editingId: '',
+            editingDestination: null,
+            form: {
+                url: '',
+                auth_type: 'none',
+                secret: '',
+                event_classes: ['motion', 'camera_offline', 'storage_low', 'ota_outcome'],
+                custom_headers_text: '',
+                clear_headers: false,
+                enabled: true,
+            },
+        },
 
         resetConfirm: false,
         resetKeepRecordings: false,
@@ -1314,7 +1537,7 @@ function settingsPage() {
             // deep-links (/settings#system, /settings#storage etc.) open
             // directly on the correct tab instead of bouncing the user
             // through the default tab. Unknown fragments are ignored.
-            var validTabs = ['system','network','tailscale','users','recording','storage','updates','security'];
+            var validTabs = ['system','network','tailscale','users','recording','storage','webhooks','updates','security'];
             var frag = (window.location.hash || '').replace('#','').toLowerCase();
             if (frag && validTabs.indexOf(frag) !== -1) {
                 this.tab = frag;
@@ -1333,6 +1556,7 @@ function settingsPage() {
                 this.loadNetworkInterfaces();
                 this.loadTailscale();
                 this.loadRecordingCameras();
+                this.loadWebhooks();
             }
         },
 
@@ -1452,6 +1676,171 @@ function settingsPage() {
                 window.HM.toast(e.message || 'Failed to save loop settings', 'error');
             } finally {
                 this.storage.loopSaving = false;
+            }
+        },
+
+        webhookEventLabel(value) {
+            var labels = {
+                motion: 'Motion',
+                camera_offline: 'Camera offline',
+                storage_low: 'Storage health',
+                ota_outcome: 'OTA outcome',
+                test: 'Test',
+            };
+            return labels[value] || String(value || '').replaceAll('_', ' ');
+        },
+
+        formatLocalTime(value) {
+            if (!value) return '--';
+            var stamp = new Date(value);
+            if (isNaN(stamp.getTime())) return value;
+            return stamp.toLocaleString();
+        },
+
+        resetWebhookForm() {
+            this.webhooks.editingId = '';
+            this.webhooks.editingDestination = null;
+            this.webhooks.form = {
+                url: '',
+                auth_type: 'none',
+                secret: '',
+                event_classes: ['motion', 'camera_offline', 'storage_low', 'ota_outcome'],
+                custom_headers_text: '',
+                clear_headers: false,
+                enabled: true,
+            };
+        },
+
+        parseWebhookHeaders(text) {
+            var out = {};
+            var lines = String(text || '').split(/\r?\n/);
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].trim();
+                if (!line) continue;
+                var idx = line.indexOf(':');
+                if (idx <= 0) {
+                    throw new Error('Custom headers must use Name: value format');
+                }
+                var name = line.slice(0, idx).trim();
+                var value = line.slice(idx + 1).trim();
+                if (!name) {
+                    throw new Error('Custom header names cannot be empty');
+                }
+                out[name] = value;
+            }
+            return out;
+        },
+
+        async loadWebhooks() {
+            if (!this.isAdmin) return;
+            this.webhooks.loading = true;
+            try {
+                var results = await Promise.all([
+                    window.HM.api.get('/api/v1/webhooks'),
+                    window.HM.api.get('/api/v1/webhooks/deliveries?limit=20'),
+                ]);
+                this.webhooks.destinations = results[0].destinations || [];
+                this.webhooks.deliveries = results[1].deliveries || [];
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to load webhooks', 'error');
+            } finally {
+                this.webhooks.loading = false;
+            }
+        },
+
+        editWebhook(dest) {
+            this.webhooks.editingId = dest.id;
+            this.webhooks.editingDestination = dest;
+            this.webhooks.form = {
+                url: dest.url || '',
+                auth_type: dest.auth_type || 'none',
+                secret: '',
+                event_classes: Array.isArray(dest.event_classes) ? dest.event_classes.slice() : [],
+                custom_headers_text: '',
+                clear_headers: false,
+                enabled: dest.enabled !== false,
+            };
+            this.tab = 'webhooks';
+        },
+
+        async submitWebhook() {
+            this.webhooks.saving = true;
+            try {
+                var payload = {
+                    url: this.webhooks.form.url,
+                    auth_type: this.webhooks.form.auth_type,
+                    event_classes: this.webhooks.form.event_classes || [],
+                    enabled: !!this.webhooks.form.enabled,
+                };
+                if (!payload.event_classes.length) {
+                    throw new Error('Select at least one event class');
+                }
+                if (payload.auth_type !== 'none' && this.webhooks.form.secret) {
+                    payload.secret = this.webhooks.form.secret;
+                }
+                if (payload.auth_type === 'none') {
+                    payload.secret = '';
+                }
+                var headerText = (this.webhooks.form.custom_headers_text || '').trim();
+                if (headerText) {
+                    payload.custom_headers = this.parseWebhookHeaders(headerText);
+                } else if (!this.webhooks.editingId || this.webhooks.form.clear_headers) {
+                    payload.custom_headers = {};
+                }
+
+                if (this.webhooks.editingId) {
+                    await window.HM.api.put('/api/v1/webhooks/' + encodeURIComponent(this.webhooks.editingId), payload);
+                    window.HM.toast('Webhook updated', 'success');
+                } else {
+                    await window.HM.api.post('/api/v1/webhooks', payload);
+                    window.HM.toast('Webhook added', 'success');
+                }
+                this.resetWebhookForm();
+                await this.loadWebhooks();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save webhook', 'error');
+            } finally {
+                this.webhooks.saving = false;
+            }
+        },
+
+        async toggleWebhookEnabled(dest, enabled) {
+            try {
+                await window.HM.api.patch('/api/v1/webhooks/' + encodeURIComponent(dest.id) + '/enabled', { enabled: !!enabled });
+                await this.loadWebhooks();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to update webhook state', 'error');
+                await this.loadWebhooks();
+            }
+        },
+
+        async deleteWebhook(dest) {
+            if (!window.confirm('Delete webhook for ' + (dest.url || dest.id) + '?')) return;
+            try {
+                await window.HM.api.del('/api/v1/webhooks/' + encodeURIComponent(dest.id));
+                if (this.webhooks.editingId === dest.id) {
+                    this.resetWebhookForm();
+                }
+                window.HM.toast('Webhook deleted', 'success');
+                await this.loadWebhooks();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to delete webhook', 'error');
+            }
+        },
+
+        async sendWebhookTest(dest) {
+            try {
+                var result = await window.HM.api.post('/api/v1/webhooks/' + encodeURIComponent(dest.id) + '/test', {});
+                var delivery = result.delivery || {};
+                if (delivery.delivered) {
+                    window.HM.toast('Test delivered successfully', 'success');
+                } else {
+                    window.HM.toast((delivery.error || 'Test delivery failed') + (delivery.response_excerpt ? ' · ' + delivery.response_excerpt : ''), 'error');
+                }
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to send test webhook', 'error');
+            } finally {
+                await this.loadWebhooks();
             }
         },
 

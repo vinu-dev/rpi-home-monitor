@@ -79,6 +79,9 @@ class TestCatalogue:
         assert "STORAGE_LOW" in ALERT_AUDIT_EVENTS
         assert "RETENTION_RISK" in ALERT_AUDIT_EVENTS
 
+    def test_audit_catalogue_includes_webhook_delivery_degraded(self):
+        assert "WEBHOOK_DELIVERY_DEGRADED" in ALERT_AUDIT_EVENTS
+
     def test_fault_severities_exclude_info(self):
         # info-level faults stay on the camera card; not alert-worthy.
         assert "info" not in ALERT_FAULT_SEVERITIES
@@ -136,6 +139,12 @@ class TestAuditMessage:
     def test_known_code_uses_label(self):
         assert "OTA update failed" in _audit_message(
             {"event": "OTA_FAILED", "detail": "verify failed"}
+        )
+
+    def test_webhook_degraded_uses_label(self):
+        assert (
+            _audit_message({"event": "WEBHOOK_DELIVERY_DEGRADED", "detail": ""})
+            == "Webhook delivery degraded"
         )
 
     def test_unknown_code_falls_through(self):

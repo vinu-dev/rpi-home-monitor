@@ -1,4 +1,4 @@
-# REQ: SWR-023, SWR-025, SWR-033, SWR-045; RISK: RISK-011, RISK-015, RISK-016, RISK-021; SEC: SC-011, SC-015, SC-021; TEST: TC-022, TC-030, TC-031, TC-042
+# REQ: SWR-023, SWR-025, SWR-033, SWR-045, SWR-056, SWR-057; RISK: RISK-011, RISK-015, RISK-016, RISK-017, RISK-020, RISK-021; SEC: SC-011, SC-012, SC-015, SC-020, SC-021; TEST: TC-022, TC-023, TC-030, TC-031, TC-041, TC-042, TC-048, TC-049
 """
 Data models for the monitoring system.
 
@@ -13,6 +13,44 @@ Files:
 """
 
 from dataclasses import dataclass, field
+
+
+@dataclass
+class WebhookDestination:
+    """Outbound webhook destination persisted in system settings."""
+
+    id: str
+    url: str
+    auth_type: str = "none"  # none | bearer | hmac
+    secret: str = ""
+    custom_headers: dict[str, str] = field(default_factory=dict)
+    event_classes: tuple[str, ...] = field(default_factory=tuple)
+    enabled: bool = True
+    created_at: str = ""
+    last_delivery_at: str | None = None
+    consecutive_failures: int = 0
+    degraded: bool = False
+
+    def __post_init__(self) -> None:
+        if isinstance(self.custom_headers, dict):
+            self.custom_headers = {
+                str(key): str(value)
+                for key, value in self.custom_headers.items()
+                if str(key).strip()
+            }
+        else:
+            self.custom_headers = {}
+
+        raw_classes = self.event_classes
+        if isinstance(raw_classes, str):
+            raw_classes = [raw_classes]
+        if raw_classes is None:
+            raw_classes = []
+        if not isinstance(raw_classes, (list, tuple, set, frozenset)):
+            raw_classes = []
+        self.event_classes = tuple(
+            sorted({str(item).strip() for item in raw_classes if str(item).strip()})
+        )
 
 
 @dataclass
@@ -208,6 +246,17 @@ class Settings:
     # scene (the person walking out of frame, the gate closing, etc.).
     # Bump up for "I want 30 s of aftermath"; shrink to trim storage.
     motion_post_roll_seconds: int = 10
+    webhook_destinations: list[WebhookDestination] = field(default_factory=list)
+    webhook_delivery_history_retention_days: int = 30
+
+    def __post_init__(self) -> None:
+        normalised: list[WebhookDestination] = []
+        for item in self.webhook_destinations or []:
+            if isinstance(item, WebhookDestination):
+                normalised.append(item)
+            elif isinstance(item, dict):
+                normalised.append(WebhookDestination(**item))
+        self.webhook_destinations = normalised
 
 
 @dataclass
