@@ -23,7 +23,7 @@ agents:
 
   researcher:
     cli: claude
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 60
     total_min: 30
     stall_min: 30        # = total_min: no stall-kill, only total-timeout safety
@@ -95,7 +95,7 @@ agents:
 
   architect:
     cli: claude
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 5
     total_min: 30
     stall_min: 30        # = total_min
@@ -171,7 +171,7 @@ agents:
 
   implementer:
     cli: claude                       # claude.cmd on Windows
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 5
     total_min: 60
     stall_min: 60        # = total_min
@@ -243,7 +243,7 @@ agents:
 
   tester:
     cli: claude
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 5
     total_min: 30
     stall_min: 30        # = total_min
@@ -309,7 +309,7 @@ agents:
 
   reviewer:
     cli: claude
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 5
     total_min: 20
     stall_min: 20        # = total_min
@@ -377,7 +377,7 @@ agents:
 
   release:
     cli: claude
-    args: ["-p", "--dangerously-skip-permissions"]
+    args: ["-p", "--model", "claude-haiku-4-5-20251001", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     interval_min: 1440
     total_min: 60
     stall_min: 60        # = total_min
