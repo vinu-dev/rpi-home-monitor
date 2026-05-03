@@ -1,0 +1,153 @@
+# Agentry — bundled standard 6-role default configuration
+# =============================================================================
+#
+# When a target repo doesn't ship its own agentry/config.yml, Agentry runs
+# with this file. It's also the file `scripts/add-to-target` writes into a
+# new target's agentry/ folder so the operator can edit it.
+#
+# The `prompt:` field on each role is what the LLM CLI receives on stdin.
+# Each prompt encodes:
+#   - The parallel-pipeline pattern (other roles run concurrently with you)
+#   - The input state for this role (which label or trigger to act on)
+#   - The brief steps to take
+#   - The output state (which label to apply when done)
+#   - A pointer at the project-specific rule file in docs/ai/roles/<role>.md
+#
+# The rule files in docs/ai/roles/<role>.md (in the TARGET repo, not in
+# agentry/) hold the detailed instructions. Edit those for project-specific
+# behavior; this config.yml is for picking which model handles what.
+
+target_repo: vinu-dev/rpi-home-monitor
+
+agents:
+
+  researcher:
+    cli: claude.cmd
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 60
+    total_min: 30
+    stall_min: 30        # = total_min: no stall-kill, only total-timeout safety
+    prompt: |
+      You are the Researcher in a parallel multi-agent pipeline. Other roles
+      (architect, implementer, tester, reviewer, release) run concurrently.
+
+      Your job: find missing features, bugs, or improvements in this repo
+      and open GitHub issues describing them, labeled `ready-for-design`
+      so the Architect picks them up. No human triage step — be selective:
+      only file an issue if you would actually want it built. Cap yourself
+      at 3 new issues per run, and dedupe against existing open issues
+      before filing.
+
+      Read docs/ai/roles/researcher.md for project-specific research focus
+      (which areas to look in, which sources to check, which kinds of ideas
+      are out of scope). If that file doesn't exist, exit with error.
+
+  architect:
+    cli: claude.cmd
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 5
+    total_min: 30
+    stall_min: 30        # = total_min
+    prompt: |
+      You are the Architect in a parallel multi-agent pipeline. Other roles
+      run concurrently with you.
+
+      Your input: GitHub issues labeled `ready-for-design` (oldest first).
+      Your output: write a design doc to docs/ai/designs/<issue-id>-<slug>.md,
+      commit on a fresh branch, push, then replace the label with
+      `ready-for-implementation`.
+
+      Read docs/ai/roles/architect.md for the project's design conventions
+      (template, what sections to include, which existing docs to reference).
+      Exit when no `ready-for-design` issues remain.
+
+  implementer:
+    cli: claude.cmd            # ← was codex.cmd; switched after smoke test showed codex spent
+                               #    full total_min on context-loading without committing.
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 5
+    total_min: 60
+    stall_min: 60        # = total_min
+    prompt: |
+      You are the Implementer in a parallel multi-agent pipeline. Other roles
+      run concurrently with you.
+
+      Your input: GitHub issues labeled `ready-for-implementation` or
+      `tests-failed` (oldest first).
+      Your output: implement the design on a fresh branch, write unit tests,
+      commit, push, then replace the label with `ready-for-test`. If the
+      label was `tests-failed`, read the latest test failure on the issue
+      and fix it before pushing.
+
+      Read docs/ai/roles/implementer.md for the project's code conventions
+      (style, file layout, branch naming, sensitive paths). Exit when no
+      matching issues remain.
+
+  tester:
+    cli: claude.cmd
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 5
+    total_min: 30
+    stall_min: 30        # = total_min
+    prompt: |
+      You are the Tester in a parallel multi-agent pipeline. Other roles run
+      concurrently with you.
+
+      Your input: GitHub issues labeled `ready-for-test` (oldest first).
+      Your output: check out the implementer's branch, run the project's
+      test suite. If green, open a PR titled `[<id>] <title>` from the
+      branch and label it `ready-for-review`, then remove `ready-for-test`
+      from the issue. If red, replace the label with `tests-failed` and
+      add a comment with the test output.
+
+      Read docs/ai/roles/tester.md for the project-specific test commands
+      (and any hardware steps if applicable). Exit when no `ready-for-test`
+      issues remain.
+
+  reviewer:
+    cli: claude.cmd
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 5
+    total_min: 20
+    stall_min: 20        # = total_min
+    prompt: |
+      You are the Reviewer in a parallel multi-agent pipeline. Other roles
+      run concurrently with you.
+
+      Your input: GitHub PRs labeled `ready-for-review` (oldest first).
+      Your output: read the diff against the linked design doc; verify
+      tests passed; check `git diff --name-only` against `sensitive_paths`
+      in agentry/config.yml. If anything matches a sensitive path or has
+      issues, label the PR `blocked` and comment with what's wrong. If
+      everything looks good, approve the PR (GitHub auto-merge handles
+      the rest).
+
+      Read docs/ai/roles/reviewer.md for the project's review criteria
+      (what to check, what to flag). Exit when no `ready-for-review` PRs
+      remain.
+
+  release:
+    cli: claude.cmd
+    args: ["-p", "--dangerously-skip-permissions"]
+    interval_min: 1440
+    total_min: 60
+    stall_min: 60        # = total_min
+    prompt: |
+      You are the Release Engineer in a parallel multi-agent pipeline.
+      Other roles run concurrently with you.
+
+      Once per day: check merged PRs since the last git tag. If a release
+      is warranted per the project's policy in docs/ai/roles/release.md
+      (e.g. enough commits, calendar trigger, milestone closed), bump the
+      version, tag, build artifacts, and publish a GitHub Release.
+      Otherwise exit immediately.
+
+      Read docs/ai/roles/release.md for the project-specific release policy
+      (versioning rule, build commands, signing, changelog format).
+
+# Paths the Reviewer's rule file should treat as block-worthy.
+# Customize per your project — these are placeholders.
+sensitive_paths:
+  - "**/auth/**"
+  - "**/secrets/**"
+  - "**/.github/workflows/**"
