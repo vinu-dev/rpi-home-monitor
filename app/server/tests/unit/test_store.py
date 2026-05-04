@@ -1,4 +1,4 @@
-# REQ: SWR-021, SWR-023, SWR-025, SWR-024; RISK: RISK-010, RISK-011, RISK-012, RISK-015; SEC: SC-010, SC-011, SC-012; TEST: TC-021, TC-022, TC-023, TC-030
+# REQ: SWR-021, SWR-023, SWR-024, SWR-025, SWR-066; RISK: RISK-010, RISK-011, RISK-012, RISK-015; SEC: SC-010, SC-011, SC-012; TEST: TC-021, TC-022, TC-023, TC-030, TC-054
 """Tests for the JSON persistence layer."""
 
 import json
@@ -50,6 +50,16 @@ class TestCameraStore:
         assert loaded is not None
         assert loaded.last_beat_camera_ts == "2026-05-04T12:00:00Z"
         assert loaded.pending_config == {"time_resync": True}
+
+    def test_camera_round_trips_encoder_preset(self, data_dir):
+        store = Store(str(data_dir / "config"))
+        camera = Camera(id="cam-001", encoder_preset="balanced")
+
+        store.save_camera(camera)
+        loaded = store.get_camera("cam-001")
+
+        assert loaded is not None
+        assert loaded.encoder_preset == "balanced"
 
     def test_get_camera_by_id(self, data_dir, sample_camera):
         store = Store(str(data_dir / "config"))

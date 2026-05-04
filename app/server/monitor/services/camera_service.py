@@ -1,3 +1,4 @@
+# REQ: SWR-004, SWR-011, SWR-025, SWR-026, SWR-065, SWR-066; RISK: RISK-005, RISK-007, RISK-015, RISK-020; SEC: SC-002, SC-012, SC-020; TEST: TC-012, TC-030, TC-054
 """
 Camera management service — orchestrates camera lifecycle operations.
 
@@ -15,6 +16,11 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from monitor.services.encoder_presets import (
+    PRESET_PARAM_FIELDS,
+    encoder_preset_params_match,
+    get_encoder_preset,
+)
 from monitor.services.throttle_state import (
     merge_throttle_state,
     sanitize_throttle_state,
@@ -275,6 +281,14 @@ def _validate_schedule(schedule) -> str:
     return ""
 
 
+def _encoder_stream_params(camera, data: dict) -> dict:
+    """Resolve the stream-field bundle after applying ``data`` to ``camera``."""
+    return {
+        field: data.get(field, getattr(camera, field, None))
+        for field in PRESET_PARAM_FIELDS
+    }
+
+
 class CameraService:
     """Orchestrates camera CRUD operations across store, streaming, and audit.
 
@@ -289,6 +303,7 @@ class CameraService:
         self._streaming = streaming
         self._audit = audit
         self._control = control_client
+        self._warned_unknown_encoder_presets: set[str] = set()
 
     def add_camera(
         self, camera_id: str, name: str = "", location: str = ""
@@ -366,6 +381,7 @@ class CameraService:
                 "bitrate": c.bitrate,
                 "h264_profile": c.h264_profile,
                 "keyframe_interval": c.keyframe_interval,
+                "encoder_preset": getattr(c, "encoder_preset", "") or "",
                 "rotation": c.rotation,
                 "hflip": c.hflip,
                 "vflip": c.vflip,
@@ -458,6 +474,7 @@ class CameraService:
             "bitrate": camera.bitrate,
             "h264_profile": camera.h264_profile,
             "keyframe_interval": camera.keyframe_interval,
+            "encoder_preset": getattr(camera, "encoder_preset", "") or "",
             "rotation": camera.rotation,
             "hflip": camera.hflip,
             "vflip": camera.vflip,
@@ -549,14 +566,45 @@ class CameraService:
             return error, 400
 
         old_recording_mode = camera.recording_mode
+        old_encoder_preset = getattr(camera, "encoder_preset", "") or ""
+        old_preset_params = _encoder_stream_params(camera, {})
+        data_to_apply = dict(data)
+        preset_audit_event = ""
+        preset_audit_detail = ""
 
-        for key, value in data.items():
+        if "encoder_preset" in data or any(key in data for key in PRESET_PARAM_FIELDS):
+            requested_preset = (
+                str(data.get("encoder_preset", "") or "").strip()
+                if "encoder_preset" in data
+                else ""
+            )
+            resolved_preset_params = _encoder_stream_params(camera, data_to_apply)
+            preset = get_encoder_preset(requested_preset) if requested_preset else None
+            if not requested_preset:
+                data_to_apply["encoder_preset"] = ""
+            elif preset is None:
+                self._warn_unknown_encoder_preset(requested_preset)
+                data_to_apply["encoder_preset"] = ""
+            elif encoder_preset_params_match(preset, resolved_preset_params):
+                data_to_apply["encoder_preset"] = requested_preset
+            else:
+                data_to_apply["encoder_preset"] = ""
+                preset_audit_event = "CAMERA_PRESET_FIELD_MISMATCH"
+                preset_audit_detail = (
+                    f"camera {camera_id} preset={requested_preset} "
+                    + ", ".join(
+                        f"{field}={resolved_preset_params[field]}"
+                        for field in PRESET_PARAM_FIELDS
+                    )
+                )
+
+        for key, value in data_to_apply.items():
             setattr(camera, key, value)
 
         # Push stream params to camera if any changed (ADR-0015).
         # Translate server-side names to the camera's wire keys
         # (e.g. recording_motion_enabled → motion_detection).
-        stream_changes = {k: v for k, v in data.items() if k in STREAM_PARAMS}
+        stream_changes = {k: v for k, v in data_to_apply.items() if k in STREAM_PARAMS}
         wire_changes = _translate_stream_params_for_wire(stream_changes)
         if wire_changes and camera.ip and self._control:
             result, err = self._control.set_config(camera.ip, wire_changes)
@@ -574,11 +622,30 @@ class CameraService:
         # RecordingScheduler on its next tick — no direct pipeline calls here.
         _ = old_recording_mode  # retained for audit/logging compatibility
 
+        if preset_audit_event:
+            self._log_audit(preset_audit_event, user, ip, preset_audit_detail)
+        elif data_to_apply.get("encoder_preset"):
+            new_preset_params = _encoder_stream_params(camera, {})
+            if (
+                old_encoder_preset != data_to_apply["encoder_preset"]
+                or old_preset_params != new_preset_params
+            ):
+                self._log_audit(
+                    "CAMERA_PRESET_APPLIED",
+                    user,
+                    ip,
+                    f"camera {camera_id} preset={data_to_apply['encoder_preset']} "
+                    + ", ".join(
+                        f"{field}={new_preset_params[field]}"
+                        for field in PRESET_PARAM_FIELDS
+                    ),
+                )
+
         self._log_audit(
             "CAMERA_UPDATED",
             user,
             ip,
-            f"updated camera {camera_id}: {', '.join(sorted(data.keys()))}",
+            f"updated camera {camera_id}: {', '.join(sorted(data_to_apply.keys()))}",
         )
 
         return "", 200
@@ -886,6 +953,7 @@ class CameraService:
             "bitrate",
             "h264_profile",
             "keyframe_interval",
+            "encoder_preset",
             "rotation",
             "hflip",
             "vflip",
@@ -961,6 +1029,13 @@ class CameraService:
         ):
             return "height must be a positive integer"
 
+        if "encoder_preset" in data:
+            encoder_preset = data["encoder_preset"]
+            if not isinstance(encoder_preset, str):
+                return "encoder_preset must be a string"
+            if len(encoder_preset.strip()) > 32:
+                return "encoder_preset must be 32 characters or fewer"
+
         # Per-camera (width, height) pair check — only when the sensor's
         # modes have been reported. The pair must be one of the modes
         # the camera advertised. Skipped silently for pre-#173 cameras.
@@ -982,6 +1057,21 @@ class CameraService:
             fps_max = sensor_mode_fps.get((w, h))
             if fps_max is not None and fps > fps_max:
                 return f"fps must be 1-{fps_max} for {w}x{h}"
+
+        encoder_max_pixels = (
+            int(getattr(camera, "encoder_max_pixels", 0) or 0)
+            if camera is not None
+            else 0
+        )
+        if (
+            encoder_max_pixels
+            and ("width" in data or "height" in data or "encoder_preset" in data)
+            and w * h > encoder_max_pixels
+        ):
+            return (
+                f"resolution {w}x{h} exceeds encoder limit "
+                f"({encoder_max_pixels} pixels)"
+            )
 
         if "bitrate" in data:
             br = data["bitrate"]
@@ -1052,3 +1142,10 @@ class CameraService:
             self._audit.log_event(event, user=user, ip=ip, detail=detail)
         except Exception as e:
             log.warning("Audit log failed: %s", e)
+
+    def _warn_unknown_encoder_preset(self, preset_key: str) -> None:
+        """Log one warning per unknown preset key per app lifetime."""
+        if preset_key in self._warned_unknown_encoder_presets:
+            return
+        self._warned_unknown_encoder_presets.add(preset_key)
+        log.warning("Unknown encoder preset received: %s", preset_key)

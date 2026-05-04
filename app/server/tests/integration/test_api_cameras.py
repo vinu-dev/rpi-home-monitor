@@ -1,4 +1,4 @@
-# REQ: SWR-003, SWR-004, SWR-011, SWR-026; RISK: RISK-002, RISK-005, RISK-007, RISK-015; SEC: SC-002; TEST: TC-008, TC-012, TC-030
+# REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-065, SWR-066; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-021; SEC: SC-002, SC-021; TEST: TC-008, TC-012, TC-030, TC-042, TC-054
 """Tests for the cameras API."""
 
 from monitor.models import Camera
@@ -50,8 +50,28 @@ class TestListCameras:
             "paired_at",
             "last_seen",
             "firmware_version",
+            "encoder_preset",
         ]:
             assert field in cam
+
+
+class TestListEncoderPresets:
+    """Test GET /api/v1/cameras/encoder-presets."""
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/cameras/encoder-presets").status_code == 401
+
+    def test_returns_catalogue(self, logged_in_client):
+        client = logged_in_client()
+        response = client.get("/api/v1/cameras/encoder-presets")
+        assert response.status_code == 200
+        data = response.get_json()
+        assert [preset["key"] for preset in data["presets"]] == [
+            "high_bitrate",
+            "balanced",
+            "low_bandwidth",
+            "mobile_friendly",
+        ]
 
 
 class TestAddCamera:
@@ -166,6 +186,25 @@ class TestUpdateCamera:
         assert response.status_code == 200
         camera = app.store.get_camera("cam-001")
         assert camera.name == "Back Yard"
+
+    def test_update_persists_matching_encoder_preset(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online")
+        response = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+        )
+        assert response.status_code == 200
+        camera = app.store.get_camera("cam-001")
+        assert camera.encoder_preset == "balanced"
 
     def test_update_recording_mode(self, app, logged_in_client):
         client = logged_in_client()

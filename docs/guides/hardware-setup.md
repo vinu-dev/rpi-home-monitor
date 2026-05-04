@@ -455,6 +455,15 @@ nmcli connection up "Wired connection 1"
 | Low FPS / dropped frames | Pi throttle or under-voltage | Check the dashboard's throttle badge first. `Under-voltage` usually means a better PSU or shorter/heavier-gauge USB cable; `Thermal throttle` means add cooling or reduce enclosure heat. Confirm on the Pi with `vcgencmd get_throttled` |
 | Blocky video | Low bitrate | Increase bitrate in camera config (trade-off: more bandwidth) |
 
+If the picture is blocky, the stream is laggy, or the camera is running hot,
+open the camera's **Settings** modal in the dashboard and try an **Encoder
+preset** before hand-tuning each field:
+
+- **Balanced** matches the default 1080p profile and is the right starting point.
+- **Low Bandwidth** reduces bitrate and frame rate for weak WiFi, mobile viewing, or thermal headroom.
+- **Mobile Friendly** keeps 720p but uses a more compatible H.264 profile for older browsers and phones.
+- **High Bitrate** trades more storage and LAN bandwidth for better image quality.
+
 ---
 
 ## 8. Maintenance

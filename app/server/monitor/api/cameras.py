@@ -1,4 +1,4 @@
-# REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-057; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-017, RISK-020; SEC: SC-002, SC-020; TEST: TC-008, TC-012, TC-030, TC-049
+# REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-057, SWR-065, SWR-066; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-017, RISK-020, RISK-021; SEC: SC-002, SC-020, SC-021; TEST: TC-008, TC-012, TC-030, TC-042, TC-049, TC-054
 """
 Camera management API.
 
@@ -24,6 +24,7 @@ import time
 from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.services.encoder_presets import list_encoder_presets
 
 # ── HMAC auth for camera M2M requests ────────────────────────────────────────
 # 30-second window is tight enough to prevent meaningful replay while still
@@ -147,6 +148,13 @@ def list_cameras():
     admin_view = session.get("role") == "admin"
     cameras = current_app.camera_service.list_cameras(admin_view=admin_view)
     return jsonify(cameras), 200
+
+
+@cameras_bp.route("/encoder-presets", methods=["GET"])
+@login_required
+def list_encoder_preset_catalogue():
+    """Return the global encoder preset catalogue."""
+    return jsonify({"presets": list_encoder_presets()}), 200
 
 
 @cameras_bp.route("", methods=["POST"])

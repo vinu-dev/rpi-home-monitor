@@ -1,4 +1,4 @@
-# REQ: SWR-039; RISK: RISK-007; SEC: SC-002; TEST: TC-037
+# REQ: SWR-039, SWR-065, SWR-066; RISK: RISK-007, RISK-015; SEC: SC-002, SC-012; TEST: TC-037, TC-054
 """Unit tests for CameraControlClient (ADR-0015)."""
 
 import pytest
@@ -134,6 +134,47 @@ class TestCameraServiceWithControl:
             assert err == ""
             mock_control.set_config.assert_called_once_with("192.168.1.50", {"fps": 15})
 
+    def test_update_preset_pushes_one_bundle_without_echo_field(
+        self, app, cameras_json
+    ):
+        with app.app_context():
+            from unittest.mock import MagicMock
+
+            mock_control = MagicMock()
+            mock_control.set_config.return_value = (
+                {"applied": {"width": 1920, "height": 1080}},
+                "",
+            )
+            app.camera_service._control = mock_control
+
+            err, status = app.camera_service.update(
+                "cam-abc123",
+                {
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 25,
+                    "bitrate": 4000000,
+                    "h264_profile": "high",
+                    "keyframe_interval": 30,
+                    "encoder_preset": "balanced",
+                },
+                user="admin",
+                ip="127.0.0.1",
+            )
+            assert status == 200
+            assert err == ""
+            mock_control.set_config.assert_called_once_with(
+                "192.168.1.50",
+                {
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 25,
+                    "bitrate": 4000000,
+                    "h264_profile": "high",
+                    "keyframe_interval": 30,
+                },
+            )
+
     def test_update_marks_pending_on_push_failure(self, app, cameras_json):
         """Config sync marked pending when push fails."""
         with app.app_context():
@@ -245,6 +286,7 @@ class TestCameraModelNewFields:
         assert sample_camera.bitrate == 4000000
         assert sample_camera.h264_profile == "high"
         assert sample_camera.keyframe_interval == 30
+        assert sample_camera.encoder_preset == ""
         assert sample_camera.rotation == 0
         assert sample_camera.hflip is False
         assert sample_camera.vflip is False
@@ -258,6 +300,7 @@ class TestCameraModelNewFields:
             assert "width" in cam
             assert "height" in cam
             assert "bitrate" in cam
+            assert "encoder_preset" in cam
             assert "config_sync" in cam
 
     def test_camera_status_includes_stream_fields(self, app, cameras_json):
@@ -266,4 +309,5 @@ class TestCameraModelNewFields:
             result, err = app.camera_service.get_camera_status("cam-abc123")
             assert err == ""
             assert "width" in result
+            assert "encoder_preset" in result
             assert "config_sync" in result

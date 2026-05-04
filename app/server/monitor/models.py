@@ -1,4 +1,4 @@
-# REQ: SWR-023, SWR-025, SWR-033, SWR-045, SWR-056, SWR-057; RISK: RISK-011, RISK-015, RISK-016, RISK-017, RISK-020, RISK-021; SEC: SC-011, SC-012, SC-015, SC-020, SC-021; TEST: TC-022, TC-023, TC-030, TC-031, TC-041, TC-042, TC-048, TC-049
+# REQ: SWR-023, SWR-025, SWR-033, SWR-045, SWR-056, SWR-057, SWR-066; RISK: RISK-011, RISK-015, RISK-016, RISK-017, RISK-020, RISK-021; SEC: SC-011, SC-012, SC-015, SC-020, SC-021; TEST: TC-022, TC-023, TC-030, TC-031, TC-041, TC-042, TC-048, TC-049, TC-054
 """
 Data models for the monitoring system.
 
@@ -83,6 +83,7 @@ class Camera:
     bitrate: int = 4000000
     h264_profile: str = "high"
     keyframe_interval: int = 30
+    encoder_preset: str = ""  # empty = Custom / hand-tuned values
     rotation: int = 0
     hflip: bool = False
     vflip: bool = False

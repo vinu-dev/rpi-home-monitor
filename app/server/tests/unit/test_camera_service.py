@@ -1,8 +1,8 @@
-# REQ: SWR-004, SWR-011, SWR-026; RISK: RISK-005, RISK-007, RISK-015; SEC: SC-002; TEST: TC-012, TC-030
+# REQ: SWR-004, SWR-011, SWR-026, SWR-065, SWR-066; RISK: RISK-005, RISK-007, RISK-015, RISK-020; SEC: SC-002, SC-012, SC-020; TEST: TC-012, TC-030, TC-054
 """Tests for the camera management service."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from monitor.services.camera_service import CameraService
 
@@ -28,6 +28,7 @@ def _make_camera(**overrides):
         "bitrate": 4000000,
         "h264_profile": "high",
         "keyframe_interval": 30,
+        "encoder_preset": "",
         "rotation": 0,
         "hflip": False,
         "vflip": False,
@@ -149,6 +150,14 @@ class TestListCameras:
         svc = CameraService(store)
         result = svc.list_cameras()
         assert result[0]["offline_alerts_enabled"] is True
+
+    def test_includes_encoder_preset_in_serialization(self):
+        cam = _make_camera(encoder_preset="balanced")
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        svc = CameraService(store)
+        result = svc.list_cameras()
+        assert result[0]["encoder_preset"] == "balanced"
 
 
 class TestAddCamera:
@@ -351,6 +360,55 @@ class TestUpdate:
         assert cam.name == "New Name"
         store.save_camera.assert_called_once_with(cam)
 
+    def test_persists_matching_encoder_preset(self):
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update(
+            "cam-001",
+            {
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+        )
+        assert status == 200, error
+        assert cam.encoder_preset == "balanced"
+
+    def test_mismatched_encoder_preset_falls_back_to_custom(self):
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update(
+            "cam-001",
+            {
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 3500000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+        )
+        assert status == 200, error
+        assert cam.encoder_preset == ""
+
+    def test_stream_update_without_encoder_preset_clears_saved_echo(self):
+        cam = _make_camera(status="online", encoder_preset="balanced")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update("cam-001", {"bitrate": 3500000})
+        assert status == 200, error
+        assert cam.encoder_preset == ""
+
     def test_updates_offline_alerts_enabled(self):
         """#136 — operator can mute offline alerts for a known-flaky
         camera via Camera Settings. Default is True; we toggle to
@@ -450,6 +508,15 @@ class TestUpdate:
         error, status = svc.update("cam-001", {"fps": 15.5})
         assert status == 400
         assert "fps" in error
+
+    def test_rejects_encoder_preset_longer_than_32_chars(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update("cam-001", {"encoder_preset": "x" * 33})
+        assert status == 400
+        assert "encoder_preset" in error
 
     def test_rejects_name_too_long(self):
         cam = _make_camera()
@@ -562,6 +629,80 @@ class TestAuditLogging:
         svc.update("cam-001", {"name": "New"}, user="admin", ip="10.0.0.1")
         audit.log_event.assert_called_once()
         assert audit.log_event.call_args[0][0] == "CAMERA_UPDATED"
+
+    def test_preset_apply_logs_specific_audit_event(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.update(
+            "cam-001",
+            {
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+            user="admin",
+            ip="10.0.0.1",
+        )
+        events = [call.args[0] for call in audit.log_event.call_args_list]
+        assert "CAMERA_PRESET_APPLIED" in events
+        assert "CAMERA_UPDATED" in events
+
+    def test_preset_mismatch_logs_specific_audit_event(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.update(
+            "cam-001",
+            {
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 3500000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+            user="admin",
+            ip="10.0.0.1",
+        )
+        events = [call.args[0] for call in audit.log_event.call_args_list]
+        assert "CAMERA_PRESET_FIELD_MISMATCH" in events
+        assert "CAMERA_UPDATED" in events
+
+    def test_unknown_encoder_preset_warning_is_rate_limited(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = {
+            "width": 1920,
+            "height": 1080,
+            "fps": 25,
+            "bitrate": 4000000,
+            "h264_profile": "high",
+            "keyframe_interval": 30,
+            "encoder_preset": "mystery",
+        }
+        with patch("monitor.services.camera_service.log.warning") as warn:
+            err, status = svc.update("cam-001", payload)
+            assert status == 200, err
+            err, status = svc.update("cam-001", payload)
+            assert status == 200, err
+        unknown_calls = [
+            call
+            for call in warn.call_args_list
+            if "Unknown encoder preset received" in str(call)
+        ]
+        assert len(unknown_calls) == 1
 
     def test_delete_logs_audit_event(self):
         store = MagicMock()
