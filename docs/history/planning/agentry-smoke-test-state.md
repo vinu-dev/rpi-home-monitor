@@ -13,7 +13,7 @@ Two repositories stay separate:
 
 | Repository | Responsibility | Current baseline |
 |---|---|---|
-| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `f7d0dc583440117c8b5f13e57d6cf9b5ade9903f` |
+| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4` |
 | `vinu-dev/rpi-home-monitor` | Target config, product code, product docs, role guidance | pinned to the Agentry baseline above |
 
 Do not mix platform fixes into this repo. Do not put target project fixes in
@@ -27,13 +27,17 @@ the Agentry repo.
 - `vinu-dev/agentry#17`: universal role prompts now instruct each role to
   process exactly one work item per run, then exit. This prevents Architect or
   another role from burning tokens by drifting into the next issue.
+- `vinu-dev/agentry#19`: completed sessions clear stale PIDs from
+  status/dashboard, the runtime contract forbids role-level wakeup/scheduling
+  tools, and the standard Reviewer leaves pending-CI PRs in
+  `ready-for-review` for the next orchestrator interval.
 
 ## Target Configuration
 
 The target Agentry scripts pin the platform to:
 
 ```text
-f7d0dc583440117c8b5f13e57d6cf9b5ade9903f
+ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4
 ```
 
 Model routing:

@@ -487,14 +487,21 @@ agents:
            commits_behind=$(git rev-list --count "origin/feature/<id>-${slug}..origin/main")
          If commits_behind > 0 → label `needs-rebase`, remove ready-for-review,
          comment "rebase required". Exit 0.
-      5. Run review checklist per docs/ai/roles/reviewer.md:
+      5. Check CI status:
+           gh pr checks <n> --json name,state,bucket
+         If checks are pending, queued, or in progress, append a concise
+         reviewer log entry, leave labels unchanged, and exit 0. Do not call
+         scheduling or wakeup tools such as `ScheduleWakeup`, `Cron*`,
+         `PushNotification`, or `RemoteTrigger`; Agentry will retry on the
+         next orchestrator interval.
+      6. Run review checklist per docs/ai/roles/reviewer.md:
          - spec adherence (acceptance criteria, non-goals respected)
          - engineering / design standards
          - validation evidence (CI green, coverage, validators ran)
          - sensitive-path scrutiny
          - traceability
          - repo policy compliance
-      6. APPROVE:
+      7. APPROVE:
            gh label create agent-approved --color 0e8a16 --force
            gh pr review <n> --approve --body "Agentry review outcome: APPROVED\n\n<concise summary>"
            gh pr edit <n> --add-label agent-approved --remove-label ready-for-review --remove-label blocked
@@ -515,9 +522,9 @@ agents:
          CHANGES: ...>"`, then perform the same PR and issue label updates.
          Verify the PR no longer has `ready-for-review` or `agent-approved`
          and the issue has `changes-requested` plus `pr-open`.
-      7. Append distilled cycle entry to
+      8. Append distilled cycle entry to
          agentry/logs/issues/<id>-<slug>/reviewer.log
-      8. Overwrite session summary. Exit 0.
+      9. Overwrite session summary. Exit 0.
 
       CONSTRAINTS:
       - Never click merge — code-owner is required by branch protection.
