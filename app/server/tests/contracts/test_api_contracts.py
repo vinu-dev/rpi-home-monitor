@@ -201,6 +201,7 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "cpu_temp",
     "memory_percent",
     "uptime_seconds",
+    "throttle_state",
     # ADR-0017: recording-mode + on-demand streaming fields
     "recording_schedule",
     "recording_motion_enabled",
@@ -1848,6 +1849,7 @@ class TestHeartbeatContract:
             "cpu_temp": 48.5,
             "memory_percent": 42,
             "uptime_seconds": 3600,
+            "throttle_state": None,
             "stream_config": {
                 "width": 1920,
                 "height": 1080,
@@ -1944,6 +1946,37 @@ class TestHeartbeatContract:
         assert updated.cpu_temp == 60.0
         assert updated.memory_percent == 75
         assert updated.uptime_seconds == 900
+
+    def test_heartbeat_persists_throttle_state(self, app, client):
+        _add_camera(app, "cam-001")
+        cam = app.store.get_camera("cam-001")
+        cam.pairing_secret = self.SECRET
+        app.store.save_camera(cam)
+
+        _signed_camera_request(
+            client,
+            self.HEARTBEAT_URL,
+            self._payload(
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": True,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": True,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:00:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00030000",
+                }
+            ),
+            secret=self.SECRET,
+        )
+
+        updated = app.store.get_camera("cam-001")
+        assert updated.throttle_state["under_voltage_sticky"] is True
+        assert updated.throttle_state["frequency_capped_sticky"] is True
 
     def test_heartbeat_returns_pending_config_when_needed(self, app, client):
         _add_camera(app, "cam-001")

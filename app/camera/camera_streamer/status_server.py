@@ -366,9 +366,10 @@ class CameraStatusServer:
             self._control,
             self._capture,
         )
+        server = None
         try:
-            self._server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
-            self._server = _wrap_https_server(self._server, self._config)
+            server = http.server.HTTPServer(("0.0.0.0", LISTEN_PORT), handler)
+            self._server = _wrap_https_server(server, self._config)
             self._thread = threading.Thread(
                 target=self._server.serve_forever,
                 daemon=True,
@@ -378,14 +379,25 @@ class CameraStatusServer:
             log.info("Status server listening on HTTPS port %d", LISTEN_PORT)
             return True
         except Exception as e:
+            if server is not None:
+                try:
+                    server.server_close()
+                except OSError:
+                    pass
+            self._server = None
+            self._thread = None
             log.error("Failed to start status server: %s", e)
             return False
 
     def stop(self):
         """Stop the status HTTPS server."""
         if self._server:
-            self._server.shutdown()
+            if self._thread and self._thread.is_alive():
+                self._server.shutdown()
+                self._thread.join(timeout=5)
+            self._server.server_close()
             self._server = None
+            self._thread = None
             log.info("Status server stopped")
 
     def connect_wifi(self, ssid, password):

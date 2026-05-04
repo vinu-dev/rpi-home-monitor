@@ -4,7 +4,7 @@
 import os
 from unittest.mock import MagicMock, mock_open, patch
 
-from camera_streamer.health import HealthMonitor, _get_disk_free_mb
+from camera_streamer.health import HealthMonitor, _get_disk_free_mb, read_throttle_state
 
 
 class TestHealthMonitor:
@@ -34,12 +34,14 @@ class TestHealthMonitor:
         assert "camera_id" in status
         assert "cpu_temp" in status
         assert "disk_free_mb" in status
+        assert "throttle_state" in status
         assert status["camera_available"] is True
         assert status["streaming"] is True
         assert status["server_configured"] is True
         assert status["camera_id"] == "cam-test001"
         # No thermal path, so cpu_temp should be None
         assert status["cpu_temp"] is None
+        assert status["throttle_state"] is None
 
     @patch("camera_streamer.health._get_disk_free_mb", return_value=500)
     def test_get_status_with_thermal(self, mock_disk, camera_config):
@@ -104,9 +106,67 @@ class TestReadCpuTemp:
         with patch("builtins.open", side_effect=OSError):
             assert mon.read_cpu_temp() is None
 
+
+class TestReadThrottleState:
+    def test_reads_vcgencmd(self):
+        completed = MagicMock(returncode=0, stdout="throttled=0x50005\n", stderr="")
+        with patch("camera_streamer.health.subprocess.run", return_value=completed):
+            state = read_throttle_state("/usr/bin/vcgencmd", None)
+        assert state is not None
+        assert state["under_voltage_now"] is True
+        assert state["under_voltage_sticky"] is True
+        assert state["throttled_now"] is True
+        assert state["throttled_sticky"] is True
+        assert state["source"] == "vcgencmd"
+
+    def test_falls_back_to_sysfs(self):
+        completed = MagicMock(returncode=1, stdout="", stderr="boom")
+        with (
+            patch("camera_streamer.health.subprocess.run", return_value=completed),
+            patch("builtins.open", mock_open(read_data="0x50000\n")),
+        ):
+            state = read_throttle_state("/usr/bin/vcgencmd", "/sys/test/throttled")
+        assert state is not None
+        assert state["under_voltage_sticky"] is True
+        assert state["throttled_sticky"] is True
+        assert state["source"] == "sysfs"
+
+    def test_returns_none_when_sources_unavailable(self):
+        with patch("camera_streamer.health.subprocess.run", side_effect=OSError):
+            assert read_throttle_state("/usr/bin/vcgencmd", None) is None
+
+    def test_monitor_retains_last_good_throttle_sample(self, camera_config):
+        mon = HealthMonitor(
+            camera_config,
+            MagicMock(),
+            MagicMock(),
+            vcgencmd_path="/usr/bin/vcgencmd",
+        )
+        first = {
+            "under_voltage_now": True,
+            "under_voltage_sticky": True,
+            "frequency_capped_now": False,
+            "frequency_capped_sticky": False,
+            "throttled_now": False,
+            "throttled_sticky": False,
+            "soft_temp_limit_now": False,
+            "soft_temp_limit_sticky": False,
+            "last_updated": "2026-05-04T00:00:00Z",
+            "raw_value_hex": "0x00010001",
+            "source": "vcgencmd",
+        }
+        with patch(
+            "camera_streamer.health.read_throttle_state",
+            side_effect=[first, None],
+        ):
+            assert mon.read_throttle_state() == first
+            assert mon.read_throttle_state() == first
+
     def test_returns_none_on_bad_data(self):
         """Should return None when file has non-numeric data."""
-        mon = self._make_monitor_with_thermal("/fake/thermal")
+        mon = HealthMonitor(
+            MagicMock(), MagicMock(), MagicMock(), thermal_path="/fake/thermal"
+        )
         with patch("builtins.open", mock_open(read_data="not_a_number\n")):
             assert mon.read_cpu_temp() is None
 

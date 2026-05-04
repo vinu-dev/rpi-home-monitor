@@ -452,7 +452,7 @@ nmcli connection up "Wired connection 1"
 |---------|-------|-----|
 | Choppy live view | WiFi congestion | Move camera closer to the AP. The Zero 2W is 2.4GHz-only, so move other 2.4GHz-capable devices to 5GHz to free up 2.4GHz airtime, or pick a less-crowded 2.4GHz channel on the AP |
 | High latency (>5s) | HLS segment delay | Expected — HLS has 2-6s latency by design |
-| Low FPS | CPU throttling | Check `vcgencmd measure_temp` — add cooling if >70C |
+| Low FPS / dropped frames | Pi throttle or under-voltage | Check the dashboard's throttle badge first. `Under-voltage` usually means a better PSU or shorter/heavier-gauge USB cable; `Thermal throttle` means add cooling or reduce enclosure heat. Confirm on the Pi with `vcgencmd get_throttled` |
 | Blocky video | Low bitrate | Increase bitrate in camera config (trade-off: more bandwidth) |
 
 ---
@@ -465,6 +465,7 @@ nmcli connection up "Wired connection 1"
 |------|-----------|---------|
 | Check disk usage | Weekly | `df -h /data` |
 | Check CPU temperature | Monthly | `vcgencmd measure_temp` |
+| Check throttle / under-voltage flags | Monthly or after video-quality complaints | Dashboard camera card, or `vcgencmd get_throttled` on the Pi |
 | Check service health | As needed | Dashboard → System Health page |
 | Check logs for errors | As needed | `journalctl -u monitor --since "1 hour ago"` |
 

@@ -36,6 +36,7 @@ def _make_camera(**overrides):
         "cpu_temp": 0.0,
         "memory_percent": 0,
         "uptime_seconds": 0,
+        "throttle_state": None,
         "pairing_secret": "",
         # ADR-0017 recording-mode + on-demand streaming fields
         "recording_schedule": [],
@@ -79,6 +80,28 @@ class TestListCameras:
         assert result[0]["paired_at"] == ""
         assert result[0]["last_seen"] == "2026-04-11T10:00:00Z"
         assert result[0]["firmware_version"] == "1.0.0"
+
+    def test_serializes_throttle_state(self):
+        cam = _make_camera(
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": False,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T12:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00010000",
+            }
+        )
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        svc = CameraService(store)
+        result = svc.list_cameras()
+        assert result[0]["throttle_state"]["under_voltage_sticky"] is True
 
     def test_returns_multiple_cameras(self):
         store = MagicMock()
@@ -857,6 +880,258 @@ class TestAcceptHeartbeat:
         assert cam.cpu_temp == 55.2
         assert cam.memory_percent == 60
         assert cam.uptime_seconds == 7200
+
+    def test_persists_throttle_state_from_heartbeat(self):
+        cam = _make_camera(throttle_state=None)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": True,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": True,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:00:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00030000",
+                }
+            ),
+        )
+        assert cam.throttle_state["under_voltage_sticky"] is True
+        assert cam.throttle_state["frequency_capped_sticky"] is True
+
+    def test_new_sticky_throttle_bits_log_audit_event(self):
+        cam = _make_camera(throttle_state=None)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": True,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": False,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:00:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00010000",
+                }
+            ),
+        )
+        audit.log_event.assert_called_once_with(
+            "CAMERA_THROTTLED",
+            user="camera",
+            ip="",
+            detail="camera cam-001 sticky throttle bits set: Under-voltage",
+        )
+
+    def test_existing_sticky_throttle_bits_do_not_realert(self):
+        cam = _make_camera(
+            uptime_seconds=7200,
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": False,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T11:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00010000",
+            },
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                uptime_seconds=7215,
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": True,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": False,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:15:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00010000",
+                },
+            ),
+        )
+        audit.log_event.assert_not_called()
+
+    def test_new_additional_sticky_throttle_bit_logs_follow_up_event(self):
+        cam = _make_camera(
+            uptime_seconds=7200,
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": False,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T11:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00010000",
+            },
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                uptime_seconds=7215,
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": True,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": True,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:15:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00030000",
+                },
+            ),
+        )
+        audit.log_event.assert_called_once_with(
+            "CAMERA_THROTTLED",
+            user="camera",
+            ip="",
+            detail="camera cam-001 sticky throttle bits set: Frequency capped",
+        )
+
+    def test_sticky_throttle_bits_persist_until_reboot(self):
+        cam = _make_camera(
+            uptime_seconds=7200,
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": True,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T11:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00030000",
+            },
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                uptime_seconds=7215,
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": False,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": False,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:15:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00000000",
+                },
+            ),
+        )
+        assert cam.throttle_state["under_voltage_sticky"] is True
+        assert cam.throttle_state["frequency_capped_sticky"] is True
+
+    def test_reboot_clears_sticky_throttle_bits(self):
+        cam = _make_camera(
+            uptime_seconds=7200,
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": True,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T11:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00030000",
+            },
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(
+                uptime_seconds=45,
+                throttle_state={
+                    "under_voltage_now": False,
+                    "under_voltage_sticky": False,
+                    "frequency_capped_now": False,
+                    "frequency_capped_sticky": False,
+                    "throttled_now": False,
+                    "throttled_sticky": False,
+                    "soft_temp_limit_now": False,
+                    "soft_temp_limit_sticky": False,
+                    "last_updated": "2026-05-04T12:20:00Z",
+                    "source": "vcgencmd",
+                    "raw_value_hex": "0x00000000",
+                },
+            ),
+        )
+        assert cam.throttle_state["under_voltage_sticky"] is False
+        assert cam.throttle_state["frequency_capped_sticky"] is False
+
+    def test_invalid_throttle_state_is_ignored(self):
+        cam = _make_camera(
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": False,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T11:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00010000",
+            }
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        svc.accept_heartbeat("cam-001", self._basic_payload(throttle_state="bad"))
+        assert cam.throttle_state["under_voltage_sticky"] is True
 
     def test_accepts_stream_config_from_heartbeat(self):
         cam = _make_camera(fps=25, config_sync="unknown")

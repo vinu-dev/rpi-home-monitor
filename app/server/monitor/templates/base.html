@@ -285,13 +285,17 @@
                     var ids = [];
                     d.alerts.forEach(function(n) {
                         try {
-                            var note = new Notification('Motion: ' + (n.camera_name || n.camera_id), {
-                                body: humaniseTime(n.started_at) + ' · ' +
-                                      (n.duration_seconds || '?') + 's',
+                            var title = n.title || ('Motion: ' + (n.camera_name || n.camera_id));
+                            var body = n.body || (
+                                humaniseTime(n.started_at) + ' · ' +
+                                (n.duration_seconds || '?') + 's'
+                            );
+                            var note = new Notification(title, {
+                                body: body,
                                 // Snapshot URL falls back to the project
                                 // logo when ffmpeg couldn't extract one
                                 // (motion-mode pre-roll race per ADR-0027).
-                                icon: n.snapshot_url || '/static/images/logo.svg',
+                                icon: n.icon || n.snapshot_url || '/static/images/logo.svg',
                                 // OS-level dedupe: same alert_id replaces
                                 // any pending notification with this tag.
                                 tag: n.alert_id,

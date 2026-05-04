@@ -1,7 +1,7 @@
 # REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """
 NotificationPolicyService - derive browser-notification eligibility for
-motion events.
+motion events and throttle-transition audits.
 
 Implements ADR-0027 (#121, #128) and the quiet-hours follow-up in #245.
 The alert center remains the persistent triage surface (ADR-0024); this
@@ -36,7 +36,10 @@ only for NOTIFICATION_QUIETED audit rate-limiting.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import re
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from threading import Lock
@@ -50,6 +53,12 @@ from monitor.services.notification_schedule import (
 
 log = logging.getLogger("monitor.notification_policy")
 
+THROTTLE_AUDIT_EVENT = "CAMERA_THROTTLED"
+_THROTTLE_AUDIT_RE = re.compile(
+    r"^camera (?P<camera_id>cam-[a-z0-9]{1,48}) sticky throttle bits set: "
+    r"(?P<labels>.+)$"
+)
+
 # Hard caps on the per-camera tunables. Enforced at PUT time so the
 # UI can't store nonsense that breaks the decision tree. Documented
 # in ADR-0027's resolved open questions.
@@ -62,14 +71,14 @@ _QUIET_AUDIT_TTL = timedelta(days=2)
 
 
 class NotificationPolicyService:
-    """Derive notification eligibility per motion event."""
+    """Derive notification eligibility for motion events and throttle audits."""
 
-    def __init__(self, *, store, motion_event_store, audit=None):
+    def __init__(self, *, store, motion_event_store, audit=None, audit_logger=None):
         self._store = store
         self._motion = motion_event_store
-        self._audit = audit
+        self._audit = audit if audit is not None else audit_logger
         self._quiet_audit_lock = Lock()
-        self._quiet_audit_windows: dict[tuple[str, str, str], datetime] = {}
+        self._quiet_audit_windows: dict[tuple[str, str, str, str], datetime] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -78,8 +87,12 @@ class NotificationPolicyService:
     def select_for_user(
         self, *, user: str, since: str | None = None, limit: int = 50
     ) -> list[dict]:
-        """Return surfaceable motion notifications for ``user`` newer
-        than ``since`` (ISO-8601 Z), capped at ``limit``."""
+        """Return surfaceable notifications for ``user`` newer
+        than ``since`` (ISO-8601 Z), capped at ``limit``.
+
+        Each entry is the wire shape consumed by
+        ``GET /api/v1/notifications/pending``.
+        """
         user_obj = self._get_user(user)
         if user_obj is None:
             return []
@@ -89,12 +102,6 @@ class NotificationPolicyService:
 
         since_iso = since or getattr(user_obj, "last_notification_seen_at", "") or ""
 
-        try:
-            events = self._motion.list_events(limit=200)
-        except Exception as exc:  # pragma: no cover - defensive
-            log.warning("notification_policy: motion fetch failed: %s", exc)
-            return []
-
         cameras_by_id = {}
         try:
             for camera in self._store.get_cameras():
@@ -103,42 +110,99 @@ class NotificationPolicyService:
             log.warning("notification_policy: cameras fetch failed: %s", exc)
             return []
 
-        out: list[dict] = []
-        for evt in events:
-            if not getattr(evt, "ended_at", None):
-                continue
-            if since_iso and getattr(evt, "started_at", "") <= since_iso:
-                continue
-            cam = cameras_by_id.get(getattr(evt, "camera_id", ""))
-            if cam is None:
-                continue
-            if not self._eligible(evt, cam, user_obj, prefs):
-                continue
+        throttle_out: list[dict] = []
+        motion_out: list[dict] = []
 
-            out.append(self._wire(evt, cam))
-            if len(out) >= limit:
-                break
+        if self._audit is not None:
+            try:
+                audit_events = self._audit.get_events(
+                    limit=200,
+                    event_type=THROTTLE_AUDIT_EVENT,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                log.warning("notification_policy: audit fetch failed: %s", exc)
+                audit_events = []
 
-        return out
+            for ev in audit_events:
+                note = self._wire_throttle(ev, cameras_by_id, prefs, user_obj)
+                if note is None:
+                    continue
+                if since_iso and note.get("started_at", "") <= since_iso:
+                    continue
+                throttle_out.append(note)
+
+        throttle_out.sort(key=lambda item: item.get("started_at", ""), reverse=True)
+        remaining = max(0, limit - len(throttle_out))
+
+        if remaining > 0:
+            try:
+                events = self._motion.list_events(limit=200)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.warning("notification_policy: motion fetch failed: %s", exc)
+                events = []
+
+            for evt in events:
+                if not getattr(evt, "ended_at", None):
+                    continue
+                if since_iso and getattr(evt, "started_at", "") <= since_iso:
+                    continue
+                cam = cameras_by_id.get(getattr(evt, "camera_id", ""))
+                if cam is None:
+                    continue
+                if not self._eligible(evt, cam, user_obj, prefs):
+                    continue
+
+                motion_out.append(self._wire(evt, cam))
+                if len(motion_out) >= remaining:
+                    break
+
+        out = throttle_out + motion_out
+        out.sort(key=lambda item: item.get("started_at", ""), reverse=True)
+        return out[:limit]
 
     def mark_seen(self, *, user: str, alert_ids: list[str]) -> int:
         """Advance ``user.last_notification_seen_at`` to the newest
-        delivered alert, persist. Returns the count actually marked."""
+        delivered alert, persist. Returns the count actually marked
+        (i.e. those whose id maps to a known notification source).
+        """
         user_obj = self._get_user(user)
         if user_obj is None or not alert_ids:
             return 0
 
         latest = ""
         marked = 0
-        for aid in alert_ids:
-            evt_id = aid.removeprefix("motion:") if aid.startswith("motion:") else aid
+        throttle_timestamps: dict[str, str] = {}
+        if self._audit is not None and any(
+            aid.startswith("throttle:") for aid in alert_ids
+        ):
             try:
-                evt = self._motion.get(evt_id)
-            except Exception:
-                evt = None
-            if evt is None:
+                audit_events = self._audit.get_events(
+                    limit=500,
+                    event_type=THROTTLE_AUDIT_EVENT,
+                )
+            except Exception:  # pragma: no cover - defensive
+                audit_events = []
+            for ev in audit_events:
+                throttle_timestamps[self._audit_alert_id(ev)] = (
+                    ev.get("timestamp") or ""
+                )
+
+        for aid in alert_ids:
+            ts = ""
+            if aid.startswith("motion:") or not aid.startswith("throttle:"):
+                evt_id = (
+                    aid.removeprefix("motion:") if aid.startswith("motion:") else aid
+                )
+                try:
+                    evt = self._motion.get(evt_id)
+                except Exception:
+                    evt = None
+                if evt is not None:
+                    ts = getattr(evt, "started_at", "")
+            else:
+                ts = throttle_timestamps.get(aid, "")
+            if not ts:
                 continue
-            ts = getattr(evt, "started_at", "")
             if ts and ts > latest:
                 latest = ts
             marked += 1
@@ -386,6 +450,10 @@ class NotificationPolicyService:
     @staticmethod
     def _event_timestamp(evt) -> datetime | None:
         value = getattr(evt, "ended_at", None) or getattr(evt, "started_at", None) or ""
+        return NotificationPolicyService._parse_timestamp(value)
+
+    @staticmethod
+    def _parse_timestamp(value: str) -> datetime | None:
         if not value:
             return None
         try:
@@ -405,12 +473,32 @@ class NotificationPolicyService:
     def _emit_quiet_audit(
         self, *, user, cam, evt, now: datetime, window_key: str, source: str
     ) -> None:
+        self._emit_quiet_audit_ref(
+            user=user,
+            camera_id=getattr(cam, "id", "") or "",
+            event_class="motion",
+            reference=f"motion_event_id={getattr(evt, 'id', '')}",
+            now=now,
+            window_key=window_key,
+            source=source,
+        )
+
+    def _emit_quiet_audit_ref(
+        self,
+        *,
+        user,
+        camera_id: str,
+        event_class: str,
+        reference: str,
+        now: datetime,
+        window_key: str,
+        source: str,
+    ) -> None:
         if not self._audit or not window_key:
             return
 
         username = getattr(user, "username", "") or ""
-        camera_id = getattr(cam, "id", "") or ""
-        key = (username, camera_id, window_key)
+        key = (username, camera_id, event_class, window_key)
 
         with self._quiet_audit_lock:
             cutoff = now - _QUIET_AUDIT_TTL
@@ -424,10 +512,8 @@ class NotificationPolicyService:
             self._quiet_audit_windows[key] = now
 
         detail = (
-            f"camera_id={camera_id} "
-            f"motion_event_id={getattr(evt, 'id', '')} "
-            f"source={source}"
-        ).strip()
+            f"camera_id={camera_id} class={event_class} {reference} source={source}"
+        )
         self._log_audit(
             event="NOTIFICATION_QUIETED",
             user=username,
@@ -469,3 +555,79 @@ class NotificationPolicyService:
             "snapshot_url": snapshot_url,
             "deep_link": "/events/" + evt_dict.get("id", ""),
         }
+
+    def _wire_throttle(
+        self,
+        event: dict,
+        cameras_by_id: dict,
+        prefs: dict,
+        user_obj,
+    ) -> dict | None:
+        """Shape a throttle-transition audit event for OS notifications."""
+        parsed = self._parse_throttle_detail(event.get("detail") or "")
+        if parsed is None:
+            return None
+        camera_id, labels = parsed
+        cam = cameras_by_id.get(camera_id)
+        if cam is not None and not self._effective_rule(cam, prefs).get(
+            "enabled",
+            True,
+        ):
+            return None
+
+        override = (prefs.get("cameras") or {}).get(camera_id)
+        quiet_override = (
+            override.get("quiet_schedule")
+            if isinstance(override, dict) and "quiet_schedule" in override
+            else None
+        )
+        event_time = self._parse_timestamp(
+            event.get("timestamp") or ""
+        ) or datetime.now(UTC)
+        decision = evaluate_quiet_hours(
+            now=event_time,
+            user_schedule=getattr(user_obj, "notification_schedule", None) or [],
+            camera_override=quiet_override,
+            tz=self._current_timezone(),
+        )
+        if decision.quiet:
+            self._emit_quiet_audit_ref(
+                user=user_obj,
+                camera_id=camera_id,
+                event_class="throttle",
+                reference=f"alert_id={self._audit_alert_id(event)}",
+                now=datetime.now(UTC),
+                window_key=decision.window_key,
+                source=decision.source,
+            )
+            return None
+
+        camera_name = getattr(cam, "name", "") if cam is not None else ""
+        camera_name = camera_name or camera_id
+        labels_text = ", ".join(labels) if labels else "See dashboard"
+        return {
+            "alert_id": self._audit_alert_id(event),
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "started_at": event.get("timestamp") or "",
+            "duration_seconds": None,
+            "snapshot_url": None,
+            "deep_link": "/dashboard#camera-" + camera_id,
+            "title": "Camera health warning: " + camera_name,
+            "body": "Raspberry Pi throttling detected: " + labels_text,
+        }
+
+    @staticmethod
+    def _parse_throttle_detail(detail: str) -> tuple[str, list[str]] | None:
+        """Parse the throttle-transition audit detail string."""
+        match = _THROTTLE_AUDIT_RE.match(detail.strip())
+        if match is None:
+            return None
+        labels = [part.strip() for part in match.group("labels").split(",")]
+        return match.group("camera_id"), [label for label in labels if label]
+
+    @staticmethod
+    def _audit_alert_id(event: dict) -> str:
+        """Return a stable id for an audit-derived throttle notification."""
+        payload = json.dumps(event, sort_keys=True, separators=(",", ":"))
+        return "throttle:" + hashlib.sha256(payload.encode()).hexdigest()[:16]

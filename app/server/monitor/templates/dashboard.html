@@ -278,9 +278,16 @@
                     <span :class="{'text-danger': _staleSeconds(cam) > 45, 'text-warning': _staleSeconds(cam) > 30 && _staleSeconds(cam) <= 45}"
                           x-text="'Last seen: ' + _relativeTime(cam.last_seen)"></span>
                 </div>
-                <div class="camera-card__health" x-show="cam.status === 'online' && (cam.cpu_temp || cam.memory_percent)">
+                <div class="camera-card__health" x-show="cam.status === 'online' && (cam.cpu_temp || cam.memory_percent || _cameraThrottleInfo(cam))">
                     <span class="text-small text-muted" x-text="cam.cpu_temp ? cam.cpu_temp.toFixed(1) + '\u00B0C' : ''"></span>
                     <span class="text-small text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
+                    <span x-show="_cameraThrottleInfo(cam)"
+                          class="fault-badge"
+                          :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
+                          :title="_cameraThrottleInfo(cam).title">
+                        <span class="fault-badge__dot" aria-hidden="true"></span>
+                        <span x-text="_cameraThrottleInfo(cam).label"></span>
+                    </span>
                 </div>
                 <!-- Collapsible details panel (issue #110). All data already
                      comes back from /api/v1/cameras — we were just not
@@ -329,6 +336,14 @@
                                 <span x-show="cam.cpu_temp" x-text="cam.cpu_temp.toFixed(1) + '\u00B0C'"></span>
                                 <span class="text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
                                 <span class="text-muted" x-show="cam.uptime_seconds" x-text="' \u00B7 up ' + _uptimeLabel(cam.uptime_seconds)"></span>
+                                <span x-show="_cameraThrottleInfo(cam)"
+                                      class="fault-badge"
+                                      :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
+                                      :title="_cameraThrottleInfo(cam).title"
+                                      style="margin-left:6px;">
+                                    <span class="fault-badge__dot" aria-hidden="true"></span>
+                                    <span x-text="_cameraThrottleInfo(cam).label"></span>
+                                </span>
                             </dd>
                         </template>
                     </dl>
@@ -641,13 +656,11 @@ function dashboardPage() {
 
         _camerasTileState(c) {
             if (!c || !c.total) return '';
-            var offline = c.total - c.online;
-            if (offline <= 0) return 'tile--green';
-            // Without per-camera last_seen durations we can't distinguish
-            // amber/red here — fall back to amber and let the top strip
-            // escalate via its own check.
-            if (this.summary.state === 'red') return 'tile--red';
-            return 'tile--amber';
+            if (c.state === 'red') return 'tile--red';
+            if (c.state === 'amber') return 'tile--amber';
+            // The server already rolls per-camera health into a single
+            // summary state for this tile.
+            return 'tile--green';
         },
 
         _storageTileState(s) {
@@ -670,9 +683,15 @@ function dashboardPage() {
             var d = this.summary.details;
             if (!d || !d.cameras) return '\u2014';
             var off = d.cameras.offline_names || [];
-            if (off.length === 0) return 'All online';
             if (off.length === 1) return off[0] + ' offline';
-            return off.length + ' offline';
+            if (off.length > 1) return off.length + ' offline';
+            var throttled = d.cameras.throttled_names || [];
+            if (throttled.length === 1) return throttled[0] + ' throttled';
+            if (throttled.length > 1) return throttled.length + ' throttled';
+            var faulted = d.cameras.faulted_names || [];
+            if (faulted.length === 1) return faulted[0] + ' needs attention';
+            if (faulted.length > 1) return faulted.length + ' need attention';
+            return 'All online';
         },
 
         get latestRelativeTime() {
@@ -710,6 +729,41 @@ function dashboardPage() {
             if (state === 'tile--red') return 'Overheat';
             if (state === 'tile--amber') return 'Under load';
             return 'Nominal';
+        },
+
+        _cameraThrottleInfo(cam) {
+            if (!cam || !cam.throttle_state) return null;
+            var s = cam.throttle_state;
+            var current = [];
+            if (s.under_voltage_now) current.push('Under-voltage');
+            if (s.throttled_now) current.push('Thermal throttle');
+            if (s.frequency_capped_now) current.push('Frequency capped');
+            if (s.soft_temp_limit_now) current.push('Soft temp limit');
+
+            var sticky = [];
+            if (s.under_voltage_sticky && current.indexOf('Under-voltage') === -1) sticky.push('Under-voltage');
+            if (s.throttled_sticky && current.indexOf('Thermal throttle') === -1) sticky.push('Thermal throttle');
+            if (s.frequency_capped_sticky && current.indexOf('Frequency capped') === -1) sticky.push('Frequency capped');
+            if (s.soft_temp_limit_sticky && current.indexOf('Soft temp limit') === -1) sticky.push('Soft temp limit');
+
+            if (current.length === 0 && sticky.length === 0) return null;
+
+            var severity = 'warning';
+            if (s.under_voltage_now) severity = 'critical';
+            else if (s.throttled_now || s.frequency_capped_now) severity = 'error';
+
+            if (current.length > 0) {
+                return {
+                    severity: severity,
+                    label: current.join(' + '),
+                    title: 'Current Raspberry Pi throttling: ' + current.join(', ')
+                };
+            }
+            return {
+                severity: 'warning',
+                label: 'Since boot: ' + sticky.join(' + '),
+                title: 'Throttle bits were set since the last reboot: ' + sticky.join(', ')
+            };
         },
 
         onStatusClick(_ev) {
