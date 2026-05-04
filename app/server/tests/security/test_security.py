@@ -222,6 +222,17 @@ class TestAuditExportCsrf:
 
         assert response.status_code == 403
 
+    def test_query_string_csrf_token_is_rejected(self, app, client):
+        login = _login(app, client)
+        token = login.get_json()["csrf_token"]
+        client.environ_base.pop("HTTP_X_CSRF_TOKEN", None)
+
+        response = client.get(
+            f"/api/v1/audit/events/export?format=csv&csrf_token={token}"
+        )
+
+        assert response.status_code == 403
+
     def test_valid_csrf_token_is_accepted(self, app, client):
         _login(app, client)
         app.audit.log_event("LOGIN_SUCCESS", user="admin")

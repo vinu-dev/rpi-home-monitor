@@ -127,6 +127,29 @@ class TestAuditExportEndpoint:
         assert detail["filters"]["event_type"] == "LOGIN_SUCCESS,LOGIN_FAILED"
         assert detail["filters"]["actor"] == "admin"
 
+    def test_csv_export_quotes_rfc4180_fields(self, app, logged_in_client):
+        app.audit = MagicMock()
+        detail = 'operator said "door, open"\nnext line'
+        app.audit.iter_events.return_value = iter(
+            [
+                {
+                    "timestamp": "2026-05-04T09:00:00Z",
+                    "event": "LOGIN_SUCCESS",
+                    "user": "admin",
+                    "ip": "192.168.1.10",
+                    "detail": detail,
+                }
+            ]
+        )
+        client = logged_in_client()
+
+        response = client.get("/api/v1/audit/events/export?format=csv")
+
+        body = response.get_data(as_text=True)
+        assert '"operator said ""door, open""\nnext line"' in body
+        rows = list(csv.reader(io.StringIO(body)))
+        assert rows[1][4] == detail
+
     def test_json_export_returns_array(self, app, logged_in_client):
         app.audit = MagicMock()
         app.audit.iter_events.return_value = iter(

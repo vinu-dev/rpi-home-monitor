@@ -32,8 +32,9 @@ Existing code this feature must build on, not re-implement:
 
 - `app/server/monitor/api/audit.py` — the audit blueprint already
   enforces `@admin_required` on `GET /events` and `@csrf_protect` on
-  `DELETE /events`. The new export endpoint reuses the same admin gate
-  and the same `current_app.audit` service handle.
+  `DELETE /events`. The new export endpoint reuses the same admin gate,
+  accepts CSRF only from the `X-CSRF-Token` header, and reuses the same
+  `current_app.audit` service handle.
 - `app/server/monitor/services/audit.py` (`AuditLogger`) — already owns
   the canonical schema (`timestamp`, `event`, `user`, `ip`, `detail`),
   the `/data/logs/audit.log` location, the `_lock` for thread-safe
@@ -80,9 +81,10 @@ Existing code this feature must build on, not re-implement:
    - "Export" button.
 3. Admin clicks Export. The browser issues
    `GET /api/v1/audit/events/export?format=csv&start=…&end=…&event_type=…&actor=…`
-   with the operator's session cookie + CSRF token. (CSRF protection is
-   the same belt-and-braces pattern the `DELETE /events` route uses,
-   even though export is a read.)
+   with the operator's session cookie + `X-CSRF-Token` header. (CSRF
+   protection is the same belt-and-braces pattern the `DELETE /events`
+   route uses, even though export is a read; the token is not accepted
+   in the query string.)
 4. Server validates filters, opens the file under `_lock` only long
    enough to install a generator (no full-file buffering), and streams
    the response body using a chunked `Content-Disposition: attachment;
@@ -326,7 +328,7 @@ ISO 14971-lite framing. Hazards specific to this change:
 | HAZ-247-1 | Streaming a multi-MB audit log buffers the whole file in memory and OOMs the gunicorn worker, killing the dashboard. | Moderate (operational) | Medium without control / Low with | RC-247-1: `iter_events` is a generator; the route emits via Flask `Response(stream)` and never calls `.read()`. AC-11 enforces a fixed memory bound on a 50 MB fixture. |
 | HAZ-247-2 | An authenticated-but-compromised admin session is used to slowly exfiltrate the audit log via repeated full exports. | Major (security) | Low | RC-247-2: per-admin + per-IP two-tier rate limit reusing the `auth._check_rate_limit` pattern (separate counter namespace, e.g., 5 / hour soft, 10 / hour hard). Hard-limit hits emit `AUDIT_LOG_EXPORT_DENIED`. AC-14 enforces. |
 | HAZ-247-3 | CSV free-text fields (`detail`) contain a leading `=`, `+`, `-`, `@`, `\t`, or `\r` and a downstream Excel user opens the file → CSV-injection / formula execution. | Moderate (security on the operator's workstation) | Medium | RC-247-3: every CSV cell whose first character is in `{=, +, -, @, \t, \r}` is prefixed with a single quote (`'`) before quoting, per OWASP "CSV Injection" guidance. Documented in code; AC-9 covers escape correctness, plus a dedicated regression test for each lead character. |
-| HAZ-247-4 | The export endpoint is invoked without CSRF and a malicious cross-site link triggers a download containing all audit history → information disclosure if the operator's browser leaks the response. | Major (security) | Low | RC-247-4: route is `@csrf_protect` (same as `DELETE /events`). AC-4 enforces. |
+| HAZ-247-4 | The export endpoint is invoked without CSRF and a malicious cross-site link triggers a download containing all audit history → information disclosure if the operator's browser leaks the response. | Major (security) | Low | RC-247-4: route requires the session CSRF value in `X-CSRF-Token` and rejects missing, wrong, empty, or query-string tokens. AC-4 enforces. |
 | HAZ-247-5 | Export hits a malformed line in `audit.log` and the generator raises an unhandled `JSONDecodeError`, terminating the stream and confusing the admin. | Minor (operational) | Low | RC-247-5: `iter_events` mirrors `get_events`'s defensive parse — `try/except json.JSONDecodeError: continue`. Malformed lines are skipped; they appear instead as an `AUDIT_LOG_EXPORT_TRUNCATED` (informational) only when the number skipped is non-zero. |
 | HAZ-247-6 | The export self-event (`AUDIT_LOG_EXPORTED`) is forgotten on the disconnect / error path → traceability gap (an export ran but the operator can't see who ran it). | Major (compliance) | Low | RC-247-6: route emits the event in a `finally:` block with `truncated`, `reason`, and `row_count`. AC-12, AC-13 enforce both happy and disconnect paths. |
 | HAZ-247-7 | Concurrent `DELETE /events` truncates the on-disk file mid-export → corrupted CSV / JSON in the operator's download. | Minor (operational) | Low | RC-247-7: the export reads the file via a single `open()` opened *before* the first yield; on Linux the open file descriptor still references the original inode after truncation, so the streamed content reflects the snapshot at open time. AC-18 enforces. Documented in spec as expected behavior, not a bug. |
@@ -350,11 +352,11 @@ Threat-model deltas (Implementer fills concrete `THREAT-` / `SC-` IDs):
   pairing, OTA, or certificate code paths. Per `docs/ai/roles/architect.md`
   these are the paths needing extra scrutiny — flagged here.
 - **Authorization**: `@admin_required` is reused, no new role.
-- **CSRF**: `@csrf_protect` is applied to a `GET` route on purpose
-  (belt-and-braces). Implementer ensures the CSRF cookie / token
-  pattern works for `GET` (today it is enforced on state-changing
-  verbs); if the existing decorator is verb-aware, add an
-  `enforce_on_get=True` flag rather than weakening it elsewhere.
+- **CSRF**: the `GET` export route intentionally performs the same
+  session-token comparison as the existing CSRF guard, but for this
+  downloadable GET it accepts the token only from `X-CSRF-Token`.
+  Query-string CSRF tokens are rejected because URLs can leak through
+  access logs, browser history, and `Referer`.
 - **Rate limiting**: per-admin + per-IP two-tier limiter is required.
   Hard-limit hits return `429` and emit `AUDIT_LOG_EXPORT_DENIED`. The
   limiter uses a separate counter namespace from
@@ -377,42 +379,26 @@ Threat-model deltas (Implementer fills concrete `THREAT-` / `SC-` IDs):
 
 ## Traceability
 
-Placeholder IDs (Implementer fills concrete numbers in
-`docs/traceability/traceability-matrix.md`):
+Implementation trace headers follow the existing convention
+(`# REQ: …; RISK: …; SEC: …; TEST: …`) and deliberately reuse the
+current audit, auth, and contract trace IDs rather than minting a new
+parallel 247-numbered controlled record set:
 
-- `UN-247` — User need: "As an admin, I want to download the security
-  audit log (filtered or full) so I can retain it for compliance and
-  perform forensic review after an incident, without SSH'ing onto the
-  device."
-- `SYS-247` — System requirement: "The system shall provide an
-  admin-gated, rate-limited, streaming export of the security audit
-  log in CSV or JSON, filterable by time range, event type, and actor,
-  and shall record each export attempt as an audit event."
-- `SWR-247-A` … `SWR-247-F` — Software requirements (one per
-  functional area: route + admin gate, filter validation, streaming
-  read, format emission, audit self-emission, rate limit).
-- `SWA-247` — Software architecture item: "Generator-based
-  `AuditLogger.iter_events` consumed by Flask `Response(stream, …)` in
-  the existing `audit_bp`; reuses `@admin_required`, `@csrf_protect`,
-  and the auth rate-limit pattern."
-- `HAZ-247-1` … `HAZ-247-8` — listed above.
-- `RISK-247-1` … `RISK-247-8` — one per hazard.
-- `RC-247-1` … `RC-247-8` — one per risk control.
-- `SEC-247-A` (admin gate completeness), `SEC-247-B` (CSRF on GET),
-  `SEC-247-C` (rate limit), `SEC-247-D` (CSV-injection escape),
-  `SEC-247-E` (audit self-emission completeness),
-  `SEC-247-F` (no secret material in response).
-- `THREAT-247-1` (slow exfiltration via repeated exports),
-  `THREAT-247-2` (CSV injection on operator workstation),
-  `THREAT-247-3` (CSRF-driven download leakage),
-  `THREAT-247-4` (audit self-event omitted on error path).
-- `SC-247-1` … `SC-247-N` — controls mapping the threats above.
-- `TC-247-AC-1` … `TC-247-AC-18` — one test case per acceptance
-  criterion above.
-- Trace headers in new files follow the existing convention
-  (`# REQ: …; RISK: …; SEC: …; TEST: …`); reuse `SWR-009`, `RISK-020`,
-  `SC-008`, `SC-020`, `TC-017` from the existing audit module so the
-  matrix update is additive.
+- `SWR-009` / `SYS-010` / `UN-004` — audit logging and security-event
+  review on `/logs`.
+- `SWR-002` — authenticated role checks and CSRF enforcement.
+- `SWR-045` — API contract coverage for protected endpoints.
+- `RISK-002`, `RISK-020`, `RISK-021` — unauthorized access,
+  operational logging, and API-contract regression risks.
+- `SC-001`, `SC-008`, `SC-020`, `SC-021` — admin authorization,
+  auditability, operational hardening, and contract controls.
+- `TC-011`, `TC-017`, `TC-042` — auth/security, audit logging, and API
+  contract verification.
+
+The risk table above keeps feature-local `HAZ-247-*` / `RC-247-*`
+labels for design review, while the machine-checkable matrix remains
+anchored to the existing controlled IDs verified by
+`python tools/traceability/check_traceability.py`.
 
 ## Deployment Impact
 
@@ -480,7 +466,7 @@ description.)
 - Audit self-emission must run in a `finally:` block; missing it is a
   compliance gap, not a minor bug. Tests must cover both happy and
   disconnect paths (AC-12, AC-13).
-- Reuse `@admin_required`, `@csrf_protect`, and the
+- Reuse `@admin_required`, header-only CSRF token comparison, and the
   `auth._check_rate_limit` pattern; do not invent new auth or
   limiting primitives.
 - CSV escaping must be RFC-4180 *and* OWASP-CSV-injection-safe; both

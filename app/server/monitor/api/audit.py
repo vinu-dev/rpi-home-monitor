@@ -61,7 +61,7 @@ def _parse_export_timestamp(value: str, *, label: str) -> str:
 
 
 def _csrf_token_error():
-    token = request.headers.get("X-CSRF-Token") or request.args.get("csrf_token", "")
+    token = request.headers.get("X-CSRF-Token", "")
     if not token or token != session.get("csrf_token"):
         return jsonify({"error": "Invalid CSRF token"}), 403
     return None

@@ -96,7 +96,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Session management | **Implemented** | 30min idle / 24hr absolute timeout; Settings Security shows active devices and supports current, per-session, and bulk revoke |
 | LUKS encryption | **Partial** | Design and implementation work exist, but production-grade validation is still in progress |
 | nftables firewall | **Implemented** | Default DROP, minimal open ports |
-| Audit logging | **Implemented** | Append-only JSON, all admin actions |
+| Audit logging | **Implemented** | Append-only JSON, all admin actions; admin CSV/JSON export from `/logs` |
 | Default admin warning | **Implemented** | `admin`/`admin` created on first boot, must change during setup |
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
