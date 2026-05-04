@@ -285,7 +285,7 @@ agents:
       4. Switch to the shared feature branch and rebase:
            slug=<from spec filename>
            git fetch origin
-           git switch "feature/<id>-${slug}"
+           git switch -C "feature/<id>-${slug}" "origin/feature/<id>-${slug}"
            git rebase origin/main
          Conflict → label `merge-conflict`, comment, exit 0.
       5. Read JUST what you need: the spec at docs/history/specs/<id>-<slug>.md
@@ -381,7 +381,7 @@ agents:
       3. Switch to feature branch and rebase:
            slug=<from spec filename>
            git fetch origin
-           git switch "feature/<id>-${slug}"
+           git switch -C "feature/<id>-${slug}" "origin/feature/<id>-${slug}"
            git rebase origin/main
          Conflict → label `merge-conflict`, exit 0.
       4. Determine which validation rows apply by inspecting the diff:
