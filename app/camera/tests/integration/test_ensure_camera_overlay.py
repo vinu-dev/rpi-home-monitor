@@ -31,6 +31,7 @@ Invariants under test:
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -42,6 +43,45 @@ SCRIPT_PATH = (
 )
 
 
+def _resolve_shell_path() -> str:
+    """Find a POSIX shell for running the real overlay script on Windows hosts."""
+    for candidate in ("sh", "bash"):
+        path = shutil.which(candidate)
+        if path:
+            return path
+
+    git_path = shutil.which("git")
+    if git_path:
+        git_root = Path(git_path).resolve().parent.parent
+        for rel_path in (
+            Path("bin/sh.exe"),
+            Path("usr/bin/sh.exe"),
+            Path("bin/bash.exe"),
+            Path("usr/bin/bash.exe"),
+        ):
+            candidate = git_root / rel_path
+            if candidate.exists():
+                return str(candidate)
+
+    for candidate in (
+        Path("C:/Program Files/Git/bin/sh.exe"),
+        Path("C:/Program Files/Git/usr/bin/sh.exe"),
+        Path("C:/Program Files/Git/bin/bash.exe"),
+        Path("C:/Program Files/Git/usr/bin/bash.exe"),
+        Path("C:/Program Files (x86)/Git/bin/sh.exe"),
+        Path("C:/Program Files (x86)/Git/usr/bin/sh.exe"),
+        Path("C:/Program Files (x86)/Git/bin/bash.exe"),
+        Path("C:/Program Files (x86)/Git/usr/bin/bash.exe"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+
+    raise FileNotFoundError(
+        "No POSIX shell found for ensure-camera-overlay.sh; install Git for Windows "
+        "or add sh.exe/bash.exe to PATH."
+    )
+
+
 def _run(
     config_path: Path, override_path: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -49,7 +89,7 @@ def _run(
     env = os.environ.copy()
     env["HM_OVERRIDE_FILE"] = str(override_path) if override_path else "/dev/null"
     return subprocess.run(
-        ["sh", str(SCRIPT_PATH), "--self-test", str(config_path)],
+        [_resolve_shell_path(), str(SCRIPT_PATH), "--self-test", str(config_path)],
         check=True,
         env=env,
         capture_output=True,
