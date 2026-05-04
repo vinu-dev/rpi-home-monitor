@@ -88,6 +88,7 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/users",
     "/api/v1/ota/status",
     "/api/v1/system/health",
+    "/api/v1/system/time/health",
     "/api/v1/system/backup/snapshots",
     "/api/v1/audit/events",
     "/api/v1/audit/events/export?format=csv",
@@ -133,6 +134,7 @@ _STATE_CHANGING_ROUTES = [
     ),
     ("POST", "/api/v1/settings/offsite-backup/test-connection", {}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
+    ("POST", "/api/v1/system/time/resync", {"target": "server"}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "x", "password": "y"}),
     (
         "POST",

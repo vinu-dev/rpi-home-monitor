@@ -89,6 +89,20 @@ STREAM_PARAM_DEFAULTS = {
 }
 
 
+def _heartbeat_timestamp_to_iso(value) -> str | None:
+    """Convert a heartbeat epoch timestamp into the store's UTC Z format."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 def _translate_stream_params_for_wire(params: dict) -> dict:
     """Rename server-side model fields to the keys the camera expects.
 
@@ -585,6 +599,9 @@ class CameraService:
         was_offline = camera.status == "offline"
         camera.status = "online"
         camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        beat_timestamp = _heartbeat_timestamp_to_iso(data.get("timestamp"))
+        if beat_timestamp is not None:
+            camera.last_beat_camera_ts = beat_timestamp
         previous_uptime = int(getattr(camera, "uptime_seconds", 0) or 0)
         previous_throttle_state = getattr(camera, "throttle_state", None)
         current_uptime: int | None = None
@@ -769,10 +786,20 @@ class CameraService:
 
         # If we have a pending config push, include it in the response
         response: dict = {"ok": True}
-        if had_pending:
-            response["pending_config"] = _translate_stream_params_for_wire(
-                _stream_params_from_camera(camera)
-            )
+        extra_pending = dict(getattr(camera, "pending_config", {}) or {})
+        if had_pending or extra_pending:
+            pending_payload = {}
+            if had_pending:
+                pending_payload.update(
+                    _translate_stream_params_for_wire(
+                        _stream_params_from_camera(camera)
+                    )
+                )
+            pending_payload.update(extra_pending)
+            response["pending_config"] = pending_payload
+            if extra_pending:
+                camera.pending_config = {}
+                self._store.save_camera(camera)
 
         return response, "", 200
 

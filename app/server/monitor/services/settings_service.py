@@ -19,6 +19,26 @@ from flask import current_app
 log = logging.getLogger("monitor.services.settings_service")
 
 
+def _trim_command_error(result, fallback: str) -> str:
+    """Return a compact stderr/stdout message for a failed subprocess."""
+    text = (
+        getattr(result, "stderr", "") or getattr(result, "stdout", "") or fallback
+    ).strip()
+    return text[:256] or fallback
+
+
+def _extract_last_sync_time(output: str) -> str:
+    """Best-effort parse of a timedatectl timesync-status timestamp line."""
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        lowered = line.lower()
+        if lowered.startswith("last synchronized:") or lowered.startswith(
+            "last synchronization:"
+        ):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 def _live_firmware_version() -> str:
     """Read the live release version from /etc/os-release.
 
@@ -259,6 +279,38 @@ class SettingsService:
             log.warning("Failed to read time status: %s", e)
         return info
 
+    def get_timesync_status(self) -> dict:
+        """Return best-effort last-sync metadata from timedatectl."""
+        info = {"last_sync_time": ""}
+        try:
+            result = subprocess.run(
+                ["timedatectl", "timesync-status", "--no-pager"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            info["last_sync_time"] = _extract_last_sync_time(result.stdout or "")
+        except (OSError, subprocess.SubprocessError) as e:
+            log.info("Failed to read timesync status: %s", e)
+        return info
+
+    def restart_timesyncd(self) -> tuple[str, int]:
+        """Restart systemd-timesyncd using the standard time-helper pattern."""
+        try:
+            result = subprocess.run(
+                ["systemctl", "restart", "systemd-timesyncd"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            return str(e), 500
+        if result.returncode != 0:
+            return _trim_command_error(result, "systemctl restart failed"), 500
+        return "System time resync requested", 200
+
     def set_manual_time(
         self, iso_time: str, requesting_user: str = "", requesting_ip: str = ""
     ) -> tuple[str, int]:
@@ -285,8 +337,7 @@ class SettingsService:
                 check=False,
             )
             if result.returncode != 0:
-                err = (result.stderr or result.stdout or "timedatectl failed").strip()
-                return err, 500
+                return _trim_command_error(result, "timedatectl failed"), 500
         except (OSError, subprocess.SubprocessError) as e:
             return str(e), 500
 

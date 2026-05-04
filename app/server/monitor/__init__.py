@@ -44,6 +44,7 @@ from monitor.services.storage_service import StorageService
 from monitor.services.streaming_service import StreamingService
 from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
+from monitor.services.time_health_service import TimeHealthService
 from monitor.services.totp_service import TotpService
 from monitor.services.user_service import UserService
 from monitor.services.watchdog_notifier import WatchdogNotifier
@@ -334,6 +335,10 @@ def _init_services(app):
         app.settings_service.reapply_persisted_time_settings()
     except Exception as _e:  # pragma: no cover — best-effort
         app.logger.warning("reapply_persisted_time_settings failed: %s", _e)
+    app.time_health_service = TimeHealthService(
+        store=app.store,
+        settings_service=app.settings_service,
+    )
 
     # Provisioning service — first-boot setup wizard
     app.provisioning_service = ProvisioningService(
@@ -426,6 +431,7 @@ def _init_services(app):
         audit=app.audit,
         recordings_service=app.recordings_service,
         health_module=_health_module,
+        time_health=app.time_health_service,
     )
     app.watchdog_notifier = WatchdogNotifier(probe_url=app.config["WATCHDOG_PROBE_URL"])
 

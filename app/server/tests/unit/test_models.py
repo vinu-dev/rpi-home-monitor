@@ -21,6 +21,8 @@ class TestCamera:
         assert cam.recording_schedule == []
         assert cam.recording_motion_enabled is False
         assert cam.desired_stream_state == "stopped"
+        assert cam.last_beat_camera_ts == ""
+        assert cam.pending_config == {}
 
     def test_create_camera_full(self, sample_camera):
         assert sample_camera.id == "cam-abc123"

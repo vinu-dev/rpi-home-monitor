@@ -734,3 +734,28 @@ class TestTimeHelpers:
         assert info["ntp_active"] is True
         assert info["ntp_synchronized"] is True
         assert "2026-04-18" in info["system_time"]
+
+    def test_get_timesync_status_parses_last_sync_line(self):
+        svc, _ = _make_service()
+        fake = (
+            "Server: ntp.example.net\nLast synchronized: Sat 2026-04-18 10:00:00 UTC\n"
+        )
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout=fake, stderr="")
+            info = svc.get_timesync_status()
+        assert info["last_sync_time"] == "Sat 2026-04-18 10:00:00 UTC"
+
+    def test_restart_timesyncd_invokes_systemctl(self):
+        svc, _ = _make_service()
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            msg, status = svc.restart_timesyncd()
+        assert status == 200
+        assert msg == "System time resync requested"
+        run.assert_called_once_with(
+            ["systemctl", "restart", "systemd-timesyncd"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )

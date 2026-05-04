@@ -411,6 +411,116 @@ components:
           type: string
         rtc_time:
           type: string
+    TimeHealthCamera:
+      type: object
+      required: [id, name, drift_seconds, state]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        drift_seconds:
+          type: number
+          nullable: true
+        state:
+          type: string
+          enum: [green, amber, red, unknown]
+    TimeHealthServer:
+      type: object
+      required: [ntp_active, ntp_synchronized, unsynced_seconds, last_sync_time]
+      properties:
+        ntp_active:
+          type: boolean
+        ntp_synchronized:
+          type: boolean
+        unsynced_seconds:
+          type: integer
+          nullable: true
+        last_sync_time:
+          type: string
+    TimeHealth:
+      type: object
+      required: [state, server, cameras, worst_camera, worst_drift_seconds]
+      properties:
+        state:
+          type: string
+          enum: [green, amber, red, unknown]
+        server:
+          $ref: "#/components/schemas/TimeHealthServer"
+        cameras:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeHealthCamera"
+        worst_camera:
+          type: string
+          nullable: true
+        worst_drift_seconds:
+          type: number
+          nullable: true
+    SystemSummaryDetails:
+      type: object
+      required: [cameras, storage, recorder, recent_errors, time_health]
+      properties:
+        cameras:
+          type: object
+          required: [online, total, offline_names]
+          properties:
+            online:
+              type: integer
+            total:
+              type: integer
+            offline_names:
+              type: array
+              items:
+                type: string
+            throttled_names:
+              type: array
+              items:
+                type: string
+            faulted_names:
+              type: array
+              items:
+                type: string
+        storage:
+          type: object
+          required: [percent, retention_days, free_gb, total_gb]
+          properties:
+            percent:
+              type: number
+            retention_days:
+              type: number
+              nullable: true
+            free_gb:
+              type: number
+            total_gb:
+              type: number
+        recorder:
+          type: object
+          required: [cpu_percent, cpu_temp_c, memory_percent]
+          properties:
+            cpu_percent:
+              type: number
+            cpu_temp_c:
+              type: number
+            memory_percent:
+              type: number
+        recent_errors:
+          type: integer
+        time_health:
+          $ref: "#/components/schemas/TimeHealth"
+    SystemSummary:
+      type: object
+      required: [state, summary, details, deep_link]
+      properties:
+        state:
+          type: string
+          enum: [green, amber, red]
+        summary:
+          type: string
+        details:
+          $ref: "#/components/schemas/SystemSummaryDetails"
+        deep_link:
+          type: string
     WifiStatus:
       type: object
       properties:
@@ -882,6 +992,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /api/v1/system/summary:
+    get:
+      tags: [system]
+      summary: Tier-1 derived dashboard summary
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: System summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemSummary"
+        "401":
+          description: Not authenticated
+  /api/v1/system/time/health:
+    get:
+      tags: [system]
+      summary: Derived server and camera time integrity (admin only)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Time health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeHealth"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Admin role required
+  /api/v1/system/time/resync:
+    post:
+      tags: [system]
+      summary: Restart timesyncd on the server or queue a camera resync
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target:
+                  type: string
+      responses:
+        "200":
+          description: Resync requested or already queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Missing or invalid target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Admin role required
+        "404":
+          description: Unknown camera target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Restart or queue operation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/system/info:
     get:
       tags: [system]

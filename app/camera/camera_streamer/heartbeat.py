@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import ssl
+import subprocess
 import threading
 import time
 import urllib.error
@@ -45,6 +46,26 @@ HEARTBEAT_JITTER = 3  # max random jitter in seconds to spread load
 # 15s each is ~75s, comfortably above the OFFLINE_TIMEOUT (30s) used on
 # the server side.
 UNPAIR_401_THRESHOLD = 5
+
+
+def _restart_timesyncd() -> None:
+    # REQ: SWR-025; RISK: RISK-015; SEC: SC-002; TEST: TC-030
+    try:
+        result = subprocess.run(
+            ["systemctl", "restart", "systemd-timesyncd"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("Failed to restart systemd-timesyncd: %s", exc)
+        return
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "systemctl restart failed").strip()
+        log.warning("systemd-timesyncd restart failed: %s", detail[:256])
+        return
+    log.info("Restarted systemd-timesyncd after server-requested time resync")
 
 
 def _build_signature(
@@ -437,6 +458,11 @@ class HeartbeatSender:
         """
         log.info("Applying pending config from server heartbeat response: %s", pending)
         try:
+            pending = dict(pending or {})
+            if pending.pop("time_resync", False):
+                _restart_timesyncd()
+            if not pending:
+                return
             body = json.dumps(pending).encode()
             params, _, err = parse_control_request(body)
             if err:

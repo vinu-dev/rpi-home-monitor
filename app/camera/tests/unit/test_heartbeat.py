@@ -500,6 +500,53 @@ class TestHeartbeatSender:
         mock_handler_cls.assert_not_called()
         mock_thread_cls.assert_not_called()
 
+    def test_apply_pending_config_restarts_timesyncd_for_time_resync(self):
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.subprocess.run",
+                return_value=MagicMock(returncode=0, stdout="", stderr=""),
+            ) as mock_run,
+            patch("camera_streamer.heartbeat.ControlHandler") as mock_handler_cls,
+        ):
+            sender._apply_pending_config({"time_resync": True})
+
+        mock_run.assert_called_once_with(
+            ["systemctl", "restart", "systemd-timesyncd"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        mock_handler_cls.assert_not_called()
+
+    def test_apply_pending_config_handles_time_resync_and_stream_config(self):
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+        mock_handler = MagicMock()
+        mock_handler.set_config.return_value = ({"applied": True}, "", 200)
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.subprocess.run",
+                return_value=MagicMock(returncode=0, stdout="", stderr=""),
+            ) as mock_run,
+            patch(
+                "camera_streamer.heartbeat.parse_control_request",
+                return_value=({"fps": 30}, 0, ""),
+            ),
+            patch(
+                "camera_streamer.heartbeat.ControlHandler", return_value=mock_handler
+            ),
+            patch("camera_streamer.heartbeat.notify_config_change"),
+        ):
+            sender._apply_pending_config({"time_resync": True, "fps": 30})
+
+        mock_run.assert_called_once()
+        mock_handler.set_config.assert_called_once()
+
     def test_notify_thread_failure_does_not_propagate(self):
         """Threading.Thread itself raising must not break the apply path —
         the camera should log and continue, not crash the heartbeat loop."""

@@ -86,6 +86,56 @@ class TestSystemSummary:
         assert client.get("/api/v1/system/summary").status_code == 200
 
 
+class TestTimeHealthEndpoints:
+    def test_get_requires_admin(self, logged_in_client):
+        client = logged_in_client("viewer")
+        assert client.get("/api/v1/system/time/health").status_code == 403
+
+    def test_get_returns_payload(self, app, logged_in_client):
+        app.time_health_service = MagicMock()
+        app.time_health_service.compute_health.return_value = {
+            "state": "amber",
+            "server": {
+                "ntp_active": True,
+                "ntp_synchronized": False,
+                "unsynced_seconds": 15,
+                "last_sync_time": "",
+            },
+            "cameras": [],
+            "worst_camera": None,
+            "worst_drift_seconds": None,
+        }
+        client = logged_in_client()
+        resp = client.get("/api/v1/system/time/health")
+        assert resp.status_code == 200
+        assert resp.get_json()["state"] == "amber"
+
+    def test_resync_requires_target(self, logged_in_client):
+        client = logged_in_client()
+        resp = client.post("/api/v1/system/time/resync", json={})
+        assert resp.status_code == 400
+
+    def test_resync_success_logs_audit(self, app, logged_in_client):
+        app.time_health_service = MagicMock()
+        app.time_health_service.request_resync.return_value = (
+            "System time resync requested",
+            200,
+            True,
+        )
+        app.audit = MagicMock()
+        client = logged_in_client()
+        app.audit.log_event.reset_mock()
+        resp = client.post("/api/v1/system/time/resync", json={"target": "server"})
+        assert resp.status_code == 200
+        assert resp.get_json()["message"] == "System time resync requested"
+        app.audit.log_event.assert_called_once_with(
+            "TIME_RESYNC_REQUESTED",
+            user="admin",
+            ip="127.0.0.1",
+            detail="target=server",
+        )
+
+
 class TestTailscaleEndpoints:
     """Test Tailscale VPN management endpoints."""
 
