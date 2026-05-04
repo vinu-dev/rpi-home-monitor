@@ -1,0 +1,95 @@
+{# REQ: SWR-059, SWR-061; RISK: RISK-023, RISK-024; SEC: SC-023, SC-024; TEST: TC-051, TC-053 #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ resource_name }} - Shared Camera</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="public-share-body">
+    <main class="public-share-shell">
+        <section class="public-share-card">
+            <div class="public-share-header">
+                <img class="public-share-logo"
+                     src="{{ url_for('static', filename='images/logo.svg') }}"
+                     alt="Home Monitor">
+                <div>
+                    <p class="public-share-kicker">Shared live camera</p>
+                    <h1 class="public-share-title">{{ resource_name }}</h1>
+                </div>
+            </div>
+            <p class="public-share-copy">
+                Shared by {{ device_name }}. This public link shows one live camera and nothing else.
+            </p>
+            <div class="public-share-player" id="share-live-frame">
+                <video class="public-share-video" id="share-live-video" autoplay muted playsinline></video>
+                <div class="public-share-watermark">
+                    Shared by {{ device_name }}
+                </div>
+                <div class="public-share-overlay" id="share-live-overlay">Loading stream...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/hls.min.js') }}"></script>
+    <script>
+    (function() {
+        var videoEl = document.getElementById('share-live-video');
+        var overlayEl = document.getElementById('share-live-overlay');
+        var streamUrl = {{ hls_url|tojson }};
+
+        function setOverlay(text) {
+            overlayEl.textContent = text;
+            overlayEl.style.display = '';
+        }
+
+        function hideOverlay() {
+            overlayEl.style.display = 'none';
+        }
+
+        function startNative() {
+            videoEl.src = streamUrl;
+            videoEl.addEventListener('loadedmetadata', function onLoaded() {
+                videoEl.removeEventListener('loadedmetadata', onLoaded);
+                hideOverlay();
+                videoEl.play().catch(function() {});
+            });
+            videoEl.addEventListener('error', function onErr() {
+                videoEl.removeEventListener('error', onErr);
+                setOverlay('Stream unavailable');
+            });
+            videoEl.play().catch(function() {});
+        }
+
+        if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            startNative();
+            return;
+        }
+
+        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            var hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+            });
+            hls.loadSource(streamUrl);
+            hls.attachMedia(videoEl);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                hideOverlay();
+                videoEl.play().catch(function() {});
+            });
+            hls.on(Hls.Events.ERROR, function(_event, data) {
+                if (data.fatal) {
+                    setOverlay('Stream unavailable');
+                    hls.destroy();
+                }
+            });
+            return;
+        }
+
+        setOverlay('Live playback is not supported in this browser');
+    })();
+    </script>
+</body>
+</html>

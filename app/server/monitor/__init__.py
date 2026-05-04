@@ -35,6 +35,7 @@ from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recording_scheduler import RecordingScheduler
 from monitor.services.recordings_service import RecordingsService
 from monitor.services.settings_service import SettingsService
+from monitor.services.share_link_service import ShareLinkService
 from monitor.services.snapshot_extractor import SnapshotExtractor
 from monitor.services.storage_manager import StorageManager
 from monitor.services.storage_service import StorageService
@@ -292,6 +293,12 @@ def _init_services(app):
         audit=app.audit,
         live_dir=app.config["LIVE_DIR"],
         default_recordings_dir=recordings_dir,
+    )
+    app.share_link_service = ShareLinkService(
+        store=app.store,
+        recordings_service=app.recordings_service,
+        live_dir=app.config["LIVE_DIR"],
+        audit=app.audit,
     )
 
     # Pairing service — camera cert exchange and revocation
@@ -620,6 +627,7 @@ def _register_blueprints(app):
     from monitor.api.pairing import pairing_bp
     from monitor.api.recordings import recordings_bp
     from monitor.api.settings import settings_bp
+    from monitor.api.share import share_api_bp, share_public_bp
     from monitor.api.storage import storage_bp
     from monitor.api.system import system_bp
     from monitor.api.users import users_bp
@@ -636,6 +644,7 @@ def _register_blueprints(app):
     app.register_blueprint(users_totp_bp, url_prefix="/api/v1/users")
     app.register_blueprint(cameras_bp, url_prefix="/api/v1/cameras")
     app.register_blueprint(recordings_bp, url_prefix="/api/v1/recordings")
+    app.register_blueprint(share_api_bp, url_prefix="/api/v1/share")
     app.register_blueprint(live_bp, url_prefix="/api/v1/live")
     app.register_blueprint(system_bp, url_prefix="/api/v1/system")
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
@@ -649,6 +658,7 @@ def _register_blueprints(app):
     app.register_blueprint(alerts_bp, url_prefix="/api/v1/alerts")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1/notifications")
     app.register_blueprint(motion_events_bp, url_prefix="/api/v1/motion-events")
+    app.register_blueprint(share_public_bp)
     # Click-through router at /events/<id>. Mounted at root (not /api/v1)
     # so it can issue user-navigable redirects into /recordings and /live.
     app.register_blueprint(events_router_bp)

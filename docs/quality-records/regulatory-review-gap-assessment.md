@@ -11,15 +11,15 @@ regulatory opinion.
 
 Reviewed areas:
 
-- Intended use and user needs: UN-001 through UN-022
-- System requirements: SYS-001 through SYS-030
-- Software requirements: SWR-001 through SWR-055
+- Intended use and user needs: UN-001 through UN-023
+- System requirements: SYS-001 through SYS-032
+- Software requirements: SWR-001 through SWR-061
 - Hardware requirements: HWR-001 through HWR-018
-- Architecture: ARCH-001 through ARCH-015, SWA-001 through SWA-025, HWA-001 through HWA-012
-- Safety risk: HAZ-001 through HAZ-022, RISK-001 through RISK-022, RC-001 through RC-022
-- DFMEA: DFMEA-001 through DFMEA-021
-- Cybersecurity: SEC-001 through SEC-016, THREAT-001 through THREAT-020, SC-001 through SC-021
-- Verification: TC-001 through TC-049
+- Architecture: ARCH-001 through ARCH-016, SWA-001 through SWA-026, HWA-001 through HWA-012
+- Safety risk: HAZ-001 through HAZ-025, RISK-001 through RISK-025, RC-001 through RC-023
+- DFMEA: DFMEA-001 through DFMEA-022
+- Cybersecurity: SEC-001 through SEC-017, THREAT-001 through THREAT-022, SC-001 through SC-024
+- Verification: TC-001 through TC-053
 - Traceability automation and code annotation baseline
 
 ## Review Findings
@@ -41,7 +41,7 @@ Reviewed areas:
 The current draft is substantially more complete than the initial baseline for
 engineering review. It covers core product operation, setup, user management,
 storage, media handling, desired/observed camera state, rich motion
-notification design, live transport proxying, OTA, release evidence,
+notification design, live transport proxying, public share links, OTA, release evidence,
 cybersecurity, hardware assumptions, CI, and traceability.
 
 It is not complete as approved quality-system evidence. Required next steps are

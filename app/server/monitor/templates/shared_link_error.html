@@ -1,0 +1,23 @@
+{# REQ: SWR-059, SWR-060; RISK: RISK-023, RISK-025; SEC: SC-022, SC-024; TEST: TC-052 #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Link - Home Monitor</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="public-share-body">
+    <main class="public-share-shell">
+        <section class="public-share-card public-share-card--narrow">
+            <img class="public-share-logo"
+                 src="{{ url_for('static', filename='images/logo.svg') }}"
+                 alt="Home Monitor">
+            <p class="public-share-kicker">Shared link</p>
+            <h1 class="public-share-title">Link unavailable</h1>
+            <p class="public-share-copy">{{ message }}</p>
+        </section>
+    </main>
+</body>
+</html>

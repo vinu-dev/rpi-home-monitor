@@ -1,0 +1,56 @@
+{# REQ: SWR-058, SWR-061; RISK: RISK-024, RISK-025; SEC: SC-023, SC-024; TEST: TC-050, TC-053 #}
+<div class="share-modal" id="share-modal" hidden>
+    <div class="share-modal__scrim" data-share-close></div>
+    <div class="share-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+        <div class="share-modal__header">
+            <div>
+                <p class="share-modal__eyebrow">Create share link</p>
+                <h2 class="share-modal__title" id="share-modal-title">Share this resource</h2>
+            </div>
+            <button type="button" class="btn btn--secondary btn--small" data-share-close>Close</button>
+        </div>
+
+        <p class="share-modal__resource" id="share-modal-resource"></p>
+
+        <label class="form-group">
+            <span>Expires</span>
+            <select class="form-input" id="share-ttl">
+                <option value="1h">1 hour</option>
+                <option value="24h" selected>24 hours</option>
+                <option value="7d">7 days</option>
+                <option value="30d">30 days</option>
+                <option value="never">Never</option>
+            </select>
+        </label>
+
+        <label class="checkbox-row">
+            <input type="checkbox" id="share-pin-ip">
+            <span>Lock to the first viewer IP subnet</span>
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" id="share-pin-ua">
+            <span>Lock to the first viewer browser family</span>
+        </label>
+
+        <label class="form-group">
+            <span>Audit note</span>
+            <input type="text" class="form-input" id="share-note" maxlength="120" placeholder="Optional note">
+        </label>
+
+        <div class="share-modal__result" id="share-result" hidden>
+            <label class="form-group">
+                <span>Share URL</span>
+                <input type="text" class="form-input" id="share-url" readonly>
+            </label>
+            <div class="share-modal__actions">
+                <button type="button" class="btn btn--secondary btn--small" id="share-copy-btn">Copy</button>
+                <a class="btn btn--secondary btn--small" id="share-manage-btn" href="/shares">Manage links</a>
+            </div>
+        </div>
+
+        <div class="share-modal__actions">
+            <button type="button" class="btn btn--secondary btn--small" data-share-close>Cancel</button>
+            <button type="button" class="btn btn--primary btn--small" id="share-create-btn">Create share link</button>
+        </div>
+    </div>
+</div>

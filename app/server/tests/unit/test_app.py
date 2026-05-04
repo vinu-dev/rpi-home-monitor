@@ -80,7 +80,7 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 22 blueprints.
+        """We expect exactly 24 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -90,8 +90,9 @@ class TestBlueprintRegistration:
           19 after ADR-0027 added the `notifications` API (#128).
           20 after outbound webhook management added the `webhooks` API (#239).
           22 after #238 added TOTP 2FA (auth_totp + users_totp blueprints).
+          24 after #244 added admin + public share-link blueprints.
         """
-        assert len(app.blueprints) == 22
+        assert len(app.blueprints) == 24
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints
@@ -101,3 +102,9 @@ class TestBlueprintRegistration:
 
     def test_audit_blueprint_registered(self, app):
         assert "audit" in app.blueprints
+
+    def test_share_api_blueprint_registered(self, app):
+        assert "share_api" in app.blueprints
+
+    def test_share_public_blueprint_registered(self, app):
+        assert "share_public" in app.blueprints

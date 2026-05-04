@@ -28,6 +28,7 @@ compliance with any cybersecurity regulation or standard.
 | SEC-014 | Runtime evidence records | Logs, audit events, faults, health telemetry, and system summaries. | SYS-020, SYS-022, SWR-044, SWR-051 |
 | SEC-015 | Production/development profiles | Dev credentials, production image profile, debug paths, service hardening, and firewall/service exposure. | SYS-024, SYS-030, SWR-049, SWR-050 |
 | SEC-016 | Public API contracts | Server API, camera API, machine-client schemas, and browser/API compatibility records. | SYS-027, SWR-045 |
+| SEC-017 | Public share-link surfaces | Share-link tokens, recipient viewer routes, share metadata, and unauthenticated token-scoped media delivery. | SYS-032, SWR-058, SWR-059, SWR-060, SWR-061 |
 
 ## Security Objectives
 
@@ -50,6 +51,7 @@ Security review is required for changes to:
 - SBOM, dependency, or build pipeline inputs
 - provisioning/setup defaults, hostnames, or device identity
 - USB/media deletion, live media serving, WebRTC proxy, or notification media
+- public share links, recipient viewers, or token-scoped media delivery
 - production/development profile, systemd hardening, firewall, or release
   promotion behavior
 - logging, fault, audit, or telemetry fields that may contain secrets or

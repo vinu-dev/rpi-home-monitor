@@ -101,6 +101,11 @@ class TestProtectedPages:
         assert response.status_code == 302
         assert "/login" in response.headers["Location"]
 
+    def test_shares_redirects_to_login(self, client):
+        response = client.get("/shares")
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+
     def test_dashboard_renders_when_authenticated(self, client):
         with client.session_transaction() as sess:
             sess["user_id"] = "user-001"
@@ -131,6 +136,14 @@ class TestProtectedPages:
             sess["username"] = "admin"
             sess["role"] = "admin"
         response = client.get("/settings")
+        assert response.status_code == 200
+
+    def test_shares_renders_when_authenticated(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/shares")
         assert response.status_code == 200
 
     def test_alerts_redirects_to_login(self, client):
@@ -443,6 +456,30 @@ class TestAlertCenterUI:
         assert "sort=importance" in body or "'sort'" in body
         # Alpine state tracks the current mode.
         assert "sortMode" in body
+
+    def test_live_page_has_share_controls(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/live")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "Share live view" in body
+        assert "Manage share links" in body
+        assert "Create share link" in body
+
+    def test_recordings_page_has_share_controls(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/recordings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "Share clip" in body
+        assert "Manage links" in body
+        assert "Lock to the first viewer IP subnet" in body
 
 
 class TestDashboardSensorAwareSettings:

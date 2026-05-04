@@ -51,6 +51,10 @@
             </video>
             <div class="inline-player__bar">
                 <span id="rec-playing-label" class="inline-player__label"></span>
+                <div class="share-toolbar share-toolbar--compact" id="rec-share-toolbar" hidden>
+                    <button class="btn btn--secondary btn--small" id="btn-share-clip" type="button">Share clip</button>
+                    <a class="btn btn--secondary btn--small" id="btn-manage-clip-shares" href="/shares">Manage links</a>
+                </div>
                 <button class="btn btn--secondary btn--small" id="btn-close-player" style="display:none;">Close</button>
             </div>
         </div>
@@ -108,6 +112,8 @@
         </button>
     </div>
 </div>
+
+{% include "share_link_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
@@ -133,11 +139,28 @@
     var dangerZone = document.getElementById('rec-danger-zone');
     var btnDeleteDate = document.getElementById('btn-delete-date');
     var btnDeleteCamera = document.getElementById('btn-delete-camera');
+    var shareToolbar = document.getElementById('rec-share-toolbar');
+    var btnShareClip = document.getElementById('btn-share-clip');
+    var btnManageClipShares = document.getElementById('btn-manage-clip-shares');
+    var shareModal = document.getElementById('share-modal');
+    var shareModalTitle = document.getElementById('share-modal-title');
+    var shareModalResource = document.getElementById('share-modal-resource');
+    var shareTtl = document.getElementById('share-ttl');
+    var sharePinIp = document.getElementById('share-pin-ip');
+    var sharePinUa = document.getElementById('share-pin-ua');
+    var shareNote = document.getElementById('share-note');
+    var shareResult = document.getElementById('share-result');
+    var shareUrl = document.getElementById('share-url');
+    var shareCreateBtn = document.getElementById('share-create-btn');
+    var shareCopyBtn = document.getElementById('share-copy-btn');
+    var shareManageBtn = document.getElementById('share-manage-btn');
 
     var cameras = [];             // [{id, name, status}]
     var availableDates = [];
     var userRole = '';
     var currentPlayingUrl = null;
+    var currentPlayingClip = null;
+    var shareContext = null;
 
     // ------------------------------------------------------------------
     // Init
@@ -159,6 +182,16 @@
     }
 
     function isAdmin() { return userRole === 'admin'; }
+
+    function refreshShareUi() {
+        var visible = isAdmin() && !!currentPlayingClip;
+        shareToolbar.hidden = !visible;
+        if (!visible) return;
+        var resourceId = currentPlayingClip.resource_id;
+        var href =
+            '/shares?resource_type=clip&resource_id=' + encodeURIComponent(resourceId);
+        btnManageClipShares.setAttribute('href', href);
+    }
 
     function currentCameraStatus() {
         var id = cameraSelect.value;
@@ -305,7 +338,7 @@
                 if (e.target.closest('.btn-play-clip')) {
                     // Play button clicked — handled via normal bubbling.
                 }
-                playClip(card.getAttribute('data-url'), card.getAttribute('data-label'));
+                playClip(card);
             });
         });
 
@@ -329,6 +362,15 @@
         card.setAttribute('data-camera', clip.camera_id);
         card.setAttribute('data-date', clip.date);
         card.setAttribute('data-filename', clip.filename);
+        card.setAttribute(
+            'data-resource-id',
+            clip.camera_id + '/' + clip.date + '/' + clip.filename
+        );
+        card.setAttribute(
+            'data-resource-name',
+            ((cameras.find(function(c) { return c.id === clip.camera_id; }) || {}).name || clip.camera_id) +
+            ' \u00B7 ' + clip.date + ' \u00B7 ' + clip.filename
+        );
 
         // Admin gets a subtle checkbox for selection. Delete itself is
         // never on the card — it only appears in the floating selection
@@ -380,10 +422,16 @@
         });
     }
 
-    function playClip(url, label) {
+    function playClip(card) {
+        var url = card.getAttribute('data-url');
+        var label = card.getAttribute('data-label');
         // Intentionally no scrollIntoView: the player is sticky (desktop) or
         // above the list (mobile), so playback starts in place.
         currentPlayingUrl = url;
+        currentPlayingClip = {
+            resource_id: card.getAttribute('data-resource-id'),
+            resource_name: card.getAttribute('data-resource-name'),
+        };
         videoEl.src = url;
         videoEl.classList.remove('hidden');
         placeholderEl.classList.add('hidden');
@@ -392,6 +440,7 @@
         playingLabel.textContent = 'Playing: ' + label;
         btnClose.style.display = '';
         refreshPlayingHighlight();
+        refreshShareUi();
     }
 
     function closePlayer() {
@@ -403,7 +452,54 @@
         playingLabel.textContent = '';
         btnClose.style.display = 'none';
         currentPlayingUrl = null;
+        currentPlayingClip = null;
         refreshPlayingHighlight();
+        refreshShareUi();
+    }
+
+    function openShareModal() {
+        if (!currentPlayingClip) return;
+        shareContext = {
+            resource_type: 'clip',
+            resource_id: currentPlayingClip.resource_id,
+            resource_name: currentPlayingClip.resource_name,
+        };
+        shareModalTitle.textContent = 'Share clip';
+        shareModalResource.textContent = shareContext.resource_name;
+        shareResult.hidden = true;
+        shareUrl.value = '';
+        shareNote.value = '';
+        sharePinIp.checked = false;
+        sharePinUa.checked = false;
+        shareManageBtn.href =
+            '/shares?resource_type=clip&resource_id=' +
+            encodeURIComponent(shareContext.resource_id);
+        shareModal.hidden = false;
+    }
+
+    function closeShareModal() {
+        shareModal.hidden = true;
+        shareCreateBtn.disabled = false;
+    }
+
+    function createShareLink() {
+        if (!shareContext) return;
+        shareCreateBtn.disabled = true;
+        window.HM.api.post('/api/v1/share/links', {
+            resource_type: shareContext.resource_type,
+            resource_id: shareContext.resource_id,
+            ttl: shareTtl.value,
+            pin_ip: sharePinIp.checked,
+            pin_ua: sharePinUa.checked,
+            note: shareNote.value.trim(),
+        }).then(function(result) {
+            shareCreateBtn.disabled = false;
+            shareResult.hidden = false;
+            shareUrl.value = result.link.share_url;
+        }).catch(function(err) {
+            shareCreateBtn.disabled = false;
+            window.HM.toast(err.message || 'Could not create share link', 'error');
+        });
     }
 
     // ------------------------------------------------------------------
@@ -550,6 +646,7 @@
         moreOptionsWrap.style.display = (isAdmin() && camId) ? '' : 'none';
         dangerZone.hidden = true;
         moreToggle.setAttribute('aria-expanded', 'false');
+        refreshShareUi();
 
         if (camId) {
             loadDates(camId);
@@ -597,6 +694,18 @@
 
     btnDeleteDate.addEventListener('click', deleteAllOnDate);
     btnDeleteCamera.addEventListener('click', deleteAllForCamera);
+    btnShareClip.addEventListener('click', openShareModal);
+    shareCreateBtn.addEventListener('click', createShareLink);
+    shareCopyBtn.addEventListener('click', function() {
+        navigator.clipboard.writeText(shareUrl.value).then(function() {
+            window.HM.toast('Share link copied', 'success');
+        }).catch(function() {
+            window.HM.toast('Could not copy share link', 'error');
+        });
+    });
+    shareModal.querySelectorAll('[data-share-close]').forEach(function(el) {
+        el.addEventListener('click', closeShareModal);
+    });
 
     function updateUrl() {
         var url = new URL(window.location);

@@ -320,3 +320,37 @@ class Clip:
         if self.date and self.start_time:
             return f"{self.date}T{self.start_time}Z"
         return ""
+
+
+@dataclass
+class ShareLink:
+    """Public, single-resource share link minted by an admin.
+
+    Tokens are persisted under /data/config/share_links.json. ``resource_id``
+    is:
+      - ``camera_id`` for live camera shares
+      - ``camera_id/YYYY-MM-DD/filename.mp4`` for clip shares
+
+    Pinning is first-use binding:
+      - ``pin_ip=True`` stores the first successful visitor IP and later
+        accepts the same /24 (IPv4) or /64 (IPv6) network.
+      - ``pin_ua=True`` stores a normalised browser-family signature on the
+        first successful access and later requires an exact match.
+    """
+
+    token: str
+    resource_type: str  # clip | camera
+    resource_id: str
+    owner_id: str
+    owner_username: str = ""
+    created_at: str = ""
+    expires_at: str = ""
+    revoked_at: str = ""
+    note: str = ""
+    pin_ip: bool = False
+    pin_ua: bool = False
+    pinned_ip: str = ""
+    pinned_ua: str = ""
+    access_count: int = 0
+    first_access_at: str = ""
+    last_access_at: str = ""

@@ -28,6 +28,7 @@ operator-managed VPN remote access. Existing narrative architecture remains in
 | ARCH-013 | Build and release boundary | Version sources, release workflows, OTA signing, SBOM generation, dependency review, and artifact validation are treated as supply-chain controls. | SYS-023, SYS-028 | RISK-019, RISK-004 | SC-018, SC-017 | TC-043, TC-045 | `.github/workflows/`, `scripts/`, `docs/guides/ota-key-management.md` |
 | ARCH-014 | Production/development separation boundary | Development credentials, debug conveniences, profiles, systemd hardening, firewall policy, and production image behavior are separated and reviewed. | SYS-024, SYS-030 | RISK-018, RISK-019 | SC-019, SC-018 | TC-044, TC-047 | ADR-0007, ADR-0022, Yocto/systemd configs |
 | ARCH-015 | Operator evidence boundary | Logs, faults, audit records, timestamps, release versions, and system summary records form operator/maintainer evidence surfaces. | SYS-020, SYS-022, SYS-023 | RISK-020, RISK-012 | SC-020, SC-008, SC-018 | TC-017, TC-029, TC-041, TC-046 | `audit.py`, `faults.py`, `system_summary_service.py` |
+| ARCH-016 | Public share-link boundary | Admin-authenticated share management and unauthenticated recipient viewing are separated by scoped tokens, generic recipient errors, and no session coupling. | SYS-032 | RISK-023, RISK-024, RISK-025 | SC-022, SC-023, SC-024 | TC-050, TC-051, TC-052, TC-053 | ADR-0028, `api/share.py`, `share_link_service.py` |
 
 ## Data Flows
 
@@ -44,6 +45,7 @@ operator-managed VPN remote access. Existing narrative architecture remains in
 | WebRTC proxy | Browser live client requests WHEP actions through the server proxy. | Authenticated browser to controlled local upstream. | ARCH-010, SWR-031, SC-016 |
 | Motion notifications | Camera motion events are correlated with clips and local alerts. | Camera event to server alert/media record. | ARCH-012, SWR-040, SWR-041, SC-015 |
 | Build/release evidence | Maintainer workflows create versioned artifacts, SBOM evidence, and signed update inputs. | Developer/build host to release artifact boundary. | ARCH-013, SWR-046, SWR-047, SC-018 |
+| Public share link | Admin mints a scoped token; recipient fetches a single clip or camera through token-bound public routes. | Authenticated admin to unauthenticated public recipient. | ARCH-016, SWR-058, SWR-059, SWR-060, SWR-061 |
 
 ## Assumptions and Open Questions
 
