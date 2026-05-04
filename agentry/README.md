@@ -39,6 +39,9 @@ feature branches from `origin/feature/<id>-<slug>` before rebasing. This keeps
 stale role worktrees from reporting false merge conflicts after a supervisor or
 agent force-with-lease push.
 
+The standard Tester prompt opens pull requests with `gh pr create --body-file`
+so multi-line validation evidence does not depend on shell quoting behavior.
+
 ## Machine Setup
 
 Run once per machine:
@@ -96,9 +99,10 @@ new autonomous issue discovery or release automation.
 instead of pinning a dated Claude model unless a rollback is intentional.
 
 The start scripts currently pin Agentry to
-`f8da18a92e6fbbc87e77c56164f24e1317bb66c4`, which includes the reviewer
-comment workflow and the stream-json watchdog fix for active Claude Code tool
-activity during check-ins.
+`e7c8c9c18b9464b819549cea495c340532545ecb`, which includes the reviewer
+comment workflow, the stream-json watchdog fix for active Claude Code tool
+activity during check-ins, branch-reset hardening, and Tester PR body-file
+creation.
 
 ## Start
 
