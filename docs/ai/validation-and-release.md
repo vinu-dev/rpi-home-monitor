@@ -4,7 +4,7 @@
 
 | Area touched | Required validation |
 |--------------|---------------------|
-| Repository governance, docs, adapters | `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `python scripts/check_version_consistency.py`, `python scripts/check_versioning_design.py`, `pre-commit run --all-files` |
+| Repository governance, docs, adapters | `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `python scripts/check_version_consistency.py`, `python scripts/check_versioning_design.py`, `python -m pre_commit run --all-files` |
 | Requirements, risk, security, traceability, annotated code | `python tools/traceability/check_traceability.py`, `python scripts/ai/check_doc_links.py`, relevant tests |
 | Server Python | `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .` |
 | Camera Python | `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .` |
@@ -69,7 +69,7 @@ repo rules passed. At minimum, code changes must report:
 - `python scripts/ai/check_shell_scripts.py`
 - `python scripts/check_version_consistency.py`
 - `python scripts/check_versioning_design.py`
-- `pre-commit run --all-files`
+- `python -m pre_commit run --all-files`
 - `ruff check .`
 - `ruff format --check .`
 - the relevant server, camera, contract, security, coverage, Yocto, or hardware
@@ -77,8 +77,8 @@ repo rules passed. At minimum, code changes must report:
 
 If a required command cannot run on the host, the PR must state the exact
 command, the reason it could not run, and the follow-up environment needed. A
-missing local tool such as `pre-commit` is not a pass; install it or report the
-validation as blocked.
+missing local Python package such as `pre-commit` is not a pass; install it or
+report the validation as blocked.
 
 ## Branch Protection Recommendation
 
