@@ -21,7 +21,7 @@ Events:
 - FIREWALL_BLOCKED
 - CERT_GENERATED, CERT_REVOKED
 - STORAGE_LOW, RETENTION_RISK   (#140 storage health, edge-detected)
-- AUDIT_LOG_CLEARED
+- AUDIT_LOG_CLEARED, AUDIT_LOG_EXPORTED, AUDIT_LOG_EXPORT_DENIED
 
 Log format (one JSON object per line):
 {
@@ -37,6 +37,7 @@ Rotation: max 50MB, retained 90 days.
 
 import json
 import logging
+import os
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,11 +90,15 @@ class AuditLogger:
         self._notify_listeners(entry)
 
     def clear_events(self, user: str = "", ip: str = "") -> None:
-        """Truncate the audit log and write an AUDIT_LOG_CLEARED sentinel.
+        """Replace the audit log with an AUDIT_LOG_CLEARED sentinel.
 
         Atomic under _lock: no concurrent log_event can interleave between
-        truncation and the sentinel write, preserving chain of custody.
+        replacement and the sentinel write, preserving chain of custody.
         The cleared log always begins with a record of who cleared it.
+
+        The sentinel is written to a temporary file and atomically replaced
+        into place so in-flight readers keep streaming the pre-clear snapshot
+        from their existing file descriptor.
         """
         entry = {
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -106,8 +111,10 @@ class AuditLogger:
 
         with self._lock:
             try:
-                with open(self.log_file, "w", encoding="utf-8") as f:
+                temp_file = self.log_file.with_suffix(".log.tmp")
+                with open(temp_file, "w", encoding="utf-8") as f:
                     f.write(line + "\n")
+                os.replace(temp_file, self.log_file)
             except OSError as e:
                 log.error("Failed to clear audit log: %s", e)
                 return
@@ -145,6 +152,62 @@ class AuditLogger:
             if len(events) >= limit:
                 break
         return events
+
+    def iter_events(
+        self,
+        start: str = "",
+        end: str = "",
+        event_type: str = "",
+        actor: str = "",
+    ):
+        """Yield audit entries oldest-first without buffering the whole file.
+
+        Args:
+            start: Inclusive lower timestamp bound (`YYYY-mm-ddTHH:MM:SSZ`).
+            end: Inclusive upper timestamp bound (`YYYY-mm-ddTHH:MM:SSZ`).
+            event_type: Optional exact event name or comma-separated names.
+            actor: Optional exact user/actor match.
+        """
+        if not self.log_file.exists():
+            return iter(())
+
+        allowed_events = {
+            value.strip() for value in event_type.split(",") if value.strip()
+        }
+
+        try:
+            handle = open(self.log_file, encoding="utf-8")
+        except OSError:
+            return iter(())
+
+        handle.seek(0, os.SEEK_END)
+        snapshot_end = handle.tell()
+        handle.seek(0)
+
+        def _iter():
+            try:
+                while handle.tell() < snapshot_end:
+                    line = handle.readline()
+                    if not line:
+                        break
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    timestamp = entry.get("timestamp", "")
+                    if start and timestamp < start:
+                        continue
+                    if end and timestamp > end:
+                        continue
+                    if allowed_events and entry.get("event") not in allowed_events:
+                        continue
+                    if actor and entry.get("user", "") != actor:
+                        continue
+                    yield entry
+            finally:
+                handle.close()
+
+        return _iter()
 
     def add_listener(self, listener) -> None:
         """Register a best-effort callback for newly written audit entries."""

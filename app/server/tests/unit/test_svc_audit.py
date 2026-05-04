@@ -136,6 +136,82 @@ class TestGetEvents:
         assert logger.get_events() == []
 
 
+class TestIterEvents:
+    """Test streaming audit-log reads."""
+
+    def test_iter_events_returns_oldest_first(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.log_event("FIRST")
+        logger.log_event("SECOND")
+        logger.log_event("THIRD")
+
+        events = list(logger.iter_events())
+
+        assert [entry["event"] for entry in events] == ["FIRST", "SECOND", "THIRD"]
+
+    def test_iter_events_filters_by_time_event_and_actor(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        log_file = data_dir / "logs" / "audit.log"
+        log_file.write_text(
+            "\n".join(
+                [
+                    '{"timestamp":"2026-05-04T09:00:00Z","event":"LOGIN_SUCCESS","user":"admin","ip":"","detail":"a"}',
+                    '{"timestamp":"2026-05-04T09:10:00Z","event":"LOGIN_FAILED","user":"admin","ip":"","detail":"b"}',
+                    '{"timestamp":"2026-05-04T09:20:00Z","event":"SESSION_LOGOUT","user":"viewer","ip":"","detail":"c"}',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        events = list(
+            logger.iter_events(
+                start="2026-05-04T09:05:00Z",
+                end="2026-05-04T09:20:00Z",
+                event_type="LOGIN_FAILED,SESSION_LOGOUT",
+                actor="admin",
+            )
+        )
+
+        assert len(events) == 1
+        assert events[0]["event"] == "LOGIN_FAILED"
+
+    def test_iter_events_skips_corrupt_lines(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        log_file = data_dir / "logs" / "audit.log"
+        log_file.write_text(
+            '{"timestamp":"2026-05-04T09:00:00Z","event":"GOOD","user":"","ip":"","detail":""}\n'
+            "not json\n"
+            '{"timestamp":"2026-05-04T09:10:00Z","event":"ALSO_GOOD","user":"","ip":"","detail":""}\n',
+            encoding="utf-8",
+        )
+
+        events = list(logger.iter_events())
+
+        assert [entry["event"] for entry in events] == ["GOOD", "ALSO_GOOD"]
+
+    def test_iter_events_snapshot_excludes_late_appends(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.log_event("BEFORE")
+
+        iterator = logger.iter_events()
+        logger.log_event("AFTER")
+
+        events = list(iterator)
+
+        assert [entry["event"] for entry in events] == ["BEFORE"]
+
+    def test_clear_preserves_existing_reader_snapshot(self, data_dir):
+        logger = AuditLogger(str(data_dir / "logs"))
+        logger.log_event("FIRST")
+        logger.log_event("SECOND")
+
+        iterator = logger.iter_events()
+        logger.clear_events(user="admin")
+
+        assert [entry["event"] for entry in iterator] == ["FIRST", "SECOND"]
+
+
 class TestClearEvents:
     """Test audit log truncation via clear_events()."""
 

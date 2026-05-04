@@ -170,6 +170,30 @@ class TestAuthMeContract:
         _assert_fields(data, {"error"})
 
 
+class TestAuditExportContract:
+    """GET /api/v1/audit/events/export."""
+
+    def test_json_export_is_an_array(self, app, logged_in_client):
+        client = logged_in_client()
+        app.audit.clear_events(user="admin")
+        app.audit.log_event("LOGIN_SUCCESS", user="admin")
+
+        resp = client.get("/api/v1/audit/events/export?format=json")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)
+        if data:
+            _assert_fields(data[0], {"timestamp", "event", "user", "ip", "detail"})
+
+    def test_invalid_format_error_shape(self, logged_in_client):
+        client = logged_in_client()
+
+        resp = client.get("/api/v1/audit/events/export?format=xml")
+
+        _assert_fields(resp.get_json(), {"error"})
+
+
 # ===========================================================================
 # Camera contracts (/api/v1/cameras/*)
 # ===========================================================================

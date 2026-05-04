@@ -90,6 +90,7 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/system/health",
     "/api/v1/system/backup/snapshots",
     "/api/v1/audit/events",
+    "/api/v1/audit/events/export?format=csv",
     "/api/v1/auth/me",
     "/api/v1/share/links",
 ]
