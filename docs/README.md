@@ -57,6 +57,7 @@ development material:
 - [`guides/build-setup.md`](guides/build-setup.md)
 - [`guides/development-guide.md`](guides/development-guide.md)
 - [`guides/testing-guide.md`](guides/testing-guide.md)
+- [`guides/diagnostics-export.md`](guides/diagnostics-export.md)
 - [`guides/release-runbook.md`](guides/release-runbook.md)
 - [`guides/ota-key-management.md`](guides/ota-key-management.md)
 - [`guides/account-security.md`](guides/account-security.md)

@@ -1,4 +1,4 @@
-# REQ: SWR-001, SWR-045, SWR-056, SWR-057, SWR-063, SWR-064; RISK: RISK-001, RISK-002, RISK-017, RISK-018, RISK-020, RISK-021; SEC: SC-001, SC-012, SC-019, SC-020, SC-021; TEST: TC-004, TC-005, TC-042, TC-044, TC-047, TC-048, TC-049
+# REQ: SWR-001, SWR-045, SWR-056, SWR-057, SWR-063, SWR-064, SWR-068, SWR-070; RISK: RISK-001, RISK-002, RISK-017, RISK-018, RISK-020, RISK-021, RISK-026; SEC: SC-001, SC-012, SC-019, SC-020, SC-021, SC-025; TEST: TC-004, TC-005, TC-042, TC-044, TC-047, TC-048, TC-049, TC-055
 """
 RPi Home Monitor - Server Application
 
@@ -27,6 +27,7 @@ from monitor.services.cert_service import CertService
 from monitor.services.clip_stamp_queue import ClipStampQueue
 from monitor.services.clip_stamper import ClipStamper
 from monitor.services.config_backup_service import ConfigBackupService
+from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
@@ -149,6 +150,29 @@ def create_app(config=None):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
         SESSION_COOKIE_SECURE=True,
+        DIAGNOSTICS_MAX_BYTES=50 * 1024 * 1024,
+        DIAGNOSTICS_TIMEOUT_SECONDS=60,
+        DIAGNOSTICS_RATE_LIMIT_PER_SESSION=6,
+        DIAGNOSTICS_RATE_LIMIT_WINDOW_SECONDS=60 * 60,
+        DIAGNOSTICS_CLEANUP_GRACE_SECONDS=60,
+        DIAGNOSTICS_SECTION_CAPS={
+            "logs": 20 * 1024 * 1024,
+            "config": 1 * 1024 * 1024,
+            "hardware": 1 * 1024 * 1024,
+            "network": 1 * 1024 * 1024,
+            "systemd": 10 * 1024 * 1024,
+            "identity": 1 * 1024 * 1024,
+        },
+        DIAGNOSTICS_UNITS=[
+            "monitor.service",
+            "mediamtx.service",
+            "camera-streamer.service",
+            "tailscaled.service",
+            "monitor-wifi-watchdog.service",
+            "monitor-hotspot.service",
+            "avahi-homemonitor.service",
+            "gpio-trigger.service",
+        ],
         WATCHDOG_PROBE_URL="http://127.0.0.1:5000/healthz",
     )
     if config:
@@ -412,6 +436,19 @@ def _init_services(app):
         data_dir=app.config["DATA_DIR"],
         config_dir=app.config["CONFIG_DIR"],
         certs_dir=app.config["CERTS_DIR"],
+    )
+    app.diagnostics_service = DiagnosticsBundleService(
+        data_dir=app.config["DATA_DIR"],
+        config_dir=app.config["CONFIG_DIR"],
+        store=app.store,
+        audit=app.audit,
+        max_bytes=app.config["DIAGNOSTICS_MAX_BYTES"],
+        timeout_seconds=app.config["DIAGNOSTICS_TIMEOUT_SECONDS"],
+        section_caps=app.config["DIAGNOSTICS_SECTION_CAPS"],
+        units=app.config["DIAGNOSTICS_UNITS"],
+        rate_limit_per_session=app.config["DIAGNOSTICS_RATE_LIMIT_PER_SESSION"],
+        rate_limit_window_seconds=app.config["DIAGNOSTICS_RATE_LIMIT_WINDOW_SECONDS"],
+        cleanup_grace_seconds=app.config["DIAGNOSTICS_CLEANUP_GRACE_SECONDS"],
     )
 
     # Connect storage manager → streaming service for dir change notifications.

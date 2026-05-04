@@ -42,7 +42,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-016 | Information disclosure/Tampering | Certificate, pairing secret, encryption key, or OTA signing material is exposed or mishandled. | Cert store, pairing config, key files, release host. | Impersonation or malicious update. | SC-017, SC-005, SC-018 | SYS-028, SWR-034, SWR-043 | TC-032, TC-040, TC-043 | Draft |
 | THREAT-017 | Supply chain/Tampering | Build workflow, dependency input, SBOM, or release artifact is compromised or unverifiable. | GitHub Actions, scripts, Yocto, Python dependencies. | Vulnerable or malicious release. | SC-018, SC-007, SC-009 | SYS-023, SWR-046, SWR-047, SWR-048 | TC-043, TC-045 | Draft |
 | THREAT-018 | Elevation | Production image includes development credentials, debug paths, or weak service hardening. | Yocto configs, systemd units, firewall, default credentials. | Unauthorized access or larger blast radius. | SC-019, SC-018 | SYS-024, SYS-030, SWR-049, SWR-050 | TC-044, TC-047 | Draft |
-| THREAT-019 | Information disclosure/Repudiation | Logs, faults, audit, or summary records leak secrets or omit necessary evidence. | Runtime logs, audit store, alert/fault records. | Privacy leak or investigation gap. | SC-020, SC-008 | SYS-022, SYS-020, SWR-044, SWR-051 | TC-017, TC-029, TC-041, TC-046 | Draft |
+| THREAT-019 | Information disclosure/Repudiation | Logs, faults, audit, summary records, or diagnostics bundles leak secrets or omit necessary evidence. | Runtime logs, audit store, alert/fault records, diagnostics export bundles. | Privacy leak or investigation gap. | SC-020, SC-008, SC-025 | SYS-022, SYS-020, SYS-034, SWR-044, SWR-051, SWR-068, SWR-069, SWR-070 | TC-017, TC-029, TC-041, TC-046, TC-055 | Draft |
 | THREAT-020 | Tampering/Denial | Public API contract drift breaks deployed camera, browser, or automation clients. | Server/camera API schemas and routes. | Loss of monitoring, pairing, or update functions. | SC-021 | SYS-027, SWR-045 | TC-042 | Draft |
 | THREAT-021 | Information disclosure/Spoofing/Denial | Share token theft, brute force, or replay reaches token-scoped media. | Public share URLs, recipient browsers, unauthenticated public routes. | Unauthorized clip/live viewing or noisy abuse against public viewers. | SC-022, SC-024 | SYS-032, SWR-058, SWR-059, SWR-060 | TC-050, TC-051, TC-052 | Draft |
 | THREAT-022 | Elevation/Information disclosure | Public share routes bypass intended scope or expose dashboard state beyond the shared resource. | Public share viewer templates, token validation, media asset routing. | Recipients pivot into unrelated media, metadata, or privileged surfaces. | SC-023, SC-024 | SYS-032, SWR-059, SWR-061 | TC-051, TC-052, TC-053 | Draft |
@@ -51,6 +51,8 @@ Method: STRIDE-style review of local-first system boundaries.
 
 - `TIME_SET_MANUAL`: Admin changed the server wall clock through the settings flow. Supports THREAT-011 and THREAT-019 investigation needs.
 - `TIME_RESYNC_REQUESTED`: Admin requested an NTP/time-sync restart on the server or queued a camera resync. Supports THREAT-011 and THREAT-019 investigation needs.
+- `DIAGNOSTICS_EXPORTED`: Admin downloaded a diagnostics bundle. Supports THREAT-019 investigation needs for evidence handoff and export accountability.
+- `DIAGNOSTICS_EXPORT_FAILED`: Diagnostics export failed before delivery. Supports THREAT-019 investigation needs for missing evidence or degraded export behavior.
 
 ## Assumptions
 

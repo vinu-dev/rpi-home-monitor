@@ -1,4 +1,4 @@
-# REQ: SWR-024, SWR-032, SWR-020, SWR-018; RISK: RISK-012, RISK-015, RISK-017, RISK-006; SEC: SC-012, SC-020, SC-004, SC-006; TEST: TC-023, TC-029, TC-010, TC-015
+# REQ: SWR-024, SWR-032, SWR-020, SWR-018, SWR-068, SWR-070; RISK: RISK-012, RISK-015, RISK-017, RISK-006, RISK-020, RISK-026; SEC: SC-012, SC-020, SC-004, SC-006, SC-025; TEST: TC-023, TC-029, TC-010, TC-015, TC-055
 """
 System health and info API.
 
@@ -17,6 +17,7 @@ Endpoints:
   POST /system/backup/export           - Download a signed configuration bundle
   POST /system/backup/preview          - Validate + preview a backup bundle
   POST /system/backup/import           - Restore a backup bundle
+  POST /system/diagnostics/export      - Download a diagnostics tarball
   GET  /system/backup/snapshots        - List rollback snapshots created on import
 """
 
@@ -28,6 +29,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
 from monitor.services.config_backup_service import ConfigBackupError
+from monitor.services.diagnostics_bundle import DiagnosticsBundleError
 from monitor.services.health import get_health_summary, get_uptime
 
 system_bp = Blueprint("system", __name__)
@@ -273,6 +275,53 @@ def info():
             "os_variant": os_info.get("VARIANT_ID", ""),
         }
     ), 200
+
+
+@system_bp.route("/diagnostics/export", methods=["POST"])
+@admin_required
+@csrf_protect
+def diagnostics_export():
+    """Build and download a diagnostics tarball. Admin only."""
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+    session_id = session.get("sid", "")
+    service = current_app.diagnostics_service
+
+    allowed, retry_after = service.check_rate_limit(session_id)
+    if not allowed:
+        response = jsonify(
+            {
+                "error": "diagnostics_export_rate_limited",
+                "retry_after_seconds": retry_after,
+            }
+        )
+        response.headers["Retry-After"] = str(retry_after)
+        return response, 429
+
+    try:
+        result = service.collect_sections(requested_by=user, requested_ip=ip)
+    except DiagnosticsBundleError as exc:
+        response = jsonify(exc.payload)
+        if exc.retry_after_seconds:
+            response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        return response, exc.status_code
+
+    try:
+        archive_stream = service.open_archive_stream(result)
+        response = send_file(
+            archive_stream,
+            mimetype="application/gzip",
+            as_attachment=True,
+            download_name=result.download_name,
+        )
+    except Exception:
+        if "archive_stream" in locals():
+            archive_stream.close()
+        else:
+            service.cleanup(result.run_id)
+        raise
+
+    return response
 
 
 # ---------------------------------------------------------------------------

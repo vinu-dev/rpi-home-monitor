@@ -11,15 +11,15 @@ regulatory opinion.
 
 Reviewed areas:
 
-- Intended use and user needs: UN-001 through UN-023
-- System requirements: SYS-001 through SYS-032
-- Software requirements: SWR-001 through SWR-061
+- Intended use and user needs: UN-001 through UN-025
+- System requirements: SYS-001 through SYS-034
+- Software requirements: SWR-001 through SWR-070
 - Hardware requirements: HWR-001 through HWR-018
 - Architecture: ARCH-001 through ARCH-016, SWA-001 through SWA-026, HWA-001 through HWA-012
-- Safety risk: HAZ-001 through HAZ-025, RISK-001 through RISK-025, RC-001 through RC-023
-- DFMEA: DFMEA-001 through DFMEA-022
-- Cybersecurity: SEC-001 through SEC-017, THREAT-001 through THREAT-022, SC-001 through SC-024
-- Verification: TC-001 through TC-053
+- Safety risk: HAZ-001 through HAZ-026, RISK-001 through RISK-026, RC-001 through RC-026
+- DFMEA: DFMEA-001 through DFMEA-023
+- Cybersecurity: SEC-001 through SEC-017, THREAT-001 through THREAT-022, SC-001 through SC-025
+- Verification: TC-001 through TC-055
 - Traceability automation and code annotation baseline
 
 ## Review Findings
