@@ -15,7 +15,7 @@ TARGET_ROOT="$(dirname "$SCRIPT_DIR")"
 VENV="$SCRIPT_DIR/.venv"
 INSTALL_REF_FILE="$VENV/.agentry-install-ref"
 AGENTRY_REPO="https://github.com/vinu-dev/agentry.git"
-AGENTRY_REF="${AGENTRY_INSTALL_REF:-5e3e66b88d9ea1a404c975fdefdbac221348ecf1}"
+AGENTRY_REF="${AGENTRY_INSTALL_REF:-e7c8c9c18b9464b819549cea495c340532545ecb}"
 
 # Locate Python.
 PYTHON=""
