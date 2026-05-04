@@ -24,7 +24,7 @@ goes weird, or the audit-log "what happened when" reasoning breaks.
 Concretely, after this change:
 
 - The dashboard's existing status strip (Tier-1 of ADR-0018) goes amber and
-  carries the sentence "Camera *living-room* clock drifted +4.2s — resync"
+  carries the sentence "Camera living-room clock drifted +4.2s — resync"
   as soon as any camera's beat-derived drift crosses the amber threshold,
   and goes red on the red threshold or when the server's own NTP is
   unsynchronized.
@@ -147,7 +147,7 @@ Existing code this feature must build on, not replace:
 
 ### Primary path — single camera drifts past amber threshold
 
-1. Camera *living-room*'s clock drifts +4.2s (e.g., its `timesyncd`
+1. Camera living-room's clock drifts +4.2s (e.g., its `timesyncd`
    back-off temporarily exceeded its sync window).
 2. On the camera's next heartbeat, the server stores its
    `last_beat_camera_ts` and the next summary tick computes `drift =
@@ -157,7 +157,7 @@ Existing code this feature must build on, not replace:
    room"`, `time_health.worst_drift_seconds == 4.2`.
 4. `compute_summary` merges this into the global state via `_worst()` →
    `summary.state == "amber"`.
-5. `summary.summary == "Camera *living-room* clock drifted +4.2s —
+5. `summary.summary == "Camera living-room clock drifted +4.2s —
    resync"`. `summary.deep_link == "/settings#time-health"`.
 6. The status strip turns amber and shows that sentence; the dashboard's
    tooltip on the chip explains the impact (clip filenames, audit
@@ -229,8 +229,8 @@ Existing code this feature must build on, not replace:
 - **Camera supplies a `timestamp` from the future > 1 year** (clock
   badly broken, e.g., RTC battery dead and no NTP) → drift is reported
   but capped at `MAX_DRIFT_SECONDS_REPORTED` (3600). State is `red` for
-  that camera. The chip shows "Camera *kitchen* clock far ahead of
-  server — resync".
+  that camera. The chip shows "Camera kitchen clock drifted +3600s —
+  resync".
 - **`systemctl restart systemd-timesyncd` fails on the server**
   (subprocess returns nonzero, or times out at 10s) → API returns 500
   with the stderr trimmed; no audit row written; the existing UI
@@ -326,7 +326,7 @@ Each bullet is testable; verification mechanism is in brackets.
   `details.time_health`.
   **[unit]**
 - AC-11: When `time_health.state` dominates the merge,
-  `summary.summary` reads "Camera *<name>* clock drifted +<n>s — resync"
+  `summary.summary` reads "Camera <name> clock drifted +<n>s — resync"
   (single worst camera) or "Server time not synchronized — resync"
   (server). `summary.deep_link` is `"/settings#time-health"`.
   **[unit]**
@@ -390,7 +390,7 @@ Each bullet is testable; verification mechanism is in brackets.
   **[manual review]**
 - AC-21: Status-strip wording is asserted by unit test: when `time_health`
   dominates the merge the sentence matches the regex
-  `^(Server time not synchronized|Camera \*[^*]+\* clock drifted [+-]\d+(\.\d+)?s) — resync$`.
+  `^(Server time not synchronized|Camera .+ clock drifted [+-]\d+(\.\d+)?s) — resync$`.
   **[unit]**
 - AC-22: When `time_health.state` is `"unknown"` (no timedatectl on
   host), it does **not** participate in `_worst()` — the strip is not
@@ -532,7 +532,7 @@ Smoke-test additions (Implementer to wire concretely):
 - "Force-skew a camera's clock by `+5s` (`date -s "+5 seconds"` on the
   camera over ssh); within `2 * HEARTBEAT_INTERVAL` (≤ 30s) the
   dashboard status strip reads
-  `Camera *<name>* clock drifted +5s — resync` and is amber."
+  `Camera <name> clock drifted +5s — resync` and is amber."
 - "Click Resync on the affected camera; verify
   `journalctl -u systemd-timesyncd` on the camera shows a restart;
   within 60s the chip returns green and `summary.state == 'green'`."
