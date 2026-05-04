@@ -203,6 +203,34 @@ class TestCSRFEnforcement:
         assert resp.status_code == 403
 
 
+class TestAuditExportCsrf:
+    """The audit export GET route is intentionally CSRF-protected."""
+
+    def test_missing_csrf_token_returns_403(self, app, client):
+        _login(app, client)
+        client.environ_base.pop("HTTP_X_CSRF_TOKEN", None)
+
+        response = client.get("/api/v1/audit/events/export?format=csv")
+
+        assert response.status_code == 403
+
+    def test_wrong_csrf_token_returns_403(self, app, client):
+        _login(app, client)
+        client.environ_base["HTTP_X_CSRF_TOKEN"] = "wrong-token"
+
+        response = client.get("/api/v1/audit/events/export?format=csv")
+
+        assert response.status_code == 403
+
+    def test_valid_csrf_token_is_accepted(self, app, client):
+        _login(app, client)
+        app.audit.log_event("LOGIN_SUCCESS", user="admin")
+
+        response = client.get("/api/v1/audit/events/export?format=json")
+
+        assert response.status_code == 200
+
+
 # ===========================================================================
 # Session abuse
 # ===========================================================================

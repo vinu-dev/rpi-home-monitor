@@ -40,6 +40,7 @@ API_BASE="https://${SERVER}:${HTTPS_PORT}/api/v1"
 CURL_OPTS="-sk --connect-timeout 5 --max-time 10"
 COOKIE_JAR="/tmp/smoke-test-cookies.txt"
 SERVER_COOKIE_HEADER="${SMOKE_SERVER_COOKIE:-}"
+AUDIT_EXPORT_TMP="/tmp/smoke-test-audit-export.csv"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -111,6 +112,7 @@ server_curl() {
 
 cleanup() {
     rm -f "$COOKIE_JAR"
+    rm -f "$AUDIT_EXPORT_TMP"
 }
 trap cleanup EXIT
 
@@ -176,6 +178,21 @@ fi
 # /auth/me
 check_status "GET /auth/me" "${API_BASE}/auth/me" 200
 check_json_field "/auth/me has user" "${API_BASE}/auth/me" "user"
+if [ -z "${CSRF:-}" ]; then
+    CSRF=$(server_curl "${API_BASE}/auth/me" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null) || true
+fi
+if [ -n "${CSRF:-}" ]; then
+    EXPORT_STATUS=$(server_curl -H "X-CSRF-Token: ${CSRF}" -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" \
+        "${API_BASE}/audit/events/export?format=csv" 2>/dev/null) || true
+    if [ "$EXPORT_STATUS" = "200" ] && head -n 1 "$AUDIT_EXPORT_TMP" | grep -q '^timestamp,event,user,ip,detail'; then
+        pass "GET /audit/events/export?format=csv returns CSV attachment data"
+    else
+        fail "GET /audit/events/export?format=csv failed (HTTP ${EXPORT_STATUS:-000})"
+    fi
+else
+    skip "Audit export check skipped: no CSRF token available from /auth/me"
+fi
+skip "Manual audit export cross-check: downloaded CSV opens cleanly and row count matches /data/logs/audit.log minus the header"
 
 # ---------------------------------------------------------------------------
 # 4. System health

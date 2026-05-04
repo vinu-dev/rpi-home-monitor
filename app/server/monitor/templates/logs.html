@@ -12,6 +12,33 @@
      so operators don't relearn a new vocabulary; the difference is the
      data source (audit log vs motion events) and the admin-only gate. -->
 <div class="card mb-16">
+    <div class="inline-form__row" x-show="isAdmin" style="margin-bottom:12px; align-items:end;">
+        <div class="form-group" style="min-width:120px; margin-bottom:0;">
+            <label>Export format</label>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <label class="chip" :class="exportFormat === 'csv' ? 'chip--active' : ''" style="cursor:pointer;">
+                    <input type="radio" name="audit-export-format" value="csv" x-model="exportFormat" style="display:none;">
+                    CSV
+                </label>
+                <label class="chip" :class="exportFormat === 'json' ? 'chip--active' : ''" style="cursor:pointer;">
+                    <input type="radio" name="audit-export-format" value="json" x-model="exportFormat" style="display:none;">
+                    JSON
+                </label>
+            </div>
+        </div>
+        <label class="text-small" style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--color-text-muted);">
+            <input type="checkbox" x-model="applyCurrentFilters">
+            Apply current filters
+        </label>
+        <button type="button"
+                class="btn btn--secondary btn--small"
+                style="margin-left:auto;"
+                @click="exportLog()"
+                :disabled="exporting">
+            <span x-show="!exporting">Export</span>
+            <span x-show="exporting">Exporting...</span>
+        </button>
+    </div>
     <div class="chip-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
         <template x-for="opt in categoryOptions" :key="opt.value">
             <button type="button"
@@ -25,7 +52,7 @@
         <div class="form-group" style="flex:1; min-width:140px;">
             <label for="log-user">User</label>
             <input type="text" id="log-user" class="form-input" x-model="userFilter"
-                   @input.debounce.300="load()" placeholder="Any user">
+                   @input.debounce.300="load()" placeholder="Exact user">
         </div>
         <div class="form-group" style="flex:1; min-width:140px;">
             <label for="log-from">From</label>
@@ -132,6 +159,9 @@ function logsPage() {
         fromDate: '',
         toDate: '',
         limit: 100,
+        exportFormat: 'csv',
+        applyCurrentFilters: true,
+        exporting: false,
 
         // Coarse categories map to sets of audit event codes. Keep these
         // in sync with the server's AuditLogger event vocabulary — see
@@ -139,11 +169,11 @@ function logsPage() {
         // entry here; no server change needed.
         categoryOptions: [
             { value: 'all',      label: 'All' },
-            { value: 'auth',     label: 'Authentication', codes: ['LOGIN_OK', 'LOGIN_FAILED', 'LOGOUT', 'SESSION_EXPIRED'] },
+            { value: 'auth',     label: 'Authentication', codes: ['LOGIN_SUCCESS', 'LOGIN_OK', 'LOGIN_FAILED', 'LOGIN_BLOCKED', 'LOGIN_RATE_WARN', 'LOGIN_PASSWORD_OK_2FA_REQUIRED', 'LOGIN_2FA_FAILED', 'SESSION_LOGOUT', 'LOGOUT', 'SESSION_EXPIRED'] },
             { value: 'cameras',  label: 'Cameras',        codes: ['CAMERA_PAIRED', 'CAMERA_REMOVED', 'CAMERA_ONLINE', 'CAMERA_OFFLINE'] },
             { value: 'users',    label: 'Users',          codes: ['USER_CREATED', 'USER_DELETED', 'PASSWORD_CHANGED'] },
             { value: 'ota',      label: 'OTA',            codes: ['OTA_STARTED', 'OTA_COMPLETED', 'OTA_FAILED', 'OTA_ROLLBACK'] },
-            { value: 'system',   label: 'System',         codes: ['SETTINGS_CHANGED', 'NOTIFICATION_QUIETED', 'FACTORY_RESET', 'CERT_GENERATED', 'CERT_REVOKED'] },
+            { value: 'system',   label: 'System',         codes: ['SETTINGS_CHANGED', 'NOTIFICATION_QUIETED', 'FACTORY_RESET', 'CERT_GENERATED', 'CERT_REVOKED', 'FIREWALL_BLOCKED', 'AUDIT_LOG_CLEARED', 'AUDIT_LOG_EXPORTED', 'AUDIT_LOG_EXPORT_DENIED'] },
         ],
 
         // Data
@@ -173,7 +203,10 @@ function logsPage() {
             // simply leaves the action hidden, which is the safe side.
             try {
                 var me = await window.HM.api.get('/api/v1/auth/me');
-                this.isAdmin = (me && me.role === 'admin');
+                this.isAdmin = !!(me && me.user && me.user.role === 'admin');
+                if (me && me.csrf_token && window.HM && window.HM.auth) {
+                    window.HM.auth.setCsrfToken(me.csrf_token);
+                }
             } catch (_) {
                 this.isAdmin = false;
             }
@@ -204,6 +237,61 @@ function logsPage() {
             }
         },
 
+        async exportLog() {
+            this.exporting = true;
+            try {
+                var params = new URLSearchParams({ format: this.exportFormat });
+                if (this.applyCurrentFilters) {
+                    var filters = this._exportFilters();
+                    Object.keys(filters).forEach(function(key) {
+                        if (filters[key]) {
+                            params.set(key, filters[key]);
+                        }
+                    });
+                }
+
+                var resp = await fetch('/api/v1/audit/events/export?' + params.toString(), {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': window.HM.auth.getCsrfToken() || '',
+                    },
+                });
+
+                if (!resp.ok) {
+                    var retryAfter = resp.headers.get('Retry-After') || '';
+                    var payload = {};
+                    try {
+                        payload = await resp.json();
+                    } catch (_) {
+                        payload = {};
+                    }
+                    var message = payload.error || 'Export failed';
+                    if (resp.status === 429 && retryAfter) {
+                        message = 'Export rate-limited. Try again in ' + retryAfter + 's.';
+                    }
+                    throw new Error(message);
+                }
+
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                var filename = this._downloadFilename(resp.headers.get('Content-Disposition'));
+                var link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                if (window.HM && window.HM.toast) {
+                    window.HM.toast(e.message || 'Export failed', 'error');
+                }
+            } finally {
+                this.exporting = false;
+            }
+        },
+
         async load() {
             this.loading = true;
             this.error = '';
@@ -229,9 +317,9 @@ function logsPage() {
                 }
                 // User filter (case-insensitive substring).
                 if (this.userFilter) {
-                    var u = this.userFilter.toLowerCase();
+                    var u = this.userFilter.trim().toLowerCase();
                     events = events.filter(function(e) {
-                        return (e.user || '').toLowerCase().indexOf(u) !== -1;
+                        return (e.user || '').toLowerCase() === u;
                     });
                 }
                 // Date filters (timestamp is ISO8601Z).
@@ -271,6 +359,32 @@ function logsPage() {
             return opt ? opt.codes : null;
         },
 
+        _exportFilters() {
+            var params = {};
+            var codes = this._codesForCategory(this.category);
+            if (codes && codes.length) {
+                params.event_type = codes.join(',');
+            }
+            if (this.userFilter.trim()) {
+                params.actor = this.userFilter.trim();
+            }
+            if (this.fromDate) {
+                params.start = this.fromDate + 'T00:00:00Z';
+            }
+            if (this.toDate) {
+                params.end = this.toDate + 'T23:59:59Z';
+            }
+            return params;
+        },
+
+        _downloadFilename(contentDisposition) {
+            var match = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition || '');
+            if (match && match[1]) {
+                return match[1];
+            }
+            return 'audit-export.' + this.exportFormat;
+        },
+
         headerLabel() {
             var n = this.events.length;
             if (this.loading) return 'Loading log...';
@@ -283,8 +397,14 @@ function logsPage() {
             if (!code) return '';
             var map = {
                 LOGIN_OK: 'Signed in',
+                LOGIN_SUCCESS: 'Signed in',
                 LOGIN_FAILED: 'Login failed',
+                LOGIN_BLOCKED: 'Login blocked',
+                LOGIN_RATE_WARN: 'Login rate warning',
+                LOGIN_PASSWORD_OK_2FA_REQUIRED: 'Password OK, 2FA required',
+                LOGIN_2FA_FAILED: 'Two-factor failed',
                 LOGOUT: 'Signed out',
+                SESSION_LOGOUT: 'Signed out',
                 SESSION_EXPIRED: 'Session expired',
                 USER_CREATED: 'User created',
                 USER_DELETED: 'User deleted',
@@ -305,16 +425,19 @@ function logsPage() {
                 CERT_GENERATED: 'Cert generated',
                 CERT_REVOKED: 'Cert revoked',
                 FIREWALL_BLOCKED: 'Firewall blocked',
+                AUDIT_LOG_CLEARED: 'Audit log cleared',
+                AUDIT_LOG_EXPORTED: 'Audit log exported',
+                AUDIT_LOG_EXPORT_DENIED: 'Audit export denied',
             };
             return map[code] || code.toLowerCase().replace(/_/g, ' ');
         },
 
         _auditEventClass(code) {
             if (!code) return '';
-            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK') {
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK' || code === 'LOGIN_BLOCKED') {
                 return 'log-teaser__row--bad';
             }
-            if (code === 'CAMERA_OFFLINE' || code === 'FIREWALL_BLOCKED') {
+            if (code === 'CAMERA_OFFLINE' || code === 'FIREWALL_BLOCKED' || code === 'AUDIT_LOG_EXPORT_DENIED') {
                 return 'log-teaser__row--warn';
             }
             return '';
@@ -324,7 +447,7 @@ function logsPage() {
             // Subtle colour on the type chip so severity reads at a glance
             // without needing full-row colour flips.
             if (!code) return '';
-            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK') {
+            if (code.endsWith('_FAILED') || code === 'FACTORY_RESET' || code === 'OTA_ROLLBACK' || code === 'LOGIN_BLOCKED') {
                 return 'event-row__type--motion';  // red treatment
             }
             return '';
