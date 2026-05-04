@@ -3578,7 +3578,7 @@ function settingsPage() {
         async cancelTimestampBackfill() {
             this.storage.timestamps.busy = true;
             try {
-                await window.HM.api.delete('/api/v1/recordings/timestamp-backfill');
+                await window.HM.api.del('/api/v1/recordings/timestamp-backfill');
                 window.HM.toast('Timestamp backfill cancellation requested', 'success');
                 await this.loadTimestampBackfillStatus();
             } catch(e) {

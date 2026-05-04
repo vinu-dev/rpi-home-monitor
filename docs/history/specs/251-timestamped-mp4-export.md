@@ -439,6 +439,8 @@ Each bullet is testable; verification mechanism noted in brackets.
   card):
   - New "Forensic timestamps" section with stamped/unstamped counts and
     backfill button.
+  - Cancel action uses the shared `window.HM.api.del` DELETE helper against
+    the timestamp-backfill endpoint.
 - `app/server/monitor/static/css/style.css` - minor additions for the new
   card; reuse existing button + progress styles.
 - `app/server/monitor/templates/recordings.html` (or its current
