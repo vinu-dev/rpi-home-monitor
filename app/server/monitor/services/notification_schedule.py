@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """Quiet-hours schedule helpers for notification delivery."""
 
 from __future__ import annotations

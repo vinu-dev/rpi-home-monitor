@@ -1,3 +1,4 @@
+# REQ: SWR-033, SWR-041; RISK: RISK-016; SEC: SC-015; TEST: TC-031
 """Shared weekday/HH:MM schedule helpers for server-side policies."""
 
 from __future__ import annotations
