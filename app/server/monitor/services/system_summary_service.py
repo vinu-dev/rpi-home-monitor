@@ -19,6 +19,8 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
+from monitor.services.throttle_state import summarize_throttle_state
+
 log = logging.getLogger("monitor.system_summary")
 
 
@@ -213,6 +215,8 @@ class SystemSummaryService:
 
         now = datetime.now(UTC)
         worst = "green"
+        faulted_ids: set[str] = set()
+        throttled = []
         for cam in offline:
             last_seen = _parse_ts(getattr(cam, "last_seen", None))
             if last_seen is None:
@@ -237,20 +241,37 @@ class SystemSummaryService:
                 # structured list yet — fall back to the v1.3.0 flag.
                 if getattr(cam, "hardware_ok", True) is False:
                     faulted.append(cam)
+                    faulted_ids.add(getattr(cam, "id", ""))
                     worst = _worst(worst, "amber")
-                continue
-            faulted.append(cam)
-            max_sev = max((f.get("severity", "warning") for f in faults), key=_sev_rank)
-            if max_sev == "critical":
-                worst = _worst(worst, "red")
             else:
-                worst = _worst(worst, "amber")
+                faulted.append(cam)
+                faulted_ids.add(getattr(cam, "id", ""))
+                max_sev = max(
+                    (f.get("severity", "warning") for f in faults), key=_sev_rank
+                )
+                if max_sev == "critical":
+                    worst = _worst(worst, "red")
+                else:
+                    worst = _worst(worst, "amber")
+
+            throttle = summarize_throttle_state(getattr(cam, "throttle_state", None))
+            if throttle is None:
+                continue
+            throttled.append(cam)
+            if getattr(cam, "id", "") not in faulted_ids:
+                faulted.append(cam)
+                faulted_ids.add(getattr(cam, "id", ""))
+            worst = _worst(worst, throttle["state"])
 
         detail = {
+            "state": worst,
             "online": len(online),
             "total": len(paired),
             "offline_names": [
                 getattr(c, "name", "") or getattr(c, "id", "") for c in offline
+            ],
+            "throttled_names": [
+                getattr(c, "name", "") or getattr(c, "id", "") for c in throttled
             ],
             "faulted_names": [
                 getattr(c, "name", "") or getattr(c, "id", "") for c in faulted
@@ -504,8 +525,18 @@ class SystemSummaryService:
 
 def _camera_sentence(cam_detail: dict) -> str:
     names = cam_detail.get("offline_names") or []
+    if names:
+        if len(names) == 1:
+            return f"{names[0]} is offline"
+        return f"{len(names)} cameras are offline"
+    names = cam_detail.get("throttled_names") or []
+    if names:
+        if len(names) == 1:
+            return f"{names[0]} is throttled"
+        return f"{len(names)} cameras are throttled"
+    names = cam_detail.get("faulted_names") or []
     if not names:
         return ""
     if len(names) == 1:
-        return f"{names[0]} is offline"
-    return f"{len(names)} cameras are offline"
+        return f"{names[0]} needs attention"
+    return f"{len(names)} cameras need attention"

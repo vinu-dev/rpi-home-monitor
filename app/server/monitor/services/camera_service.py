@@ -15,6 +15,11 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from monitor.services.throttle_state import (
+    merge_throttle_state,
+    sanitize_throttle_state,
+)
+
 log = logging.getLogger("monitor.camera_service")
 
 VALID_RECORDING_MODES = {"off", "continuous", "schedule", "motion"}
@@ -174,6 +179,15 @@ def _sensor_mode_max_fps(sensor_modes: list[dict]) -> dict[tuple[int, int], int]
         key = (width, height)
         max_by_resolution[key] = max(max_by_resolution.get(key, 0), max_fps)
     return max_by_resolution
+
+
+def _uptime_looks_rebooted(previous: int, current: int | None) -> bool:
+    """Treat a large uptime drop as a reboot that clears hardware sticky bits."""
+    if current is None or previous <= 0:
+        return False
+    # Heartbeats arrive every 15s. Requiring a >60s drop avoids false
+    # positives from malformed samples while still catching real reboots.
+    return current + 60 < previous
 
 
 def _validate_image_quality(payload: dict, camera) -> str:
@@ -350,6 +364,11 @@ class CameraService:
                 "recording_schedule": list(c.recording_schedule),
                 "recording_motion_enabled": c.recording_motion_enabled,
                 "desired_stream_state": c.desired_stream_state,
+                "throttle_state": (
+                    dict(getattr(c, "throttle_state", {}) or {})
+                    if getattr(c, "throttle_state", None)
+                    else None
+                ),
                 # Hardware health is not admin-gated — even viewers
                 # benefit from seeing "no camera module detected" on
                 # the dashboard so they don't wait for a broken
@@ -429,6 +448,11 @@ class CameraService:
             "vflip": camera.vflip,
             "motion_sensitivity": getattr(camera, "motion_sensitivity", 5),
             "config_sync": camera.config_sync,
+            "throttle_state": (
+                dict(getattr(camera, "throttle_state", {}) or {})
+                if getattr(camera, "throttle_state", None)
+                else None
+            ),
             # Sensor capabilities (#173). Empty for pre-multi-sensor
             # firmware; dashboard falls back to the legacy preset.
             "sensor_model": getattr(camera, "sensor_model", "") or "",
@@ -560,6 +584,10 @@ class CameraService:
         was_offline = camera.status == "offline"
         camera.status = "online"
         camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        previous_uptime = int(getattr(camera, "uptime_seconds", 0) or 0)
+        current_uptime: int | None = None
+        missing = object()
+        raw_throttle_state = data.get("throttle_state", missing)
 
         # Update live health fields
         camera.streaming = bool(data.get("streaming", False))
@@ -575,9 +603,21 @@ class CameraService:
                 pass
         if "uptime_seconds" in data:
             try:
-                camera.uptime_seconds = int(data["uptime_seconds"])
+                current_uptime = int(data["uptime_seconds"])
+                camera.uptime_seconds = current_uptime
             except (TypeError, ValueError):
                 pass
+        rebooted = _uptime_looks_rebooted(previous_uptime, current_uptime)
+        if raw_throttle_state is not missing:
+            cleaned_throttle = sanitize_throttle_state(raw_throttle_state)
+            if cleaned_throttle is not None:
+                camera.throttle_state = merge_throttle_state(
+                    getattr(camera, "throttle_state", None),
+                    cleaned_throttle,
+                    rebooted=rebooted,
+                )
+            elif raw_throttle_state is None and rebooted:
+                camera.throttle_state = None
         # Hardware health — "no camera module detected" + friends.
         # Accept only the expected types; ignore garbage.
         if "hardware_ok" in data:

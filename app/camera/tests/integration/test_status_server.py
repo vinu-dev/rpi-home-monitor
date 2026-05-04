@@ -209,9 +209,31 @@ class TestTlsHelpers:
         mock_run.assert_not_called()
 
     @patch("camera_streamer.status_server.subprocess.run")
-    def test_ensure_tls_material_requires_openssl(self, mock_run, tls_config):
+    def test_ensure_tls_material_falls_back_without_openssl(self, mock_run, tls_config):
         mock_run.side_effect = FileNotFoundError
-        with pytest.raises(RuntimeError, match="openssl is required"):
+        cert_path, key_path = _ensure_tls_material(tls_config)
+
+        assert (
+            Path(cert_path)
+            .read_text(encoding="utf-8")
+            .startswith("-----BEGIN CERTIFICATE-----")
+        )
+        assert (
+            Path(key_path)
+            .read_text(encoding="utf-8")
+            .startswith("-----BEGIN PRIVATE KEY-----")
+        )
+
+    @patch("camera_streamer.status_server._generate_tls_material_with_cryptography")
+    @patch("camera_streamer.status_server.subprocess.run")
+    def test_ensure_tls_material_requires_openssl_or_cryptography(
+        self, mock_run, mock_generate, tls_config
+    ):
+        mock_run.side_effect = FileNotFoundError
+        mock_generate.side_effect = RuntimeError(
+            "camera HTTPS status page requires openssl or cryptography"
+        )
+        with pytest.raises(RuntimeError, match="requires openssl or cryptography"):
             _ensure_tls_material(tls_config)
 
     @patch("camera_streamer.status_server.subprocess.run")

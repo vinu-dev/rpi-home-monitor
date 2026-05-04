@@ -140,6 +140,36 @@ components:
           type: string
         firmware_version:
           type: string
+        throttle_state:
+          type: object
+          nullable: true
+          description: |
+            Decoded Raspberry Pi throttle flags from the camera heartbeat.
+            `null` when the camera cannot read `vcgencmd get_throttled` or a
+            sysfs fallback on the current platform.
+          properties:
+            under_voltage_now:
+              type: boolean
+            under_voltage_sticky:
+              type: boolean
+            frequency_capped_now:
+              type: boolean
+            frequency_capped_sticky:
+              type: boolean
+            throttled_now:
+              type: boolean
+            throttled_sticky:
+              type: boolean
+            soft_temp_limit_now:
+              type: boolean
+            soft_temp_limit_sticky:
+              type: boolean
+            last_updated:
+              type: string
+            source:
+              type: string
+            raw_value_hex:
+              type: string
         hardware_ok:
           type: boolean
           description: |

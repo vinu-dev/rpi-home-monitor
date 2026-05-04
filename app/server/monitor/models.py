@@ -97,6 +97,7 @@ class Camera:
     cpu_temp: float = 0.0  # °C, from last heartbeat
     memory_percent: int = 0  # 0-100, from last heartbeat
     uptime_seconds: int = 0  # seconds since camera boot
+    throttle_state: dict | None = None  # decoded Pi throttle bits from heartbeat
     # Hardware health reported by the camera in every heartbeat.
     #
     # v1.3.0 shipped two flat fields (``hardware_ok`` +

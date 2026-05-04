@@ -22,6 +22,7 @@ Environment variables:
 import glob
 import logging
 import os
+import shutil
 
 log = logging.getLogger("camera-streamer.platform")
 
@@ -38,12 +39,16 @@ class Platform:
         camera_device: str = "/dev/video0",
         led_path: str | None = "/sys/class/leds/ACT",
         thermal_path: str | None = "/sys/class/thermal/thermal_zone0/temp",
+        vcgencmd_path: str | None = None,
+        throttle_path: str | None = None,
         wifi_interface: str = "wlan0",
         hostname_prefix: str = "rpi-divinu-cam",
     ):
         self.camera_device = camera_device
         self.led_path = led_path
         self.thermal_path = thermal_path
+        self.vcgencmd_path = vcgencmd_path
+        self.throttle_path = throttle_path
         self.wifi_interface = wifi_interface
         self.hostname_prefix = hostname_prefix
 
@@ -56,6 +61,8 @@ class Platform:
         camera_device = os.environ.get("CAMERA_DEVICE", _probe_camera_device())
         led_path = os.environ.get("CAMERA_LED_PATH", _probe_led_path())
         thermal_path = os.environ.get("CAMERA_THERMAL_PATH", _probe_thermal_path())
+        vcgencmd_path = os.environ.get("CAMERA_VCGENCMD_PATH", _probe_vcgencmd_path())
+        throttle_path = os.environ.get("CAMERA_THROTTLED_PATH", _probe_throttle_path())
         wifi_interface = os.environ.get("CAMERA_WIFI_IFACE", _probe_wifi_interface())
         hostname_prefix = os.environ.get("CAMERA_HOSTNAME_PREFIX", "rpi-divinu-cam")
 
@@ -63,14 +70,18 @@ class Platform:
             camera_device=camera_device,
             led_path=led_path if led_path else None,
             thermal_path=thermal_path if thermal_path else None,
+            vcgencmd_path=vcgencmd_path if vcgencmd_path else None,
+            throttle_path=throttle_path if throttle_path else None,
             wifi_interface=wifi_interface,
             hostname_prefix=hostname_prefix,
         )
         log.info(
-            "Platform detected: camera=%s, led=%s, thermal=%s, wifi=%s, prefix=%s",
+            "Platform detected: camera=%s, led=%s, thermal=%s, vcgencmd=%s, throttled=%s, wifi=%s, prefix=%s",
             platform.camera_device,
             platform.led_path or "none",
             platform.thermal_path or "none",
+            platform.vcgencmd_path or "none",
+            platform.throttle_path or "none",
             platform.wifi_interface,
             platform.hostname_prefix,
         )
@@ -87,6 +98,12 @@ class Platform:
         if not self.thermal_path:
             return False
         return os.path.isfile(self.thermal_path)
+
+    def has_throttle(self) -> bool:
+        """Return True if a throttle-state source is available."""
+        if self.vcgencmd_path and shutil.which(self.vcgencmd_path):
+            return True
+        return bool(self.throttle_path and os.path.isfile(self.throttle_path))
 
     def has_camera(self) -> bool:
         """Return True if the camera device node exists."""
@@ -170,6 +187,24 @@ def _probe_thermal_path() -> str | None:
     candidates = sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp"))
     if candidates:
         return candidates[0]
+    return None
+
+
+def _probe_vcgencmd_path() -> str | None:
+    """Find the Raspberry Pi vcgencmd tool if present."""
+    return shutil.which("vcgencmd")
+
+
+def _probe_throttle_path() -> str | None:
+    """Find a Raspberry Pi throttle-state sysfs file if present."""
+    patterns = (
+        "/sys/devices/platform/soc/**/throttled",
+        "/sys/devices/platform/soc/**/get_throttled",
+    )
+    for pattern in patterns:
+        for path in sorted(glob.glob(pattern, recursive=True)):
+            if os.path.isfile(path):
+                return path
     return None
 
 

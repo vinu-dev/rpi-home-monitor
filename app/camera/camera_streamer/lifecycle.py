@@ -521,6 +521,9 @@ class CameraLifecycle:
         self._ota_agent = OTAAgent(self._config)
         self._ota_agent.start()
 
+        vcgencmd_path = getattr(self._platform, "vcgencmd_path", None)
+        throttle_path = getattr(self._platform, "throttle_path", None)
+
         # Heartbeat sender — keeps server informed of liveness (ADR-0016)
         # and reports the persisted desired stream state so the server can
         # detect drift (ADR-0017 §3). The control handler is the single
@@ -530,6 +533,8 @@ class CameraLifecycle:
             self._pairing,
             stream_manager=self._stream,
             thermal_path=self._platform.thermal_path,
+            vcgencmd_path=vcgencmd_path,
+            throttle_path=throttle_path,
             control_handler=self._status_server.control_handler,
             # Surface hardware faults ("no camera module detected")
             # to the server so the dashboard can show the user.
@@ -544,6 +549,8 @@ class CameraLifecycle:
             self._capture,
             self._stream,
             thermal_path=self._platform.thermal_path,
+            vcgencmd_path=vcgencmd_path,
+            throttle_path=throttle_path,
         )
         self._health.start()
 

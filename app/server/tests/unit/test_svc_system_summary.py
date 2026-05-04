@@ -213,6 +213,53 @@ class TestCameraStateTransitions:
         svc = _build(cameras=cams)
         assert "2 cameras are offline" in svc.compute_summary()["summary"]
 
+    def test_sticky_throttle_is_amber_and_names_camera(self):
+        cam = _cam(
+            id="cam-front",
+            name="Front Door",
+            throttle_state={
+                "under_voltage_now": False,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": False,
+                "frequency_capped_sticky": False,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T12:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00010000",
+            },
+        )
+        svc = _build(cameras=[cam])
+        out = svc.compute_summary()
+        assert out["state"] == "amber"
+        assert "Front Door is throttled" in out["summary"]
+        assert out["details"]["cameras"]["throttled_names"] == ["Front Door"]
+
+    def test_current_under_voltage_is_red(self):
+        cam = _cam(
+            id="cam-front",
+            name="Front Door",
+            throttle_state={
+                "under_voltage_now": True,
+                "under_voltage_sticky": True,
+                "frequency_capped_now": True,
+                "frequency_capped_sticky": True,
+                "throttled_now": False,
+                "throttled_sticky": False,
+                "soft_temp_limit_now": False,
+                "soft_temp_limit_sticky": False,
+                "last_updated": "2026-05-04T12:00:00Z",
+                "source": "vcgencmd",
+                "raw_value_hex": "0x00030003",
+            },
+        )
+        svc = _build(cameras=[cam])
+        out = svc.compute_summary()
+        assert out["state"] == "red"
+        assert out["details"]["cameras"]["state"] == "red"
+
 
 # ---------------------------------------------------------------------------
 # Recorder host thresholds

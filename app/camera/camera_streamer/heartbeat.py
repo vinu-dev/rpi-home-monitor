@@ -26,6 +26,7 @@ import urllib.error
 import urllib.request
 
 from camera_streamer.control import ControlHandler, parse_control_request
+from camera_streamer.health import read_throttle_state as _read_throttle_state
 from camera_streamer.server_notifier import notify_config_change
 
 log = logging.getLogger("camera-streamer.heartbeat")
@@ -153,6 +154,8 @@ class HeartbeatSender:
         pairing_manager,
         stream_manager=None,
         thermal_path=None,
+        vcgencmd_path=None,
+        throttle_path=None,
         control_handler=None,
         capture_manager=None,
     ):
@@ -160,6 +163,9 @@ class HeartbeatSender:
         self._pairing = pairing_manager
         self._stream = stream_manager
         self._thermal_path = thermal_path
+        self._vcgencmd_path = vcgencmd_path
+        self._throttle_path = throttle_path
+        self._last_throttle_state = None
         # Optional ControlHandler — when provided, the heartbeat reports the
         # *persisted desired* state (ADR-0017), which is what the server
         # compares against to detect drift. Tests that don't care about
@@ -219,6 +225,13 @@ class HeartbeatSender:
 
             self._stop_event.wait(timeout=HEARTBEAT_INTERVAL)
 
+    def _get_throttle_state(self) -> dict | None:
+        """Best-effort throttle read; preserve last good sample on errors."""
+        state = _read_throttle_state(self._vcgencmd_path, self._throttle_path)
+        if state is not None:
+            self._last_throttle_state = state
+        return self._last_throttle_state
+
     def _build_payload(self) -> dict:
         """Assemble the heartbeat payload from live system state."""
         streaming = bool(self._stream and self._stream.is_streaming)
@@ -275,6 +288,7 @@ class HeartbeatSender:
             "cpu_temp": _get_cpu_temp(self._thermal_path),
             "memory_percent": _get_memory_percent(),
             "uptime_seconds": _get_uptime_seconds(),
+            "throttle_state": self._get_throttle_state(),
             "firmware_version": _get_firmware_version(),
             "hardware_ok": hardware_ok,
             "hardware_error": hardware_error,

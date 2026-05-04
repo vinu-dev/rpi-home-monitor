@@ -172,10 +172,62 @@ class TestHeartbeatSender:
         assert "cpu_temp" in payload
         assert "memory_percent" in payload
         assert "uptime_seconds" in payload
+        assert "throttle_state" in payload
         sc = payload["stream_config"]
         assert sc["width"] == 1920
         assert sc["height"] == 1080
         assert sc["fps"] == 25
+
+    def test_payload_includes_throttle_state(self):
+        cfg = _make_config()
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            vcgencmd_path="/usr/bin/vcgencmd",
+        )
+        throttle = {
+            "under_voltage_now": True,
+            "under_voltage_sticky": True,
+            "frequency_capped_now": False,
+            "frequency_capped_sticky": False,
+            "throttled_now": False,
+            "throttled_sticky": False,
+            "soft_temp_limit_now": False,
+            "soft_temp_limit_sticky": False,
+            "last_updated": "2026-05-04T00:00:00Z",
+            "raw_value_hex": "0x00010001",
+            "source": "vcgencmd",
+        }
+        with patch(
+            "camera_streamer.heartbeat._read_throttle_state", return_value=throttle
+        ):
+            payload = sender._build_payload()
+        assert payload["throttle_state"] == throttle
+
+    def test_throttle_state_retains_last_good_sample(self):
+        cfg = _make_config()
+        sender = HeartbeatSender(
+            cfg, _make_pairing(), vcgencmd_path="/usr/bin/vcgencmd"
+        )
+        throttle = {
+            "under_voltage_now": False,
+            "under_voltage_sticky": True,
+            "frequency_capped_now": False,
+            "frequency_capped_sticky": False,
+            "throttled_now": False,
+            "throttled_sticky": False,
+            "soft_temp_limit_now": False,
+            "soft_temp_limit_sticky": False,
+            "last_updated": "2026-05-04T00:00:00Z",
+            "raw_value_hex": "0x00010000",
+            "source": "vcgencmd",
+        }
+        with patch(
+            "camera_streamer.heartbeat._read_throttle_state",
+            side_effect=[throttle, None],
+        ):
+            assert sender._build_payload()["throttle_state"] == throttle
+            assert sender._build_payload()["throttle_state"] == throttle
 
     def test_streaming_true_when_stream_manager_active(self):
         cfg = _make_config()
