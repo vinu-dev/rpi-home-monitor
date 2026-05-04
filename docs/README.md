@@ -64,6 +64,12 @@ development material:
 - [`guides/admin-recovery.md`](guides/admin-recovery.md)
 - [`guides/network-fallback.md`](guides/network-fallback.md)
 
+## Operations Runbooks
+
+Operator-readable deployment and incident-response runbooks live here:
+
+- [`operations/secrets-inventory.md`](operations/secrets-inventory.md)
+
 ## History
 
 Use [`history/README.md`](history/README.md) for design history and planning

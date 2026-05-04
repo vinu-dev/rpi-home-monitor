@@ -1,12 +1,14 @@
-# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
+# REQ: SWR-045, SWR-101-A; RISK: RISK-021, RISK-101-3; SEC: SC-021, SC-101; TEST: TC-042, TC-101-AC-3
 """
 Tests for application factory helpers: secret key persistence
 and default admin user creation.
 """
 
 import os
+from unittest.mock import MagicMock
 
 from monitor import _ensure_default_admin, _load_or_create_secret_key, create_app
+from monitor.services.audit import SECRET_KEY_ROTATED
 from monitor.store import Store
 
 
@@ -40,6 +42,21 @@ class TestLoadOrCreateSecretKey:
         key_file.write_text("")
         key = _load_or_create_secret_key(str(tmp_path))
         assert len(key) == 64  # Generated a new key
+
+    def test_logs_rotation_when_key_is_generated(self, tmp_path):
+        audit = MagicMock()
+        _load_or_create_secret_key(str(tmp_path), audit=audit)
+        audit.log_event.assert_called_once_with(
+            SECRET_KEY_ROTATED,
+            detail="session signing key generated during startup",
+        )
+
+    def test_does_not_log_rotation_when_existing_key_is_loaded(self, tmp_path):
+        key_file = tmp_path / ".secret_key"
+        key_file.write_text("abcdef1234567890" * 4)
+        audit = MagicMock()
+        _load_or_create_secret_key(str(tmp_path), audit=audit)
+        audit.log_event.assert_not_called()
 
 
 class TestEnsureDefaultAdmin:

@@ -16,6 +16,8 @@ import time
 
 from flask import current_app
 
+from monitor.services.audit import TAILSCALE_AUTH_KEY_ROTATED
+
 log = logging.getLogger("monitor.services.settings_service")
 
 
@@ -69,6 +71,15 @@ UPDATABLE_FIELDS = {
     # Issue #238: TOTP 2FA policy
     "require_2fa_for_remote",
 }
+
+# REQ: SWR-101-B; RISK: RISK-101-1; SEC: SC-005, SC-101; TEST: TC-101-AC-2, TC-101-AC-12
+SECRET_FIELDS = frozenset(
+    {
+        "settings.json:tailscale_auth_key",
+        "settings.json:offsite_backup_secret_access_key",
+        "settings.json:webhook_destinations[].secret",
+    }
+)
 
 
 # REQ: SWR-024; RISK: RISK-012; SEC: SC-012; TEST: TC-023
@@ -143,11 +154,29 @@ class SettingsService:
                         400,
                     )
 
+        # REQ: SWR-101-A; RISK: RISK-101-3; SEC: SC-005, SC-101; TEST: TC-101-AC-3
         settings = self._store.get_settings()
+        previous_tailscale_auth_key = settings.tailscale_auth_key
         for key, value in data.items():
             setattr(settings, key, value)
         self._store.save_settings(settings)
         self._apply_runtime_changes(settings, set(data.keys()))
+
+        if (
+            "tailscale_auth_key" in data
+            and data["tailscale_auth_key"] != previous_tailscale_auth_key
+        ):
+            detail = (
+                "tailscale auth key cleared via settings"
+                if not data["tailscale_auth_key"]
+                else "tailscale auth key updated via settings"
+            )
+            self._log_audit(
+                TAILSCALE_AUTH_KEY_ROTATED,
+                requesting_user,
+                requesting_ip,
+                detail,
+            )
 
         self._log_audit(
             "SETTINGS_UPDATED",

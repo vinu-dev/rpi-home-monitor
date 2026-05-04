@@ -1,4 +1,4 @@
-# REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-008, TC-012
+# REQ: SWR-003, SWR-101-A; RISK: RISK-002, RISK-101-3; SEC: SC-002, SC-005, SC-101; TEST: TC-008, TC-012, TC-101-AC-3
 """
 Camera pairing service — manages PIN-based pairing and certificate lifecycle.
 
@@ -21,6 +21,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from monitor.services.audit import CAMERA_PAIRING_SECRET_ROTATED
 from monitor.services.camera_trust import (
     persist_pinned_status_cert,
     remove_pinned_status_cert,
@@ -183,6 +184,14 @@ class PairingService:
 
             camera.paired_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._store.save_camera(camera)
+
+        # REQ: SWR-101-A; RISK: RISK-101-3; SEC: SC-005, SC-101; TEST: TC-101-AC-3
+        self._log_audit(
+            CAMERA_PAIRING_SECRET_ROTATED,
+            "",
+            ip,
+            f"pairing secret issued for camera {camera_id}",
+        )
 
         # Clean up pending state
         del self._pending_pairings[camera_id]

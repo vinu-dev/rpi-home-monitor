@@ -1,4 +1,4 @@
-# REQ: SWR-001, SWR-045, SWR-056, SWR-057, SWR-063, SWR-064, SWR-068, SWR-070; RISK: RISK-001, RISK-002, RISK-017, RISK-018, RISK-020, RISK-021, RISK-026; SEC: SC-001, SC-012, SC-019, SC-020, SC-021, SC-025; TEST: TC-004, TC-005, TC-042, TC-044, TC-047, TC-048, TC-049, TC-055
+# REQ: SWR-001, SWR-045, SWR-056, SWR-057, SWR-063, SWR-064, SWR-068, SWR-070, SWR-101-A; RISK: RISK-001, RISK-002, RISK-017, RISK-018, RISK-020, RISK-021, RISK-026, RISK-101-3; SEC: SC-001, SC-012, SC-019, SC-020, SC-021, SC-025, SC-101; TEST: TC-004, TC-005, TC-042, TC-044, TC-047, TC-048, TC-049, TC-055, TC-101-AC-3
 """
 RPi Home Monitor - Server Application
 
@@ -19,7 +19,7 @@ from monitor.logging_config import configure_logging
 from monitor.models import ServerMeta
 from monitor.release_version import release_version
 from monitor.services.alert_center_service import AlertCenterService
-from monitor.services.audit import AuditLogger
+from monitor.services.audit import SECRET_KEY_ROTATED, AuditLogger
 from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_ota_client import CameraOTAClient
 from monitor.services.camera_service import CameraService
@@ -60,7 +60,8 @@ from monitor.store import Store
 log = logging.getLogger("monitor")
 
 
-def _load_or_create_secret_key(config_dir):
+def _load_or_create_secret_key(config_dir, audit=None):
+    # REQ: SWR-101-A; RISK: RISK-101-3; SEC: SC-005, SC-101; TEST: TC-101-AC-3
     """Load persistent secret key, or create one on first boot.
 
     If the file is missing we generate a fresh 32-byte key and persist
@@ -92,6 +93,14 @@ def _load_or_create_secret_key(config_dir):
             "Fix filesystem permissions or the data volume before restart — "
             "an ephemeral key would invalidate every session on the next boot."
         ) from exc
+    if audit is not None:
+        try:
+            audit.log_event(
+                SECRET_KEY_ROTATED,
+                detail="session signing key generated during startup",
+            )
+        except Exception:
+            log.debug("Audit log failed for %s (non-fatal)", SECRET_KEY_ROTATED)
     return key
 
 
@@ -180,12 +189,15 @@ def create_app(config=None):
 
     log.debug("Config: DATA_DIR=%s CONFIG_DIR=%s", app.config["DATA_DIR"], config_dir)
 
-    # Load persistent secret key (unless overridden by test config)
-    if not config or "SECRET_KEY" not in config:
-        app.config["SECRET_KEY"] = _load_or_create_secret_key(app.config["CONFIG_DIR"])
-
     # --- Core infrastructure ---
     _init_infrastructure(app)
+
+    # Load persistent secret key (unless overridden by test config)
+    if not config or "SECRET_KEY" not in config:
+        app.config["SECRET_KEY"] = _load_or_create_secret_key(
+            app.config["CONFIG_DIR"],
+            audit=app.audit,
+        )
 
     # --- Persisted settings ---
     _load_persisted_settings(app, explicit_config_keys)

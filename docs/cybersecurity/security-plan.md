@@ -16,7 +16,7 @@ compliance with any cybersecurity regulation or standard.
 | SEC-002 | Operator accounts and sessions | Password hashes, roles, session cookies, server-side active-session inventory, CSRF tokens, TOTP secrets, and recovery-code hashes. | SYS-004, SWR-001, SWR-002 |
 | SEC-003 | Camera credentials and pairing secrets | Client certs, CA cert, keys, pairing secret. | SYS-005, SWR-003, SWR-004 |
 | SEC-004 | OTA signing and update path | SWUpdate bundles, signing certs, staging dirs, update status. | SYS-009, SWR-010 |
-| SEC-005 | Persistent config and logs | `/data/config`, audit logs, settings, camera registry, and staged diagnostics exports. | SYS-003, SYS-010, SYS-034 |
+| SEC-005 | Persistent config and logs | `/data/config`, audit logs, settings, camera registry, staged diagnostics exports, and the operator-visible secrets inventory that classifies persisted secret exposure. | SYS-003, SYS-010, SYS-034, SYS-101 |
 | SEC-006 | Local network and optional VPN access | LAN, mDNS, HTTPS/RTSPS, optional Tailscale. | SYS-001, SYS-004, SWR-020 |
 | SEC-007 | Build and dependency inputs | Python dependencies, Yocto recipes, workflow dependencies, SBOM records. | SYS-012, SWR-019 |
 | SEC-008 | Provisioning and default identity | Setup-complete state, initial admin path, default hostnames, and development credential boundaries. | SYS-013, SYS-024, SWR-021, SWR-054 |

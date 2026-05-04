@@ -9,15 +9,15 @@ This Markdown file summarizes the current coverage.
 
 | Area | Coverage status |
 |---|---|
-| User needs | UN-001 through UN-026 are linked to system requirements and tests. |
-| System requirements | SYS-001 through SYS-035 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
-| Software requirements | SWR-001 through SWR-071 each have at least one linked test case. |
+| User needs | UN-001 through UN-026 plus UN-101 are linked to system requirements and tests. |
+| System requirements | SYS-001 through SYS-035 plus SYS-101 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
+| Software requirements | SWR-001 through SWR-071 plus SWR-101-A through SWR-101-C each have at least one linked test case. |
 | Hardware requirements | HWR-001 through HWR-018 are linked to architecture and hardware/manual or automated verification. |
-| Architecture | ARCH-001 through ARCH-016, SWA-001 through SWA-028, and HWA-001 through HWA-012 are linked into the matrix. |
-| Safety risk | RISK-001 through RISK-027 each have at least one risk control and verification. |
-| Cybersecurity | THREAT-001 through THREAT-023 and SC-001 through SC-026 are linked to requirements and tests. |
+| Architecture | ARCH-001 through ARCH-016, SWA-001 through SWA-028 plus SWA-101, and HWA-001 through HWA-012 are linked into the matrix. |
+| Safety risk | RISK-001 through RISK-027 plus RISK-101-1 through RISK-101-3 each have at least one risk control and verification. |
+| Cybersecurity | THREAT-001 through THREAT-023 plus THREAT-101, and SC-001 through SC-026 plus SC-101, are linked to requirements and tests. |
 | Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation covers the full set of checker-selected traceable files, excluding vendored minified browser libraries. |
-| Tests | TC-001 through TC-056 have linked requirements. |
+| Tests | TC-001 through TC-056 plus TC-101-AC-1 through TC-101-AC-14 have linked requirements. |
 
 ## Matrix Source
 

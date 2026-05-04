@@ -1,4 +1,4 @@
-# REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-008, TC-012
+# REQ: SWR-003, SWR-101-A; RISK: RISK-002, RISK-101-3; SEC: SC-002, SC-101; TEST: TC-008, TC-012, TC-101-AC-3
 """Tests for the pairing service."""
 
 import time
@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from monitor.services.audit import CAMERA_PAIRING_SECRET_ROTATED
 from monitor.services.camera_trust import status_cert_fingerprint_from_pem
 from monitor.services.pairing_service import (
     PIN_DIGITS,
@@ -262,6 +263,20 @@ class TestExchangeCerts:
         svc.exchange_certs("123456", "cam-001")
         assert any(
             call[0][0] == "CAMERA_PAIRED" for call in audit.log_event.call_args_list
+        )
+
+    def test_successful_exchange_logs_pairing_secret_rotation(self, svc, store, audit):
+        self._setup_pending(svc, store, pin="123456")
+        svc.exchange_certs("123456", "cam-001", ip="192.168.1.50")
+
+        rotation_call = next(
+            call
+            for call in audit.log_event.call_args_list
+            if call.args[0] == CAMERA_PAIRING_SECRET_ROTATED
+        )
+        assert rotation_call.kwargs["ip"] == "192.168.1.50"
+        assert (
+            rotation_call.kwargs["detail"] == "pairing secret issued for camera cam-001"
         )
 
     def test_wrong_pin_decrements_remaining(self, svc, store):

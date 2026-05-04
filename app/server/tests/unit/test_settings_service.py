@@ -1,10 +1,15 @@
-# REQ: SWR-024; RISK: RISK-012; SEC: SC-012; TEST: TC-023
+# REQ: SWR-024, SWR-101-A, SWR-101-B; RISK: RISK-012, RISK-101-1, RISK-101-3; SEC: SC-012, SC-101; TEST: TC-023, TC-101-AC-2, TC-101-AC-3, TC-101-AC-12
 """Tests for the settings service."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from monitor.services.settings_service import UPDATABLE_FIELDS, SettingsService
+from monitor.services.audit import TAILSCALE_AUTH_KEY_ROTATED
+from monitor.services.settings_service import (
+    SECRET_FIELDS,
+    UPDATABLE_FIELDS,
+    SettingsService,
+)
 
 
 def _make_settings(**overrides):
@@ -178,6 +183,59 @@ class TestUpdateSettings:
         # Should not raise
         msg, code = svc.update_settings({"timezone": "US/Eastern"}, "admin", "1.2.3.4")
         assert code == 200
+
+    def test_tailscale_auth_key_rotation_logged_when_value_changes(self):
+        audit = MagicMock()
+        settings = _make_settings(tailscale_auth_key="old-key")
+        svc, _ = _make_service(settings=settings, audit=audit)
+
+        svc.update_settings(
+            {"tailscale_auth_key": "new-key"},
+            "admin",
+            "1.2.3.4",
+        )
+
+        assert any(
+            call.args[0] == TAILSCALE_AUTH_KEY_ROTATED
+            for call in audit.log_event.call_args_list
+        )
+
+    def test_tailscale_auth_key_rotation_detail_redacts_value(self):
+        audit = MagicMock()
+        settings = _make_settings(tailscale_auth_key="old-key")
+        svc, _ = _make_service(settings=settings, audit=audit)
+
+        svc.update_settings(
+            {"tailscale_auth_key": "super-secret-value"},
+            "admin",
+            "1.2.3.4",
+        )
+
+        rotation_call = next(
+            call
+            for call in audit.log_event.call_args_list
+            if call.args[0] == TAILSCALE_AUTH_KEY_ROTATED
+        )
+        assert (
+            rotation_call.kwargs["detail"] == "tailscale auth key updated via settings"
+        )
+        assert "super-secret-value" not in rotation_call.kwargs["detail"]
+
+    def test_tailscale_auth_key_rotation_not_logged_when_value_is_unchanged(self):
+        audit = MagicMock()
+        settings = _make_settings(tailscale_auth_key="same-key")
+        svc, _ = _make_service(settings=settings, audit=audit)
+
+        svc.update_settings(
+            {"tailscale_auth_key": "same-key"},
+            "admin",
+            "1.2.3.4",
+        )
+
+        assert all(
+            call.args[0] != TAILSCALE_AUTH_KEY_ROTATED
+            for call in audit.log_event.call_args_list
+        )
 
 
 # ---- _validate ----
@@ -648,6 +706,13 @@ class TestUpdatableFields:
 
     def test_firmware_version_not_updatable(self):
         assert "firmware_version" not in UPDATABLE_FIELDS
+
+    def test_secret_fields_constant_matches_expected_paths(self):
+        assert SECRET_FIELDS == {
+            "settings.json:tailscale_auth_key",
+            "settings.json:offsite_backup_secret_access_key",
+            "settings.json:webhook_destinations[].secret",
+        }
 
 
 # ---- ADR-0019 time helpers ----
