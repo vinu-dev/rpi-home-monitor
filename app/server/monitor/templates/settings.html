@@ -1,4 +1,4 @@
-{# REQ: SWR-002, SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-002, RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-004, TC-011, TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
+{# REQ: SWR-001, SWR-002, SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-002, RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-004, TC-011, TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
 {% extends "base.html" %}
 
 {% block title %}Settings - Home Monitor{% endblock %}
@@ -18,6 +18,7 @@
             <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
             <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="tab = 'tailscale'">Tailscale</button>
             <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
+            <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSessions()">Security</button>
             <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
             <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
             <button class="settings-tab" :class="{ active: tab === 'webhooks' }" @click="tab = 'webhooks'; loadWebhooks()">Webhooks</button>
@@ -25,13 +26,14 @@
         </span>
     </template>
     <button class="settings-tab" :class="{ active: tab === 'account' }" @click="tab = 'account'; loadTotpStatus()">Account</button>
+    <template x-if="!isAdmin">
+        <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSessions()">Security</button>
+    </template>
     <!-- Notifications tab is per-user — visible to admins AND viewers
          (#129, ADR-0027). Each user manages their own browser-
          notification opt-in here; admins additionally see the
          camera-level defaults inside the panel. -->
     <button class="settings-tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'; loadNotificationPrefs()">Notifications</button>
-    <!-- ADR-0025: "Security" tab retired. Audit-log management
-         (open + clear) lives at /logs itself. -->
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -797,6 +799,89 @@
 <!-- ═══════════════════════════════════════════════════════════
      ACCOUNT TAB (all users)
      ═══════════════════════════════════════════════════════════ -->
+<div x-show="tab === 'security'" x-cloak>
+    <div class="settings-section">
+        <div class="flex-between" style="align-items:flex-start; gap:var(--space-3); flex-wrap:wrap;">
+            <div>
+                <div class="settings-section__title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Active Sessions</div>
+                <div class="text-small text-muted" style="margin-top:6px;">
+                    Review every browser currently signed in to this account and revoke any device that should no longer have access.
+                </div>
+            </div>
+            <label x-show="isAdmin" class="text-small" style="display:inline-flex; gap:8px; align-items:center; cursor:pointer; margin-top:4px;">
+                <input type="checkbox" x-model="sessions.includeAll" @change="loadSessions()">
+                <span>All users (admin)</span>
+            </label>
+        </div>
+
+        <div class="card mt-16">
+            <div style="display:flex; justify-content:space-between; gap:var(--space-3); align-items:center; flex-wrap:wrap; margin-bottom:var(--space-3);">
+                <div class="text-small text-muted">
+                    Source IPs are visible to admins when the all-users view is enabled. Current-session detection is server-side, not IP-based.
+                </div>
+                <button class="btn btn--secondary btn--small"
+                        :disabled="sessions.loading || sessions.busy || sessionOtherCount() === 0"
+                        @click="revokeOtherSessions()">
+                    Sign out other devices
+                </button>
+            </div>
+
+            <template x-if="sessions.loading">
+                <div class="text-small text-muted">Loading active sessions...</div>
+            </template>
+
+            <template x-if="!sessions.loading && sessions.rows.length === 0">
+                <div class="text-small text-muted">No active sessions are currently indexed for this account.</div>
+            </template>
+
+            <div class="user-table-wrap" x-show="!sessions.loading && sessions.rows.length > 0">
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th x-show="isAdmin && sessions.includeAll">User</th>
+                            <th>Device</th>
+                            <th>Source IP</th>
+                            <th>Signed in</th>
+                            <th>Last active</th>
+                            <th style="width:180px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="row in sessions.rows" :key="row.id">
+                            <tr>
+                                <td x-show="isAdmin && sessions.includeAll">
+                                    <div style="font-weight:600;" x-text="row.username"></div>
+                                    <div class="text-small text-muted" x-show="row.is_locked_out">Account locked out</div>
+                                </td>
+                                <td>
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <span style="font-weight:600;" x-text="sessionDeviceLabel(row)"></span>
+                                        <span x-show="row.is_current" class="badge badge--ok">this device</span>
+                                        <span x-show="row.is_legacy" class="badge badge--warn">legacy</span>
+                                    </div>
+                                    <div class="text-small text-muted" x-show="row.user_agent" x-text="row.user_agent"></div>
+                                </td>
+                                <td class="text-small" x-text="row.source_ip || '--'"></td>
+                                <td class="text-small" x-text="formatLocalTime(row.created_at)"></td>
+                                <td class="text-small" x-text="formatRelativeTime(row.last_active)"></td>
+                                <td>
+                                    <button x-show="row.is_legacy || !row.is_current"
+                                            class="btn btn--secondary btn--small"
+                                            :disabled="sessions.busy"
+                                            @click="revokeSessionRow(row)"
+                                            x-text="row.is_legacy ? 'Sign out to upgrade' : 'Sign out'">
+                                    </button>
+                                    <span x-show="!row.is_legacy && row.is_current" class="text-small text-muted">Use the top-right logout for this browser.</span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div x-show="tab === 'account'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">Change Password</div>
@@ -1710,7 +1795,7 @@
     </div>
 </div>
 
-<div x-show="!isAdmin && tab !== 'notifications' && tab !== 'account'" x-cloak>
+<div x-show="!isAdmin && tab !== 'notifications' && tab !== 'account' && tab !== 'security'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">System Info</div>
         <div class="card">
@@ -1864,10 +1949,9 @@
     </div>
 </div>
 
-<!-- ADR-0025: SECURITY TAB REMOVED. Audit-log management lives at
-     /logs itself (admin-only); the alert-triage view lives at
-     /alerts. Settings is for things you configure, not for viewing
-     activity history. -->
+<!-- Audit-log browsing still lives at /logs. This tab is limited to
+     active-session inventory and revoke controls for the current
+     account (plus admin all-users scope). -->
 
 
 </div>
@@ -1895,6 +1979,7 @@ function settingsPage() {
             memory: '', mem_class: '', warnings: [],
         },
         users: [],
+        sessions: { loading: false, busy: false, includeAll: false, rows: [] },
         newUser: { username: '', password: '', role: 'viewer' },
         // Admin reset-password modal state (issue #99 slice 1).
         resetTarget: null,       // user object whose password is being reset
@@ -1994,10 +2079,9 @@ function settingsPage() {
         ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
         _otaPollTimer: null,
 
-        // ADR-0025: security state retired entirely. The audit-log
-        // clear-log admin action moved to /logs (contextually
-        // correct), and the inline-table viewer was always /logs's
-        // job. Settings is now strictly for configuration.
+        // Security-tab state is limited to active-session inventory.
+        // Audit-log browsing stays on /logs where the operator can
+        // filter and inspect the full event stream.
 
         async init() {
             try {
@@ -2010,11 +2094,12 @@ function settingsPage() {
             // deep-links (/settings#system, /settings#storage etc.) open
             // directly on the correct tab instead of bouncing the user
             // through the default tab. Unknown fragments are ignored.
-            var validTabs = ['system','network','tailscale','users','account','recording','storage','webhooks','updates','security'];
+            var validTabs = ['system','network','tailscale','users','account','recording','storage','webhooks','updates','security','notifications'];
             var frag = (window.location.hash || '').replace('#','').toLowerCase();
             if (frag && validTabs.indexOf(frag) !== -1) {
                 this.tab = frag;
                 if (frag === 'updates' && this.isAdmin) { this.loadOtaStatus(); }
+                if (frag === 'security') { this.loadSessions(); }
             }
 
             this.loadSystemInfo();
@@ -2171,6 +2256,92 @@ function settingsPage() {
             var stamp = new Date(value);
             if (isNaN(stamp.getTime())) return value;
             return stamp.toLocaleString();
+        },
+
+        formatRelativeTime(value) {
+            if (!value) return '--';
+            var stamp = new Date(value);
+            if (isNaN(stamp.getTime())) return value;
+            var diff = Math.max(0, Math.round((Date.now() - stamp.getTime()) / 1000));
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) {
+                var mins = Math.floor(diff / 60);
+                return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
+            }
+            if (diff < 86400) {
+                var hours = Math.floor(diff / 3600);
+                return hours + ' hour' + (hours === 1 ? '' : 's') + ' ago';
+            }
+            var days = Math.floor(diff / 86400);
+            return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+        },
+
+        sessionDeviceLabel(row) {
+            var parsed = row && row.user_agent_parsed ? row.user_agent_parsed : {};
+            var browser = parsed.browser || 'Unknown browser';
+            var os = parsed.os || 'Unknown OS';
+            return browser + ' · ' + os;
+        },
+
+        sessionOtherCount() {
+            if (!this.currentUser) return 0;
+            return (this.sessions.rows || []).filter(row =>
+                row.user_id === this.currentUser.id &&
+                !row.is_current &&
+                !row.is_legacy
+            ).length;
+        },
+
+        async loadSessions() {
+            this.sessions.loading = true;
+            try {
+                var url = '/api/v1/sessions';
+                if (this.isAdmin && this.sessions.includeAll) {
+                    url += '?scope=all';
+                }
+                var data = await window.HM.api.get(url);
+                this.sessions.rows = data.sessions || [];
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to load active sessions', 'error');
+            } finally {
+                this.sessions.loading = false;
+            }
+        },
+
+        async revokeSessionRow(row) {
+            var action = row.is_legacy ? 'Sign out this legacy session and return to login?' : 'Sign out this session?';
+            if (!window.confirm(action)) return;
+            this.sessions.busy = true;
+            try {
+                await window.HM.api.del('/api/v1/sessions/' + encodeURIComponent(row.id));
+                if (row.is_current) {
+                    window.location.href = '/login';
+                    return;
+                }
+                window.HM.toast('Session revoked', 'success');
+                await this.loadSessions();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to revoke session', 'error');
+            } finally {
+                this.sessions.busy = false;
+            }
+        },
+
+        async revokeOtherSessions() {
+            var count = this.sessionOtherCount();
+            if (count === 0) return;
+            if (!window.confirm('Sign out ' + count + ' other session' + (count === 1 ? '' : 's') + '?')) return;
+            this.sessions.busy = true;
+            try {
+                var data = await window.HM.api.del('/api/v1/sessions/others');
+                var revoked = data && typeof data.revoked_count === 'number' ? data.revoked_count : count;
+                window.HM.toast('Signed out ' + revoked + ' other session' + (revoked === 1 ? '' : 's'), 'success');
+                await this.loadSessions();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to sign out other devices', 'error');
+            } finally {
+                this.sessions.busy = false;
+            }
         },
 
         resetWebhookForm() {

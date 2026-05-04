@@ -317,13 +317,13 @@ class TestAlertCenterUI:
         # (it lived only inside the teaser block).
         assert 'href="/logs">Full log' not in body
 
-    def test_settings_has_no_security_tab(self, client):
-        """ADR-0025 — the Security tab was retired entirely. Settings
-        is for things you configure; an audit log is a viewer, not
-        a setting. The clear-log admin action moved to /logs itself.
+    def test_settings_security_tab_is_sessions_only(self, client):
+        """Issue #246 reintroduces Settings → Security for session
+        inventory and revoke controls only.
 
-        Pin the absence of the tab button binding so a future revert
-        ('I'll just put the audit log back in Settings') fails loudly.
+        Pin both the new tab binding and the absence of the old
+        inline audit-log viewer so the page does not regress into
+        the retired ADR-0025 design.
         """
         with client.session_transaction() as sess:
             sess["user_id"] = "user-001"
@@ -332,11 +332,10 @@ class TestAlertCenterUI:
         response = client.get("/settings")
         assert response.status_code == 200
         body = response.get_data(as_text=True)
-        # The tab button binding `@click="tab = 'security'"` is gone.
-        assert "tab = 'security'" not in body
-        # The tab body's gate `tab === 'security'` is gone.
-        assert "tab === 'security'" not in body
-        # The retired inline table's binding is gone.
+        assert "tab = 'security'" in body
+        assert "tab === 'security'" in body
+        assert "/api/v1/sessions" in body
+        # The retired inline audit table never comes back.
         assert 'x-for="(ev, i) in security.events"' not in body
 
     def test_logs_page_has_admin_only_clear_action(self, client):

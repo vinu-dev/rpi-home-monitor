@@ -27,9 +27,10 @@ VALID_ROLES = {"admin", "viewer"}
 class UserService:
     """Manages user CRUD operations and password changes."""
 
-    def __init__(self, store, audit=None):
+    def __init__(self, store, audit=None, session_service=None):
         self._store = store
         self._audit = audit
+        self._session_service = session_service
 
     def list_users(self) -> list[dict]:
         """List all users. Passwords excluded from output."""
@@ -121,6 +122,8 @@ class UserService:
         deleted = self._store.delete_user(user_id)
         if not deleted:
             return "User not found", 404
+        if self._session_service is not None:
+            self._session_service.delete_sessions_for_user(user_id)
 
         self._log_audit(
             "USER_DELETED",

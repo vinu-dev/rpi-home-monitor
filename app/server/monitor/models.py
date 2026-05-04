@@ -215,6 +215,22 @@ class User:
 
 
 @dataclass
+class ActiveSession:
+    """Server-side inventory row for an authenticated browser session."""
+
+    id: str
+    user_id: str
+    username: str
+    role: str = "viewer"
+    created_at: float = 0.0
+    last_active: float = 0.0
+    expires_at: float = 0.0
+    source_ip: str = ""
+    user_agent: str = ""
+    is_remember_me: bool = False
+
+
+@dataclass
 class Settings:
     """System-wide settings. Persisted to /data/config/settings.json."""
 

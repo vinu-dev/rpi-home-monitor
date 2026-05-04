@@ -86,6 +86,9 @@ class TestLogin:
         assert data["user"]["username"] == "admin"
         assert data["user"]["role"] == "admin"
         assert "csrf_token" in data
+        with client.session_transaction() as sess:
+            assert sess["sid"]
+        assert len(app.store.get_sessions()) == 1
 
     def test_login_wrong_password(self, app, client):
         _create_test_user(app)
@@ -135,6 +138,7 @@ class TestLogout:
         )
         response = client.post("/api/v1/auth/logout")
         assert response.status_code == 200
+        assert app.store.get_sessions() == []
 
         # Verify session is cleared
         response = client.get("/api/v1/auth/me")

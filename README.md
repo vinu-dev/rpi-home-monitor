@@ -77,7 +77,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Recording | Continuous 3-minute MP4 clips, organized by camera/date. Four modes: off / continuous / schedule / motion-only |
 | Motion Detection | On-camera two-frame differencing at 5 fps on the Picamera2 lores stream. HMAC-signed events posted to the server, listed on the dashboard with wall-clock time, and click-through seeks into the recording at the motion timestamp. Motion-only recording mode records just the event windows + 10 s post-roll. See ADR-0021 |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
-| User Auth | Server: bcrypt + CSRF + TOTP 2FA + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
+| User Auth | Server: bcrypt + CSRF + TOTP 2FA + rate limiting + active-session inventory/revoke controls. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
@@ -93,7 +93,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | HTTPS (TLS) | **Implemented** | Self-signed certs, NGINX terminates TLS |
 | bcrypt auth + CSRF | **Implemented** | Cost 12, rate limiting (warn at 5, block at 10) |
 | TOTP two-factor auth | **Implemented** | Account enrollment, recovery codes, admin reset, optional remote-access enforcement |
-| Session management | **Implemented** | 30min idle / 24hr absolute timeout |
+| Session management | **Implemented** | 30min idle / 24hr absolute timeout; Settings Security shows active devices and supports current, per-session, and bulk revoke |
 | LUKS encryption | **Partial** | Design and implementation work exist, but production-grade validation is still in progress |
 | nftables firewall | **Implemented** | Default DROP, minimal open ports |
 | Audit logging | **Implemented** | Append-only JSON, all admin actions |

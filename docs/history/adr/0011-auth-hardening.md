@@ -38,6 +38,11 @@ Add `flask-limiter` with in-memory backend (no Redis needed for 1-5 users):
   - Token rotated on each use
 - Regenerate session ID on login (prevent session fixation)
 
+Follow-up shipped in issue #246: authenticated browser sessions now also
+write a server-side inventory row to `/data/config/sessions.json` so the
+Settings → Security UI can enumerate and revoke active devices without
+forcing a whole-user logout or deleting the account record.
+
 ### TOTP (Future)
 
 Add `totp_secret` field to user model now. Implement TOTP UI in a later phase using `pyotp`. Not critical for LAN-only but valuable when exposed via Tailscale Funnel.
