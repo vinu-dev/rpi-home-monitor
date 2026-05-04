@@ -179,6 +179,7 @@ class HeartbeatSender:
         throttle_path=None,
         control_handler=None,
         capture_manager=None,
+        server_resolver=None,
     ):
         self._config = config
         self._pairing = pairing_manager
@@ -197,6 +198,9 @@ class HeartbeatSender:
         # camera status page can surface a "no camera module detected"
         # banner without waiting for a stream-start failure.
         self._capture = capture_manager
+        # Optional _ServerResolver â€” when present, heartbeats prefer its
+        # last known-good resolved IP during transient mDNS outages.
+        self._server_resolver = server_resolver
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Track consecutive 401 Unknown-camera responses to detect server-side unpair
@@ -332,7 +336,10 @@ class HeartbeatSender:
 
     def _send(self) -> dict | None:
         """POST one heartbeat to the server. Returns parsed response or None."""
-        server_ip = self._config.server_ip
+        server_ip = None
+        if self._server_resolver is not None:
+            server_ip = getattr(self._server_resolver, "resolved_ip", None)
+        server_ip = server_ip or self._config.server_ip
         if not server_ip:
             log.debug("No server IP configured — skipping heartbeat")
             return None

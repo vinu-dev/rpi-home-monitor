@@ -203,10 +203,13 @@ check_json_field "health has cpu_temp_c" "${API_BASE}/system/health" "cpu_temp_c
 check_json_field "health has memory" "${API_BASE}/system/health" "memory"
 check_json_field "health has disk" "${API_BASE}/system/health" "disk"
 check_json_field "health has status" "${API_BASE}/system/health" "status"
+check_status "GET /system/network" "${API_BASE}/system/network" 200
+check_json_field "network has server_url" "${API_BASE}/system/network" "server_url"
 
 check_status "GET /system/info" "${API_BASE}/system/info" 200
 check_json_field "info has hostname" "${API_BASE}/system/info" "hostname"
 check_json_field "info has firmware_version" "${API_BASE}/system/info" "firmware_version"
+skip "Manual network fallback check: login page and dashboard show Server address QR + Copy"
 
 # ---------------------------------------------------------------------------
 # 5. Camera endpoints
@@ -343,6 +346,7 @@ if [ -n "$CAMERA_IP" ]; then
         CAM_STREAM=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('streaming','?'))" 2>/dev/null) || CAM_STREAM="?"
         CAM_TEMP=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu_temp','?'))" 2>/dev/null) || CAM_TEMP="?"
         echo -e "  ${YELLOW}INFO${NC} Camera: id=${CAM_ID}, streaming=${CAM_STREAM}, cpu_temp=${CAM_TEMP}"
+        skip "Manual camera fallback check: setup-complete and status pages show IP QR + Copy"
     fi
 
     if "${CAM_CURL[@]}" -o /dev/null "${CAM_CONTROL_URL}/api/v1/control/status" 2>/dev/null; then

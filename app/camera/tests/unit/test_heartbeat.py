@@ -362,6 +362,38 @@ class TestHeartbeatSender:
 
         assert result is None
 
+    def test_send_once_prefers_cached_resolved_server_ip(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.42"
+        sender = HeartbeatSender(cfg, _make_pairing(), server_resolver=resolver)
+        captured_url = {}
+
+        class FakeResp:
+            status = 200
+
+            def read(self):
+                return b'{"ok":true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        def fake_urlopen(req, context=None, timeout=None):
+            captured_url["url"] = req.full_url
+            return FakeResp()
+
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch("camera_streamer.heartbeat.urllib.request.urlopen", fake_urlopen),
+        ):
+            result = sender.send_once()
+
+        assert result == {"ok": True}
+        assert captured_url["url"].startswith("https://192.168.1.42/")
+
     def test_apply_pending_config_calls_control_handler(self):
         cfg = _make_config()
         stream = MagicMock()

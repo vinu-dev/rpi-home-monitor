@@ -76,6 +76,8 @@ CODE_SUFFIXES = {
 EXCLUDED_CODE_PATTERNS = [
     re.compile(r"/__pycache__/"),
     re.compile(r"^app/server/monitor/static/js/(?:alpine|hls|htmx)\.min\.js$"),
+    re.compile(r"^app/server/monitor/static/qrcode\.min\.js$"),
+    re.compile(r"^app/camera/camera_streamer/static/qrcode\.min\.js$"),
 ]
 REQUIREMENT_PREFIXES = {"SYS", "SWR", "HWR"}
 ARCHITECTURE_PREFIXES = {"ARCH", "SWA", "HWA"}

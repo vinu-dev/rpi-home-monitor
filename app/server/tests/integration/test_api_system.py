@@ -67,6 +67,51 @@ class TestInfoEndpoint:
         assert data["uptime"]["seconds"] == 7200
 
 
+class TestNetworkEndpoint:
+    """Test GET /api/v1/system/network."""
+
+    def test_allows_unauthenticated_access(self, client):
+        response = client.get(
+            "/api/v1/system/network",
+            base_url="https://192.168.1.42:5443",
+        )
+        assert response.status_code == 200
+        assert response.get_json() == {
+            "server_url": "https://192.168.1.42:5443/",
+            "ip": "192.168.1.42",
+            "port": 5443,
+            "source": "request_host",
+        }
+
+    def test_authenticated_fetch_logs_audit(self, app, client):
+        app.audit = MagicMock()
+        serializer = app.session_interface.get_signing_serializer(app)
+        cookie_value = serializer.dumps(
+            {
+                "user_id": "user-admin",
+                "username": "admin",
+            }
+        )
+        client.set_cookie(
+            app.config["SESSION_COOKIE_NAME"],
+            cookie_value,
+            domain="192.168.1.42",
+        )
+
+        response = client.get(
+            "/api/v1/system/network",
+            base_url="https://192.168.1.42:5443",
+        )
+
+        assert response.status_code == 200
+        app.audit.log_event.assert_called_once_with(
+            "SYSTEM_NETWORK_FALLBACK_VIEWED",
+            user="admin",
+            ip="127.0.0.1",
+            detail="source=request_host",
+        )
+
+
 class TestSystemSummary:
     """Test GET /api/v1/system/summary."""
 

@@ -7,9 +7,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: "app/server/monitor/static/js/.*\\.min\\.js$"
+        exclude: "app/server/monitor/static/js/.*\\.min\\.js$|app/server/monitor/static/qrcode\\.min\\.js$|app/camera/camera_streamer/static/qrcode\\.min\\.js$"
       - id: end-of-file-fixer
-        exclude: "app/server/monitor/static/js/.*\\.min\\.js$"
+        exclude: "app/server/monitor/static/js/.*\\.min\\.js$|app/server/monitor/static/qrcode\\.min\\.js$|app/camera/camera_streamer/static/qrcode\\.min\\.js$"
       - id: check-yaml
       - id: check-json
       - id: check-toml
@@ -46,5 +46,10 @@ repos:
       - id: check-shell-scripts
         name: check-shell-scripts
         entry: python scripts/ai/check_shell_scripts.py
+        language: system
+        pass_filenames: false
+      - id: check-static-hashes
+        name: check-static-hashes
+        entry: python tools/check_static_hashes.py
         language: system
         pass_filenames: false

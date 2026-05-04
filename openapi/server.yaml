@@ -423,6 +423,18 @@ components:
           type: string
         os_variant:
           type: string
+    SystemNetwork:
+      type: object
+      required: [server_url, ip, port, source]
+      properties:
+        server_url:
+          type: string
+        ip:
+          type: string
+        port:
+          type: integer
+        source:
+          type: string
     Settings:
       type: object
       properties:
@@ -1134,6 +1146,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/system/network:
+    get:
+      tags: [system]
+      summary: LAN fallback URL for this server
+      responses:
+        "200":
+          description: Fallback URL derived from the current request context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemNetwork"
   /api/v1/system/info:
     get:
       tags: [system]

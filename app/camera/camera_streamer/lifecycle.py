@@ -17,15 +17,18 @@ Design patterns:
 - Fail-Silent (hardware check failure doesn't block startup)
 """
 
+import json
 import logging
 import os
 import socket
 import ssl
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 
 from camera_streamer import led
 from camera_streamer.capture import CaptureManager
@@ -113,10 +116,12 @@ class _ServerResolver:
     # tells operators to look at the configured address rather than
     # waiting indefinitely.
     DEADLINE_S = 300.0
+    MAX_CACHE_AGE_S = 7 * 24 * 60 * 60
 
-    def __init__(self, address: str, capture_manager=None):
+    def __init__(self, address: str, capture_manager=None, cache_path: str = ""):
         self._address = address or ""
         self._capture = capture_manager
+        self._cache_path = cache_path or ""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._resolved_ip: str | None = None
@@ -131,6 +136,7 @@ class _ServerResolver:
         if not self._address:
             log.debug("ServerResolver: no address configured — skipping")
             return
+        self._prime_from_cache()
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -176,6 +182,7 @@ class _ServerResolver:
                 continue
 
             self._resolved_ip = ip
+            self._persist_cache(ip)
             log.info(
                 "Server address resolved after %d attempt(s): %s -> %s",
                 attempts,
@@ -224,6 +231,92 @@ class _ServerResolver:
                 )
             except AttributeError:
                 pass
+
+    def _prime_from_cache(self) -> None:
+        """Load a recent cached resolution from /data/config if available."""
+        if not self._cache_path or not os.path.isfile(self._cache_path):
+            return
+        try:
+            with open(self._cache_path, encoding="utf-8") as handle:
+                cached = json.load(handle)
+            hostname = str(cached["hostname"]).strip()
+            ip = str(cached["ip"]).strip()
+            timestamp = str(cached["ts"]).strip()
+            if hostname != self._address:
+                log.info(
+                    "ServerResolver: ignoring cached IP for %s because address is %s",
+                    hostname,
+                    self._address,
+                )
+                return
+            age_s = self._cache_age_seconds(timestamp)
+            if age_s is None:
+                raise ValueError("invalid timestamp")
+            if age_s > self.MAX_CACHE_AGE_S:
+                log.info(
+                    "ServerResolver: cached IP for %s is stale (age=%ss)",
+                    self._address,
+                    int(age_s),
+                )
+                return
+            if not ip:
+                raise ValueError("missing ip")
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            log.warning(
+                "ServerResolver: ignoring invalid cache %s: %s",
+                self._cache_path,
+                exc,
+            )
+            return
+
+        self._resolved_ip = ip
+        log.info("ServerResolver: primed cached IP for %s -> %s", self._address, ip)
+
+    def _persist_cache(self, ip: str) -> None:
+        """Best-effort atomic rewrite of the last known-good server IP."""
+        if not self._cache_path or not ip:
+            return
+        payload = {
+            "hostname": self._address,
+            "ip": ip,
+            "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        cache_dir = os.path.dirname(self._cache_path)
+        temp_path = ""
+        try:
+            if cache_dir:
+                os.makedirs(cache_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=cache_dir or None,
+                delete=False,
+            ) as handle:
+                json.dump(payload, handle, separators=(",", ":"))
+                handle.write("\n")
+                temp_path = handle.name
+            os.replace(temp_path, self._cache_path)
+        except OSError as exc:
+            log.warning(
+                "ServerResolver: failed to persist cache %s: %s",
+                self._cache_path,
+                exc,
+            )
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _cache_age_seconds(timestamp: str) -> float | None:
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return max(0.0, (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds())
 
 
 class State:
@@ -494,7 +587,9 @@ class CameraLifecycle:
         # threading the dependency through earlier states.
         if self._config.is_configured and self._config.server_ip:
             self._server_resolver = _ServerResolver(
-                self._config.server_ip, capture_manager=self._capture
+                self._config.server_ip,
+                capture_manager=self._capture,
+                cache_path=os.path.join(self._config.config_dir, "server_resolved_ip"),
             )
             self._server_resolver.start()
 
@@ -571,6 +666,7 @@ class CameraLifecycle:
             # Surface hardware faults ("no camera module detected")
             # to the server so the dashboard can show the user.
             capture_manager=self._capture,
+            server_resolver=self._server_resolver,
         )
         if self._config.is_configured and self._pairing.is_paired:
             self._heartbeat.start()

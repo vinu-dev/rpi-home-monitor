@@ -44,7 +44,7 @@ programmatic checks:
 | Requirements | [`requirements/system-requirements.md`](requirements/system-requirements.md), [`requirements/software-requirements.md`](requirements/software-requirements.md), [`requirements/hardware-requirements.md`](requirements/hardware-requirements.md) |
 | Architecture | [`architecture/system-architecture.md`](architecture/system-architecture.md), [`architecture/software-architecture.md`](architecture/software-architecture.md), [`architecture/hardware-architecture.md`](architecture/hardware-architecture.md) |
 | Safety risk | [`risk/hazard-analysis.md`](risk/hazard-analysis.md), [`risk/risk-control-verification.md`](risk/risk-control-verification.md) |
-| Cybersecurity | [`cybersecurity/threat-model.md`](cybersecurity/threat-model.md), [`cybersecurity/security-risk-analysis.md`](cybersecurity/security-risk-analysis.md) |
+| Cybersecurity | [`cybersecurity/threat-model.md`](cybersecurity/threat-model.md), [`cybersecurity/security-risk-analysis.md`](cybersecurity/security-risk-analysis.md), [`cybersecurity/third-party-libraries.md`](cybersecurity/third-party-libraries.md) |
 | Verification | [`verification-validation/test-plan.md`](verification-validation/test-plan.md), [`verification-validation/test-cases.md`](verification-validation/test-cases.md) |
 | Traceability | [`traceability/traceability-matrix.md`](traceability/traceability-matrix.md), [`traceability/traceability-matrix.csv`](traceability/traceability-matrix.csv) |
 
@@ -62,6 +62,7 @@ development material:
 - [`guides/ota-key-management.md`](guides/ota-key-management.md)
 - [`guides/account-security.md`](guides/account-security.md)
 - [`guides/admin-recovery.md`](guides/admin-recovery.md)
+- [`guides/network-fallback.md`](guides/network-fallback.md)
 
 ## History
 

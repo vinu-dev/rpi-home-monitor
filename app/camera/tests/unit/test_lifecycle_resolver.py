@@ -9,7 +9,9 @@ fault on the CaptureManager so the heartbeat surfaces a precise badge.
 
 from __future__ import annotations
 
+import json
 import socket
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.faults import FAULT_NETWORK_MDNS_RESOLUTION_FAILED
@@ -34,6 +36,25 @@ class TestResolverHappyPath:
         capture.clear_fault.assert_called_once_with(
             FAULT_NETWORK_MDNS_RESOLUTION_FAILED
         )
+
+    def test_success_persists_cache_atomically(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.socket.gethostbyname",
+            return_value="192.168.1.42",
+        ):
+            resolver._run()
+
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cached["hostname"] == "homemonitor.local"
+        assert cached["ip"] == "192.168.1.42"
+        assert cached["ts"].endswith("Z")
 
     def test_resolves_after_transient_failures(self):
         """Mocked gethostbyname fails N times then succeeds — exactly the
@@ -192,6 +213,106 @@ class TestResolverStopSemantics:
 
         assert resolver._thread is not None
         assert not resolver._thread.is_alive()
+
+
+class TestResolverCachePriming:
+    def test_start_primes_recent_matching_cache(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "hostname": "homemonitor.local",
+                    "ip": "192.168.1.42",
+                    "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.threading.Thread",
+            return_value=MagicMock(start=MagicMock()),
+        ):
+            resolver.start()
+
+        assert resolver.resolved_ip == "192.168.1.42"
+
+    def test_start_ignores_mismatched_hostname_cache(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "hostname": "other.local",
+                    "ip": "192.168.1.99",
+                    "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.threading.Thread",
+            return_value=MagicMock(start=MagicMock()),
+        ):
+            resolver.start()
+
+        assert resolver.resolved_ip is None
+
+    def test_start_ignores_stale_cache(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "hostname": "homemonitor.local",
+                    "ip": "192.168.1.42",
+                    "ts": (datetime.now(UTC) - timedelta(days=8)).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.threading.Thread",
+            return_value=MagicMock(start=MagicMock()),
+        ):
+            resolver.start()
+
+        assert resolver.resolved_ip is None
+
+    def test_start_ignores_corrupted_cache(self, tmp_path, caplog):
+        cache_path = tmp_path / "server_resolved_ip"
+        cache_path.write_text("{broken", encoding="utf-8")
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.threading.Thread",
+            return_value=MagicMock(start=MagicMock()),
+        ):
+            resolver.start()
+
+        assert resolver.resolved_ip is None
+        assert "ignoring invalid cache" in caplog.text
 
 
 class TestResolverBackoffShape:

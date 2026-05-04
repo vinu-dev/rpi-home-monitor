@@ -58,10 +58,28 @@
             </p>
         </form>
     </div>
+    <div id="login-server-address" class="login-card" hidden style="margin-top:16px;">
+        <div class="login-card__subtitle" style="margin-bottom:10px;">Server address</div>
+        <a data-role="server-url" href="" class="form-input"
+           style="display:block;text-decoration:none;font-family:var(--font-mono, monospace);word-break:break-word;"></a>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+            <button data-role="copy-url" type="button" class="btn btn--secondary">Copy</button>
+            <a data-role="help-link" href="" class="text-small text-muted">Help</a>
+        </div>
+        <div data-role="server-meta" class="text-small text-muted" style="margin-top:10px;"></div>
+        <div data-role="server-qr" hidden
+             style="margin-top:14px;background:#fff;border-radius:12px;padding:10px;width:fit-content;"></div>
+        <div data-role="qr-note" class="text-small text-muted" hidden style="margin-top:8px;">
+            QR not rendered; copy the URL manually.
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='qrcode.min.js') }}"
+        integrity="sha256-uyNl5JAvT4SFLPQCXm9qYDJaaCrq+kP7Y7f8jwmNHvI="
+        crossorigin="anonymous"></script>
 <script>
 (function() {
     var form = document.getElementById('login-form');
@@ -155,6 +173,8 @@
         btnVerifyTotp.disabled = false;
         btnVerifyTotp.textContent = 'Verify';
     }
+
+    window.HM.networkFallback.mount('login-server-address', '/help/network-fallback');
 })();
 </script>
 {% endblock %}

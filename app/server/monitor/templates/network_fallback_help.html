@@ -1,0 +1,32 @@
+{# REQ: SWR-022, SWR-067; RISK: RISK-010, RISK-015; SEC: SC-010, SC-020; TEST: TC-021, TC-054 #}
+{% extends "base.html" %}
+
+{% block title %}Network Fallback Help - Home Monitor{% endblock %}
+
+{% block content %}
+<div class="page">
+    <h1 class="page-title">What to do when .local does not work</h1>
+
+    <div class="card" style="padding:16px;">
+        <p class="text-muted" style="line-height:1.6;">
+            If your phone or laptop cannot open a <span class="inline-code">.local</span>
+            address, use the IP fallback shown in the product UI.
+        </p>
+        <ol style="margin:16px 0 0 20px; line-height:1.7;">
+            <li>Open the camera status page and scan or copy the <strong>By IP</strong> link.</li>
+            <li>Open the server login page or dashboard and copy the <strong>Server address</strong> link.</li>
+            <li>Bookmark the IP URL you used successfully on this WiFi network.</li>
+        </ol>
+    </div>
+
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="section-header" style="margin-bottom:10px;">If neither page opens</div>
+        <p class="text-muted" style="line-height:1.6;">
+            Check that your device is back on the same home WiFi as the camera and server.
+            If the camera is unavailable, reconnect to the setup hotspot and repeat setup.
+            If the server is unavailable, verify it is powered on and reachable from another
+            device on the same network.
+        </p>
+    </div>
+</div>
+{% endblock %}
