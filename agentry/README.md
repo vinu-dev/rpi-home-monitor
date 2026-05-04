@@ -90,6 +90,11 @@ new autonomous issue discovery or release automation.
 `opus` is the Claude Code alias for the latest Opus model. Keep this alias
 instead of pinning a dated Claude model unless a rollback is intentional.
 
+The start scripts currently pin Agentry to
+`f8da18a92e6fbbc87e77c56164f24e1317bb66c4`, which includes the reviewer
+comment workflow and the stream-json watchdog fix for active Claude Code tool
+activity during check-ins.
+
 ## Start
 
 ```powershell
