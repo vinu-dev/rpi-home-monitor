@@ -386,11 +386,16 @@
 
         var actionsHtml =
             '<button class="btn btn--primary btn--small btn-play-clip">Play</button>';
+        var stampedHtml = clip.stamped
+            ? '<span class="badge badge--ok" title="Embedded timestamps present">Stamped</span>'
+            : '';
 
         card.innerHTML =
             checkHtml +
             '<div class="clip-card__info">' +
-                '<div class="clip-card__time">' + window.HM.escapeHtml(clip.start_time) + '</div>' +
+                '<div class="clip-card__time">' +
+                    window.HM.escapeHtml(clip.start_time) + ' ' + stampedHtml +
+                '</div>' +
                 '<div class="clip-card__meta">' +
                     window.HM.formatDuration(clip.duration_seconds) + ' / ' +
                     window.HM.formatBytes(clip.size_bytes) +

@@ -2,8 +2,10 @@
 """Tests for the recordings API."""
 
 import os
+from pathlib import Path
 
 from monitor.models import Camera
+from monitor.services.clip_stamper import stamp_sentinel_path
 
 
 def _add_camera(app, camera_id="cam-001"):
@@ -41,11 +43,14 @@ class TestListClips:
     def test_lists_clips(self, app, logged_in_client):
         client = logged_in_client()
         _add_camera(app)
-        _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
+        first = _make_clip(app, "cam-001", "2026-04-09", "14-00-00")
+        stamp_sentinel_path(Path(first)).write_text("ok\n", encoding="utf-8")
         _make_clip(app, "cam-001", "2026-04-09", "14-30-00")
         data = client.get("/api/v1/recordings/cam-001?date=2026-04-09").get_json()
         assert len(data) == 2
         assert data[0]["start_time"] == "14:00:00"
+        assert data[0]["stamped"] is True
+        assert data[1]["stamped"] is False
 
     def test_viewer_can_list(self, app, logged_in_client):
         client = logged_in_client("viewer")

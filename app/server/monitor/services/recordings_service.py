@@ -18,6 +18,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from monitor.services.clip_stamper import stamp_sentinel_path
 from monitor.services.recorder_service import RecorderService
 
 log = logging.getLogger("monitor.recordings-service")
@@ -345,6 +346,7 @@ class RecordingsService:
             "duration_seconds": 180,
             "size_bytes": size,
             "thumbnail": f"{newest_path.stem}.thumb.jpg",
+            "stamped": stamp_sentinel_path(newest_path).exists(),
         }
         return data, None, 200
 
@@ -423,6 +425,7 @@ class RecordingsService:
                     "duration_seconds": 180,
                     "size_bytes": size,
                     "thumbnail": thumb_name,
+                    "stamped": stamp_sentinel_path(mp4).exists(),
                 }
             )
         return out, None, 200

@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 
 from monitor.models import Clip
+from monitor.services.clip_stamper import stamp_sentinel_path
 
 # Loop recorder produces flat filenames directly under the camera dir:
 #   cam-xxx/YYYYMMDD_HHMMSS.mp4
@@ -102,6 +103,7 @@ class RecorderService:
                         start_time=stem.replace("-", ":"),
                         size_bytes=mp4.stat().st_size,
                         thumbnail=thumb.name if thumb.exists() else "",
+                        stamped=stamp_sentinel_path(mp4).exists(),
                     )
                 )
 
@@ -118,6 +120,7 @@ class RecorderService:
                     start_time=_flat_clip_start_time(mp4.stem),
                     size_bytes=mp4.stat().st_size,
                     thumbnail=thumb.name if thumb.exists() else "",
+                    stamped=stamp_sentinel_path(mp4).exists(),
                 )
             )
 

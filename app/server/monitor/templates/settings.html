@@ -1283,6 +1283,58 @@
             </div>
         </div>
 
+        <div class="card mt-16">
+            <div class="flex-between" style="margin-bottom:12px;">
+                <span style="font-weight:600;">Forensic Timestamps</span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button
+                        class="btn btn--primary btn--small"
+                        @click="startTimestampBackfill()"
+                        :disabled="storage.timestamps.busy || !storage.timestamps.ffmpegAvailable || storage.timestamps.state === 'running' || storage.timestamps.state === 'cancelling' || storage.timestamps.unstamped === 0">
+                        <span x-text="storage.timestamps.busy ? 'Working...' : 'Backfill timestamps now'"></span>
+                    </button>
+                    <button
+                        class="btn btn--secondary btn--small"
+                        x-show="storage.timestamps.state === 'running' || storage.timestamps.state === 'cancelling'"
+                        @click="cancelTimestampBackfill()"
+                        :disabled="storage.timestamps.busy || storage.timestamps.state === 'cancelling'">
+                        <span x-text="storage.timestamps.state === 'cancelling' ? 'Cancelling...' : 'Cancel'"></span>
+                    </button>
+                </div>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Stamped / Unstamped</span>
+                <span class="info-row__value" x-text="storage.timestamps.stamped + ' / ' + storage.timestamps.unstamped"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Backfill State</span>
+                <span class="info-row__value" x-text="storage.timestamps.state || 'idle'"></span>
+            </div>
+            <div class="info-row" x-show="storage.timestamps.total > 0">
+                <span class="info-row__label">Progress</span>
+                <span class="info-row__value" x-text="storage.timestamps.processed + ' / ' + storage.timestamps.total"></span>
+            </div>
+            <div class="info-row" x-show="storage.timestamps.currentCamera">
+                <span class="info-row__label">Current Camera</span>
+                <span class="info-row__value" x-text="storage.timestamps.currentCamera"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;" x-show="storage.timestamps.startedAt">
+                <span class="info-row__label">Started</span>
+                <span class="info-row__value" x-text="formatLocalTime(storage.timestamps.startedAt)"></span>
+            </div>
+            <div class="msg msg--warn" x-show="!storage.timestamps.ffmpegAvailable" style="margin-top:12px;">
+                ffmpeg/ffprobe are not available on this host. New clips remain downloadable, but embedded timestamps cannot be added until the image is fixed.
+            </div>
+            <div style="margin-top:12px;" x-show="storage.timestamps.cameras.length > 0">
+                <template x-for="row in storage.timestamps.cameras" :key="row.camera_id">
+                    <div class="info-row" style="padding:8px 0;">
+                        <span class="info-row__label" x-text="row.camera_name"></span>
+                        <span class="info-row__value" x-text="row.stamped + ' stamped / ' + row.unstamped + ' unstamped'"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
         <!-- USB Devices -->
         <div class="card mt-16">
             <div class="flex-between" style="margin-bottom:12px;">
@@ -2239,7 +2291,39 @@ function settingsPage() {
 
         tailscale: { installed: false, running: false, state: 'unavailable', hostname: '', ip: '', peers: [], authUrl: '', loading: false, daemon_enabled: false, authenticated: false, config: { enabled: false, auto_connect: false, accept_routes: false, ssh: false, has_auth_key: false }, authKey: '', pollTimer: null },
 
-        storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false, mountPath: '', spaceDetail: '', oldestSegment: '', newestSegment: '', lowWatermark: 10, hysteresis: 5, loopSaving: false },
+        storage: {
+            location: '',
+            recSize: '',
+            space: '',
+            clips: '',
+            isUsb: false,
+            devices: [],
+            scanned: false,
+            scanning: false,
+            showFormat: false,
+            formatDevice: {},
+            formatting: false,
+            mountPath: '',
+            spaceDetail: '',
+            oldestSegment: '',
+            newestSegment: '',
+            lowWatermark: 10,
+            hysteresis: 5,
+            loopSaving: false,
+            timestamps: {
+                ffmpegAvailable: true,
+                state: 'idle',
+                processed: 0,
+                total: 0,
+                currentCamera: '',
+                startedAt: '',
+                stamped: 0,
+                unstamped: 0,
+                cameras: [],
+                busy: false,
+                pollTimer: null
+            }
+        },
         offsite: {
             enabled: false,
             configured: false,
@@ -3447,6 +3531,61 @@ function settingsPage() {
                     this.storage.hysteresis = s.loop_hysteresis_percent;
                 }
             } catch(e) {}
+            await this.loadTimestampBackfillStatus();
+        },
+
+        async loadTimestampBackfillStatus() {
+            try {
+                var data = await window.HM.api.get('/api/v1/recordings/timestamp-backfill/status');
+                this.storage.timestamps.ffmpegAvailable = data.ffmpeg_available !== false;
+                this.storage.timestamps.state = data.state || 'idle';
+                this.storage.timestamps.processed = data.processed || 0;
+                this.storage.timestamps.total = data.total || 0;
+                this.storage.timestamps.currentCamera = data.current_camera || '';
+                this.storage.timestamps.startedAt = data.started_at || '';
+                var summary = data.summary || {};
+                this.storage.timestamps.stamped = summary.stamped || 0;
+                this.storage.timestamps.unstamped = summary.unstamped || 0;
+                this.storage.timestamps.cameras = summary.cameras || [];
+            } catch(e) {
+                this.storage.timestamps.ffmpegAvailable = false;
+            }
+            if (this.storage.timestamps.pollTimer) {
+                clearTimeout(this.storage.timestamps.pollTimer);
+                this.storage.timestamps.pollTimer = null;
+            }
+            if (this.storage.timestamps.state === 'running' || this.storage.timestamps.state === 'cancelling') {
+                this.storage.timestamps.pollTimer = setTimeout(() => {
+                    this.loadTimestampBackfillStatus();
+                }, 2000);
+            }
+        },
+
+        async startTimestampBackfill() {
+            if (!confirm('Scan existing clips and stamp any that are still missing embedded timestamps?')) return;
+            this.storage.timestamps.busy = true;
+            try {
+                await window.HM.api.post('/api/v1/recordings/timestamp-backfill', {});
+                window.HM.toast('Timestamp backfill started', 'success');
+                await this.loadTimestampBackfillStatus();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to start timestamp backfill', 'error');
+            } finally {
+                this.storage.timestamps.busy = false;
+            }
+        },
+
+        async cancelTimestampBackfill() {
+            this.storage.timestamps.busy = true;
+            try {
+                await window.HM.api.del('/api/v1/recordings/timestamp-backfill');
+                window.HM.toast('Timestamp backfill cancellation requested', 'success');
+                await this.loadTimestampBackfillStatus();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to cancel timestamp backfill', 'error');
+            } finally {
+                this.storage.timestamps.busy = false;
+            }
         },
 
         _offsitePayload() {

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from monitor.models import Camera, Clip
+from monitor.services.clip_stamper import stamp_sentinel_path
 from monitor.services.recordings_service import RecordingsService
 
 
@@ -85,12 +86,17 @@ class TestListClips:
         assert status == 404
 
     def test_returns_clips(self, svc, storage_manager):
-        _create_clip_file(storage_manager, "cam-001", "2026-04-09", "14-30-00")
+        stamped = _create_clip_file(
+            storage_manager, "cam-001", "2026-04-09", "14-30-00"
+        )
+        stamp_sentinel_path(stamped).write_text("ok\n", encoding="utf-8")
         _create_clip_file(storage_manager, "cam-001", "2026-04-09", "15-00-00")
         result, error, status = svc.list_clips("cam-001", "2026-04-09")
         assert error is None
         assert status == 200
         assert len(result) == 2
+        assert result[0]["stamped"] is True
+        assert result[1]["stamped"] is False
 
     def test_empty_date(self, svc):
         result, error, status = svc.list_clips("cam-001", "2099-01-01")

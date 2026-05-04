@@ -1194,6 +1194,7 @@ CLIP_FIELDS = {
     "duration_seconds",
     "size_bytes",
     "thumbnail",
+    "stamped",
 }
 
 
