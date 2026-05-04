@@ -34,6 +34,11 @@ docs/ai/roles/
 Edit those files for project behavior. The prompts in `agentry/config.yml`
 point at them.
 
+The standard Implementer retry path and Tester workflow reset clean local
+feature branches from `origin/feature/<id>-<slug>` before rebasing. This keeps
+stale role worktrees from reporting false merge conflicts after a supervisor or
+agent force-with-lease push.
+
 ## Machine Setup
 
 Run once per machine:
