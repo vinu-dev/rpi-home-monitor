@@ -1,4 +1,4 @@
-# REQ: SWR-022; RISK: RISK-010; SEC: SC-010; TEST: TC-021
+# REQ: SWR-022, SWR-067; RISK: RISK-007, RISK-010, RISK-015; SEC: SC-010, SC-012; TEST: TC-021, TC-054
 """
 Tests for view routes — HTML page serving and redirects.
 """
@@ -441,6 +441,21 @@ class TestAlertCenterUI:
         # Initial-state and save-payload wiring.
         assert "offline_alerts_enabled: (typeof cam.offline_alerts_enabled" in body
         assert "Boolean(this.editForm.offline_alerts_enabled)" in body
+
+    def test_dashboard_camera_settings_has_encoder_preset_controls(self, client):
+        """#252 â€” Camera Settings modal exposes encoder preset controls."""
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert ">Encoder preset<" in body
+        assert 'x-model="editForm.encoder_preset"' in body
+        assert "/api/v1/cameras/encoder-presets" in body
+        assert "onEncoderPresetChange()" in body
+        assert "onEncoderFieldEdited()" in body
 
     def test_alerts_page_has_review_queue_sort_toggle(self, client):
         """#144 review queue — the alerts page exposes the

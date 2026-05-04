@@ -134,6 +134,12 @@ components:
           type: string
         fps:
           type: integer
+        encoder_preset:
+          type: string
+          description: |
+            Echo of the named encoder preset currently matching the saved
+            stream parameters. Empty string means the camera is using a
+            hand-tuned custom bundle.
         paired_at:
           type: string
         last_seen:
@@ -263,6 +269,9 @@ components:
           type: integer
           minimum: 500000
           maximum: 8000000
+        encoder_preset:
+          type: string
+          maxLength: 32
         h264_profile:
           type: string
           enum: [baseline, main, high]
@@ -300,6 +309,43 @@ components:
           properties:
             uptime:
               type: string
+    EncoderPreset:
+      type: object
+      required: [key, label, description, min_sensor, params]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        min_sensor:
+          type: string
+        params:
+          type: object
+          required: [width, height, fps, bitrate, h264_profile, keyframe_interval]
+          properties:
+            width:
+              type: integer
+            height:
+              type: integer
+            fps:
+              type: integer
+            bitrate:
+              type: integer
+            h264_profile:
+              type: string
+              enum: [baseline, main, high]
+            keyframe_interval:
+              type: integer
+    EncoderPresetCatalogue:
+      type: object
+      required: [presets]
+      properties:
+        presets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EncoderPreset"
     PairingResponse:
       type: object
       required: [pin, expires_in]
@@ -734,6 +780,24 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Duplicate camera
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/cameras/encoder-presets:
+    get:
+      tags: [cameras]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Global encoder preset catalogue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncoderPresetCatalogue"
+        "401":
+          description: Authentication required
           content:
             application/json:
               schema:

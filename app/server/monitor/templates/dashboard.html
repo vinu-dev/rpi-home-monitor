@@ -1,4 +1,4 @@
-{# REQ: SWR-022, SWR-032; RISK: RISK-010, RISK-015; SEC: SC-010, SC-020; TEST: TC-021, TC-029 #}
+{# REQ: SWR-022, SWR-032, SWR-065, SWR-067; RISK: RISK-007, RISK-010, RISK-015; SEC: SC-010, SC-012, SC-020; TEST: TC-021, TC-029, TC-054 #}
 {% extends "base.html" %}
 
 {% block title %}Dashboard - Home Monitor{% endblock %}
@@ -418,6 +418,24 @@
                     <strong>Saved resolution unavailable on this sensor.</strong>
                     <span x-text="editForm.resolutionMismatchHint"></span>
                 </div>
+                <div class="form-group" x-show="editForm.encoderPresetAvailable">
+                    <label>Encoder preset</label>
+                    <select class="form-input" x-model="editForm.encoder_preset" @change="onEncoderPresetChange()">
+                        <template x-for="preset in editForm.encoderPresetOptions" :key="preset.key">
+                            <option :value="preset.key" x-text="preset.label"></option>
+                        </template>
+                        <option value="">Custom</option>
+                    </select>
+                    <div class="text-small text-muted"
+                         x-show="editForm.encoderPresetDescription"
+                         x-text="editForm.encoderPresetDescription"
+                         style="margin-top:4px;"></div>
+                    <div class="text-small text-muted"
+                         x-show="editForm.encoderPresetHiddenHint"
+                         style="margin-top:4px;">
+                        Some presets hidden because this camera doesn't support them.
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Resolution</label>
                     <select class="form-input" x-model="editForm.resolution" @change="onResolutionChange()">
@@ -428,7 +446,7 @@
                 </div>
                 <div class="form-group">
                     <label>Framerate (fps)</label>
-                    <input type="number" class="form-input" x-model.number="editForm.fps" min="1" :max="editForm.maxFps">
+                    <input type="number" class="form-input" x-model.number="editForm.fps" min="1" :max="editForm.maxFps" @input="onEncoderFieldEdited()">
                     <div class="text-small text-muted" x-text="'Max: ' + editForm.maxFps + ' fps for this resolution'"></div>
                 </div>
                 <div class="form-group">
@@ -440,11 +458,11 @@
                          "settings showing defaults instead of saved value".
                          Server-side validation still enforces 0.5-8 Mbps
                          on Zero 2W via the camera's encoder ceiling. -->
-                    <input type="number" class="form-input" x-model.number="editForm.bitrateMbps" min="0.5" max="12" step="0.5">
+                    <input type="number" class="form-input" x-model.number="editForm.bitrateMbps" min="0.5" max="12" step="0.5" @input="onEncoderFieldEdited()">
                 </div>
                 <div class="form-group">
                     <label>H.264 Profile</label>
-                    <select class="form-input" x-model="editForm.h264_profile">
+                    <select class="form-input" x-model="editForm.h264_profile" @change="onEncoderFieldEdited()">
                         <option value="baseline">Baseline</option>
                         <option value="main">Main</option>
                         <option value="high">High</option>
@@ -452,7 +470,7 @@
                 </div>
                 <div class="form-group">
                     <label>Keyframe Interval (frames)</label>
-                    <input type="number" class="form-input" x-model.number="editForm.keyframe_interval" min="1" max="120">
+                    <input type="number" class="form-input" x-model.number="editForm.keyframe_interval" min="1" max="120" @input="onEncoderFieldEdited()">
                 </div>
                 <div class="form-group">
                     <label>Rotation</label>
@@ -619,10 +637,29 @@ function dashboardPage() {
         pairingCameraId: '',
         scanning: false,
         editCam: null,
-        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, recording_motion_enabled: false, motion_sensitivity: 5, maxFps: 30 },
+        editForm: {
+            resolution: '1920x1080',
+            fps: 25,
+            bitrateMbps: 4,
+            h264_profile: 'high',
+            keyframe_interval: 30,
+            encoder_preset: '',
+            encoderPresetOptions: [],
+            encoderPresetAvailable: false,
+            encoderPresetDescription: '',
+            encoderPresetHiddenHint: false,
+            rotation: 0,
+            hflip: false,
+            vflip: false,
+            recording_motion_enabled: false,
+            motion_sensitivity: 5,
+            maxFps: 30
+        },
         savingStream: false,
         streamSaveMsg: '',
         streamSaveOk: false,
+        encoderPresets: [],
+        encoderPresetsLoaded: false,
 
         _summaryInterval: null,
         _cameraInterval: null,
@@ -913,6 +950,19 @@ function dashboardPage() {
             } catch(e) {}
         },
 
+        async loadEncoderPresets() {
+            try {
+                var payload = await window.HM.api.get('/api/v1/cameras/encoder-presets');
+                this.encoderPresets = Array.isArray(payload && payload.presets)
+                    ? payload.presets : [];
+                this.encoderPresetsLoaded = true;
+            } catch(e) {
+                this.encoderPresets = [];
+                this.encoderPresetsLoaded = false;
+                console.warn('Failed to load encoder presets', e);
+            }
+        },
+
         async scanCameras() {
             this.scanning = true;
             try {
@@ -991,27 +1041,128 @@ function dashboardPage() {
             { value: '1920x1080', label: '1920x1080 (max 30 fps)', width: 1920, height: 1080, max_fps: 30 },
         ],
 
+        _legacyEncoderPresetResolutions: {
+            '1280x720': true,
+            '1920x1080': true,
+        },
+
+        _encoderPresetsForCamera(cam) {
+            var presets = Array.isArray(this.encoderPresets) ? this.encoderPresets.slice() : [];
+            if (!presets.length) return [];
+            var modes = (cam && Array.isArray(cam.sensor_modes)) ? cam.sensor_modes : [];
+            if (!modes.length) {
+                return presets.filter((preset) => {
+                    var key = preset.params.width + 'x' + preset.params.height;
+                    return !!this._legacyEncoderPresetResolutions[key];
+                });
+            }
+            var maxFpsByResolution = {};
+            for (var i = 0; i < modes.length; i++) {
+                var mode = modes[i] || {};
+                var resKey = mode.width + 'x' + mode.height;
+                var fps = Math.floor(Number(mode.max_fps) || 0);
+                if (!fps) continue;
+                maxFpsByResolution[resKey] = Math.max(maxFpsByResolution[resKey] || 0, fps);
+            }
+            var encoderMaxPixels = Number((cam && cam.encoder_max_pixels) || 0);
+            return presets.filter(function(preset) {
+                var params = preset.params || {};
+                var resKey = params.width + 'x' + params.height;
+                var maxFps = maxFpsByResolution[resKey];
+                if (!maxFps) return false;
+                if (Number(params.fps) > maxFps) return false;
+                if (encoderMaxPixels > 0 && Number(params.width) * Number(params.height) > encoderMaxPixels) {
+                    return false;
+                }
+                return true;
+            });
+        },
+
+        _encoderPresetByKey(key) {
+            if (!key) return null;
+            var presets = Array.isArray(this.encoderPresets) ? this.encoderPresets : [];
+            for (var i = 0; i < presets.length; i++) {
+                if (presets[i].key === key) return presets[i];
+            }
+            return null;
+        },
+
+        _encoderPresetDescriptionFor(key) {
+            var preset = this._encoderPresetByKey(key);
+            return preset && preset.description ? preset.description : '';
+        },
+
+        _encoderPresetMatchesForm(preset) {
+            if (!preset || !this.editForm) return false;
+            var params = preset.params || {};
+            var parts = String(this.editForm.resolution || '').split('x');
+            return (
+                parseInt(parts[0], 10) === Number(params.width) &&
+                parseInt(parts[1], 10) === Number(params.height) &&
+                Number(this.editForm.fps) === Number(params.fps) &&
+                Math.round(Number(this.editForm.bitrateMbps) * 1000000) === Number(params.bitrate) &&
+                String(this.editForm.h264_profile || '') === String(params.h264_profile || '') &&
+                Number(this.editForm.keyframe_interval) === Number(params.keyframe_interval)
+            );
+        },
+
+        _syncEncoderPresetUiState() {
+            if (!this.editForm) return;
+            var key = this.editForm.encoder_preset || '';
+            if (key) {
+                var preset = this._encoderPresetByKey(key);
+                if (!this._encoderPresetMatchesForm(preset)) {
+                    this.editForm.encoder_preset = '';
+                    key = '';
+                }
+            }
+            this.editForm.encoderPresetDescription = this._encoderPresetDescriptionFor(key);
+        },
+
         // Build the dropdown option list for ONE camera from its
         // reported sensor_modes (#173). Each camera gets its own list,
         // so an IMX219 shows 3280x2464 and an OV5647 stops at 2592x1944.
         _resolutionOptionsFor(cam) {
             var modes = (cam && Array.isArray(cam.sensor_modes)) ? cam.sensor_modes : [];
+            var options;
             if (!modes.length) {
-                return this._legacyResolutionOptions.slice();
+                options = this._legacyResolutionOptions.slice();
+            } else {
+                // Sort by pixel count so the dropdown is small-to-large.
+                var sorted = modes.slice().sort(function(a, b) {
+                    return (a.width * a.height) - (b.width * b.height);
+                });
+                options = sorted.map(function(m) {
+                    var fps = Math.round(Number(m.max_fps) || 0);
+                    return {
+                        value: m.width + 'x' + m.height,
+                        label: m.width + 'x' + m.height + ' (max ' + fps + ' fps)',
+                        width: m.width,
+                        height: m.height,
+                        max_fps: fps,
+                    };
+                });
             }
-            // Sort by pixel count so the dropdown is small-to-large.
-            var sorted = modes.slice().sort(function(a, b) {
+            var seen = {};
+            for (var i = 0; i < options.length; i++) {
+                seen[options[i].value] = true;
+            }
+            var presets = this._encoderPresetsForCamera(cam);
+            for (var j = 0; j < presets.length; j++) {
+                var params = presets[j].params || {};
+                var value = params.width + 'x' + params.height;
+                if (seen[value]) continue;
+                options.push({
+                    value: value,
+                    label: value + ' (max 30 fps)',
+                    width: params.width,
+                    height: params.height,
+                    max_fps: 30,
+                });
+                seen[value] = true;
+            }
+            return options.sort(function(a, b) {
                 return (a.width * a.height) - (b.width * b.height);
-            });
-            return sorted.map(function(m) {
-                var fps = Math.round(Number(m.max_fps) || 0);
-                return {
-                    value: m.width + 'x' + m.height,
-                    label: m.width + 'x' + m.height + ' (max ' + fps + ' fps)',
-                    width: m.width,
-                    height: m.height,
-                    max_fps: fps,
-                };
             });
         },
 
@@ -1167,6 +1318,7 @@ function dashboardPage() {
             this.editCam = cam;
             var resKey = cam.width + 'x' + cam.height;
             var options = this._resolutionOptionsFor(cam);
+            var encoderPresetOptions = this._encoderPresetsForCamera(cam);
             // If the camera's saved resolution isn't in the current
             // sensor's mode list (e.g. the user swapped sensors and
             // the saved 3280x2464 is now invalid), pick the closest
@@ -1198,6 +1350,12 @@ function dashboardPage() {
                 bitrateMbps: (cam.bitrate / 1000000),
                 h264_profile: cam.h264_profile || 'high',
                 keyframe_interval: cam.keyframe_interval || 30,
+                encoder_preset: '',
+                encoderPresetOptions: encoderPresetOptions,
+                encoderPresetAvailable: this.encoderPresetsLoaded && encoderPresetOptions.length > 0,
+                encoderPresetDescription: '',
+                encoderPresetHiddenHint: this.encoderPresetsLoaded
+                    && encoderPresetOptions.length < this.encoderPresets.length,
                 rotation: cam.rotation || 0,
                 hflip: cam.hflip || false,
                 vflip: cam.vflip || false,
@@ -1248,6 +1406,14 @@ function dashboardPage() {
                     cam, this._imageQualityRowsFor(cam)
                 ),
             };
+            if (this.editForm.encoderPresetAvailable) {
+                var savedPreset = (typeof cam.encoder_preset === 'string') ? cam.encoder_preset : '';
+                var preset = this._encoderPresetByKey(savedPreset);
+                if (savedPreset && this._encoderPresetMatchesForm(preset)) {
+                    this.editForm.encoder_preset = savedPreset;
+                }
+                this._syncEncoderPresetUiState();
+            }
             this.streamSaveMsg = '';
         },
 
@@ -1276,6 +1442,30 @@ function dashboardPage() {
             if (this.editForm.fps > this.editForm.maxFps) {
                 this.editForm.fps = this.editForm.maxFps;
             }
+            this._syncEncoderPresetUiState();
+        },
+
+        onEncoderFieldEdited() {
+            this._syncEncoderPresetUiState();
+        },
+
+        onEncoderPresetChange() {
+            if (!this.editForm) return;
+            var preset = this._encoderPresetByKey(this.editForm.encoder_preset);
+            if (!preset) {
+                this.editForm.encoder_preset = '';
+                this._syncEncoderPresetUiState();
+                return;
+            }
+            var params = preset.params || {};
+            this.editForm.resolution = params.width + 'x' + params.height;
+            this.editForm.fps = params.fps;
+            this.editForm.bitrateMbps = Number(params.bitrate) / 1000000;
+            this.editForm.h264_profile = params.h264_profile;
+            this.editForm.keyframe_interval = params.keyframe_interval;
+            this.onResolutionChange();
+            this.editForm.encoder_preset = preset.key;
+            this._syncEncoderPresetUiState();
         },
 
         async saveStreamSettings() {
@@ -1303,6 +1493,7 @@ function dashboardPage() {
                 bitrate: Math.round(this.editForm.bitrateMbps * 1000000),
                 h264_profile: this.editForm.h264_profile,
                 keyframe_interval: this.editForm.keyframe_interval,
+                encoder_preset: this.editForm.encoder_preset || '',
                 rotation: parseInt(this.editForm.rotation),
                 hflip: this.editForm.hflip,
                 vflip: this.editForm.vflip,
@@ -1400,6 +1591,7 @@ function dashboardPage() {
 
         init() {
             this.loadCurrentUser();
+            this.loadEncoderPresets();
             this.loadSummary();
             this.loadCameras();
             // Summary: 10s (matches the existing health cadence; ADR-0018

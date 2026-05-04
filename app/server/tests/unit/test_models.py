@@ -1,4 +1,4 @@
-# REQ: SWR-045, SWR-056, SWR-057; RISK: RISK-020, RISK-021; SEC: SC-020, SC-021; TEST: TC-042, TC-048, TC-049
+# REQ: SWR-045, SWR-056, SWR-057, SWR-066; RISK: RISK-015, RISK-020, RISK-021; SEC: SC-020, SC-021; TEST: TC-042, TC-048, TC-049, TC-054
 """Tests for data models."""
 
 from dataclasses import asdict
@@ -23,6 +23,7 @@ class TestCamera:
         assert cam.desired_stream_state == "stopped"
         assert cam.last_beat_camera_ts == ""
         assert cam.pending_config == {}
+        assert cam.encoder_preset == ""
 
     def test_create_camera_full(self, sample_camera):
         assert sample_camera.id == "cam-abc123"

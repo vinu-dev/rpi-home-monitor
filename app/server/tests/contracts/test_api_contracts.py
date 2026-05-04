@@ -1,4 +1,4 @@
-# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
+# REQ: SWR-045, SWR-065, SWR-066; RISK: RISK-015, RISK-021; SEC: SC-020, SC-021; TEST: TC-042, TC-054
 """
 API contract tests — verify exact response field names for every endpoint.
 
@@ -216,6 +216,7 @@ CAMERA_LIST_FIELDS_ADMIN = {
     "bitrate",
     "h264_profile",
     "keyframe_interval",
+    "encoder_preset",
     "rotation",
     "hflip",
     "vflip",
@@ -319,6 +320,39 @@ class TestCamerasListContract:
             assert field not in cam, f"Sensitive field '{field}' leaked"
 
 
+class TestCameraPresetCatalogueContract:
+    """GET /api/v1/cameras/encoder-presets."""
+
+    def test_returns_named_catalogue(self, logged_in_client):
+        client = logged_in_client()
+        resp = client.get("/api/v1/cameras/encoder-presets")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_has_fields(data, {"presets"})
+        assert isinstance(data["presets"], list)
+        assert [preset["key"] for preset in data["presets"]] == [
+            "high_bitrate",
+            "balanced",
+            "low_bandwidth",
+            "mobile_friendly",
+        ]
+        first = data["presets"][0]
+        _assert_has_fields(
+            first, {"key", "label", "description", "params", "min_sensor"}
+        )
+        _assert_has_fields(
+            first["params"],
+            {
+                "width",
+                "height",
+                "fps",
+                "bitrate",
+                "h264_profile",
+                "keyframe_interval",
+            },
+        )
+
+
 class TestCameraAddContract:
     """POST /api/v1/cameras."""
 
@@ -383,6 +417,7 @@ class TestCameraStatusContract:
                 "resolution",
                 "fps",
                 "recording_mode",
+                "encoder_preset",
             },
         )
 
@@ -2190,6 +2225,44 @@ class TestCameraUpdateRecordingModeContract:
         _add_camera(app)
         resp = client.put("/api/v1/cameras/cam-001", json={"recording_mode": "motion"})
         assert resp.status_code == 200
+
+    def test_put_accepts_matching_encoder_preset(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "balanced",
+            },
+        )
+        assert resp.status_code == 200
+        cam = app.store.get_camera("cam-001")
+        assert cam.encoder_preset == "balanced"
+
+    def test_put_unknown_encoder_preset_degrades_to_custom(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app)
+        resp = client.put(
+            "/api/v1/cameras/cam-001",
+            json={
+                "width": 1920,
+                "height": 1080,
+                "fps": 25,
+                "bitrate": 4000000,
+                "h264_profile": "high",
+                "keyframe_interval": 30,
+                "encoder_preset": "mystery",
+            },
+        )
+        assert resp.status_code == 200
+        cam = app.store.get_camera("cam-001")
+        assert cam.encoder_preset == ""
 
 
 class TestOnDemandEndpointContract:
