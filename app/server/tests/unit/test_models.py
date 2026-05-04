@@ -66,6 +66,10 @@ class TestUser:
         user = User(id="u1", username="bob", password_hash="hash")
         assert user.last_login is None
 
+    def test_notification_schedule_defaults_empty(self):
+        user = User(id="u1", username="bob", password_hash="hash")
+        assert user.notification_schedule == []
+
 
 class TestSettings:
     """Test Settings dataclass."""

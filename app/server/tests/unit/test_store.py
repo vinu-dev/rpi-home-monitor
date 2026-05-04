@@ -135,10 +135,14 @@ class TestUserStore:
         store = Store(str(data_dir / "config"))
         store.save_user(sample_user)
         sample_user.role = "viewer"
+        sample_user.notification_schedule = [
+            {"days": ["mon"], "start": "22:00", "end": "06:00"}
+        ]
         store.save_user(sample_user)
         users = store.get_users()
         assert len(users) == 1
         assert users[0].role == "viewer"
+        assert users[0].notification_schedule[0]["start"] == "22:00"
 
     def test_delete_user(self, data_dir, sample_user):
         store = Store(str(data_dir / "config"))

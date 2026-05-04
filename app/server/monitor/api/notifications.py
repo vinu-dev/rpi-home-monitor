@@ -107,7 +107,9 @@ def update_prefs():
     if not isinstance(body, dict):
         return jsonify({"error": "body must be an object"}), 400
     new_prefs, err = current_app.notification_policy.update_prefs(
-        user=user, payload=body
+        user=user,
+        payload=body,
+        ip=request.remote_addr or "",
     )
     if err:
         return jsonify({"error": err}), 400

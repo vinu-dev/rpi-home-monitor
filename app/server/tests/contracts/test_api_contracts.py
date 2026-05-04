@@ -1653,6 +1653,65 @@ class TestTailscaleApplyConfigContract:
 
 
 # ===========================================================================
+# Notifications contracts (/api/v1/notifications/*)
+# ===========================================================================
+
+
+class TestNotificationPrefsContract:
+    """GET/PUT /api/v1/notifications/prefs - response field names."""
+
+    def test_get_fields(self, app, logged_in_client):
+        from unittest.mock import MagicMock
+
+        client = logged_in_client()
+        app.notification_policy = MagicMock()
+        app.notification_policy.get_prefs.return_value = {
+            "enabled": True,
+            "cameras": {
+                "cam-001": {
+                    "enabled": False,
+                    "quiet_schedule": [
+                        {"days": ["fri"], "start": "18:00", "end": "23:00"}
+                    ],
+                }
+            },
+            "notification_schedule": [
+                {"days": ["mon"], "start": "22:00", "end": "06:00"}
+            ],
+        }
+
+        resp = client.get("/api/v1/notifications/prefs")
+        data = resp.get_json()
+        _assert_fields(data, {"prefs"})
+        _assert_fields(
+            data["prefs"],
+            {"enabled", "cameras", "notification_schedule"},
+        )
+
+    def test_put_fields(self, app, logged_in_client):
+        from unittest.mock import MagicMock
+
+        client = logged_in_client()
+        app.notification_policy = MagicMock()
+        app.notification_policy.update_prefs.return_value = (
+            {
+                "enabled": True,
+                "cameras": {},
+                "notification_schedule": [],
+            },
+            "",
+        )
+
+        resp = client.put("/api/v1/notifications/prefs", json={"enabled": True})
+        data = resp.get_json()
+        _assert_fields(data, {"prefs"})
+        _assert_fields(
+            data["prefs"],
+            {"enabled", "cameras", "notification_schedule"},
+        )
+
+
+# ===========================================================================
 # Error response contracts (consistency check)
 # ===========================================================================
 

@@ -83,11 +83,14 @@ class TestPrefsEndpoints:
         app.notification_policy.get_prefs.return_value = {
             "enabled": True,
             "cameras": {},
+            "notification_schedule": [],
         }
         client = logged_in_client()
         response = client.get("/api/v1/notifications/prefs")
         assert response.status_code == 200
-        assert response.get_json() == {"prefs": {"enabled": True, "cameras": {}}}
+        assert response.get_json() == {
+            "prefs": {"enabled": True, "cameras": {}, "notification_schedule": []}
+        }
 
     def test_put_validates_body(self, app, logged_in_client):
         app.notification_policy = MagicMock()
@@ -103,10 +106,11 @@ class TestPrefsEndpoints:
     def test_put_returns_updated_prefs(self, app, logged_in_client):
         app.notification_policy = MagicMock()
         app.notification_policy.update_prefs.return_value = (
-            {"enabled": True, "cameras": {}},
+            {"enabled": True, "cameras": {}, "notification_schedule": []},
             "",
         )
         client = logged_in_client()
         response = client.put("/api/v1/notifications/prefs", json={"enabled": True})
         assert response.status_code == 200
         assert response.get_json()["prefs"]["enabled"] is True
+        assert response.get_json()["prefs"]["notification_schedule"] == []

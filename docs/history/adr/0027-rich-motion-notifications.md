@@ -281,6 +281,21 @@ viewer sees their own per-user toggles only):
   so the user can verify their browser permission + their
   expectations of look-and-feel.
 
+### Follow-up: quiet hours (#245)
+
+Issue #245 extends this ADR's decision tree with one more delivery-side
+gate: a per-user quiet-hours schedule, plus per-camera tri-state
+overrides inside the existing `notification_prefs.cameras` map. The
+alert-center inbox remains the source-of-truth surface, while
+`NotificationPolicyService` now suppresses only the active browser
+notification path when an event's local `ended_at` falls inside a quiet
+window. Suppressed events deliberately do not stamp
+`last_notification_at`, and a rate-limited `NOTIFICATION_QUIETED` audit
+entry makes the divergence observable without leaking the full schedule
+body into the audit log. See
+[`docs/history/specs/245-quiet-hours.md`](../specs/245-quiet-hours.md)
+for the detailed acceptance criteria and risk analysis.
+
 ## Alternatives considered
 
 ### A. Web Push + service worker (true server-pushed even when tab is closed)

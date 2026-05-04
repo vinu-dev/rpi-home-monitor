@@ -204,6 +204,9 @@ class TestAlertCenterUI:
         # Tab body has the per-user controls.
         assert "Browser notifications" in body
         assert "Notify me" in body
+        assert "Quiet hours" in body
+        assert "saveQuietHours()" in body
+        assert "cameraQuietMode(cam)" in body
         # Permission state surfaced.
         assert "notify.permission === 'granted'" in body
         assert "notify.permission === 'denied'" in body
@@ -229,6 +232,8 @@ class TestAlertCenterUI:
         # is gated by tab=='notifications', not by isAdmin, so it
         # appears for the viewer when they click the button.
         assert "Notifications</button>" in body or "Notifications<" in body
+        assert "Quiet hours" in body
+        assert "notification_schedule" in body
         # Per-camera defaults section IS admin-only — verify it's
         # gated.
         assert 'x-show="isAdmin && notify.cameras.length' in body

@@ -1452,6 +1452,148 @@
         </div>
     </div>
 
+    <div class="settings-section">
+        <div class="settings-section__title">Quiet hours</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                Suppress the immediate browser notification during selected weekday windows while
+                still keeping every event in the <a href="/alerts">alert center</a>.
+                Quiet hours use the server's timezone.
+            </p>
+
+            <div class="info-row">
+                <span class="info-row__label">Server timezone</span>
+                <span class="info-row__value" x-text="notify.timezone || 'Unknown'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Status</span>
+                <span class="info-row__value" x-text="quietStatusText(notify.prefs.notification_schedule)"></span>
+            </div>
+            <div class="text-small text-muted" x-show="!notify.prefs.enabled" style="margin-top:8px;">
+                Notifications are globally off right now. Quiet hours will apply once you turn notifications back on.
+            </div>
+
+            <div style="margin-top:var(--space-3);">
+                <div class="info-row__label" style="margin-bottom:8px;">Default schedule</div>
+                <template x-if="notify.prefs.notification_schedule.length === 0">
+                    <div class="text-small text-muted" style="margin-bottom:8px;">No quiet windows configured.</div>
+                </template>
+                <template x-for="(win, idx) in notify.prefs.notification_schedule" :key="'quiet-user-' + idx">
+                    <div style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                            <template x-for="day in notify.DAY_ORDER" :key="'quiet-day-' + idx + '-' + day">
+                                <label class="text-small" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                                    <input type="checkbox"
+                                           :checked="Array.isArray(win.days) && win.days.indexOf(day) !== -1"
+                                           @change="toggleQuietWindowDay(win, day, $event.target.checked)">
+                                    <span x-text="dayShortLabel(day)"></span>
+                                </label>
+                            </template>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <input type="time" class="form-input" style="max-width:120px;"
+                                   :value="win.start"
+                                   @change="updateQuietWindowField(win, 'start', $event.target.value)"
+                                   :aria-label="'Quiet-hours start time ' + (idx + 1)">
+                            <span class="text-muted">to</span>
+                            <input type="time" class="form-input" style="max-width:120px;"
+                                   :value="win.end"
+                                   @change="updateQuietWindowField(win, 'end', $event.target.value)"
+                                   :aria-label="'Quiet-hours end time ' + (idx + 1)">
+                            <button type="button" class="btn btn--danger btn--small btn--icon"
+                                    @click="removeQuietWindow(notify.prefs.notification_schedule, idx)"
+                                    :aria-label="'Remove quiet window ' + (idx + 1)">&#x2715;</button>
+                        </div>
+                    </div>
+                </template>
+                <button type="button" class="btn btn--secondary btn--small"
+                        @click="addQuietWindow(notify.prefs.notification_schedule)">Add quiet window</button>
+            </div>
+
+            <div x-show="notify.cameras.length > 0" style="margin-top:var(--space-4);">
+                <div class="info-row__label" style="margin-bottom:8px;">Per-camera overrides</div>
+                <template x-for="cam in notify.cameras" :key="'quiet-override-' + cam.id">
+                    <div style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <div>
+                                <strong x-text="cam.name || cam.id"></strong>
+                                <span class="text-small text-muted" x-show="cam.location" x-text="' · ' + cam.location"></span>
+                            </div>
+                            <span class="text-small text-muted" x-show="cameraQuietMode(cam) === 'override'">Camera-specific schedule</span>
+                        </div>
+
+                        <fieldset style="border:none; padding:0; margin:10px 0 0 0;">
+                            <label class="text-small" style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;">
+                                <input type="radio" :name="'quiet-mode-' + cam.id"
+                                       :checked="cameraQuietMode(cam) === 'inherit'"
+                                       @change="setCameraQuietMode(cam.id, 'inherit')">
+                                <span>Inherit user default</span>
+                            </label>
+                            <label class="text-small" style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;">
+                                <input type="radio" :name="'quiet-mode-' + cam.id"
+                                       :checked="cameraQuietMode(cam) === 'override'"
+                                       @change="setCameraQuietMode(cam.id, 'override')">
+                                <span>Camera-specific schedule</span>
+                            </label>
+                            <label class="text-small" style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                <input type="radio" :name="'quiet-mode-' + cam.id"
+                                       :checked="cameraQuietMode(cam) === 'always_loud'"
+                                       @change="setCameraQuietMode(cam.id, 'always_loud')">
+                                <span>Always loud</span>
+                            </label>
+                        </fieldset>
+
+                        <div x-show="cameraQuietMode(cam) === 'override'" style="margin-top:10px;">
+                            <template x-if="cameraQuietSchedule(cam).length === 0">
+                                <div class="text-small text-muted" style="margin-bottom:8px;">No camera-specific quiet windows yet.</div>
+                            </template>
+                            <template x-for="(win, idx) in cameraQuietSchedule(cam)" :key="'quiet-cam-' + cam.id + '-' + idx">
+                                <div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px;">
+                                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                                        <template x-for="day in notify.DAY_ORDER" :key="'quiet-cam-day-' + cam.id + '-' + idx + '-' + day">
+                                            <label class="text-small" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                                                <input type="checkbox"
+                                                       :checked="Array.isArray(win.days) && win.days.indexOf(day) !== -1"
+                                                       @change="toggleQuietWindowDay(win, day, $event.target.checked)">
+                                                <span x-text="dayShortLabel(day)"></span>
+                                            </label>
+                                        </template>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                        <input type="time" class="form-input" style="max-width:120px;"
+                                               :value="win.start"
+                                               @change="updateQuietWindowField(win, 'start', $event.target.value)"
+                                               :aria-label="'Camera quiet-hours start time ' + (idx + 1)">
+                                        <span class="text-muted">to</span>
+                                        <input type="time" class="form-input" style="max-width:120px;"
+                                               :value="win.end"
+                                               @change="updateQuietWindowField(win, 'end', $event.target.value)"
+                                               :aria-label="'Camera quiet-hours end time ' + (idx + 1)">
+                                        <button type="button" class="btn btn--danger btn--small btn--icon"
+                                                @click="removeQuietWindow(cameraQuietSchedule(cam), idx)"
+                                                :aria-label="'Remove camera quiet window ' + (idx + 1)">&#x2715;</button>
+                                    </div>
+                                </div>
+                            </template>
+                            <button type="button" class="btn btn--secondary btn--small"
+                                    @click="addQuietWindow(cameraQuietSchedule(cam))">Add camera quiet window</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div style="margin-top:var(--space-3); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button type="button" class="btn btn--primary btn--small"
+                        @click="saveQuietHours()"
+                        :disabled="notify.quietSaving">
+                    <span x-text="notify.quietSaving ? 'Saving...' : 'Save quiet hours'"></span>
+                </button>
+                <span x-show="notify.quietSavedAt" class="text-small text-muted"
+                      x-text="'Saved ' + notify.quietSavedAt"></span>
+            </div>
+        </div>
+    </div>
+
     <div class="settings-section" x-show="notify.permission === 'granted' && notify.prefs.enabled">
         <div class="settings-section__title">Test</div>
         <div class="card">
@@ -3401,7 +3543,15 @@ function settingsPage() {
                admin-only fields stripped for viewers, per the
                existing API contract). Used to render per-camera
                override rows + admin's camera-defaults section. */
-        notify: { permission: 'default', prefs: { enabled: false, cameras: {} }, cameras: [] },
+        notify: {
+            permission: 'default',
+            prefs: { enabled: false, cameras: {}, notification_schedule: [] },
+            cameras: [],
+            timezone: '',
+            DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'],
+            quietSaving: false,
+            quietSavedAt: '',
+        },
 
         async loadNotificationPrefs() {
             // Resolve current permission state. The Notifications API
@@ -3411,9 +3561,9 @@ function settingsPage() {
                 (typeof Notification === 'undefined') ? 'unsupported' : Notification.permission;
             try {
                 var resp = await window.HM.api.get('/api/v1/notifications/prefs');
-                this.notify.prefs = (resp && resp.prefs) || { enabled: false, cameras: {} };
+                this.notify.prefs = this.normaliseNotificationPrefs((resp && resp.prefs) || {});
             } catch(e) {
-                this.notify.prefs = { enabled: false, cameras: {} };
+                this.notify.prefs = this.normaliseNotificationPrefs({});
             }
             try {
                 var cams = await window.HM.api.get('/api/v1/cameras');
@@ -3421,6 +3571,45 @@ function settingsPage() {
             } catch(e) {
                 this.notify.cameras = [];
             }
+            try {
+                var timeStatus = await window.HM.api.get('/api/v1/settings/time');
+                this.notify.timezone = (timeStatus && timeStatus.timezone) || '';
+            } catch(e) {
+                this.notify.timezone = '';
+            }
+        },
+
+        normaliseNotificationPrefs(prefs) {
+            var cameras = {};
+            var rawCameras = (prefs && prefs.cameras) || {};
+            Object.keys(rawCameras).forEach(function(camId) {
+                if (typeof camId !== 'string') return;
+                var entry = rawCameras[camId];
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+                var clean = {};
+                if (typeof entry.enabled === 'boolean') clean.enabled = entry.enabled;
+                if (Number.isInteger(entry.min_duration_seconds)) {
+                    clean.min_duration_seconds = entry.min_duration_seconds;
+                }
+                if (Number.isInteger(entry.coalesce_seconds)) {
+                    clean.coalesce_seconds = entry.coalesce_seconds;
+                }
+                if (Object.prototype.hasOwnProperty.call(entry, 'quiet_schedule')) {
+                    clean.quiet_schedule = Array.isArray(entry.quiet_schedule)
+                        ? JSON.parse(JSON.stringify(entry.quiet_schedule))
+                        : [];
+                }
+                if (Object.keys(clean).length > 0) {
+                    cameras[camId] = clean;
+                }
+            });
+            return {
+                enabled: !!(prefs && prefs.enabled),
+                cameras: cameras,
+                notification_schedule: Array.isArray(prefs && prefs.notification_schedule)
+                    ? JSON.parse(JSON.stringify(prefs.notification_schedule))
+                    : [],
+            };
         },
 
         async requestNotificationPermission() {
@@ -3448,7 +3637,7 @@ function settingsPage() {
                     '/api/v1/notifications/prefs',
                     { enabled: !!this.notify.prefs.enabled }
                 );
-                this.notify.prefs = (resp && resp.prefs) || this.notify.prefs;
+                this.notify.prefs = this.normaliseNotificationPrefs((resp && resp.prefs) || this.notify.prefs);
             } catch(e) {
                 window.HM.toast(e.message || 'Failed to save', 'error');
             }
@@ -3474,11 +3663,180 @@ function settingsPage() {
                     '/api/v1/notifications/prefs',
                     { cameras: cams }
                 );
-                this.notify.prefs = (resp && resp.prefs) || this.notify.prefs;
+                this.notify.prefs = this.normaliseNotificationPrefs((resp && resp.prefs) || this.notify.prefs);
             } catch(e) {
                 window.HM.toast(e.message || 'Failed to save', 'error');
                 // Re-load to show server's truth.
                 this.loadNotificationPrefs();
+            }
+        },
+
+        quietWindowTemplate() {
+            return { days: ['mon'], start: '22:00', end: '06:00' };
+        },
+
+        addQuietWindow(schedule) {
+            if (!Array.isArray(schedule)) return;
+            schedule.push(this.quietWindowTemplate());
+        },
+
+        removeQuietWindow(schedule, idx) {
+            if (!Array.isArray(schedule)) return;
+            schedule.splice(idx, 1);
+        },
+
+        toggleQuietWindowDay(window, day, enabled) {
+            if (!window || typeof window !== 'object') return;
+            if (!Array.isArray(window.days)) window.days = [];
+            if (enabled) {
+                if (window.days.indexOf(day) === -1) window.days.push(day);
+            } else {
+                window.days = window.days.filter(function(item) { return item !== day; });
+            }
+        },
+
+        updateQuietWindowField(window, field, value) {
+            if (!window || typeof window !== 'object') return;
+            if (!/^\d{2}:\d{2}$/.test(value)) return;
+            window[field] = value;
+        },
+
+        dayShortLabel(day) {
+            return String(day || '').slice(0, 3).toUpperCase();
+        },
+
+        cameraQuietMode(cam) {
+            var override = (this.notify.prefs.cameras || {})[cam.id];
+            if (!override || !Object.prototype.hasOwnProperty.call(override, 'quiet_schedule')) {
+                return 'inherit';
+            }
+            if (Array.isArray(override.quiet_schedule) && override.quiet_schedule.length === 0) {
+                return 'always_loud';
+            }
+            return 'override';
+        },
+
+        cameraQuietSchedule(cam) {
+            var override = (this.notify.prefs.cameras || {})[cam.id];
+            if (!override || !Array.isArray(override.quiet_schedule)) return [];
+            return override.quiet_schedule;
+        },
+
+        setCameraQuietMode(camId, mode) {
+            if (!this.notify.prefs.cameras) this.notify.prefs.cameras = {};
+            var entry = Object.assign({}, this.notify.prefs.cameras[camId] || {});
+            if (mode === 'inherit') {
+                delete entry.quiet_schedule;
+            } else if (mode === 'always_loud') {
+                entry.quiet_schedule = [];
+            } else {
+                entry.quiet_schedule = Array.isArray(entry.quiet_schedule) && entry.quiet_schedule.length > 0
+                    ? entry.quiet_schedule
+                    : [this.quietWindowTemplate()];
+            }
+            if (Object.keys(entry).length === 0) {
+                delete this.notify.prefs.cameras[camId];
+            } else {
+                this.notify.prefs.cameras[camId] = entry;
+            }
+            this.notify.prefs.cameras = Object.assign({}, this.notify.prefs.cameras);
+        },
+
+        quietStatusText(schedule) {
+            var match = this.matchQuietWindow(schedule);
+            if (!match) return 'Not currently quiet';
+            return 'Currently quiet - resumes at ' + match.end;
+        },
+
+        matchQuietWindow(schedule) {
+            if (!Array.isArray(schedule) || schedule.length === 0) return null;
+            var ref = this.currentQuietReference();
+            if (!ref) return null;
+
+            for (var i = 0; i < schedule.length; i++) {
+                var item = schedule[i];
+                if (!item || typeof item !== 'object') continue;
+                if (!Array.isArray(item.days) || item.days.length === 0) continue;
+                if (!/^\d{2}:\d{2}$/.test(item.start || '') || !/^\d{2}:\d{2}$/.test(item.end || '')) continue;
+                var start = this.hhmmToMinutes(item.start);
+                var end = this.hhmmToMinutes(item.end);
+                if (start === null || end === null) continue;
+
+                var todayMatch = item.days.indexOf(ref.day) !== -1;
+                var yestMatch = item.days.indexOf(ref.yesterdayDay) !== -1;
+                if (end > start) {
+                    if (todayMatch && start <= ref.minutes && ref.minutes < end) {
+                        return { end: item.end };
+                    }
+                    continue;
+                }
+                if (todayMatch && ref.minutes >= start) {
+                    return { end: item.end };
+                }
+                if (yestMatch && ref.minutes < end) {
+                    return { end: item.end };
+                }
+            }
+            return null;
+        },
+
+        currentQuietReference() {
+            var tz = this.notify.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            try {
+                var fmt = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: tz,
+                    weekday: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hourCycle: 'h23',
+                });
+                var parts = fmt.formatToParts(new Date());
+                var weekday = '';
+                var hour = '';
+                var minute = '';
+                parts.forEach(function(part) {
+                    if (part.type === 'weekday') weekday = part.value.toLowerCase().slice(0, 3);
+                    if (part.type === 'hour') hour = part.value;
+                    if (part.type === 'minute') minute = part.value;
+                });
+                var dayOrder = this.notify.DAY_ORDER;
+                var idx = dayOrder.indexOf(weekday);
+                return {
+                    day: weekday,
+                    yesterdayDay: idx === -1 ? '' : dayOrder[(idx + 6) % 7],
+                    minutes: parseInt(hour || '0', 10) * 60 + parseInt(minute || '0', 10),
+                };
+            } catch(e) {
+                return null;
+            }
+        },
+
+        hhmmToMinutes(value) {
+            if (!/^\d{2}:\d{2}$/.test(value || '')) return null;
+            var hh = parseInt(value.slice(0, 2), 10);
+            var mm = parseInt(value.slice(3, 5), 10);
+            if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+            return hh * 60 + mm;
+        },
+
+        async saveQuietHours() {
+            this.notify.quietSaving = true;
+            try {
+                var resp = await window.HM.api.put(
+                    '/api/v1/notifications/prefs',
+                    {
+                        notification_schedule: this.notify.prefs.notification_schedule || [],
+                        cameras: this.notify.prefs.cameras || {},
+                    }
+                );
+                this.notify.prefs = this.normaliseNotificationPrefs((resp && resp.prefs) || this.notify.prefs);
+                this.notify.quietSavedAt = new Date().toLocaleTimeString();
+                window.HM.toast('Quiet hours saved', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save quiet hours', 'error');
+                this.loadNotificationPrefs();
+            } finally {
+                this.notify.quietSaving = false;
             }
         },
 

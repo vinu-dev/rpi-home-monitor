@@ -52,6 +52,7 @@ def _make_user(username="alice", **overrides):
         "id": f"user-{username}",
         "username": username,
         "notification_prefs": {"enabled": True, "cameras": {}},
+        "notification_schedule": [],
         "last_notification_seen_at": "",
     }
     defaults.update(overrides)
@@ -62,6 +63,7 @@ def _make_service(*, cameras=None, users=None, motion_events=None):
     store = MagicMock()
     store.get_cameras.return_value = cameras or []
     store.get_users.return_value = users or []
+    store.get_settings.return_value = SimpleNamespace(timezone="Europe/Dublin")
     store.save_camera = MagicMock()
     store.save_user = MagicMock()
 
@@ -279,6 +281,111 @@ class TestCoalesceWindow:
         assert len(svc.select_for_user(user="alice")) == 1
 
 
+class TestQuietHours:
+    def test_quiet_hours_suppresses_and_does_not_stamp_camera(self):
+        cam = _make_camera(last_notification_at="")
+        usr = _make_user(
+            notification_schedule=[
+                {"days": ["mon"], "start": "22:00", "end": "06:00"},
+            ]
+        )
+        evt = _FakeMotionEvent(
+            id="m1",
+            camera_id="cam-d8ee",
+            started_at="2026-06-01T21:20:00Z",
+            ended_at="2026-06-01T21:30:00Z",
+            duration_seconds=10,
+        )
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        store.get_users.return_value = [usr]
+        store.get_settings.return_value = SimpleNamespace(timezone="Europe/Dublin")
+        store.save_camera = MagicMock()
+        store.save_user = MagicMock()
+        motion = MagicMock()
+        motion.list_events.return_value = [evt]
+        motion.get.return_value = evt
+        audit = MagicMock()
+
+        svc = NotificationPolicyService(
+            store=store,
+            motion_event_store=motion,
+            audit=audit,
+        )
+
+        assert svc.select_for_user(user="alice") == []
+        assert cam.last_notification_at == ""
+        store.save_camera.assert_not_called()
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "NOTIFICATION_QUIETED"
+        assert "camera_id=cam-d8ee" in audit.log_event.call_args.kwargs["detail"]
+
+    def test_empty_camera_quiet_override_bypasses_user_schedule(self):
+        cam = _make_camera(last_notification_at="")
+        usr = _make_user(
+            notification_schedule=[
+                {"days": ["mon"], "start": "22:00", "end": "06:00"},
+            ],
+            notification_prefs={
+                "enabled": True,
+                "cameras": {"cam-d8ee": {"quiet_schedule": []}},
+            },
+        )
+        evt = _FakeMotionEvent(
+            id="m1",
+            camera_id="cam-d8ee",
+            started_at="2026-06-01T21:20:00Z",
+            ended_at="2026-06-01T21:30:00Z",
+            duration_seconds=10,
+        )
+        svc, _, _ = _make_service(cameras=[cam], users=[usr], motion_events=[evt])
+
+        assert len(svc.select_for_user(user="alice")) == 1
+
+    def test_quiet_audit_is_rate_limited_per_window(self):
+        cam = _make_camera(last_notification_at="")
+        usr = _make_user(
+            notification_schedule=[
+                {"days": ["mon"], "start": "22:00", "end": "06:00"},
+            ]
+        )
+        events = [
+            _FakeMotionEvent(
+                id="m1",
+                camera_id="cam-d8ee",
+                started_at="2026-06-01T21:20:00Z",
+                ended_at="2026-06-01T21:30:00Z",
+                duration_seconds=10,
+            ),
+            _FakeMotionEvent(
+                id="m2",
+                camera_id="cam-d8ee",
+                started_at="2026-06-01T21:31:00Z",
+                ended_at="2026-06-01T21:32:00Z",
+                duration_seconds=10,
+            ),
+        ]
+        store = MagicMock()
+        store.get_cameras.return_value = [cam]
+        store.get_users.return_value = [usr]
+        store.get_settings.return_value = SimpleNamespace(timezone="Europe/Dublin")
+        store.save_camera = MagicMock()
+        store.save_user = MagicMock()
+        motion = MagicMock()
+        motion.list_events.return_value = events
+        motion.get.side_effect = lambda eid: next(e for e in events if e.id == eid)
+        audit = MagicMock()
+
+        svc = NotificationPolicyService(
+            store=store,
+            motion_event_store=motion,
+            audit=audit,
+        )
+
+        assert svc.select_for_user(user="alice") == []
+        assert audit.log_event.call_count == 1
+
+
 class TestSinceFilter:
     def test_since_anchor_filters_older_events(self):
         cam = _make_camera()
@@ -482,6 +589,60 @@ class TestUpdatePrefs:
             payload={"cameras": {"cam-d8ee": {"coalesce_seconds": 5}}},
         )
         assert "coalesce" in err
+
+    def test_accepts_notification_schedule(self):
+        usr = _make_user(notification_schedule=[])
+        svc, store, _ = _make_service(users=[usr])
+        prefs, err = svc.update_prefs(
+            user="alice",
+            payload={
+                "notification_schedule": [
+                    {"days": ["mon", "tue"], "start": "22:00", "end": "06:00"}
+                ]
+            },
+        )
+        assert err == ""
+        assert prefs["notification_schedule"][0]["start"] == "22:00"
+        assert usr.notification_schedule[0]["end"] == "06:00"
+        store.save_user.assert_called_once()
+
+    def test_rejects_zero_length_notification_schedule(self):
+        usr = _make_user(notification_schedule=[])
+        svc, _, _ = _make_service(users=[usr])
+        _, err = svc.update_prefs(
+            user="alice",
+            payload={
+                "notification_schedule": [
+                    {"days": ["mon"], "start": "22:00", "end": "22:00"}
+                ]
+            },
+        )
+        assert "same start and end time" in err
+
+    def test_camera_quiet_schedule_null_clears_but_preserves_other_overrides(self):
+        usr = _make_user(
+            notification_prefs={
+                "enabled": True,
+                "cameras": {
+                    "cam-d8ee": {
+                        "enabled": False,
+                        "quiet_schedule": [
+                            {"days": ["mon"], "start": "22:00", "end": "06:00"}
+                        ],
+                    }
+                },
+            }
+        )
+        svc, _, _ = _make_service(users=[usr])
+        prefs, err = svc.update_prefs(
+            user="alice",
+            payload={
+                "cameras": {"cam-d8ee": {"enabled": False, "quiet_schedule": None}}
+            },
+        )
+        assert err == ""
+        assert prefs["cameras"]["cam-d8ee"]["enabled"] is False
+        assert "quiet_schedule" not in prefs["cameras"]["cam-d8ee"]
 
     def test_null_camera_override_clears(self):
         usr = _make_user(
