@@ -47,6 +47,11 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-021 | Information disclosure/Spoofing/Denial | Share token theft, brute force, or replay reaches token-scoped media. | Public share URLs, recipient browsers, unauthenticated public routes. | Unauthorized clip/live viewing or noisy abuse against public viewers. | SC-022, SC-024 | SYS-032, SWR-058, SWR-059, SWR-060 | TC-050, TC-051, TC-052 | Draft |
 | THREAT-022 | Elevation/Information disclosure | Public share routes bypass intended scope or expose dashboard state beyond the shared resource. | Public share viewer templates, token validation, media asset routing. | Recipients pivot into unrelated media, metadata, or privileged surfaces. | SC-023, SC-024 | SYS-032, SWR-059, SWR-061 | TC-051, TC-052, TC-053 | Draft |
 
+## Audit Events
+
+- `TIME_SET_MANUAL`: Admin changed the server wall clock through the settings flow. Supports THREAT-011 and THREAT-019 investigation needs.
+- `TIME_RESYNC_REQUESTED`: Admin requested an NTP/time-sync restart on the server or queued a camera resync. Supports THREAT-011 and THREAT-019 investigation needs.
+
 ## Assumptions
 
 - ASSUMPTION: Operator-controlled LAN is hostile enough to require auth and

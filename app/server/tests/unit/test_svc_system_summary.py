@@ -76,6 +76,22 @@ def _build(**overrides):
             "memory": {"percent": 30.0},
         },
     )
+    time_health = MagicMock()
+    time_health.compute_health.return_value = overrides.get(
+        "time_health",
+        {
+            "state": "green",
+            "server": {
+                "ntp_active": True,
+                "ntp_synchronized": True,
+                "unsynced_seconds": None,
+                "last_sync_time": "",
+            },
+            "cameras": [],
+            "worst_camera": None,
+            "worst_drift_seconds": None,
+        },
+    )
 
     return SystemSummaryService(
         store=store,
@@ -83,6 +99,7 @@ def _build(**overrides):
         audit=audit,
         recordings_service=rec_svc,
         health_module=health,
+        time_health=time_health,
     )
 
 
@@ -117,6 +134,25 @@ class TestGreenBaseline:
         )
         out = svc.compute_summary()
         assert out["details"]["cameras"]["total"] == 1
+
+    def test_time_health_unknown_does_not_flip_summary(self):
+        svc = _build(
+            time_health={
+                "state": "unknown",
+                "server": {
+                    "ntp_active": False,
+                    "ntp_synchronized": False,
+                    "unsynced_seconds": None,
+                    "last_sync_time": "",
+                },
+                "cameras": [],
+                "worst_camera": None,
+                "worst_drift_seconds": None,
+            }
+        )
+        out = svc.compute_summary()
+        assert out["state"] == "green"
+        assert out["details"]["time_health"]["state"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +413,15 @@ class TestGracefulDegradation:
                     "memory": {"percent": 10},
                 }
             ),
+            time_health=MagicMock(
+                compute_health=lambda: {
+                    "state": "green",
+                    "server": {},
+                    "cameras": [],
+                    "worst_camera": None,
+                    "worst_drift_seconds": None,
+                }
+            ),
         )
         out = svc.compute_summary()
         assert out["state"] == "green"
@@ -399,6 +444,15 @@ class TestGracefulDegradation:
             audit=audit,
             recordings_service=rec_svc,
             health_module=health,
+            time_health=MagicMock(
+                compute_health=lambda: {
+                    "state": "green",
+                    "server": {},
+                    "cameras": [],
+                    "worst_camera": None,
+                    "worst_drift_seconds": None,
+                }
+            ),
         )
         out = svc.compute_summary()
         # Must not crash; best-effort green with zeros.
@@ -435,6 +489,52 @@ class TestPriority:
             },
         )
         assert svc.compute_summary()["state"] == "red"
+
+    def test_time_health_camera_sentence_is_used_when_it_dominates(self):
+        svc = _build(
+            time_health={
+                "state": "amber",
+                "server": {
+                    "ntp_active": True,
+                    "ntp_synchronized": True,
+                    "unsynced_seconds": None,
+                    "last_sync_time": "",
+                },
+                "cameras": [
+                    {
+                        "id": "cam-1",
+                        "name": "Living Room",
+                        "drift_seconds": 4.2,
+                        "state": "amber",
+                    }
+                ],
+                "worst_camera": "Living Room",
+                "worst_drift_seconds": 4.2,
+            }
+        )
+        out = svc.compute_summary()
+        assert out["state"] == "amber"
+        assert out["summary"] == "Camera *Living Room* clock drifted +4.2s — resync"
+        assert out["deep_link"] == "/settings#time-health"
+
+    def test_time_health_server_sentence_is_used_when_it_dominates(self):
+        svc = _build(
+            time_health={
+                "state": "red",
+                "server": {
+                    "ntp_active": True,
+                    "ntp_synchronized": False,
+                    "unsynced_seconds": 1900,
+                    "last_sync_time": "",
+                },
+                "cameras": [],
+                "worst_camera": None,
+                "worst_drift_seconds": None,
+            }
+        )
+        out = svc.compute_summary()
+        assert out["state"] == "red"
+        assert out["summary"] == "Server time not synchronized — resync"
 
 
 if __name__ == "__main__":

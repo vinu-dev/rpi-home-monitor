@@ -73,6 +73,7 @@ class Camera:
     fps: int = 25
     paired_at: str | None = None
     last_seen: str | None = None
+    last_beat_camera_ts: str = ""  # camera-supplied heartbeat timestamp (UTC Z)
     firmware_version: str = ""
     cert_serial: str = ""
     pairing_secret: str = ""  # hex-encoded, for camera LUKS key derivation (ADR-0010)
@@ -92,6 +93,10 @@ class Camera:
     # over the existing control channel (ADR-0015).
     motion_sensitivity: int = 5
     config_sync: str = "unknown"  # synced | pending | error | unknown
+    # One-shot server→camera flags piggy-back on the existing heartbeat
+    # response channel so operators can queue a camera-side action even
+    # while the camera is temporarily unreachable.
+    pending_config: dict = field(default_factory=dict)
     # Live status fields — populated by heartbeat (ADR-0016)
     streaming: bool = False  # is camera actively streaming RTSP?
     cpu_temp: float = 0.0  # °C, from last heartbeat

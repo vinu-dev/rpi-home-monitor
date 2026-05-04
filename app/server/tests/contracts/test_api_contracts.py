@@ -860,6 +860,20 @@ HEALTH_FIELDS = {
     "warnings",
     "status",
 }
+TIME_HEALTH_FIELDS = {
+    "state",
+    "server",
+    "cameras",
+    "worst_camera",
+    "worst_drift_seconds",
+}
+TIME_HEALTH_SERVER_FIELDS = {
+    "ntp_active",
+    "ntp_synchronized",
+    "unsynced_seconds",
+    "last_sync_time",
+}
+TIME_HEALTH_CAMERA_FIELDS = {"id", "name", "drift_seconds", "state"}
 
 
 class TestSystemHealthContract:
@@ -928,7 +942,7 @@ class TestSystemSummaryContract:
         data = resp.get_json()
         _assert_fields(
             data["details"],
-            {"cameras", "storage", "recorder", "recent_errors"},
+            {"cameras", "storage", "recorder", "recent_errors", "time_health"},
             msg="summary.details",
         )
         _assert_has_fields(
@@ -946,10 +960,73 @@ class TestSystemSummaryContract:
             {"cpu_percent", "cpu_temp_c", "memory_percent"},
             msg="summary.details.recorder",
         )
+        _assert_fields(
+            data["details"]["time_health"],
+            TIME_HEALTH_FIELDS,
+            msg="summary.details.time_health",
+        )
+        _assert_fields(
+            data["details"]["time_health"]["server"],
+            TIME_HEALTH_SERVER_FIELDS,
+            msg="summary.details.time_health.server",
+        )
 
     def test_requires_login(self, client):
         resp = client.get("/api/v1/system/summary")
         assert resp.status_code == 401
+
+
+class TestTimeHealthContract:
+    """GET /api/v1/system/time/health."""
+
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.get("/api/v1/system/time/health")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_fields(data, TIME_HEALTH_FIELDS)
+        _assert_fields(
+            data["server"], TIME_HEALTH_SERVER_FIELDS, msg="time_health.server"
+        )
+        if data["cameras"]:
+            _assert_fields(
+                data["cameras"][0],
+                TIME_HEALTH_CAMERA_FIELDS,
+                msg="time_health.cameras[0]",
+            )
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.get("/api/v1/system/time/health")
+        assert resp.status_code == 403
+
+
+class TestTimeResyncContract:
+    """POST /api/v1/system/time/resync."""
+
+    def test_success_fields(self, app, logged_in_client):
+        app.time_health_service = MagicMock()
+        app.time_health_service.request_resync.return_value = (
+            "System time resync requested",
+            200,
+            True,
+        )
+        app.audit = MagicMock()
+        client = logged_in_client()
+        resp = client.post("/api/v1/system/time/resync", json={"target": "server"})
+        assert resp.status_code == 200
+        _assert_fields(resp.get_json(), {"message"})
+
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.post("/api/v1/system/time/resync", json={})
+        assert resp.status_code == 400
+        _assert_fields(resp.get_json(), {"error"})
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.post("/api/v1/system/time/resync", json={"target": "server"})
+        assert resp.status_code == 403
 
 
 class TestBackupExportContract:

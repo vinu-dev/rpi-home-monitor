@@ -1,9 +1,11 @@
-# REQ: SWR-032, SWR-020, SWR-018; RISK: RISK-005, RISK-017, RISK-006; SEC: SC-020, SC-004, SC-006; TEST: TC-029, TC-010, TC-015
+# REQ: SWR-024, SWR-032, SWR-020, SWR-018; RISK: RISK-012, RISK-015, RISK-017, RISK-006; SEC: SC-012, SC-020, SC-004, SC-006; TEST: TC-023, TC-029, TC-010, TC-015
 """
 System health and info API.
 
 Endpoints:
   GET  /system/health                  - CPU temp, CPU%, RAM%, disk usage, warnings
+  GET  /system/time/health             - derived server/camera time integrity (admin only)
+  POST /system/time/resync             - restart timesyncd on server or queue camera resync
   GET  /system/info                    - firmware version, uptime, hostname, OS version
   GET  /system/tailscale               - Tailscale VPN status + config
   POST /system/tailscale/connect       - Start Tailscale, return auth URL if needed
@@ -66,6 +68,17 @@ def _log_backup_audit(event: str, *, user: str, ip: str, detail: str) -> None:
         audit.log_event(event, user=user, ip=ip, detail=detail)
     except Exception:
         current_app.logger.debug("Backup audit log failed for %s", event)
+
+
+def _log_time_audit(*, user: str, ip: str, detail: str) -> None:
+    """Best-effort audit logging for time-related admin actions."""
+    audit = getattr(current_app, "audit", None)
+    if not audit:
+        return
+    try:
+        audit.log_event("TIME_RESYNC_REQUESTED", user=user, ip=ip, detail=detail)
+    except Exception:
+        current_app.logger.debug("Time resync audit log failed for %s", detail)
 
 
 def _backup_scope_from_body(body: dict | None) -> dict:
@@ -199,6 +212,39 @@ def summary():
     """
     result = current_app.system_summary_service.compute_summary()
     return jsonify(result), 200
+
+
+@system_bp.route("/time/health", methods=["GET"])
+@admin_required
+def time_health():
+    """Return the current derived time-health payload. Admin only."""
+    return jsonify(current_app.time_health_service.compute_health()), 200
+
+
+@system_bp.route("/time/resync", methods=["POST"])
+@admin_required
+@csrf_protect
+def time_resync():
+    """Restart timesyncd on the server or queue a camera-side resync."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "JSON body required"}), 400
+    target = data.get("target")
+    if not isinstance(target, str) or not target.strip():
+        return jsonify({"error": "target is required"}), 400
+
+    message, status, should_audit = current_app.time_health_service.request_resync(
+        target
+    )
+    if status != 200:
+        return jsonify({"error": message}), status
+    if should_audit:
+        _log_time_audit(
+            user=session.get("username", ""),
+            ip=request.remote_addr or "",
+            detail=f"target={target.strip()}",
+        )
+    return jsonify({"message": message}), 200
 
 
 @system_bp.route("/info", methods=["GET"])

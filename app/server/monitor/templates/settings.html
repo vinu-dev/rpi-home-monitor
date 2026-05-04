@@ -127,6 +127,89 @@
         <div class="text-small text-muted" style="margin-top: var(--space-2);" x-show="manualTimeMsg" x-text="manualTimeMsg"></div>
     </div>
 
+    <div class="settings-section" id="time-health" x-show="isAdmin">
+        <div class="settings-section__title">Time Health</div>
+        <div class="card">
+            <div class="text-small text-muted" style="margin-bottom: var(--space-3);">
+                Camera-side drift affects heartbeat ordering and cross-camera event timing. Clip filenames and audit-log timestamps remain server-authored.
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Overall State</span>
+                <span class="info-row__value">
+                    <span class="badge" :style="timeHealthBadgeStyle(timeHealth.state)" x-text="timeHealthStateLabel(timeHealth.state)"></span>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Server NTP</span>
+                <span class="info-row__value">
+                    <span x-text="timeHealth.server.ntp_active ? 'enabled' : 'disabled'"></span>
+                    <span class="text-muted">
+                        <span x-show="timeHealth.server.ntp_active && timeHealth.server.ntp_synchronized">— synchronized</span>
+                        <span x-show="timeHealth.server.ntp_active && !timeHealth.server.ntp_synchronized">— not synchronized</span>
+                        <span x-show="!timeHealth.server.ntp_active">— manual or unavailable</span>
+                    </span>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Last Sync Time</span>
+                <span class="info-row__value" x-text="timeHealth.server.last_sync_time || '—'"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Server Resync</span>
+                <span class="info-row__value" style="display:flex; align-items:center; gap:8px;">
+                    <button class="btn btn--secondary btn--small"
+                            @click="resyncTime('server')"
+                            :disabled="timeHealthBusyTarget === 'server'">
+                        <span x-text="timeHealthBusyTarget === 'server' ? 'Resyncing…' : 'Resync now'"></span>
+                    </button>
+                    <span class="text-small text-muted"
+                          x-show="timeHealth.server.unsynced_seconds != null"
+                          x-text="'Unsynced for ' + formatDurationSeconds(timeHealth.server.unsynced_seconds)"></span>
+                </span>
+            </div>
+            <div class="text-small text-muted" x-show="timeHealth.state === 'unknown'">
+                Time health unavailable in this environment.
+            </div>
+            <div style="margin-top: var(--space-3); overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr class="text-small text-muted">
+                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">Camera</th>
+                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">Drift</th>
+                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">State</th>
+                            <th style="text-align:right; padding:0 0 var(--space-2) 0;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="camera in timeHealth.cameras" :key="camera.id">
+                            <tr>
+                                <td style="padding:10px 0; border-top:1px solid var(--color-border);" x-text="camera.name || camera.id"></td>
+                                <td style="padding:10px 0; border-top:1px solid var(--color-border);" x-text="formatSignedSeconds(camera.drift_seconds)"></td>
+                                <td style="padding:10px 0; border-top:1px solid var(--color-border);">
+                                    <span class="badge"
+                                          :style="timeHealthBadgeStyle(camera.state)"
+                                          x-text="timeHealthStateLabel(camera.state)"></span>
+                                </td>
+                                <td style="padding:10px 0; border-top:1px solid var(--color-border); text-align:right;">
+                                    <button class="btn btn--secondary btn--small"
+                                            @click="resyncTime(camera.id)"
+                                            :disabled="camera.state === 'unknown' || timeHealthBusyTarget === camera.id">
+                                        <span x-text="timeHealthBusyTarget === camera.id ? 'Queued…' : 'Resync'"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!timeHealth.cameras.length">
+                            <td colspan="4" class="text-small text-muted" style="padding-top:10px; border-top:1px solid var(--color-border);">
+                                No paired cameras reporting time health yet.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- System Info (identity + environment) -->
     <div class="settings-section" id="system">
         <div class="settings-section__title">System Info</div>
@@ -2112,6 +2195,15 @@ function settingsPage() {
         networkInterfaces: [],
         settings: { hostname: '', timezone: '', ntp_mode: 'auto', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60, require_2fa_for_remote: false },
         timeStatus: { timezone: '', ntp_mode: 'auto', ntp_active: false, ntp_synchronized: false, system_time: '' },
+        timeHealth: {
+            state: 'unknown',
+            server: { ntp_active: false, ntp_synchronized: false, unsynced_seconds: null, last_sync_time: '' },
+            cameras: [],
+            worst_camera: null,
+            worst_drift_seconds: null,
+        },
+        timeHealthBusyTarget: '',
+        _timeHealthTimer: null,
         manualTimeInput: '',
         manualTimeMsg: '',
         sysInfo: {
@@ -2260,6 +2352,13 @@ function settingsPage() {
                 this.loadRecordingCameras();
                 this.loadWebhooks();
                 this.loadBackupSnapshots();
+                this.loadTimeHealth();
+                if (!this._timeHealthTimer) {
+                    var self = this;
+                    this._timeHealthTimer = window.setInterval(function() {
+                        self.loadTimeHealth();
+                    }, 30000);
+                }
             }
         },
 
@@ -2416,6 +2515,41 @@ function settingsPage() {
             }
             var days = Math.floor(diff / 86400);
             return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+        },
+
+        formatSignedSeconds(value) {
+            if (value == null || value === '') return '—';
+            var num = Number(value);
+            if (!isFinite(num)) return '—';
+            var abs = Math.abs(num);
+            var decimals = Math.abs(abs - Math.round(abs)) < 0.05 ? 0 : 1;
+            return (num >= 0 ? '+' : '-') + abs.toFixed(decimals) + ' s';
+        },
+
+        formatDurationSeconds(value) {
+            if (value == null || value === '') return '—';
+            var total = Math.max(0, Math.round(Number(value) || 0));
+            if (total < 60) return total + 's';
+            if (total < 3600) {
+                var mins = Math.floor(total / 60);
+                var secs = total % 60;
+                return mins + 'm' + (secs ? ' ' + secs + 's' : '');
+            }
+            var hours = Math.floor(total / 3600);
+            var minsRemainder = Math.floor((total % 3600) / 60);
+            return hours + 'h' + (minsRemainder ? ' ' + minsRemainder + 'm' : '');
+        },
+
+        timeHealthStateLabel(state) {
+            var labels = { green: 'Green', amber: 'Amber', red: 'Red', unknown: 'Unknown' };
+            return labels[state] || 'Unknown';
+        },
+
+        timeHealthBadgeStyle(state) {
+            if (state === 'green') return 'background: var(--color-success); color: var(--color-bg);';
+            if (state === 'amber') return 'background: var(--color-warning); color: var(--color-bg);';
+            if (state === 'red') return 'background: var(--color-danger); color: var(--color-bg);';
+            return 'background: #555; color: #ccc;';
         },
 
         sessionDeviceLabel(row) {
@@ -2808,6 +2942,33 @@ function settingsPage() {
                 var data = await window.HM.api.get('/api/v1/settings/time');
                 this.timeStatus = data || this.timeStatus;
             } catch(e) { /* silent on transient failure */ }
+        },
+        async loadTimeHealth() {
+            if (!this.isAdmin) return;
+            try {
+                var data = await window.HM.api.get('/api/v1/system/time/health');
+                this.timeHealth = data || this.timeHealth;
+            } catch(e) {
+                this.timeHealth = {
+                    state: 'unknown',
+                    server: { ntp_active: false, ntp_synchronized: false, unsynced_seconds: null, last_sync_time: '' },
+                    cameras: [],
+                    worst_camera: null,
+                    worst_drift_seconds: null,
+                };
+            }
+        },
+        async resyncTime(target) {
+            this.timeHealthBusyTarget = target;
+            try {
+                var result = await window.HM.api.post('/api/v1/system/time/resync', { target: target });
+                window.HM.toast((result && result.message) || 'Time resync requested', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to request time resync', 'error');
+            } finally {
+                this.timeHealthBusyTarget = '';
+                await Promise.all([this.loadTimeHealth(), this.loadTimeStatus()]);
+            }
         },
         async applyManualTime() {
             if (!this.manualTimeInput) return;

@@ -36,6 +36,21 @@ class TestCameraStore:
         assert cameras[0].id == sample_camera.id
         assert cameras[0].name == sample_camera.name
 
+    def test_camera_round_trips_time_health_fields(self, data_dir):
+        store = Store(str(data_dir / "config"))
+        camera = Camera(
+            id="cam-001",
+            last_beat_camera_ts="2026-05-04T12:00:00Z",
+            pending_config={"time_resync": True},
+        )
+
+        store.save_camera(camera)
+        loaded = store.get_camera("cam-001")
+
+        assert loaded is not None
+        assert loaded.last_beat_camera_ts == "2026-05-04T12:00:00Z"
+        assert loaded.pending_config == {"time_resync": True}
+
     def test_get_camera_by_id(self, data_dir, sample_camera):
         store = Store(str(data_dir / "config"))
         store.save_camera(sample_camera)

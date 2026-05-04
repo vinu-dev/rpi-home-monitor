@@ -20,6 +20,7 @@ def _make_camera(**overrides):
         "fps": 15,
         "paired_at": "",
         "last_seen": "2026-04-11T10:00:00Z",
+        "last_beat_camera_ts": "",
         "firmware_version": "1.0.0",
         "rtsp_url": "",
         "width": 1920,
@@ -31,6 +32,7 @@ def _make_camera(**overrides):
         "hflip": False,
         "vflip": False,
         "config_sync": "unknown",
+        "pending_config": {},
         # Heartbeat fields (ADR-0016)
         "streaming": False,
         "cpu_temp": 0.0,
@@ -730,6 +732,26 @@ class TestAcceptHeartbeat:
         svc.accept_heartbeat("cam-001", self._basic_payload(streaming=False))
         assert cam.streaming is False
 
+    def test_persists_camera_supplied_heartbeat_timestamp(self):
+        cam = _make_camera(last_beat_camera_ts="")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        svc.accept_heartbeat("cam-001", self._basic_payload(timestamp=1760000000))
+
+        assert cam.last_beat_camera_ts == "2025-10-09T08:53:20Z"
+
+    def test_invalid_heartbeat_timestamp_leaves_previous_value(self):
+        cam = _make_camera(last_beat_camera_ts="2026-04-11T09:59:45Z")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        svc.accept_heartbeat("cam-001", self._basic_payload(timestamp="not-a-number"))
+
+        assert cam.last_beat_camera_ts == "2026-04-11T09:59:45Z"
+
     def test_accepts_hardware_fault_from_heartbeat(self):
         """Camera reports a hardware fault — server stores + surfaces it.
 
@@ -1181,6 +1203,19 @@ class TestAcceptHeartbeat:
         response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
         assert code == 200
         assert "pending_config" not in response
+
+    def test_one_shot_pending_flags_are_returned_once(self):
+        cam = _make_camera(config_sync="synced", pending_config={"time_resync": True})
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        response, _, code = svc.accept_heartbeat("cam-001", self._basic_payload())
+
+        assert code == 200
+        assert response["pending_config"]["time_resync"] is True
+        assert cam.pending_config == {}
+        assert store.save_camera.call_count == 2
 
     def test_logs_camera_online_audit_when_was_offline(self):
         cam = _make_camera(status="offline")

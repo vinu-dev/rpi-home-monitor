@@ -127,6 +127,7 @@ class SystemSummaryService:
         audit,
         recordings_service,
         health_module,
+        time_health,
     ):
         self._store = store
         self._storage = storage_manager
@@ -134,6 +135,7 @@ class SystemSummaryService:
         self._recordings = recordings_service
         # Injected so tests can stub host metrics without touching /proc.
         self._health = health_module
+        self._time_health = time_health
         # Retention estimate walks the entire recordings tree (rglob +
         # stat per file). That is ~O(thousands of files) and was firing
         # on every /system/summary call — which the dashboard polls
@@ -169,8 +171,12 @@ class SystemSummaryService:
         disk_state, disk_detail, disk_link = self._storage_state()
         host_state, host_detail, host_link = self._recorder_host()
         err_state, err_count, err_link = self._recent_errors()
+        time_state, time_detail, time_link = self._time_health_state()
 
-        state = _worst(cam_state, disk_state, host_state, err_state)
+        merged_time_state = (
+            time_state if time_state in {"green", "amber", "red"} else "green"
+        )
+        state = _worst(cam_state, disk_state, host_state, err_state, merged_time_state)
 
         summary, deep_link = self._build_summary(
             state,
@@ -185,6 +191,9 @@ class SystemSummaryService:
             err_state=err_state,
             err_count=err_count,
             err_link=err_link,
+            time_state=time_state,
+            time_detail=time_detail,
+            time_link=time_link,
         )
 
         return {
@@ -196,6 +205,7 @@ class SystemSummaryService:
                 "storage": disk_detail,
                 "recorder": host_detail,
                 "recent_errors": err_count,
+                "time_health": time_detail,
             },
         }
 
@@ -292,6 +302,18 @@ class SystemSummaryService:
         return worst, detail, link
 
     # -- storage ------------------------------------------------------------
+
+    def _time_health_state(self) -> tuple[str, dict, str]:
+        try:
+            detail = self._time_health.compute_health()
+        except Exception as exc:
+            log.warning("summary: time_health.compute_health failed: %s", exc)
+            return (
+                "unknown",
+                {"state": "unknown", "server": {}, "cameras": []},
+                "/settings#time-health",
+            )
+        return detail.get("state", "unknown"), detail, "/settings#time-health"
 
     def _storage_state(self) -> tuple[str, dict, str]:
         try:
@@ -471,6 +493,9 @@ class SystemSummaryService:
         err_state: str,
         err_count: int,
         err_link: str,
+        time_state: str,
+        time_detail: dict,
+        time_link: str,
     ) -> tuple[str, str]:
         """Produce (sentence, deep_link) matching the overall state.
 
@@ -502,6 +527,12 @@ class SystemSummaryService:
                 True,
                 f"Recorder disk {disk_detail.get('percent', 0):.0f}% full",
                 disk_link,
+            ),
+            (
+                time_state,
+                time_state in {"amber", "red"},
+                _time_sentence(time_detail),
+                time_link,
             ),
             (
                 cam_state,
@@ -540,3 +571,15 @@ def _camera_sentence(cam_detail: dict) -> str:
     if len(names) == 1:
         return f"{names[0]} needs attention"
     return f"{len(names)} cameras need attention"
+
+
+def _time_sentence(time_detail: dict) -> str:
+    if time_detail.get("server", {}).get("ntp_active") and not time_detail.get(
+        "server", {}
+    ).get("ntp_synchronized"):
+        return "Server time not synchronized — resync"
+    worst_camera = time_detail.get("worst_camera")
+    worst_drift = time_detail.get("worst_drift_seconds")
+    if not worst_camera or worst_drift is None:
+        return ""
+    return f"Camera *{worst_camera}* clock drifted {worst_drift:+g}s — resync"

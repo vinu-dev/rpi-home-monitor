@@ -118,6 +118,7 @@ _CSRF_PROTECTED_ENDPOINTS = [
     ),
     ("POST", "/api/v1/settings/offsite-backup/test-connection", {}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
+    ("POST", "/api/v1/system/time/resync", {"target": "server"}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "MyNet", "password": "pass1234"}),
     ("POST", "/api/v1/users", {"username": "newuser1", "password": "password1234"}),
     ("DELETE", "/api/v1/users/user-nobody", None),
