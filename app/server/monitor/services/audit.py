@@ -1,4 +1,4 @@
-# REQ: SWR-009; RISK: RISK-020; SEC: SC-008, SC-020; TEST: TC-017
+# REQ: SWR-009, SWR-057; RISK: RISK-017, RISK-020; SEC: SC-008, SC-020; TEST: TC-017, TC-049
 """
 Security audit logger.
 
@@ -46,6 +46,7 @@ class AuditLogger:
         self.logs_dir = Path(logs_dir)
         self.log_file = self.logs_dir / "audit.log"
         self._lock = threading.Lock()
+        self._listeners: list = []
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
     def log_event(
@@ -80,6 +81,7 @@ class AuditLogger:
                 log.error("Failed to write audit log: %s", e)
 
         log.info("AUDIT: %s user=%s ip=%s detail=%s", event, user, ip, detail)
+        self._notify_listeners(entry)
 
     def clear_events(self, user: str = "", ip: str = "") -> None:
         """Truncate the audit log and write an AUDIT_LOG_CLEARED sentinel.
@@ -106,6 +108,7 @@ class AuditLogger:
                 return
 
         log.info("AUDIT: AUDIT_LOG_CLEARED user=%s ip=%s", user, ip)
+        self._notify_listeners(entry)
 
     def get_events(self, limit: int = 100, event_type: str = "") -> list[dict]:
         """Read recent events from the audit log.
@@ -137,3 +140,19 @@ class AuditLogger:
             if len(events) >= limit:
                 break
         return events
+
+    def add_listener(self, listener) -> None:
+        """Register a best-effort callback for newly written audit entries."""
+        if not callable(listener):
+            return
+        with self._lock:
+            self._listeners.append(listener)
+
+    def _notify_listeners(self, entry: dict) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(dict(entry))
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("Audit listener failed: %s", exc)

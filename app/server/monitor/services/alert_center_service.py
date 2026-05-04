@@ -1,4 +1,4 @@
-# REQ: SWR-017, SWR-033; RISK: RISK-005, RISK-016, RISK-020; SEC: SC-008, SC-015, SC-020; TEST: TC-014, TC-031
+# REQ: SWR-017, SWR-033, SWR-057; RISK: RISK-005, RISK-016, RISK-017, RISK-020; SEC: SC-008, SC-015, SC-020; TEST: TC-014, TC-031, TC-049
 """
 AlertCenterService — derive-on-read view over existing event sources.
 
@@ -71,6 +71,7 @@ ALERT_AUDIT_EVENTS: frozenset[str] = frozenset(
         # severities so the inbox surfaces them differently.
         "STORAGE_LOW",
         "RETENTION_RISK",
+        "WEBHOOK_DELIVERY_DEGRADED",
     }
 )
 
@@ -98,6 +99,7 @@ _AUDIT_SEVERITY: dict[str, str] = {
     "STORAGE_LOW": "warning",  # heads-up before auto-FIFO cleanup
     "RETENTION_RISK": "error",  # FIFO is actively running; user
     # retention is being violated
+    "WEBHOOK_DELIVERY_DEGRADED": "error",
 }
 
 # Severity ordering so the API can sort / filter by "at least this bad."
@@ -577,6 +579,7 @@ def _audit_message(ev: dict) -> str:
         # #140
         "STORAGE_LOW": "Recordings storage low",
         "RETENTION_RISK": "Retention at risk — auto-deleting recordings",
+        "WEBHOOK_DELIVERY_DEGRADED": "Webhook delivery degraded",
     }
     label = label_map.get(code, code.replace("_", " ").lower().capitalize())
     if detail:

@@ -223,7 +223,7 @@ def csrf_protect(f):
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):
-        if request.method in ("POST", "PUT", "DELETE"):
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             token = request.headers.get("X-CSRF-Token") or request.form.get(
                 "csrf_token"
             )
