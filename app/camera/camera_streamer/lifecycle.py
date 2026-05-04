@@ -1,4 +1,4 @@
-# REQ: SWR-012; RISK: RISK-001, RISK-008; TEST: TC-005, TC-018
+# REQ: SWR-012, SWR-062; RISK: RISK-001, RISK-008; TEST: TC-005, TC-018
 """
 Camera lifecycle state machine — orchestrates startup, streaming, and shutdown.
 
@@ -244,10 +244,11 @@ class CameraLifecycle:
 
     WIFI_TIMEOUT = 60  # seconds to wait for WiFi IP
 
-    def __init__(self, config, platform, shutdown_event):
+    def __init__(self, config, platform, shutdown_event, notifier=None):
         self._config = config
         self._platform = platform
         self._is_shutdown = shutdown_event
+        self._notifier = notifier
         # Persisted desired stream state file (ADR-0017). Stored on the
         # instance so tests can override and the heartbeat/control paths
         # share a single source of truth.
@@ -359,8 +360,12 @@ class CameraLifecycle:
         self._start_hotspot()
 
         self._setup_server.start()
+        if self._notifier is not None:
+            self._notifier.mark_ready()
 
         while not self._is_shutdown() and self._setup_server.needs_setup():
+            if self._notifier is not None:
+                self._notifier.beat("setup")
             time.sleep(1)
 
         self._setup_server.stop()
@@ -396,10 +401,14 @@ class CameraLifecycle:
             pairing_manager=self._pairing,
         )
         self._status_server.start()
+        if self._notifier is not None:
+            self._notifier.mark_ready()
 
         # Poll until paired or shutdown
         last_registration_attempt = 0.0
         while not self._is_shutdown():
+            if self._notifier is not None:
+                self._notifier.beat("pairing")
             now = time.monotonic()
             if now - last_registration_attempt >= 10:
                 self._register_with_server()
@@ -551,14 +560,19 @@ class CameraLifecycle:
             thermal_path=self._platform.thermal_path,
             vcgencmd_path=vcgencmd_path,
             throttle_path=throttle_path,
+            notifier=self._notifier,
         )
         self._health.start()
 
         led.connected()
+        if self._notifier is not None:
+            self._notifier.mark_ready()
         log.info("Camera streamer running (camera=%s)", self._config.camera_id)
 
         # Main loop — wait for shutdown
         while not self._is_shutdown():
+            if self._notifier is not None:
+                self._notifier.beat("lifecycle")
             time.sleep(1)
 
         return True
@@ -672,6 +686,8 @@ class CameraLifecycle:
         for elapsed in range(self.WIFI_TIMEOUT):
             if self._is_shutdown():
                 return True  # Don't block shutdown
+            if self._notifier is not None:
+                self._notifier.beat("connecting")
 
             try:
                 result = subprocess.run(

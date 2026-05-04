@@ -1,7 +1,6 @@
 # REQ: SWR-037; RISK: RISK-008, RISK-022; SEC: SC-020; TEST: TC-035
 """Additional tests for health module to boost coverage."""
 
-import os
 from unittest.mock import MagicMock, mock_open, patch
 
 from camera_streamer.health import HealthMonitor
@@ -41,38 +40,26 @@ class TestHealthRunCheck:
         mon._run_check()  # Should not raise
 
 
-class TestWatchdogNotify:
-    """Test systemd watchdog notification."""
+class TestHealthNotifier:
+    """Test watchdog notifier integration."""
 
-    def test_notify_no_socket(self, camera_config):
-        """Should do nothing when NOTIFY_SOCKET not set."""
+    def test_health_loop_beats_notifier(self, camera_config):
         capture = MagicMock()
         capture.available = True
         stream = MagicMock()
         stream.is_streaming = True
-        mon = HealthMonitor(camera_config, capture, stream)
-        with patch.dict(os.environ, {}, clear=True):
-            mon._notify_watchdog()  # Should not raise
+        notifier = MagicMock()
+        mon = HealthMonitor(camera_config, capture, stream, notifier=notifier)
 
-    def test_notify_with_socket_env(self, camera_config):
-        """Watchdog should not raise even when NOTIFY_SOCKET is set."""
-        capture = MagicMock()
-        capture.available = True
-        stream = MagicMock()
-        stream.is_streaming = True
-        mon = HealthMonitor(camera_config, capture, stream)
-        with patch.dict(os.environ, {"NOTIFY_SOCKET": "/run/systemd/notify"}):
-            mon._notify_watchdog()  # Should not raise on any platform
+        def _run_once():
+            mon._running = False
 
-    def test_notify_exception_suppressed(self, camera_config):
-        """Watchdog errors should be silently suppressed."""
-        capture = MagicMock()
-        capture.available = True
-        stream = MagicMock()
-        stream.is_streaming = True
-        mon = HealthMonitor(camera_config, capture, stream)
-        with patch.dict(os.environ, {"NOTIFY_SOCKET": "@/invalid/path"}):
-            mon._notify_watchdog()  # Should not raise
+        mon._run_check = MagicMock(side_effect=_run_once)
+        mon._running = True
+
+        mon._health_loop()
+
+        notifier.beat.assert_called_once_with("health")
 
 
 class TestCpuTempEdge:

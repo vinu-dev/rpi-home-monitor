@@ -15,9 +15,12 @@ class TestMainSetupMode:
     """Test main() behavior during first-boot setup."""
 
     @patch("camera_streamer.lifecycle.CameraLifecycle")
+    @patch("camera_streamer.watchdog_notifier.WatchdogNotifier")
     @patch("camera_streamer.platform.Platform")
     @patch("camera_streamer.config.ConfigManager")
-    def test_main_runs_lifecycle(self, MockConfig, MockPlatform, MockLifecycle):
+    def test_main_runs_lifecycle(
+        self, MockConfig, MockPlatform, MockWatchdog, MockLifecycle
+    ):
         """Main creates lifecycle and calls run()."""
         config = MagicMock()
         config.camera_id = "cam-test"
@@ -26,6 +29,7 @@ class TestMainSetupMode:
 
         lifecycle = MagicMock()
         MockLifecycle.return_value = lifecycle
+        MockWatchdog.return_value = MagicMock()
 
         main_module._shutdown = False
         main()
@@ -33,10 +37,11 @@ class TestMainSetupMode:
         lifecycle.run.assert_called_once()
 
     @patch("camera_streamer.lifecycle.CameraLifecycle")
+    @patch("camera_streamer.watchdog_notifier.WatchdogNotifier")
     @patch("camera_streamer.platform.Platform")
     @patch("camera_streamer.config.ConfigManager")
     def test_keyboard_interrupt_calls_shutdown(
-        self, MockConfig, MockPlatform, MockLifecycle
+        self, MockConfig, MockPlatform, MockWatchdog, MockLifecycle
     ):
         """KeyboardInterrupt during run should call shutdown."""
         config = MagicMock()
@@ -47,6 +52,7 @@ class TestMainSetupMode:
         lifecycle = MagicMock()
         lifecycle.run.side_effect = KeyboardInterrupt
         MockLifecycle.return_value = lifecycle
+        MockWatchdog.return_value = MagicMock()
 
         main_module._shutdown = False
         main()

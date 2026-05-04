@@ -339,6 +339,11 @@ class ConfigManager:
         # out when using a plain directory as /data.
         if os.environ.get("CAMERA_SKIP_MOUNT_CHECK") == "1":
             return True
+        # The mount contract is Linux-specific. On non-POSIX hosts we
+        # cannot infer a valid /data mount from Windows path semantics,
+        # so fail closed unless the explicit escape hatch is enabled.
+        if os.name != "posix":
+            return False
         try:
             return os.stat(self._data_dir).st_dev != os.stat("/").st_dev
         except OSError:

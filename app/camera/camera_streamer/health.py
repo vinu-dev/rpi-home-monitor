@@ -1,7 +1,7 @@
 """
 Health monitoring for camera-streamer.
 
-Reports system health metrics and notifies systemd watchdog.
+Reports system health metrics.
 Checks:
 - Camera device accessible
 - ffmpeg process alive
@@ -90,7 +90,7 @@ def read_throttle_state(
     return None
 
 
-# REQ: SWR-037; RISK: RISK-022; TEST: TC-035
+# REQ: SWR-037, SWR-062; RISK: RISK-001, RISK-008, RISK-022; TEST: TC-005, TC-035
 class HealthMonitor:
     """Monitor camera system health and report to systemd watchdog.
 
@@ -110,6 +110,7 @@ class HealthMonitor:
         thermal_path=None,
         vcgencmd_path=None,
         throttle_path=None,
+        notifier=None,
     ):
         self._config = config
         self._capture = capture_mgr
@@ -117,6 +118,7 @@ class HealthMonitor:
         self._thermal_path = thermal_path
         self._vcgencmd_path = vcgencmd_path
         self._throttle_path = throttle_path
+        self._notifier = notifier
         self._last_throttle_state = None
         self._running = False
         self._thread = None
@@ -176,7 +178,8 @@ class HealthMonitor:
         while self._running:
             try:
                 self._run_check()
-                self._notify_watchdog()
+                if self._notifier is not None:
+                    self._notifier.beat("health")
             except Exception:
                 log.exception("Health check error")
 
@@ -202,25 +205,6 @@ class HealthMonitor:
         disk = status["disk_free_mb"]
         if disk is not None and disk < 50:
             log.warning("Low disk space: %d MB free", disk)
-
-    def _notify_watchdog(self):
-        """Send systemd watchdog notification."""
-        try:
-            import socket
-
-            addr = os.environ.get("NOTIFY_SOCKET")
-            if not addr:
-                return
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-            try:
-                if addr.startswith("@"):
-                    addr = "\0" + addr[1:]
-                sock.connect(addr)
-                sock.sendall(b"WATCHDOG=1")
-            finally:
-                sock.close()
-        except Exception:
-            pass  # Watchdog notification is best-effort
 
 
 def _get_disk_free_mb(path):

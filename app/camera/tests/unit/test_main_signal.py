@@ -10,7 +10,7 @@ has deadlocked — see the auto-unpair and re-pair flows in
 heartbeat.py and status_server.py.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import camera_streamer.main as main_mod
 
@@ -19,12 +19,15 @@ class TestHandleSignal:
     def setup_method(self):
         # Reset module-level flag between tests
         main_mod._shutdown = False
+        main_mod._watchdog_notifier = None
 
     def test_first_signal_sets_flag_and_arms_watchdog(self):
+        main_mod._watchdog_notifier = MagicMock()
         with patch("camera_streamer.main.threading.Timer") as mock_timer:
             main_mod._handle_signal(15, None)
 
             assert main_mod._shutdown is True
+            main_mod._watchdog_notifier.stop.assert_called_once_with(stopping=True)
             # Watchdog Timer instantiated with the configured budget
             args, _ = mock_timer.call_args
             assert args[0] == main_mod._SHUTDOWN_WATCHDOG_SECONDS
