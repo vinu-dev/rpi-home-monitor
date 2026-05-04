@@ -79,11 +79,21 @@ This repo is configured to use alternating model perspectives:
 - Tester: Codex via `npx @openai/codex -m gpt-5.4`
 - Reviewer: Claude Code via `npx @anthropic-ai/claude-code --model opus`
 
+Reviewer approval is recorded with a PR comment beginning
+`Agentry review outcome:` plus the `agent-approved` label. The target config
+does not use formal `gh pr review` by default because GitHub rejects
+same-author self-review.
+
 Researcher and Release are disabled by default. Enable them only when you want
 new autonomous issue discovery or release automation.
 
 `opus` is the Claude Code alias for the latest Opus model. Keep this alias
 instead of pinning a dated Claude model unless a rollback is intentional.
+
+The start scripts currently pin Agentry to
+`f8da18a92e6fbbc87e77c56164f24e1317bb66c4`, which includes the reviewer
+comment workflow and the stream-json watchdog fix for active Claude Code tool
+activity during check-ins.
 
 ## Start
 

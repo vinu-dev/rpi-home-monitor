@@ -13,7 +13,7 @@ Two repositories stay separate:
 
 | Repository | Responsibility | Current baseline |
 |---|---|---|
-| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4` |
+| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `f8da18a92e6fbbc87e77c56164f24e1317bb66c4` |
 | `vinu-dev/rpi-home-monitor` | Target config, product code, product docs, role guidance | pinned to the Agentry baseline above |
 
 Do not mix platform fixes into this repo. Do not put target project fixes in
@@ -31,13 +31,19 @@ the Agentry repo.
   status/dashboard, the runtime contract forbids role-level wakeup/scheduling
   tools, and the standard Reviewer leaves pending-CI PRs in
   `ready-for-review` for the next orchestrator interval.
+- `vinu-dev/agentry#20`: Reviewer outcomes now use deterministic PR comments
+  plus labels as the canonical Agentry approval/block signal, avoiding noisy
+  GitHub self-review failures when the pipeline and PR author share an account.
+- `vinu-dev/agentry#21`: stream-json check-ins now treat fresh Claude Code tool
+  activity as progress, so an active reviewer is not killed just because it is
+  inside a long-running tool call and has not emitted a textual `STATUS:`.
 
 ## Target Configuration
 
 The target Agentry scripts pin the platform to:
 
 ```text
-ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4
+f8da18a92e6fbbc87e77c56164f24e1317bb66c4
 ```
 
 Model routing:
@@ -56,13 +62,14 @@ large Claude model without hardcoding a dated model name.
 
 As of this update:
 
-- #238 is `tests-failed`. Tester found real failures: formatting drift, missing
-  traceability IDs, and settings-service test failures.
-- #239 is in implementation for outbound webhook delivery.
-- #240, #241, and #242 were moved by Architect to `ready-for-implementation`.
-- #243 and newer issues remain in `ready-for-design`.
-- No Researcher or Release automation should run unless explicitly enabled by
-  an operator.
+- #265 and #267 are open with green CI and are waiting on Agentry review /
+  supervisor-approved merge handling.
+- #268 updates the target Agentry pin and should merge before restarting the
+  pipeline so new sessions use the fixed platform.
+- #246 active-session UI work has a local implementation commit in the
+  Implementer worktree and still needs rebase, validation, push, and PR flow.
+- Researcher and Release remain disabled and should not run unless explicitly
+  enabled by an operator.
 
 ## Operator Workflow
 

@@ -503,23 +503,24 @@ agents:
          - repo policy compliance
       7. APPROVE:
            gh label create agent-approved --color 0e8a16 --force
-           gh pr review <n> --approve --body "Agentry review outcome: APPROVED\n\n<concise summary>"
+           gh pr comment <n> --body "Agentry review outcome: APPROVED\n\n<concise summary>"
            gh pr edit <n> --add-label agent-approved --remove-label ready-for-review --remove-label blocked
-         If `gh pr review` fails or GitHub refuses self-review, use
-         `gh pr comment <n> --body "Agentry review outcome: APPROVED\n\n<concise summary>"`.
          The verified comment plus `agent-approved` is the canonical Agentry
-         approval signal. Still add `agent-approved`, remove `ready-for-review`
-         and `blocked`, verify with `gh pr view`, and leave the linked issue's
-         `pr-open` label in place until the PR or issue closes.
+         approval signal. Do not call `gh pr review --approve` by default:
+         GitHub rejects self-review when the pipeline and PR author share an
+         account, which creates noisy false failures. Projects that need formal
+         GitHub reviews can add that locally after confirming the reviewer actor
+         is allowed to review the PR. Still add `agent-approved`, remove
+         `ready-for-review` and `blocked`, verify with `gh pr view`, and leave
+         the linked issue's `pr-open` label in place until the PR or issue
+         closes.
          (Do NOT click merge — code-owner human merges.)
          BLOCK (any item failed):
            gh label create agent-approved --color 0e8a16 --force
-           gh pr review <n> --request-changes --body "Agentry review outcome: REQUEST CHANGES\n\n<itemized issues>"
+           gh pr comment <n> --body "Agentry review outcome: REQUEST CHANGES\n\n<itemized issues>"
            gh pr edit <n> --remove-label agent-approved --add-label blocked --remove-label ready-for-review
            gh issue edit <id> --add-label changes-requested --add-label pr-open --remove-label ready-for-test
            gh issue comment <id> --body "<short review-fix summary and PR link>"
-         If `gh pr review` fails, use `gh pr comment <n> --body "<REQUEST
-         CHANGES: ...>"`, then perform the same PR and issue label updates.
          Verify the PR no longer has `ready-for-review` or `agent-approved`
          and the issue has `changes-requested` plus `pr-open`.
       8. Append distilled cycle entry to
