@@ -13,7 +13,7 @@ Two repositories stay separate:
 
 | Repository | Responsibility | Current baseline |
 |---|---|---|
-| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4` |
+| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `74231a7b43fdab5b46c6192c6843b2ee700a04cf` |
 | `vinu-dev/rpi-home-monitor` | Target config, product code, product docs, role guidance | pinned to the Agentry baseline above |
 
 Do not mix platform fixes into this repo. Do not put target project fixes in
@@ -31,13 +31,16 @@ the Agentry repo.
   status/dashboard, the runtime contract forbids role-level wakeup/scheduling
   tools, and the standard Reviewer leaves pending-CI PRs in
   `ready-for-review` for the next orchestrator interval.
+- `vinu-dev/agentry#20`: Reviewer outcomes now use deterministic PR comments
+  plus labels as the canonical Agentry approval/block signal, avoiding noisy
+  GitHub self-review failures when the pipeline and PR author share an account.
 
 ## Target Configuration
 
 The target Agentry scripts pin the platform to:
 
 ```text
-ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4
+74231a7b43fdab5b46c6192c6843b2ee700a04cf
 ```
 
 Model routing:

@@ -31,7 +31,7 @@ $TargetRoot = Split-Path -Parent $ScriptDir
 $Venv = Join-Path $ScriptDir '.venv'
 $InstallRefFile = Join-Path $Venv '.agentry-install-ref'
 $AgentryRepo = 'https://github.com/vinu-dev/agentry.git'
-$AgentryRef = 'ad2c7a8535c1ebdcfcd9bcb922e1500d61a8d6b4'
+$AgentryRef = '74231a7b43fdab5b46c6192c6843b2ee700a04cf'
 if ($env:AGENTRY_INSTALL_REF) { $AgentryRef = $env:AGENTRY_INSTALL_REF }
 
 # Locate Python.
