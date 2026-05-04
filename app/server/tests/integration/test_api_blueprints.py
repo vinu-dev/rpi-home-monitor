@@ -76,6 +76,7 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/recordings/latest",
     "/api/v1/live/cam-test/stream.m3u8",
     "/api/v1/settings",
+    "/api/v1/settings/offsite-backup",
     "/api/v1/webhooks",
     "/api/v1/webhooks/deliveries",
     "/api/v1/users",
@@ -111,6 +112,18 @@ class TestAuthEnforcement:
 _STATE_CHANGING_ROUTES = [
     ("POST", "/api/v1/cameras", {"id": "cam-x"}),
     ("PUT", "/api/v1/settings", {"hostname": "x"}),
+    (
+        "PUT",
+        "/api/v1/settings/offsite-backup",
+        {
+            "enabled": True,
+            "endpoint": "minio.example.com:9000",
+            "bucket": "hm-backups",
+            "access_key_id": "AKIATEST",
+            "secret_access_key": "secret-value",
+        },
+    ),
+    ("POST", "/api/v1/settings/offsite-backup/test-connection", {}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "x", "password": "y"}),
     (

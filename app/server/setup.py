@@ -13,6 +13,7 @@ setup(
         "jinja2>=3.0",
         "pyotp>=2.9",
         "zeroconf>=0.100",
+        "boto3>=1.34",
     ],
     entry_points={
         "console_scripts": [

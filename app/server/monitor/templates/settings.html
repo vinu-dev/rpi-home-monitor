@@ -1232,6 +1232,145 @@
                 </form>
             </div>
         </div>
+
+        <div class="settings-section" style="margin-top:var(--space-3);">
+            <div class="settings-section__title">Offsite Backup</div>
+            <div class="card">
+                <p class="text-small text-muted" style="margin:0 0 var(--space-3) 0;">
+                    Mirror finalized clips to your own S3-compatible bucket. Local recording stays authoritative; uploads run in the background and never delete local clips.
+                </p>
+
+                <div class="info-row">
+                    <span class="info-row__label">Status</span>
+                    <span class="info-row__value" x-text="offsite.enabled ? 'Enabled' : 'Disabled'"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Queue</span>
+                    <span class="info-row__value" x-text="offsite.queueSize + ' pending / ' + offsite.failedCount + ' failed'"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Last upload</span>
+                    <span class="info-row__value" x-text="formatLocalTime(offsite.lastSuccessAt)"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__label">Next retry</span>
+                    <span class="info-row__value" x-text="formatLocalTime(offsite.nextRetryAt)"></span>
+                </div>
+                <div class="info-row" style="border-bottom:none;">
+                    <span class="info-row__label">Last error</span>
+                    <span class="info-row__value">
+                        <span x-text="offsite.lastError || '--'"></span>
+                        <span class="text-small text-muted" x-show="offsite.lastErrorAt">
+                            (<span x-text="formatLocalTime(offsite.lastErrorAt)"></span>)
+                        </span>
+                    </span>
+                </div>
+
+                <form @submit.prevent="saveOffsiteBackup()" style="margin-top:12px;">
+                    <label style="display:inline-flex; align-items:center; gap:8px; margin-bottom:12px; cursor:pointer;">
+                        <input type="checkbox" x-model="offsite.enabled">
+                        <span x-text="offsite.enabled ? 'Offsite backup enabled' : 'Enable offsite backup'"></span>
+                    </label>
+
+                    <div x-show="offsite.enabled" x-cloak>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="offsite-endpoint">S3 Endpoint</label>
+                                <input type="text"
+                                       id="offsite-endpoint"
+                                       class="form-input"
+                                       x-model.trim="offsite.endpoint"
+                                       placeholder="s3.amazonaws.com">
+                                <span class="form-hint">Host or host:port. HTTPS is required; bare hosts default to HTTPS.</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="offsite-bucket">Bucket</label>
+                                <input type="text"
+                                       id="offsite-bucket"
+                                       class="form-input"
+                                       x-model.trim="offsite.bucket"
+                                       placeholder="home-monitor-backups">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="offsite-access-key">Access Key ID</label>
+                                <input type="text"
+                                       id="offsite-access-key"
+                                       class="form-input"
+                                       x-model.trim="offsite.accessKeyId"
+                                       placeholder="AKIA...">
+                            </div>
+                            <div class="form-group">
+                                <label for="offsite-secret-key">Secret Access Key</label>
+                                <input type="password"
+                                       id="offsite-secret-key"
+                                       class="form-input"
+                                       x-model="offsite.secretAccessKey"
+                                       placeholder="Leave blank to keep the current secret">
+                                <span class="form-hint" x-show="offsite.secretConfigured">Leave blank to keep the saved secret.</span>
+                                <span class="form-hint" x-show="!offsite.secretConfigured">Required before the first save.</span>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="offsite-prefix">Object Prefix</label>
+                                <input type="text"
+                                       id="offsite-prefix"
+                                       class="form-input"
+                                       x-model.trim="offsite.prefix"
+                                       placeholder="backups/home-monitor">
+                            </div>
+                            <div class="form-group">
+                                <label for="offsite-bandwidth">Bandwidth Cap (MB/s)</label>
+                                <input type="number"
+                                       id="offsite-bandwidth"
+                                       class="form-input"
+                                       min="1"
+                                       max="1000"
+                                       step="1"
+                                       x-model="offsite.bandwidthCapMbps"
+                                       placeholder="Unlimited">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="offsite-retention">Cloud Retention</label>
+                                <select id="offsite-retention" class="form-input" x-model="offsite.retentionDays">
+                                    <option :value="7">7 days</option>
+                                    <option :value="30">30 days</option>
+                                    <option :value="90">90 days</option>
+                                    <option value="">Unlimited</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Saved Secret</label>
+                                <div class="text-small text-muted" style="padding-top:10px;">
+                                    <span x-text="offsite.secretConfigured ? 'Configured' : 'Not configured'"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <button type="button"
+                                    class="btn btn--secondary btn--small"
+                                    @click="testOffsiteBackupConnection()"
+                                    :disabled="offsite.testing || offsite.saving">
+                                <span x-text="offsite.testing ? 'Testing...' : 'Test Connection'"></span>
+                            </button>
+                            <button type="submit"
+                                    class="btn btn--primary btn--small"
+                                    :disabled="offsite.saving || offsite.testing">
+                                <span x-text="offsite.saving ? 'Saving...' : 'Save Offsite Backup'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1782,6 +1921,27 @@ function settingsPage() {
         tailscale: { installed: false, running: false, state: 'unavailable', hostname: '', ip: '', peers: [], authUrl: '', loading: false, daemon_enabled: false, authenticated: false, config: { enabled: false, auto_connect: false, accept_routes: false, ssh: false, has_auth_key: false }, authKey: '', pollTimer: null },
 
         storage: { location: '', recSize: '', space: '', clips: '', isUsb: false, devices: [], scanned: false, scanning: false, showFormat: false, formatDevice: {}, formatting: false, mountPath: '', spaceDetail: '', oldestSegment: '', newestSegment: '', lowWatermark: 10, hysteresis: 5, loopSaving: false },
+        offsite: {
+            enabled: false,
+            configured: false,
+            secretConfigured: false,
+            endpoint: '',
+            bucket: '',
+            accessKeyId: '',
+            secretAccessKey: '',
+            prefix: '',
+            retentionDays: 30,
+            bandwidthCapMbps: '',
+            queueSize: 0,
+            queueLimit: 100,
+            failedCount: 0,
+            lastSuccessAt: '',
+            nextRetryAt: '',
+            lastError: '',
+            lastErrorAt: '',
+            saving: false,
+            testing: false,
+        },
 
         recording: { cameras: [], timezone: '', DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'] },
         webhooks: {
@@ -1866,6 +2026,7 @@ function settingsPage() {
                 this.loadUsers();
                 this.loadWifi();
                 this.loadStorageStatus();
+                this.loadOffsiteBackup();
                 this.scanUsb();
                 this.loadNetworkInterfaces();
                 this.loadTailscale();
@@ -2812,6 +2973,73 @@ function settingsPage() {
                     this.storage.hysteresis = s.loop_hysteresis_percent;
                 }
             } catch(e) {}
+        },
+
+        _offsitePayload() {
+            var payload = {
+                enabled: !!this.offsite.enabled,
+                endpoint: this.offsite.endpoint || '',
+                bucket: this.offsite.bucket || '',
+                access_key_id: this.offsite.accessKeyId || '',
+                prefix: this.offsite.prefix || '',
+                retention_days: this.offsite.retentionDays === '' ? null : this.offsite.retentionDays,
+                bandwidth_cap_mbps: this.offsite.bandwidthCapMbps === '' ? null : this.offsite.bandwidthCapMbps,
+            };
+            if (this.offsite.secretAccessKey) {
+                payload.secret_access_key = this.offsite.secretAccessKey;
+            }
+            return payload;
+        },
+
+        async loadOffsiteBackup() {
+            try {
+                var data = await window.HM.api.get('/api/v1/settings/offsite-backup');
+                this.offsite.enabled = !!data.enabled;
+                this.offsite.configured = !!data.configured;
+                this.offsite.secretConfigured = !!data.secret_configured;
+                this.offsite.endpoint = data.endpoint || '';
+                this.offsite.bucket = data.bucket || '';
+                this.offsite.accessKeyId = data.access_key_id || '';
+                this.offsite.secretAccessKey = '';
+                this.offsite.prefix = data.prefix || '';
+                this.offsite.retentionDays = data.retention_days == null ? '' : data.retention_days;
+                this.offsite.bandwidthCapMbps = data.bandwidth_cap_mbps == null ? '' : data.bandwidth_cap_mbps;
+                this.offsite.queueSize = data.queue_size || 0;
+                this.offsite.queueLimit = data.queue_limit || 100;
+                this.offsite.failedCount = data.failed_count || 0;
+                this.offsite.lastSuccessAt = data.last_success_at || '';
+                this.offsite.nextRetryAt = data.next_retry_at || '';
+                this.offsite.lastError = data.last_error || '';
+                this.offsite.lastErrorAt = data.last_error_at || '';
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to load offsite backup settings', 'error');
+            }
+        },
+
+        async saveOffsiteBackup() {
+            this.offsite.saving = true;
+            try {
+                await window.HM.api.put('/api/v1/settings/offsite-backup', this._offsitePayload());
+                window.HM.toast('Offsite backup settings saved', 'success');
+                await this.loadOffsiteBackup();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save offsite backup settings', 'error');
+            } finally {
+                this.offsite.saving = false;
+            }
+        },
+
+        async testOffsiteBackupConnection() {
+            this.offsite.testing = true;
+            try {
+                var data = await window.HM.api.post('/api/v1/settings/offsite-backup/test-connection', this._offsitePayload());
+                window.HM.toast(data.message || 'Connection OK', 'success');
+                await this.loadOffsiteBackup();
+            } catch(e) {
+                window.HM.toast(e.message || 'Connection test failed', 'error');
+            } finally {
+                this.offsite.testing = false;
+            }
         },
 
         async scanUsb() {

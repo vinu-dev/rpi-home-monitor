@@ -220,6 +220,18 @@ class TestAlertCenterUI:
         # gated.
         assert 'x-show="isAdmin && notify.cameras.length' in body
 
+    def test_settings_storage_tab_has_offsite_backup_controls(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "Offsite Backup" in body
+        assert "testOffsiteBackupConnection()" in body
+        assert "/api/v1/settings/offsite-backup" in body
+
     def test_base_html_polls_notifications_pending(self, client):
         """The polling-and-fire-Notification logic must be wired
         in base.html so the bell-badge poller's neighbour fires

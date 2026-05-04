@@ -254,6 +254,16 @@ class Settings:
     # TOTP 2FA policy (issue #238). When enabled, sessions from Tailscale
     # Funnel IPs must present a TOTP code after password verification.
     require_2fa_for_remote: bool = False
+    # Offsite backup (#243). Credentials are stored on the encrypted /data
+    # volume and are never returned in plaintext from API reads.
+    offsite_backup_enabled: bool = False
+    offsite_backup_endpoint: str = ""
+    offsite_backup_bucket: str = ""
+    offsite_backup_access_key_id: str = ""
+    offsite_backup_secret_access_key: str = ""
+    offsite_backup_prefix: str = ""
+    offsite_backup_retention_days: int | None = 30
+    offsite_backup_bandwidth_cap_mbps: float | None = None
     webhook_destinations: list[WebhookDestination] = field(default_factory=list)
     webhook_delivery_history_retention_days: int = 30
     backup_max_history: int = 3

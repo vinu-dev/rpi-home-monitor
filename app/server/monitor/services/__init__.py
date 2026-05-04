@@ -14,6 +14,7 @@ Services:
   provisioning_service.py - ProvisioningService: first-boot setup wizard
   storage_service.py      - StorageService: USB select/format/eject orchestration
   storage_manager.py      - StorageManager: FIFO loop recording cleanup, disk monitoring
+  offsite_backup.py       - OffsiteBackupService: S3-compatible clip mirroring + retry queue
   streaming_service.py    - StreamingService: ffmpeg pipeline management (HLS, recording, snapshots)
   recorder_service.py     - RecorderService: clip metadata, listing, deletion
   recordings_service.py   - RecordingsService: orchestrates clip queries + deletion + audit
