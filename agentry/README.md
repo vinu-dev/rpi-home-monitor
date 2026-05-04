@@ -111,6 +111,9 @@ no background service by default.
 Stop is conservative: Agentry kills only currently running session PIDs, not
 completed or stale records.
 
+Completed sessions clear their recorded PID before status/dashboard rendering,
+so a visible PID means there is still an active role process to inspect or stop.
+
 ## Upgrade
 
 The start scripts install Agentry from the Git ref pinned in the script. To
