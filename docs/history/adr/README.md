@@ -41,6 +41,7 @@ is marked `Status: Superseded by ADR-XXXX` rather than deleted.
 | 0025 | [Information architecture consolidation](0025-ia-consolidation.md)                               | Proposed   |
 | 0026 | [Desired-vs-observed camera state reconciliation](0026-desired-vs-observed-state-reconciliation.md) | Proposed   |
 | 0027 | [Rich motion notifications](0027-rich-motion-notifications.md)                                   | Proposed   |
+| 0028 | [Public share links for clips and live cameras](0028-public-share-links.md)                      | Proposed   |
 
 ## Writing a new ADR
 

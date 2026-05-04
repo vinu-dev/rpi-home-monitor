@@ -17,6 +17,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | User administration | Authenticated admin actions cross into password, role, and session trust state. | ARCH-008, SWA-013 |
 | Removable media | Operator USB devices and media requests cross into filesystem operations. | ARCH-009, SWA-015, SWA-016 |
 | Live transport proxy | Browser WHEP/HLS/snapshot requests cross into local upstream stream services. | ARCH-010, SWA-017 |
+| Public share links | Admin-issued links cross from authenticated share management into unauthenticated, token-scoped recipient media access. | ARCH-016, SWA-026 |
 | Build/release pipeline | Maintainer/build host actions cross into signed deployable artifacts. | ARCH-013, SWA-024 |
 
 ## Threats and Controls
@@ -43,6 +44,8 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-018 | Elevation | Production image includes development credentials, debug paths, or weak service hardening. | Yocto configs, systemd units, firewall, default credentials. | Unauthorized access or larger blast radius. | SC-019, SC-018 | SYS-024, SYS-030, SWR-049, SWR-050 | TC-044, TC-047 | Draft |
 | THREAT-019 | Information disclosure/Repudiation | Logs, faults, audit, or summary records leak secrets or omit necessary evidence. | Runtime logs, audit store, alert/fault records. | Privacy leak or investigation gap. | SC-020, SC-008 | SYS-022, SYS-020, SWR-044, SWR-051 | TC-017, TC-029, TC-041, TC-046 | Draft |
 | THREAT-020 | Tampering/Denial | Public API contract drift breaks deployed camera, browser, or automation clients. | Server/camera API schemas and routes. | Loss of monitoring, pairing, or update functions. | SC-021 | SYS-027, SWR-045 | TC-042 | Draft |
+| THREAT-021 | Information disclosure/Spoofing/Denial | Share token theft, brute force, or replay reaches token-scoped media. | Public share URLs, recipient browsers, unauthenticated public routes. | Unauthorized clip/live viewing or noisy abuse against public viewers. | SC-022, SC-024 | SYS-032, SWR-058, SWR-059, SWR-060 | TC-050, TC-051, TC-052 | Draft |
+| THREAT-022 | Elevation/Information disclosure | Public share routes bypass intended scope or expose dashboard state beyond the shared resource. | Public share viewer templates, token validation, media asset routing. | Recipients pivot into unrelated media, metadata, or privileged surfaces. | SC-023, SC-024 | SYS-032, SWR-059, SWR-061 | TC-051, TC-052, TC-053 | Draft |
 
 ## Assumptions
 

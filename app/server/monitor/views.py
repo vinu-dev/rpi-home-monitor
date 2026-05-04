@@ -154,3 +154,13 @@ def settings():
     if not _is_authenticated():
         return redirect(url_for("views.login"))
     return render_template("settings.html")
+
+
+@views_bp.route("/shares")
+def shares():
+    """Authenticated share-link management page."""
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    if not _is_authenticated():
+        return redirect(url_for("views.login"))
+    return render_template("share_management.html")

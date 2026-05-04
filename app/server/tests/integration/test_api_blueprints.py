@@ -52,6 +52,12 @@ class TestBlueprintRegistration:
     def test_audit_blueprint(self, app):
         assert "audit" in app.blueprints
 
+    def test_share_api_blueprint(self, app):
+        assert "share_api" in app.blueprints
+
+    def test_share_public_blueprint(self, app):
+        assert "share_public" in app.blueprints
+
 
 class TestUnknownRoutes:
     """Non-existent routes return 404, not 500."""
@@ -85,6 +91,7 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/system/backup/snapshots",
     "/api/v1/audit/events",
     "/api/v1/auth/me",
+    "/api/v1/share/links",
 ]
 
 
@@ -160,6 +167,16 @@ _STATE_CHANGING_ROUTES = [
     ),
     ("POST", "/api/v1/system/backup/preview", {}),
     ("POST", "/api/v1/system/backup/import", {}),
+    (
+        "POST",
+        "/api/v1/share/links",
+        {
+            "resource_type": "camera",
+            "resource_id": "cam-x",
+            "ttl": "24h",
+        },
+    ),
+    ("DELETE", "/api/v1/share/links/sharelink_test", None),
 ]
 
 

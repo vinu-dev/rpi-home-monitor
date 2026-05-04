@@ -12,11 +12,13 @@ import io
 import json
 import os
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
 from monitor.models import Camera, Settings, User, WebhookDestination
+from monitor.services.share_link_service import ShareLinkService
 from monitor.services.webhook_delivery_service import HttpResult
 
 # ---------------------------------------------------------------------------
@@ -73,6 +75,24 @@ def _seed_backup_state(app):
         handle.write("backup-box\n")
     with open(os.path.join(app.config["CERTS_DIR"], "ca.crt"), "w") as handle:
         handle.write("root-cert")
+
+
+def _seed_share_clip(
+    app, camera_id="cam-share", clip_date="2026-05-04", filename="12-00-00.mp4"
+):
+    _add_camera(app, camera_id)
+    clip_dir = Path(app.config["RECORDINGS_DIR"]) / camera_id / clip_date
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    (clip_dir / filename).write_bytes(b"fake mp4 bytes")
+    return ShareLinkService.build_clip_resource_id(camera_id, clip_date, filename)
+
+
+def _seed_share_live(app, camera_id="cam-live"):
+    _add_camera(app, camera_id)
+    live_dir = Path(app.config["LIVE_DIR"]) / camera_id
+    live_dir.mkdir(parents=True, exist_ok=True)
+    (live_dir / "stream.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+    (live_dir / "seg000.ts").write_bytes(b"segment")
 
 
 def _assert_fields(data, required_fields, msg=""):
@@ -1291,6 +1311,145 @@ class TestRecordingsBulkDeleteContract:
         resp = client.delete("/api/v1/recordings/nope")
         data = resp.get_json()
         _assert_fields(data, {"error"})
+
+
+SHARE_LINK_FIELDS = {
+    "token",
+    "resource_type",
+    "resource_id",
+    "owner_id",
+    "owner_username",
+    "created_at",
+    "expires_at",
+    "revoked_at",
+    "note",
+    "pin_ip",
+    "pin_ua",
+    "pinned_ip",
+    "pinned_ua",
+    "access_count",
+    "first_access_at",
+    "last_access_at",
+    "resource_name",
+    "share_url",
+    "status",
+    "ttl_remaining_seconds",
+    "pinned_ip_bound",
+    "pinned_ua_bound",
+}
+
+
+class TestShareLinksCreateContract:
+    """POST /api/v1/share/links."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resource_id = _seed_share_clip(app)
+        resp = client.post(
+            "/api/v1/share/links",
+            json={
+                "resource_type": "clip",
+                "resource_id": resource_id,
+                "ttl": "24h",
+                "pin_ip": True,
+                "pin_ua": True,
+                "note": "adjuster",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        _assert_fields(data, {"link"})
+        _assert_fields(data["link"], SHARE_LINK_FIELDS)
+
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.post(
+            "/api/v1/share/links",
+            json={"resource_type": "clip", "resource_id": "bad", "ttl": "24h"},
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
+class TestShareLinksListContract:
+    """GET /api/v1/share/links."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resource_id = _seed_share_clip(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="clip",
+            resource_id=resource_id,
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+        resp = client.get(
+            "/api/v1/share/links",
+            query_string={"resource_type": "clip", "resource_id": resource_id},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_fields(data, {"resource_type", "resource_id", "resource_name", "links"})
+        assert isinstance(data["links"], list) and data["links"]
+        _assert_fields(data["links"][0], SHARE_LINK_FIELDS)
+        assert data["links"][0]["token"] == created["token"]
+
+
+class TestShareLinksRevokeContract:
+    """DELETE /api/v1/share/links/<token>."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resource_id = _seed_share_clip(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="clip",
+            resource_id=resource_id,
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+        resp = client.delete("/api/v1/share/links/" + created["token"])
+        data = resp.get_json()
+        _assert_fields(data, {"message"})
+
+
+class TestPublicShareContract:
+    """Public share endpoints keep the documented status/shape."""
+
+    def test_valid_clip_page_returns_html(self, app, client):
+        resource_id = _seed_share_clip(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="clip",
+            resource_id=resource_id,
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+        resp = client.get("/share/clip/" + created["token"])
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/html"
+
+    def test_invalid_token_returns_404(self, client):
+        resp = client.get("/share/clip/sharelink_missing")
+        assert resp.status_code == 404
+
+    def test_valid_camera_playlist_returns_m3u8(self, app, client):
+        _seed_share_live(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="camera",
+            resource_id="cam-live",
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+        resp = client.get("/share/camera/" + created["token"] + "/stream.m3u8")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/vnd.apple.mpegurl"
 
 
 # ===========================================================================

@@ -113,7 +113,7 @@ Operators need to share individual clips or live camera feeds with neighbors, fa
 
 ### Services (app/server/monitor/services/)
 
-- **share_link_service.py** (new): 
+- **share_link_service.py** (new):
   - `generate_token()` → cryptographic token
   - `create_share_link(resource_type, resource_id, owner_id, ttl, pin_ip, pin_ua)` → ShareLink
   - `get_share_link(token)` → ShareLink or None

@@ -1,0 +1,37 @@
+{# REQ: SWR-059, SWR-061; RISK: RISK-023, RISK-024; SEC: SC-023, SC-024; TEST: TC-051, TC-053 #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ resource_name }} - Shared Clip</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="public-share-body">
+    <main class="public-share-shell">
+        <section class="public-share-card">
+            <div class="public-share-header">
+                <img class="public-share-logo"
+                     src="{{ url_for('static', filename='images/logo.svg') }}"
+                     alt="Home Monitor">
+                <div>
+                    <p class="public-share-kicker">Shared clip</p>
+                    <h1 class="public-share-title">{{ resource_name }}</h1>
+                </div>
+            </div>
+            <p class="public-share-copy">
+                Shared by {{ device_name }}. This public link grants view-only access to this single clip.
+            </p>
+            <div class="public-share-player">
+                <video class="public-share-video" controls playsinline preload="metadata" src="{{ video_url }}">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="public-share-watermark">
+                    Shared by {{ device_name }}
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

@@ -31,6 +31,7 @@ Status: Draft prepared to support expert regulatory review.
 | SWA-023 | Fault framework | Server and camera fault records normalize source, category, severity, timestamps, and remediation metadata. | SWR-051, SWR-037 | RISK-005, RISK-020 | SC-020, SC-008 | TC-046, TC-035 | `faults.py`, `alert_center_service.py` |
 | SWA-024 | Build, release, and CI automation | Workflows and scripts execute tests, release validation, OTA signing checks, version checks, SBOM, and traceability. | SWR-046, SWR-047, SWR-048, SWR-055 | RISK-009, RISK-019 | SC-009, SC-018 | TC-043, TC-045 | `.github/workflows/`, `scripts/` |
 | SWA-025 | Production/development profile separation | Runtime images and configs separate development defaults, production credentials, debug access, and hardening rules. | SWR-049, SWR-050, SWR-054 | RISK-018, RISK-010 | SC-019, SC-010 | TC-044, TC-047 | ADR-0007, Yocto/systemd/firewall configs |
+| SWA-026 | Share-link service and public blueprint | One service owns token lifecycle, scope validation, first-use pinning, and audit while separate admin/public blueprints keep recipient routes decoupled from session-authenticated views. | SWR-058, SWR-059, SWR-060, SWR-061 | RISK-023, RISK-024, RISK-025 | SC-022, SC-023, SC-024 | TC-050, TC-051, TC-052, TC-053 | `share_link_service.py`, `api/share.py`, `views.py`, `templates/shared_*` |
 
 ## Failure Handling
 

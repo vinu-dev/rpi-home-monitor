@@ -16,7 +16,7 @@ import threading
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from monitor.models import Camera, Settings, User
+from monitor.models import Camera, Settings, ShareLink, User
 
 
 def _filter_known(cls, raw: dict) -> dict:
@@ -176,3 +176,47 @@ class Store:
         """Save system settings."""
         with self._lock:
             self._write_json("settings.json", asdict(settings))
+
+    # --- Share links ---
+
+    def get_share_links(self) -> list[ShareLink]:
+        """Return all persisted share links."""
+        with self._lock:
+            raw = self._read_json("share_links.json")
+        if not isinstance(raw, list):
+            return []
+        return [
+            ShareLink(**_filter_known(ShareLink, item))
+            for item in raw
+            if isinstance(item, dict)
+        ]
+
+    def get_share_link(self, token: str) -> ShareLink | None:
+        """Return one share link by token."""
+        for link in self.get_share_links():
+            if link.token == token:
+                return link
+        return None
+
+    def save_share_link(self, share_link: ShareLink):
+        """Add or update a share link by token."""
+        with self._lock:
+            links = self._read_json("share_links.json")
+            if not isinstance(links, list):
+                links = []
+            row = asdict(share_link)
+            for index, item in enumerate(links):
+                if item.get("token") == share_link.token:
+                    links[index] = row
+                    self._write_json("share_links.json", links)
+                    return
+            links.append(row)
+            self._write_json("share_links.json", links)
+
+    def replace_share_links(self, share_links: list[ShareLink]):
+        """Replace the full share-link file with the provided rows."""
+        with self._lock:
+            self._write_json(
+                "share_links.json",
+                [asdict(link) for link in share_links],
+            )

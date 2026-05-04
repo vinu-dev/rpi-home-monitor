@@ -47,6 +47,11 @@
     </div>
 </div>
 
+<div class="share-toolbar" id="live-share-toolbar" hidden>
+    <button class="btn btn--secondary btn--small" id="btn-share-live" type="button">Share live view</button>
+    <a class="btn btn--secondary btn--small" id="btn-manage-live-shares" href="/shares">Manage share links</a>
+</div>
+
 <!-- Camera Info -->
 <div class="card mt-16 camera-info" id="live-camera-info" style="display:none;">
     <div class="camera-info__row">
@@ -74,6 +79,8 @@
         <span class="camera-info__value" id="info-recording">--</span>
     </div>
 </div>
+
+{% include "share_link_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
@@ -97,6 +104,21 @@
     var btnFullscreen = document.getElementById('btn-fullscreen');
     var statusEl = document.getElementById('live-stream-status');
     var infoPanel = document.getElementById('live-camera-info');
+    var shareToolbar = document.getElementById('live-share-toolbar');
+    var btnShareLive = document.getElementById('btn-share-live');
+    var btnManageShares = document.getElementById('btn-manage-live-shares');
+    var shareModal = document.getElementById('share-modal');
+    var shareModalTitle = document.getElementById('share-modal-title');
+    var shareModalResource = document.getElementById('share-modal-resource');
+    var shareTtl = document.getElementById('share-ttl');
+    var sharePinIp = document.getElementById('share-pin-ip');
+    var sharePinUa = document.getElementById('share-pin-ua');
+    var shareNote = document.getElementById('share-note');
+    var shareResult = document.getElementById('share-result');
+    var shareUrl = document.getElementById('share-url');
+    var shareCreateBtn = document.getElementById('share-create-btn');
+    var shareCopyBtn = document.getElementById('share-copy-btn');
+    var shareManageBtn = document.getElementById('share-manage-btn');
 
     // Player-control buttons share the same enabled/disabled state as
     // Snapshot (enabled only while a stream is live). Centralised here so
@@ -117,6 +139,8 @@
     var hlsInstance = null;
     var cameras = [];
     var currentTransport = '';  // 'webrtc' or 'hls'
+    var userRole = '';
+    var shareContext = null;
 
     // WHEP timeout — if WebRTC doesn't connect in 5s, fall back to HLS.
     // On-demand streaming (ADR-0017) adds ~3-5 s camera warm-up on the first
@@ -188,6 +212,65 @@
         document.getElementById('info-ip').textContent = cam.ip || '--';
         document.getElementById('info-status').textContent = cam.status || '--';
         document.getElementById('info-recording').textContent = cam.recording_mode || '--';
+        refreshShareUi(cam);
+    }
+
+    function refreshShareUi(cam) {
+        var isAdmin = userRole === 'admin';
+        shareToolbar.hidden = !isAdmin;
+        if (!isAdmin) return;
+        var enabled = !!(cam && cam.id);
+        btnShareLive.disabled = !enabled;
+        var href = '/shares';
+        if (enabled) {
+            href += '?resource_type=camera&resource_id=' + encodeURIComponent(cam.id);
+        }
+        btnManageShares.setAttribute('href', href);
+    }
+
+    function openShareModal() {
+        var cam = findCamera(selectEl.value);
+        if (!cam) return;
+        shareContext = {
+            resource_type: 'camera',
+            resource_id: cam.id,
+            resource_name: cam.name || cam.id,
+        };
+        shareModalTitle.textContent = 'Share live view';
+        shareModalResource.textContent = shareContext.resource_name;
+        shareResult.hidden = true;
+        shareUrl.value = '';
+        shareNote.value = '';
+        sharePinIp.checked = false;
+        sharePinUa.checked = false;
+        shareManageBtn.href =
+            '/shares?resource_type=camera&resource_id=' + encodeURIComponent(cam.id);
+        shareModal.hidden = false;
+    }
+
+    function closeShareModal() {
+        shareModal.hidden = true;
+        shareCreateBtn.disabled = false;
+    }
+
+    function createShareLink() {
+        if (!shareContext) return;
+        shareCreateBtn.disabled = true;
+        window.HM.api.post('/api/v1/share/links', {
+            resource_type: shareContext.resource_type,
+            resource_id: shareContext.resource_id,
+            ttl: shareTtl.value,
+            pin_ip: sharePinIp.checked,
+            pin_ua: sharePinUa.checked,
+            note: shareNote.value.trim(),
+        }).then(function(result) {
+            shareCreateBtn.disabled = false;
+            shareResult.hidden = false;
+            shareUrl.value = result.link.share_url;
+        }).catch(function(err) {
+            shareCreateBtn.disabled = false;
+            window.HM.toast(err.message || 'Could not create share link', 'error');
+        });
     }
 
     // ---- Stream lifecycle ----
@@ -481,7 +564,28 @@
 
     refreshMuteIcon();
 
-    function init() { loadCameras(); }
+    function init() {
+        window.HM.auth.getMe()
+            .catch(function() { /* app.js handles redirect */ })
+            .then(function() {
+                var user = window.HM.auth.getUser();
+                userRole = user ? user.role : '';
+                loadCameras();
+            });
+    }
+
+    btnShareLive.addEventListener('click', openShareModal);
+    shareCreateBtn.addEventListener('click', createShareLink);
+    shareCopyBtn.addEventListener('click', function() {
+        navigator.clipboard.writeText(shareUrl.value).then(function() {
+            window.HM.toast('Share link copied', 'success');
+        }).catch(function() {
+            window.HM.toast('Could not copy share link', 'error');
+        });
+    });
+    shareModal.querySelectorAll('[data-share-close]').forEach(function(el) {
+        el.addEventListener('click', closeShareModal);
+    });
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

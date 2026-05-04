@@ -1,0 +1,133 @@
+{# REQ: SWR-058, SWR-061; RISK: RISK-024, RISK-025; SEC: SC-023, SC-024; TEST: TC-050, TC-053 #}
+{% extends "base.html" %}
+
+{% block title %}Share Links - Home Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Share Links</h1>
+
+<div class="card share-manager" id="share-manager"
+     data-resource-type="{{ request.args.get('resource_type', '') }}"
+     data-resource-id="{{ request.args.get('resource_id', '') }}">
+    <div class="share-manager__header">
+        <div>
+            <p class="text-muted text-small">Manage active public links for one clip or one live camera.</p>
+            <h2 class="share-manager__title" id="share-manager-title">Loading...</h2>
+        </div>
+        <a class="btn btn--secondary btn--small" href="javascript:history.back()">Back</a>
+    </div>
+
+    <div class="share-manager__empty" id="share-empty" hidden>
+        No active share links for this resource.
+    </div>
+
+    <div class="share-list" id="share-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var root = document.getElementById('share-manager');
+    var listEl = document.getElementById('share-list');
+    var emptyEl = document.getElementById('share-empty');
+    var titleEl = document.getElementById('share-manager-title');
+    var resourceType = root.getAttribute('data-resource-type');
+    var resourceId = root.getAttribute('data-resource-id');
+
+    function escapeHtml(value) {
+        return window.HM.escapeHtml(value || '');
+    }
+
+    function formatRemaining(seconds) {
+        if (seconds === null || seconds === undefined) return 'Never expires';
+        if (seconds <= 0) return 'Expired';
+        if (seconds < 3600) return Math.max(1, Math.floor(seconds / 60)) + ' min left';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + ' h left';
+        return Math.floor(seconds / 86400) + ' d left';
+    }
+
+    function pinningLabel(link) {
+        var parts = [];
+        if (link.pin_ip) parts.push(link.pinned_ip_bound ? 'IP pinned' : 'IP on first use');
+        if (link.pin_ua) parts.push(link.pinned_ua_bound ? 'Browser pinned' : 'Browser on first use');
+        return parts.length ? parts.join(' · ') : 'No device pinning';
+    }
+
+    function buildRow(link) {
+        var row = document.createElement('article');
+        row.className = 'share-row';
+        row.innerHTML =
+            '<div class="share-row__meta">' +
+                '<div class="share-row__url">' + escapeHtml(link.share_url) + '</div>' +
+                '<div class="share-row__facts">' +
+                    '<span>' + escapeHtml(formatRemaining(link.ttl_remaining_seconds)) + '</span>' +
+                    '<span>' + escapeHtml(pinningLabel(link)) + '</span>' +
+                    '<span>' + escapeHtml((link.access_count || 0) + ' views') + '</span>' +
+                    '<span>' + escapeHtml(link.last_access_at || 'Never opened') + '</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="share-row__actions">' +
+                '<button type="button" class="btn btn--secondary btn--small" data-copy>Copy</button>' +
+                '<button type="button" class="btn btn--danger btn--small" data-revoke>Revoke</button>' +
+            '</div>';
+
+        row.querySelector('[data-copy]').addEventListener('click', function() {
+            navigator.clipboard.writeText(link.share_url).then(function() {
+                window.HM.toast('Share link copied', 'success');
+            }).catch(function() {
+                window.HM.toast('Could not copy share link', 'error');
+            });
+        });
+
+        row.querySelector('[data-revoke]').addEventListener('click', function() {
+            if (!confirm('Revoke this share link?')) return;
+            window.HM.api.del('/api/v1/share/links/' + encodeURIComponent(link.token))
+                .then(function() {
+                    window.HM.toast('Share link revoked', 'success');
+                    loadLinks();
+                })
+                .catch(function(err) {
+                    window.HM.toast(err.message || 'Could not revoke share link', 'error');
+                });
+        });
+
+        return row;
+    }
+
+    function render(result) {
+        titleEl.textContent = result.resource_name || 'Share links';
+        listEl.innerHTML = '';
+        var links = result.links || [];
+        emptyEl.hidden = links.length !== 0;
+        links.forEach(function(link) {
+            listEl.appendChild(buildRow(link));
+        });
+    }
+
+    function loadLinks() {
+        if (!resourceType || !resourceId) {
+            titleEl.textContent = 'Share links';
+            emptyEl.hidden = false;
+            emptyEl.textContent = 'Open this page from a clip or live camera to manage its share links.';
+            return;
+        }
+        window.HM.api.get(
+            '/api/v1/share/links?resource_type=' + encodeURIComponent(resourceType) +
+            '&resource_id=' + encodeURIComponent(resourceId)
+        ).then(render)
+         .catch(function(err) {
+            titleEl.textContent = 'Share links';
+            emptyEl.hidden = false;
+            emptyEl.textContent = err.message || 'Could not load share links.';
+         });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadLinks);
+    } else {
+        loadLinks();
+    }
+})();
+</script>
+{% endblock %}

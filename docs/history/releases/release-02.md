@@ -15,6 +15,7 @@ detection value, local integrations, and stronger account/ops capabilities.
 - events become meaningfully classifiable, not just "motion happened"
 - advanced users can connect the system to local automation tools
 - household and operator trust improves through stronger account controls
+- operators can safely share one clip or one live camera without account reuse
 
 ## Planned Scope
 
@@ -28,6 +29,7 @@ detection value, local integrations, and stronger account/ops capabilities.
 8. TOTP / stronger 2FA
 9. protected clips
 10. diagnostic export bundle
+11. shareable view-only links for clips and live cameras
 
 ## Dependency Assumptions
 
@@ -37,12 +39,16 @@ detection value, local integrations, and stronger account/ops capabilities.
 - TOTP should respect the current "no software backdoor" recovery posture
 - protected clips should layer on the existing recording/event store instead of
   inventing a second retention model
+- share links should reuse the existing auth abuse controls and avoid exposing
+  normal dashboard surfaces to unauthenticated recipients
 
 ## Major Risks
 
 - semantic detection can create false-confidence UX if precision is poor
 - integrations can fragment architecture if each is implemented ad hoc
 - stronger auth flows can accidentally conflict with the agreed recovery policy
+- public sharing can widen the unauthenticated attack surface if token scope
+  and generic failure handling are weak
 
 ## Planning Rule For This Release
 
