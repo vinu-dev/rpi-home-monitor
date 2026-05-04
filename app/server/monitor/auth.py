@@ -126,10 +126,77 @@ def _get_audit_logger():
     return getattr(current_app, "audit", None)
 
 
+def _get_session_service():
+    """Return the app session inventory service, if configured."""
+    return getattr(current_app, "session_service", None)
+
+
+def _current_session_id() -> str:
+    """Return the opaque sid for server-side tracked sessions."""
+    sid = session.get("sid")
+    return sid if isinstance(sid, str) else ""
+
+
+def _discard_current_session():
+    """Delete the current server-side session row without audit noise."""
+    sid = _current_session_id()
+    session_service = _get_session_service()
+    if sid and session_service is not None:
+        session_service.discard(sid)
+
+
+def _touch_current_session() -> None:
+    """Refresh session activity in both the cookie and server-side index."""
+    now = time.time()
+    session["last_active"] = now
+    sid = _current_session_id()
+    session_service = _get_session_service()
+    if sid and session_service is not None:
+        session_service.touch(sid)
+
+
+def _begin_user_session(user, *, source_ip: str = ""):
+    """Start a fresh authenticated session for ``user``."""
+    _discard_current_session()
+    session.clear()
+    session_service = _get_session_service()
+    session_record = None
+    if session_service is not None:
+        session_record = session_service.issue(
+            user,
+            source_ip=source_ip,
+            user_agent=request.headers.get("User-Agent", ""),
+        )
+        session["sid"] = session_record.id
+
+    session["user_id"] = user.id
+    session["username"] = user.username
+    session["role"] = user.role
+    session["created_at"] = (
+        session_record.created_at if session_record is not None else time.time()
+    )
+    session["last_active"] = (
+        session_record.last_active if session_record is not None else time.time()
+    )
+    # Carry the "forced change on next login" flag into the session so
+    # login_required / admin_required can refuse every non-password-change
+    # endpoint until the user completes the change. Without this the flag
+    # was a suggestion to the client (returned in the login response body)
+    # and any API client ignoring it could keep using default credentials.
+    session["must_change_password"] = bool(user.must_change_password)
+
+
 def _is_session_valid() -> bool:
     """Check if the current session is still valid (not expired)."""
     if "user_id" not in session:
         return False
+
+    sid = _current_session_id()
+    session_service = _get_session_service()
+    if sid and session_service is not None:
+        active_session = session_service.get(sid, validate_timeout=False)
+        if active_session is None or active_session.user_id != session.get("user_id"):
+            return False
 
     timeout_minutes = current_app.config.get("SESSION_TIMEOUT_MINUTES", 60)
     last_active = session.get("last_active")
@@ -138,10 +205,42 @@ def _is_session_valid() -> bool:
 
     # Idle timeout
     if last_active and (now - last_active) > (timeout_minutes * 60):
+        if sid and session_service is not None:
+            session_service.expire(
+                sid,
+                fallback_user=session.get("username", ""),
+                fallback_ip=request.remote_addr or "",
+                detail="idle timeout",
+            )
+            return False
+        audit = _get_audit_logger()
+        if audit:
+            audit.log_event(
+                "SESSION_EXPIRED",
+                user=session.get("username", ""),
+                ip=request.remote_addr or "",
+                detail="legacy session idle timeout",
+            )
         return False
 
     # Absolute timeout (24 hours)
-    if created_at and (now - created_at) > 86400:  # noqa: SIM103
+    if created_at and (now - created_at) > 86400:
+        if sid and session_service is not None:
+            session_service.expire(
+                sid,
+                fallback_user=session.get("username", ""),
+                fallback_ip=request.remote_addr or "",
+                detail="absolute timeout",
+            )
+            return False
+        audit = _get_audit_logger()
+        if audit:
+            audit.log_event(
+                "SESSION_EXPIRED",
+                user=session.get("username", ""),
+                ip=request.remote_addr or "",
+                detail="legacy session absolute timeout",
+            )
         return False
 
     return True
@@ -187,7 +286,7 @@ def login_required(f):
                     "must_change_password": True,
                 }
             ), 403
-        session["last_active"] = time.time()
+        _touch_current_session()
         return f(*args, **kwargs)
 
     return decorated
@@ -211,7 +310,7 @@ def admin_required(f):
                     "must_change_password": True,
                 }
             ), 403
-        session["last_active"] = time.time()
+        _touch_current_session()
         return f(*args, **kwargs)
 
     return decorated
@@ -243,8 +342,9 @@ def auth_check():
     request via auth_request, so it must be fast (no JSON, no DB).
     """
     if _is_session_valid():
-        session["last_active"] = time.time()
+        _touch_current_session()
         return "", 200
+    session.clear()
     return "", 401
 
 
@@ -373,18 +473,7 @@ def login():
         return response, 200
 
     # Create session (no 2FA required)
-    session.clear()
-    session["user_id"] = user.id
-    session["username"] = user.username
-    session["role"] = user.role
-    session["created_at"] = time.time()
-    session["last_active"] = time.time()
-    # Carry the "forced change on next login" flag into the session so
-    # login_required / admin_required can refuse every non-password-change
-    # endpoint until the user completes the change. Without this the flag
-    # was a suggestion to the client (returned in the login response body)
-    # and any API client ignoring it could keep using default credentials.
-    session["must_change_password"] = bool(user.must_change_password)
+    _begin_user_session(user, source_ip=ip)
 
     csrf_token = generate_csrf_token()
 
@@ -411,8 +500,19 @@ def login():
 def logout():
     """Destroy session."""
     username = session.get("username", "")
+    role = session.get("role", "")
     ip = request.remote_addr or ""
     audit = _get_audit_logger()
+    sid = _current_session_id()
+
+    session_service = _get_session_service()
+    if sid and session_service is not None:
+        session_service.revoke(
+            sid,
+            actor_user=username,
+            actor_role=role,
+            actor_ip=ip,
+        )
 
     session.clear()
 

@@ -13,7 +13,7 @@ compliance with any cybersecurity regulation or standard.
 | ID | Asset | Description | Related requirements |
 |---|---|---|---|
 | SEC-001 | Live and recorded video | Sensitive household video streams and clips. | SYS-001, SYS-002, SYS-004 |
-| SEC-002 | Operator accounts and sessions | Password hashes, roles, session cookies, CSRF tokens, TOTP secrets, and recovery-code hashes. | SYS-004, SWR-001, SWR-002 |
+| SEC-002 | Operator accounts and sessions | Password hashes, roles, session cookies, server-side active-session inventory, CSRF tokens, TOTP secrets, and recovery-code hashes. | SYS-004, SWR-001, SWR-002 |
 | SEC-003 | Camera credentials and pairing secrets | Client certs, CA cert, keys, pairing secret. | SYS-005, SWR-003, SWR-004 |
 | SEC-004 | OTA signing and update path | SWUpdate bundles, signing certs, staging dirs, update status. | SYS-009, SWR-010 |
 | SEC-005 | Persistent config and logs | `/data/config`, audit logs, settings, camera registry. | SYS-003, SYS-010 |

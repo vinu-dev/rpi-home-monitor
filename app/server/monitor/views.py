@@ -28,7 +28,14 @@ def _setup_complete():
 
 def _is_authenticated():
     """Check if current session has a logged-in user."""
-    return "user_id" in session
+    from monitor.auth import _is_session_valid
+
+    if "user_id" not in session:
+        return False
+    if not _is_session_valid():
+        session.clear()
+        return False
+    return True
 
 
 # REQ: SWR-022; RISK: RISK-010; SEC: SC-010; TEST: TC-021

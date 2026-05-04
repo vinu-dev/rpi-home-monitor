@@ -34,6 +34,7 @@ from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recording_scheduler import RecordingScheduler
 from monitor.services.recordings_service import RecordingsService
+from monitor.services.session_service import SessionService
 from monitor.services.settings_service import SettingsService
 from monitor.services.share_link_service import ShareLinkService
 from monitor.services.snapshot_extractor import SnapshotExtractor
@@ -279,8 +280,18 @@ def _init_services(app):
         recordings_dir=recordings_dir,
     )
 
+    app.session_service = SessionService(
+        store=app.store,
+        audit=app.audit,
+        idle_timeout_provider=lambda: app.config.get("SESSION_TIMEOUT_MINUTES", 60),
+    )
+
     # User service — user CRUD + password management
-    app.user_service = UserService(store=app.store, audit=app.audit)
+    app.user_service = UserService(
+        store=app.store,
+        audit=app.audit,
+        session_service=app.session_service,
+    )
 
     # TOTP service — two-factor authentication (issue #238)
     app.totp_service = TotpService(
@@ -627,6 +638,7 @@ def _register_blueprints(app):
     from monitor.api.ota import ota_bp
     from monitor.api.pairing import pairing_bp
     from monitor.api.recordings import recordings_bp
+    from monitor.api.sessions import sessions_bp
     from monitor.api.settings import settings_bp
     from monitor.api.share import share_api_bp, share_public_bp
     from monitor.api.storage import storage_bp
@@ -649,6 +661,7 @@ def _register_blueprints(app):
     app.register_blueprint(live_bp, url_prefix="/api/v1/live")
     app.register_blueprint(system_bp, url_prefix="/api/v1/system")
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
+    app.register_blueprint(sessions_bp, url_prefix="/api/v1/sessions")
     app.register_blueprint(webhooks_bp, url_prefix="/api/v1/webhooks")
     app.register_blueprint(users_bp, url_prefix="/api/v1/users")
     app.register_blueprint(ota_bp, url_prefix="/api/v1/ota")

@@ -17,7 +17,6 @@ Endpoints:
 - POST /api/v1/users/<id>/totp/reset     — admin reset for another user
 """
 
-import time
 from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, jsonify, request, session
@@ -251,6 +250,7 @@ def verify():
     On failure: increments failed_logins + lockout counter on the user.
     """
     from monitor.auth import (
+        _begin_user_session,
         _check_rate_limit,
         _get_lockout_duration,
         _record_attempt,
@@ -370,13 +370,7 @@ def verify():
     user.locked_until = ""
     current_app.store.save_user(user)
 
-    session.clear()
-    session["user_id"] = user.id
-    session["username"] = user.username
-    session["role"] = user.role
-    session["created_at"] = time.time()
-    session["last_active"] = time.time()
-    session["must_change_password"] = bool(user.must_change_password)
+    _begin_user_session(user, source_ip=ip)
 
     csrf_token = generate_csrf_token()
 

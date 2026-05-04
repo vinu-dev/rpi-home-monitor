@@ -16,7 +16,7 @@ import threading
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from monitor.models import Camera, Settings, ShareLink, User
+from monitor.models import ActiveSession, Camera, Settings, ShareLink, User
 
 
 def _filter_known(cls, raw: dict) -> dict:
@@ -161,6 +161,82 @@ class Store:
                 self._write_json("users.json", users)
                 return True
             return False
+
+    # --- Sessions ---
+
+    def get_sessions(self) -> list[ActiveSession]:
+        """Return all server-side active sessions."""
+        with self._lock:
+            raw = self._read_json("sessions.json")
+        if not isinstance(raw, list):
+            return []
+        return [
+            ActiveSession(**_filter_known(ActiveSession, session))
+            for session in raw
+            if isinstance(session, dict)
+        ]
+
+    def get_session(self, session_id: str) -> ActiveSession | None:
+        """Return one session by opaque id, or None."""
+        for active_session in self.get_sessions():
+            if active_session.id == session_id:
+                return active_session
+        return None
+
+    def save_session(self, active_session: ActiveSession):
+        """Add or update a server-side session row."""
+        with self._lock:
+            sessions = self._read_json("sessions.json")
+            if not isinstance(sessions, list):
+                sessions = []
+            for index, raw_session in enumerate(sessions):
+                if raw_session.get("id") == active_session.id:
+                    sessions[index] = asdict(active_session)
+                    self._write_json("sessions.json", sessions)
+                    return
+            sessions.append(asdict(active_session))
+            self._write_json("sessions.json", sessions)
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete one session row by id. Returns True if removed."""
+        with self._lock:
+            sessions = self._read_json("sessions.json")
+            if not isinstance(sessions, list):
+                return False
+            original_len = len(sessions)
+            sessions = [row for row in sessions if row.get("id") != session_id]
+            if len(sessions) < original_len:
+                self._write_json("sessions.json", sessions)
+                return True
+            return False
+
+    def delete_sessions_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str = "",
+    ) -> list[ActiveSession]:
+        """Delete all sessions for one user, optionally preserving one id."""
+        deleted: list[ActiveSession] = []
+        with self._lock:
+            sessions = self._read_json("sessions.json")
+            if not isinstance(sessions, list):
+                return deleted
+            kept = []
+            for raw_session in sessions:
+                if (
+                    raw_session.get("user_id") == user_id
+                    and raw_session.get("id") != except_session_id
+                ):
+                    if isinstance(raw_session, dict):
+                        deleted.append(
+                            ActiveSession(**_filter_known(ActiveSession, raw_session))
+                        )
+                    continue
+                kept.append(raw_session)
+            if len(kept) != len(sessions):
+                self._write_json("sessions.json", kept)
+        return deleted
 
     # --- Settings ---
 

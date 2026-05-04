@@ -64,6 +64,9 @@ class TestBlueprintRegistration:
     def test_settings_blueprint_registered(self, app):
         assert "settings" in app.blueprints
 
+    def test_sessions_blueprint_registered(self, app):
+        assert "sessions" in app.blueprints
+
     def test_webhooks_blueprint_registered(self, app):
         assert "webhooks" in app.blueprints
 
@@ -80,7 +83,7 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 24 blueprints.
+        """We expect exactly 25 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -91,8 +94,9 @@ class TestBlueprintRegistration:
           20 after outbound webhook management added the `webhooks` API (#239).
           22 after #238 added TOTP 2FA (auth_totp + users_totp blueprints).
           24 after #244 added admin + public share-link blueprints.
+          25 after #246 added active-session enumeration + revoke APIs.
         """
-        assert len(app.blueprints) == 24
+        assert len(app.blueprints) == 25
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints

@@ -9,7 +9,8 @@ source_of_truth: false
 # Account Security
 
 Use this guide for operator-facing account controls: password changes,
-two-factor authentication, recovery codes, and remote-access policy.
+two-factor authentication, recovery codes, active browser sessions, and
+remote-access policy.
 
 ## Two-Factor Authentication
 
@@ -41,6 +42,19 @@ current password plus a TOTP or recovery code.
 Admins can reset another user's 2FA from **Settings > Users**. This clears that
 user's TOTP secret and recovery-code hashes; it does not reveal any secret.
 Admins cannot reset their own 2FA through the admin reset path.
+
+## Active Sessions
+
+Open **Settings > Security** to review signed-in browser sessions. The table
+shows the user, role, source IP address, parsed browser/device string, last
+activity, and expiry time. The current browser session is marked so an operator
+does not accidentally revoke the device they are using.
+
+Admins can revoke another session from that table or use the bulk revoke action
+to expire every other active session. Non-admin users can view and revoke their
+own sessions only. Revocation removes the server-side session inventory row and
+records an audit event; the affected browser must sign in again on its next
+request.
 
 ## Remote Access Policy
 
