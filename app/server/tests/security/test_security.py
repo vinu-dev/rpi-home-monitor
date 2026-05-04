@@ -130,6 +130,7 @@ _CSRF_PROTECTED_ENDPOINTS = [
         "/api/v1/system/backup/export",
         {"passphrase": "correct horse battery staple"},
     ),
+    ("POST", "/api/v1/system/diagnostics/export", {}),
     ("POST", "/api/v1/system/backup/preview", {}),
     ("POST", "/api/v1/system/backup/import", {}),
 ]

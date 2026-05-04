@@ -1146,6 +1146,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemInfo"
+  /api/v1/system/diagnostics/export:
+    post:
+      tags: [system]
+      summary: Build and download an admin-only diagnostics tarball
+      security:
+        - cookieAuth: []
+          csrfHeader: []
+      responses:
+        "200":
+          description: Diagnostics bundle ready for download
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Not authenticated
+        "403":
+          description: Admin role required
+        "429":
+          description: Export already running or session rate-limited
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, retry_after_seconds]
+                properties:
+                  error:
+                    type: string
+                  retry_after_seconds:
+                    type: integer
+        "500":
+          description: Diagnostics export failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Staging directory could not be created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/settings:
     get:
       tags: [settings]

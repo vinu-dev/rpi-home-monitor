@@ -9,15 +9,15 @@ This Markdown file summarizes the current coverage.
 
 | Area | Coverage status |
 |---|---|
-| User needs | UN-001 through UN-024 are linked to system requirements and tests. |
-| System requirements | SYS-001 through SYS-033 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
-| Software requirements | SWR-001 through SWR-067 each have at least one linked test case. |
+| User needs | UN-001 through UN-025 are linked to system requirements and tests. |
+| System requirements | SYS-001 through SYS-034 are linked to user needs, lower-level requirements, architecture, risks, controls, and tests. |
+| Software requirements | SWR-001 through SWR-070 each have at least one linked test case. |
 | Hardware requirements | HWR-001 through HWR-018 are linked to architecture and hardware/manual or automated verification. |
-| Architecture | ARCH-001 through ARCH-016, SWA-001 through SWA-027, and HWA-001 through HWA-012 are linked into the matrix. |
-| Safety risk | RISK-001 through RISK-025 each have at least one risk control and verification. |
-| Cybersecurity | THREAT-001 through THREAT-022 and SC-001 through SC-024 are linked to requirements and tests. |
-| Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation in this update covers 368 of 368 traceable files, excluding vendored minified browser libraries. |
-| Tests | TC-001 through TC-054 have linked requirements. |
+| Architecture | ARCH-001 through ARCH-016, SWA-001 through SWA-028, and HWA-001 through HWA-012 are linked into the matrix. |
+| Safety risk | RISK-001 through RISK-026 each have at least one risk control and verification. |
+| Cybersecurity | THREAT-001 through THREAT-022 and SC-001 through SC-025 are linked to requirements and tests. |
+| Code references | The checker requires every traceable code, test, workflow, build, script, configuration, and hardware-interface file to carry at least one `REQ:` annotation. Current validation covers the full set of checker-selected traceable files, excluding vendored minified browser libraries. |
+| Tests | TC-001 through TC-055 have linked requirements. |
 
 ## Matrix Source
 

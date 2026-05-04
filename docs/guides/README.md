@@ -19,6 +19,7 @@ traceability records live in their dedicated folders.
 | Build the project or images | [`build-setup.md`](build-setup.md) |
 | Work on application code | [`development-guide.md`](development-guide.md) |
 | Run validation | [`testing-guide.md`](testing-guide.md) |
+| Export or inspect diagnostics bundles | [`diagnostics-export.md`](diagnostics-export.md) |
 | Assemble or provision hardware | [`hardware-setup.md`](hardware-setup.md) |
 | Release safely | [`release-runbook.md`](release-runbook.md) |
 | Manage OTA keys | [`ota-key-management.md`](ota-key-management.md) |

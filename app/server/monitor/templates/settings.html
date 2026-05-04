@@ -287,6 +287,20 @@
     </div>
 
     <div class="settings-section">
+        <div class="settings-section__title">Diagnostics</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
+                Bundle logs, scrubbed configuration snapshots, hardware state, and network details for troubleshooting. Passwords, keys, and stored secrets are redacted before download.
+            </p>
+            <button class="btn btn--primary" @click="exportDiagnostics()" :disabled="diagnostics.exporting">
+                <span x-text="diagnostics.exporting ? 'Collecting diagnostics...' : 'Export Diagnostics'"></span>
+            </button>
+            <div class="text-small text-muted" x-show="diagnostics.status" x-text="diagnostics.status" style="margin-top:var(--space-2);"></div>
+            <div class="warning-item" x-show="diagnostics.error" x-text="diagnostics.error" style="margin-top:var(--space-3);"></div>
+        </div>
+    </div>
+
+    <div class="settings-section">
         <div class="settings-section__title">Configuration Backup</div>
         <div class="card">
             <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
@@ -2385,6 +2399,12 @@ function settingsPage() {
                 scope: { users: true, cameras: true, settings: true, camera_trust: true },
             },
         },
+        diagnostics: {
+            exporting: false,
+            status: '',
+            error: '',
+            slowTimer: null,
+        },
 
         resetConfirm: false,
         resetKeepRecordings: false,
@@ -2919,6 +2939,69 @@ function settingsPage() {
                 window.HM.toast(e.message || 'Backup export failed', 'error');
             } finally {
                 this.backup.exporting = false;
+            }
+        },
+
+        async exportDiagnostics() {
+            this.diagnostics.exporting = true;
+            this.diagnostics.error = '';
+            this.diagnostics.status = 'Collecting logs, config, and host state...';
+            if (this.diagnostics.slowTimer) {
+                clearTimeout(this.diagnostics.slowTimer);
+            }
+            this.diagnostics.slowTimer = setTimeout(() => {
+                if (this.diagnostics.exporting) {
+                    this.diagnostics.status = 'Still collecting diagnostics...';
+                }
+            }, 30000);
+            try {
+                var resp = await fetch('/api/v1/system/diagnostics/export', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': window.HM.auth.getCsrfToken() || '',
+                    },
+                });
+                if (!resp.ok) {
+                    var payload = {};
+                    try {
+                        payload = await resp.json();
+                    } catch (_) {
+                        payload = {};
+                    }
+                    var message = payload.error || 'Diagnostics export failed';
+                    if (resp.status === 429 && payload.retry_after_seconds) {
+                        message = 'Diagnostics export busy. Try again in ' + payload.retry_after_seconds + 's.';
+                    } else if (payload.detail) {
+                        message = payload.detail;
+                    }
+                    throw new Error(message);
+                }
+
+                var blob = await resp.blob();
+                var disposition = resp.headers.get('Content-Disposition') || '';
+                var match = disposition.match(/filename="?([^";]+)"?/);
+                var filename = match ? match[1] : 'hm-diagnostics.tar.gz';
+                var url = window.URL.createObjectURL(blob);
+                var link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                this.diagnostics.status = 'Diagnostics bundle downloaded.';
+                window.HM.toast('Diagnostics downloaded', 'success');
+            } catch (e) {
+                this.diagnostics.error = e.message || 'Diagnostics export failed';
+                this.diagnostics.status = '';
+                window.HM.toast(this.diagnostics.error, 'error');
+            } finally {
+                if (this.diagnostics.slowTimer) {
+                    clearTimeout(this.diagnostics.slowTimer);
+                    this.diagnostics.slowTimer = null;
+                }
+                this.diagnostics.exporting = false;
             }
         },
 

@@ -1096,6 +1096,27 @@ class TestBackupExportContract:
         assert resp.status_code == 401
 
 
+class TestDiagnosticsExportContract:
+    """POST /api/v1/system/diagnostics/export."""
+
+    def test_download_headers(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.post("/api/v1/system/diagnostics/export")
+        assert resp.status_code == 200
+        assert resp.headers["Content-Type"].startswith("application/gzip")
+        assert "attachment" in resp.headers.get("Content-Disposition", "")
+        assert resp.data
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.post("/api/v1/system/diagnostics/export")
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.post("/api/v1/system/diagnostics/export")
+        assert resp.status_code == 401
+
+
 class TestBackupPreviewContract:
     """POST /api/v1/system/backup/preview."""
 
