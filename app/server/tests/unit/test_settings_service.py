@@ -26,6 +26,8 @@ def _make_settings(**overrides):
         # ADR-0017 loop-recording watermarks
         "loop_low_watermark_percent": 10,
         "loop_hysteresis_percent": 5,
+        # Issue #238: remote-origin TOTP enforcement
+        "require_2fa_for_remote": False,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -63,20 +65,26 @@ class TestGetSettings:
         # ADR-0017 loop-recording watermarks
         assert result["loop_low_watermark_percent"] == 10
         assert result["loop_hysteresis_percent"] == 5
+        assert result["require_2fa_for_remote"] is False
 
     def test_returns_dict(self):
         svc, _ = _make_service()
         result = svc.get_settings()
         assert isinstance(result, dict)
-        # 12 original + 2 ADR-0017 loop-recording + 1 ADR-0019 ntp_mode
-        assert len(result) == 15
+        # 12 original + 2 ADR-0017 loop-recording + 1 ADR-0019 ntp_mode + 1 Issue #238 policy
+        assert len(result) == 16
 
     def test_reflects_custom_values(self):
-        settings = _make_settings(timezone="US/Pacific", hostname="mybox")
+        settings = _make_settings(
+            timezone="US/Pacific",
+            hostname="mybox",
+            require_2fa_for_remote=True,
+        )
         svc, _ = _make_service(settings=settings)
         result = svc.get_settings()
         assert result["timezone"] == "US/Pacific"
         assert result["hostname"] == "mybox"
+        assert result["require_2fa_for_remote"] is True
 
 
 # ---- update_settings ----
@@ -630,6 +638,8 @@ class TestUpdatableFields:
             # ADR-0017 loop-recording watermarks
             "loop_low_watermark_percent",
             "loop_hysteresis_percent",
+            # Issue #238: remote-origin TOTP enforcement
+            "require_2fa_for_remote",
         }
         assert expected == UPDATABLE_FIELDS
 

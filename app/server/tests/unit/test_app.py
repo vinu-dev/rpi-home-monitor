@@ -80,7 +80,7 @@ class TestBlueprintRegistration:
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 20 blueprints.
+        """We expect exactly 22 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -89,8 +89,9 @@ class TestBlueprintRegistration:
           18 after ADR-0024 added the `alerts` API (#132).
           19 after ADR-0027 added the `notifications` API (#128).
           20 after outbound webhook management added the `webhooks` API (#239).
+          22 after #238 added TOTP 2FA (auth_totp + users_totp blueprints).
         """
-        assert len(app.blueprints) == 20
+        assert len(app.blueprints) == 22
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints

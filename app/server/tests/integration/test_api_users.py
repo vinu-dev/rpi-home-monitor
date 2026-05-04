@@ -56,6 +56,10 @@ class TestListUsers:
         assert "role" in user
         assert "created_at" in user
         assert "last_login" in user
+        assert "totp_enabled" in user
+        assert "recovery_codes_remaining" in user
+        assert "totp_secret" not in user
+        assert "recovery_code_hashes" not in user
 
 
 class TestCreateUser:

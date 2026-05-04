@@ -22,6 +22,7 @@ traceability records live in their dedicated folders.
 | Assemble or provision hardware | [`hardware-setup.md`](hardware-setup.md) |
 | Release safely | [`release-runbook.md`](release-runbook.md) |
 | Manage OTA keys | [`ota-key-management.md`](ota-key-management.md) |
+| Manage account security and 2FA | [`account-security.md`](account-security.md) |
 | Recover admin access | [`admin-recovery.md`](admin-recovery.md) |
 | Plan an AI-delivered feature | [`ai-feature-template.md`](ai-feature-template.md) |
 | Understand connectivity constraints | [`connectivity-and-privacy-constraints.md`](connectivity-and-privacy-constraints.md) |

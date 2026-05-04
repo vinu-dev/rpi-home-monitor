@@ -59,6 +59,7 @@ development material:
 - [`guides/testing-guide.md`](guides/testing-guide.md)
 - [`guides/release-runbook.md`](guides/release-runbook.md)
 - [`guides/ota-key-management.md`](guides/ota-key-management.md)
+- [`guides/account-security.md`](guides/account-security.md)
 - [`guides/admin-recovery.md`](guides/admin-recovery.md)
 
 ## History

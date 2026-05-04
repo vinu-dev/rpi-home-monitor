@@ -66,6 +66,7 @@ pytest >= 8.0
 pytest-cov >= 5.0
 flask >= 3.0
 bcrypt >= 4.0
+pyotp >= 2.9
 ```
 
 Installed automatically by the setup script for running unit tests.
