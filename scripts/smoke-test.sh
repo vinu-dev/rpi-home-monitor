@@ -267,6 +267,7 @@ if [ -n "$CAMERA_IP" ]; then
     echo ""
     echo "[8/8] Camera node: ${CAMERA_IP}"
     CAM_URL="https://${CAMERA_IP}"
+    CAM_CONTROL_URL="https://${CAMERA_IP}:8443"
     CAM_CURL=(curl -sk --connect-timeout 5 --max-time 10)
 
     # --- Reachability ---
@@ -341,6 +342,38 @@ if [ -n "$CAMERA_IP" ]; then
         CAM_STREAM=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('streaming','?'))" 2>/dev/null) || CAM_STREAM="?"
         CAM_TEMP=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu_temp','?'))" 2>/dev/null) || CAM_TEMP="?"
         echo -e "  ${YELLOW}INFO${NC} Camera: id=${CAM_ID}, streaming=${CAM_STREAM}, cpu_temp=${CAM_TEMP}"
+    fi
+
+    if "${CAM_CURL[@]}" -o /dev/null "${CAM_CONTROL_URL}/api/v1/control/status" 2>/dev/null; then
+        fail "Camera control port unexpectedly accepted a no-cert client"
+    else
+        pass "Camera control port rejects a no-cert client"
+    fi
+
+    if [ -n "${SMOKE_CAMERA_CONTROL_CERT:-}" ] && [ -n "${SMOKE_CAMERA_CONTROL_KEY:-}" ]; then
+        CAM_MTLS_CURL=(
+            curl -sk --connect-timeout 5 --max-time 10
+            --cert "${SMOKE_CAMERA_CONTROL_CERT}"
+            --key "${SMOKE_CAMERA_CONTROL_KEY}"
+        )
+
+        CAM_CONTROL_STATUS=$("${CAM_MTLS_CURL[@]}" -o /dev/null -w "%{http_code}" \
+            "${CAM_CONTROL_URL}/api/v1/control/config" 2>/dev/null) || true
+        if [ "$CAM_CONTROL_STATUS" = "200" ]; then
+            pass "Camera control API reachable on :8443 with mTLS"
+        else
+            fail "Camera control API on :8443 expected 200, got ${CAM_CONTROL_STATUS:-000}"
+        fi
+
+        CAM_HUMAN_CONTROL_STATUS=$("${CAM_MTLS_CURL[@]}" -o /dev/null -w "%{http_code}" \
+            "${CAM_URL}/api/v1/control/config" 2>/dev/null) || true
+        if [ "$CAM_HUMAN_CONTROL_STATUS" = "404" ]; then
+            pass "Camera human listener returns 404 for control path"
+        else
+            fail "Camera human listener expected 404 for control path, got ${CAM_HUMAN_CONTROL_STATUS:-000}"
+        fi
+    else
+        skip "Camera mTLS control-path checks skipped (set SMOKE_CAMERA_CONTROL_CERT and SMOKE_CAMERA_CONTROL_KEY)"
     fi
 else
     if [ -z "${3:-}" ]; then

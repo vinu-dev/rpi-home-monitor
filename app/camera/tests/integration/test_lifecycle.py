@@ -226,6 +226,36 @@ class TestPairingRegistration:
         assert request.full_url == "https://rpi-divinu.local/api/v1/pair/register"
 
 
+class TestPairingListenerWiring:
+    """PAIRING state should expose only the human listener."""
+
+    @patch("camera_streamer.lifecycle.CameraControlServer")
+    @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.time.sleep")
+    @patch("camera_streamer.lifecycle.led")
+    def test_pairing_only_starts_status_listener(
+        self, mock_led, mock_sleep, MockStatus, MockControlServer
+    ):
+        config = _make_config()
+        platform = _make_platform()
+
+        shutdown_calls = [0]
+
+        def shutdown():
+            shutdown_calls[0] += 1
+            return shutdown_calls[0] > 1
+
+        lc = CameraLifecycle(config, platform, shutdown)
+        lc._pairing = MagicMock()
+        lc._pairing.is_paired = False
+
+        result = lc._do_pairing()
+
+        assert result is False
+        MockStatus.return_value.start.assert_called_once()
+        MockControlServer.assert_not_called()
+
+
 class TestValidating:
     """Test VALIDATING state — camera hardware check."""
 
@@ -267,14 +297,18 @@ class TestRunning:
 
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_starts_all_services(
         self,
         MockDiscovery,
         MockStream,
+        MockControlHandler,
         MockStatus,
+        MockControlServer,
         MockHealth,
         mock_led,
         tmp_path,
@@ -302,17 +336,28 @@ class TestRunning:
         assert result is True
         MockDiscovery.return_value.start.assert_called_once()
         MockStream.return_value.start.assert_called_once()
+        MockControlHandler.assert_called_once()
         MockStatus.return_value.start.assert_called_once()
+        MockControlServer.return_value.start.assert_called_once()
         MockHealth.return_value.start.assert_called_once()
         mock_led.connected.assert_called_once()
 
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_skips_streaming_when_unconfigured(
-        self, MockDiscovery, MockStream, MockStatus, MockHealth, mock_led
+        self,
+        MockDiscovery,
+        MockStream,
+        MockControlHandler,
+        MockStatus,
+        MockControlServer,
+        MockHealth,
+        mock_led,
     ):
         config = _make_config(is_configured=False)
         platform = _make_platform()
@@ -323,18 +368,24 @@ class TestRunning:
         lc._do_running()
 
         MockStream.return_value.start.assert_not_called()
+        MockControlHandler.assert_called_once()
+        MockControlServer.return_value.start.assert_called_once()
 
     @patch("camera_streamer.lifecycle._ServerResolver")
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_starts_server_resolver(
         self,
         MockDiscovery,
         MockStream,
+        MockControlHandler,
         MockStatus,
+        MockControlServer,
         MockHealth,
         mock_led,
         MockResolver,
@@ -358,14 +409,18 @@ class TestRunning:
     @patch("camera_streamer.lifecycle._ServerResolver")
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_does_not_start_resolver_when_unconfigured(
         self,
         MockDiscovery,
         MockStream,
+        MockControlHandler,
         MockStatus,
+        MockControlServer,
         MockHealth,
         mock_led,
         MockResolver,
@@ -383,14 +438,18 @@ class TestRunning:
 
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     def test_skips_streaming_when_desired_state_stopped(
         self,
         MockDiscovery,
         MockStream,
+        MockControlHandler,
         MockStatus,
+        MockControlServer,
         MockHealth,
         mock_led,
         tmp_path,
@@ -426,6 +485,7 @@ class TestShutdown:
 
         lc._health = MagicMock()
         lc._stream = MagicMock()
+        lc._control_server = MagicMock()
         lc._status_server = MagicMock()
         lc._discovery = MagicMock()
         # The boot-time server-name resolver (#199) joins on shutdown
@@ -438,9 +498,25 @@ class TestShutdown:
         assert lc.state == State.SHUTDOWN
         lc._health.stop.assert_called_once()
         lc._stream.stop.assert_called_once()
+        lc._control_server.stop.assert_called_once()
         lc._status_server.stop.assert_called_once()
         lc._discovery.stop.assert_called_once()
         lc._server_resolver.stop.assert_called_once()
+
+    def test_stops_control_listener_before_status_listener(self):
+        config = _make_config()
+        platform = _make_platform()
+        lc = CameraLifecycle(config, platform, lambda: False)
+
+        parent = MagicMock()
+        lc._control_server = parent.control
+        lc._status_server = parent.status
+
+        lc.shutdown()
+
+        assert parent.method_calls.index(
+            ("control.stop", (), {})
+        ) < parent.method_calls.index(("status.stop", (), {}))
 
     def test_handles_none_services(self):
         """Shutdown should work even if services were never started."""
@@ -459,7 +535,9 @@ class TestFullLifecycle:
     @patch("camera_streamer.lifecycle.led")
     @patch("camera_streamer.lifecycle.LedController")
     @patch("camera_streamer.lifecycle.HealthMonitor")
+    @patch("camera_streamer.lifecycle.CameraControlServer")
     @patch("camera_streamer.lifecycle.CameraStatusServer")
+    @patch("camera_streamer.lifecycle.ControlHandler")
     @patch("camera_streamer.lifecycle.StreamManager")
     @patch("camera_streamer.lifecycle.DiscoveryService")
     @patch("camera_streamer.lifecycle.CaptureManager")
@@ -470,7 +548,9 @@ class TestFullLifecycle:
         MockCapture,
         MockDiscovery,
         MockStream,
+        MockControlHandler,
         MockStatus,
+        MockControlServer,
         MockHealth,
         MockLedCtrl,
         mock_led,

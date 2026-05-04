@@ -21,6 +21,8 @@ from urllib.request import Request, urlopen
 import pytest
 
 from camera_streamer.config import ConfigManager
+from camera_streamer.control import ControlHandler
+from camera_streamer.sensor_info import capabilities_for_testing
 from camera_streamer.status_server import CameraStatusServer
 from camera_streamer.wifi_setup import WifiSetupServer
 
@@ -170,6 +172,14 @@ def _head(path, scheme="http"):
         kwargs["context"] = TLS_CONTEXT
     with urlopen(req, **kwargs) as resp:
         return resp.status
+
+
+def _make_control_handler(config):
+    return ControlHandler(
+        config,
+        None,
+        sensor_capabilities=capabilities_for_testing("ov5647"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +577,10 @@ class TestStatusServerStreamConfigContract:
 
     def test_requires_auth(self, noauth_config):
         """Without password, /api/stream-config works without auth."""
-        server = CameraStatusServer(noauth_config)
+        server = CameraStatusServer(
+            noauth_config,
+            control_handler=_make_control_handler(noauth_config),
+        )
         server.start()
         try:
             data, status = _json_put(
@@ -581,7 +594,10 @@ class TestStatusServerStreamConfigContract:
 
     def test_error_on_invalid_param(self, noauth_config):
         """Invalid param returns {error}."""
-        server = CameraStatusServer(noauth_config)
+        server = CameraStatusServer(
+            noauth_config,
+            control_handler=_make_control_handler(noauth_config),
+        )
         server.start()
         try:
             data, status = _json_put(

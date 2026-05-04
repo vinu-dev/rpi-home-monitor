@@ -2,8 +2,8 @@
 """
 Camera control client — pushes configuration to cameras via their control API.
 
-Uses server mTLS credentials to authenticate with the camera's HTTPS
-status server. The camera verifies the server certificate against the
+Uses server mTLS credentials to authenticate with the camera's dedicated
+control listener. The camera verifies the server certificate against the
 CA established during pairing (ADR-0009, ADR-0015).
 
 Design patterns:
@@ -22,6 +22,7 @@ log = logging.getLogger("monitor.camera_control_client")
 
 # Timeout for control API requests (seconds)
 REQUEST_TIMEOUT = 15
+CONTROL_PORT = 8443
 
 
 class CameraControlClient:
@@ -32,16 +33,17 @@ class CameraControlClient:
             server.crt, server.key, and ca.crt.
     """
 
-    def __init__(self, certs_dir):
+    def __init__(self, certs_dir, control_port=CONTROL_PORT):
         self._certs_dir = certs_dir
+        self._control_port = control_port
 
     def _ssl_context(self):
         """Build an SSL context with server mTLS credentials.
 
         The server presents its certificate (signed by the CA) to the
         camera, which verifies it against ca.crt received during pairing.
-        We disable hostname verification because the camera's status
-        server uses a self-signed cert with its own hostname.
+        We disable hostname verification because the camera listener
+        presents a self-signed device certificate.
         """
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
@@ -140,7 +142,7 @@ class CameraControlClient:
 
         Returns (response_dict, error_string). Error is empty on success.
         """
-        url = f"https://{camera_ip}{path}"
+        url = f"https://{camera_ip}:{self._control_port}{path}"
         data = None
         if body is not None:
             data = json.dumps(body).encode()
@@ -169,8 +171,27 @@ class CameraControlClient:
             log.warning("Control request %s %s failed: %s", method, url, err_msg)
             return None, err_msg
         except urllib.error.URLError as e:
+            if _is_control_port_unreachable(e.reason):
+                err_msg = "camera control port unreachable (firmware mismatch?)"
+                log.warning(
+                    "Control request %s %s unreachable: %s", method, url, err_msg
+                )
+                return None, err_msg
             log.warning("Control request %s %s unreachable: %s", method, url, e.reason)
             return None, f"Camera unreachable: {e.reason}"
         except (OSError, json.JSONDecodeError) as e:
             log.warning("Control request %s %s error: %s", method, url, e)
             return None, str(e)
+
+
+def _is_control_port_unreachable(reason) -> bool:
+    """Detect the "new port not listening yet" upgrade-mismatch case."""
+    if isinstance(reason, ConnectionRefusedError):
+        return True
+    if isinstance(reason, OSError) and getattr(reason, "errno", None) in {
+        111,
+        61,
+        10061,
+    }:
+        return True
+    return "connection refused" in str(reason).lower()
