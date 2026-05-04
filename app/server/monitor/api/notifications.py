@@ -41,7 +41,7 @@ def _current_user() -> str:
 @notifications_bp.route("/pending", methods=["GET"])
 @login_required
 def list_pending():
-    """Surfaceable motion notifications for the current user.
+    """Surfaceable notifications for the current user.
 
     Newest first. ``since`` defaults to the user's
     ``last_notification_seen_at`` so a polling client doesn't
@@ -65,10 +65,10 @@ def list_pending():
 @login_required
 @csrf_protect
 def mark_seen():
-    """Mark a list of motion alert ids as delivered to this user.
+    """Mark a list of notification alert ids as delivered to this user.
 
     Idempotent: re-marking already-seen alerts is a no-op.
-    Body: ``{"alert_ids": ["motion:<event_id>", ...]}``.
+    Body: ``{"alert_ids": ["motion:<event_id>", "throttle:<hash>", ...]}``.
     """
     user = _current_user()
     if not user:

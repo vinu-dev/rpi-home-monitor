@@ -36,7 +36,6 @@ class _FakeMotionEvent:
 class _FakeCamera:
     id: str
     hardware_faults: list[dict] = field(default_factory=list)
-    throttle_state: dict | None = None
 
 
 def _make_service(tmp_path, *, cameras=None, audit_events=None, motion_events=None):
@@ -288,32 +287,6 @@ class TestFaultFiltering:
         svc = _make_service(tmp_path, cameras=cameras)
         result = svc.list_alerts(user="alice", role="admin")
         assert len(result) == 1
-
-    def test_throttle_state_surfaces_as_fault_alert(self, tmp_path):
-        cameras = [
-            _FakeCamera(
-                id="cam-d8ee",
-                throttle_state={
-                    "under_voltage_now": False,
-                    "under_voltage_sticky": True,
-                    "frequency_capped_now": False,
-                    "frequency_capped_sticky": True,
-                    "throttled_now": False,
-                    "throttled_sticky": False,
-                    "soft_temp_limit_now": False,
-                    "soft_temp_limit_sticky": False,
-                    "last_updated": "2026-05-04T12:00:00Z",
-                    "source": "vcgencmd",
-                    "raw_value_hex": "0x00030000",
-                },
-            )
-        ]
-        svc = _make_service(tmp_path, cameras=cameras)
-        result = svc.list_alerts(user="alice", role="admin")
-        assert len(result) == 1
-        assert result[0]["id"] == "fault:cam-d8ee:throttle_state"
-        assert result[0]["severity"] == "warning"
-        assert "Raspberry Pi throttling" in result[0]["message"]
 
 
 class TestAuditFiltering:

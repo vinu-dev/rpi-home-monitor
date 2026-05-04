@@ -48,8 +48,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from monitor.services.throttle_state import summarize_throttle_state
-
 log = logging.getLogger("monitor.alert_center")
 
 
@@ -365,28 +363,6 @@ class AlertCenterService:
                         hint=fault.get("hint") or "",
                         context=fault.get("context") or {},
                         deep_link="/dashboard#cameras-section",
-                    )
-                )
-
-            throttle = summarize_throttle_state(getattr(cam, "throttle_state", None))
-            if throttle is not None:
-                out.append(
-                    Alert(
-                        id=f"fault:{cam.id}:throttle_state",
-                        source="fault",
-                        severity=throttle["severity"],
-                        timestamp=_normalise_iso_z(
-                            throttle["last_updated"] or _now_z()
-                        ),
-                        subject={"type": "camera", "id": cam.id},
-                        message=throttle["alert_message"],
-                        hint=throttle["hint"],
-                        context={
-                            "labels": throttle["labels"],
-                            "source": throttle["source"],
-                            "raw_value_hex": throttle["raw_value_hex"],
-                        },
-                        deep_link="/dashboard#camera-" + cam.id,
                     )
                 )
 

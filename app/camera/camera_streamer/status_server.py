@@ -9,7 +9,6 @@ Requires the admin password set during provisioning.
 """
 
 import http.server
-import ipaddress
 import json
 import logging
 import os
@@ -19,7 +18,6 @@ import ssl
 import subprocess
 import threading
 import time
-from datetime import UTC, datetime, timedelta
 
 from camera_streamer import ota_installer, wifi
 from camera_streamer.control import ControlHandler, parse_control_request
@@ -116,63 +114,6 @@ def _status_server_names():
     return list(dict.fromkeys(n for n in names if n))
 
 
-def _generate_tls_material_with_cryptography(cert_path, key_path, names):
-    """Generate self-signed TLS material without shelling out to openssl."""
-    try:
-        from cryptography import x509
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-    except ImportError as e:
-        raise RuntimeError(
-            "camera HTTPS status page requires openssl or cryptography"
-        ) from e
-
-    san_entries = [x509.DNSName(name) for name in names]
-    san_entries.append(x509.IPAddress(ipaddress.ip_address("127.0.0.1")))
-    now = datetime.now(UTC)
-    key = ec.generate_private_key(ec.SECP256R1())
-    subject = x509.Name(
-        [
-            x509.NameAttribute(NameOID.COMMON_NAME, names[0]),
-        ]
-    )
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(subject)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(minutes=5))
-        .not_valid_after(now + timedelta(days=1825))
-        .add_extension(
-            x509.SubjectAlternativeName(san_entries),
-            critical=False,
-        )
-        .add_extension(
-            x509.BasicConstraints(ca=False, path_length=None),
-            critical=True,
-        )
-        .add_extension(
-            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),
-            critical=False,
-        )
-        .sign(key, hashes.SHA256())
-    )
-
-    with open(key_path, "wb") as fh:
-        fh.write(
-            key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-    with open(cert_path, "wb") as fh:
-        fh.write(cert.public_bytes(serialization.Encoding.PEM))
-    os.chmod(key_path, 0o600)
-
-
 def _ensure_tls_material(config):
     """Create a self-signed cert for the camera HTTPS status page if needed."""
     cert_path, key_path = _status_tls_paths(config)
@@ -224,12 +165,8 @@ def _ensure_tls_material(config):
             timeout=15,
         )
         os.chmod(key_path, 0o600)
-    except FileNotFoundError:
-        log.warning(
-            "openssl not available; generating camera HTTPS cert with "
-            "cryptography fallback"
-        )
-        _generate_tls_material_with_cryptography(cert_path, key_path, names)
+    except FileNotFoundError as e:
+        raise RuntimeError("openssl is required for camera HTTPS status page") from e
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
         raise RuntimeError(f"failed to generate camera HTTPS cert: {stderr}") from e

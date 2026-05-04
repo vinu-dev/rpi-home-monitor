@@ -96,6 +96,19 @@ def merge_throttle_state(previous: Any, current: dict, *, rebooted: bool) -> dic
     return merged
 
 
+def sticky_transition_labels(previous: Any, current: Any) -> list[str]:
+    """Return friendly labels for sticky throttle bits newly set in ``current``."""
+    if not isinstance(current, dict):
+        return []
+
+    previous = previous if isinstance(previous, dict) else {}
+    labels: list[str] = []
+    for field, label in _STICKY_LABELS:
+        if bool(current.get(field)) and not bool(previous.get(field)):
+            labels.append(label)
+    return labels
+
+
 def summarize_throttle_state(throttle_state: Any) -> dict | None:
     """Return a derived summary for UI/alerts, or None when clear."""
     if not isinstance(throttle_state, dict):

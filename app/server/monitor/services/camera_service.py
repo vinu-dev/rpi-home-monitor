@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from monitor.services.throttle_state import (
     merge_throttle_state,
     sanitize_throttle_state,
+    sticky_transition_labels,
 )
 
 log = logging.getLogger("monitor.camera_service")
@@ -585,6 +586,7 @@ class CameraService:
         camera.status = "online"
         camera.last_seen = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         previous_uptime = int(getattr(camera, "uptime_seconds", 0) or 0)
+        previous_throttle_state = getattr(camera, "throttle_state", None)
         current_uptime: int | None = None
         missing = object()
         raw_throttle_state = data.get("throttle_state", missing)
@@ -611,11 +613,27 @@ class CameraService:
         if raw_throttle_state is not missing:
             cleaned_throttle = sanitize_throttle_state(raw_throttle_state)
             if cleaned_throttle is not None:
-                camera.throttle_state = merge_throttle_state(
-                    getattr(camera, "throttle_state", None),
+                baseline_throttle = None if rebooted else previous_throttle_state
+                merged_throttle = merge_throttle_state(
+                    previous_throttle_state,
                     cleaned_throttle,
                     rebooted=rebooted,
                 )
+                camera.throttle_state = merged_throttle
+                new_sticky_labels = sticky_transition_labels(
+                    baseline_throttle,
+                    merged_throttle,
+                )
+                if new_sticky_labels:
+                    self._log_audit(
+                        "CAMERA_THROTTLED",
+                        "camera",
+                        "",
+                        "camera "
+                        + camera_id
+                        + " sticky throttle bits set: "
+                        + ", ".join(new_sticky_labels),
+                    )
             elif raw_throttle_state is None and rebooted:
                 camera.throttle_state = None
         # Hardware health — "no camera module detected" + friends.

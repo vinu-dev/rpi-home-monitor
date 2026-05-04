@@ -27,11 +27,71 @@ from camera_streamer.wifi_setup import WifiSetupServer
 # Use a non-privileged port for CI (port 80 requires root on Linux)
 TEST_PORT = 18080
 TLS_CONTEXT = ssl._create_unverified_context()
+TEST_TLS_CERT = """-----BEGIN CERTIFICATE-----
+MIIC1DCCAbygAwIBAgIUQJ/0HCgICubUlh5xcLuGlUxBmbEwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDUwMzA5MzU1N1oXDTM2MDUw
+MTA5MzU1N1owFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAqmsxl4ovgLFXNoQDt4+ZSZycM2HXdEVhuku3p16mgTZO
+CrUFg5FEMV+tHXD4mzUwZkVyjUHWN5P9f0v4tG/t6Zs7uGiPXxRQH3Lrw4XZ7XEt
+WwLtlg4Gx8qGSBGl8jC8HSIgr80xky4k6GMPR1FJHfYgSJLe2wBYBUm/JgA5MBI1
+UvWSpMR9yXuXejBdWrHZCtNQzclCtfMeq+NTCrz+7T1j+8uz2LxCl91Lf0vEyuZL
+b/iEcL56sm18GWF8zrwoQDto1oQAhhhd5Hne5T2S9yAYarLWK/ZK+UBKGB1soxW4
+nM4gMN+IfSpqdD85dZyS4BHEyXbzd7M47cqFLIUeeQIDAQABox4wHDAaBgNVHREE
+EzARgglsb2NhbGhvc3SHBH8AAAEwDQYJKoZIhvcNAQELBQADggEBAI05ntN0GzQp
+0qOn+Tyv/Z8htsXNmafrtgeyYAlMBlCreoZhItG1rAw92JhQ1S3/dZPbKhQDNKi1
+WI4LYXpxr/CZYLr+VjslpNAncTcLtiI/VIga837kAinKt2mpBVclNZYMUD7e7K5j
+Sp9mNK3F3Yi+FX+hXu7GU2ftd6IZl05LTJXrm29VnqcLahh65NbhTouvl68Jb5La
+mykymirwGkxQHWmA3JjeEhbKB8LHa6c7UWLAfLOYuG/Toc1w/g8jQIi0nB6kGFkx
+EjdYHFtYoNjnmNFQ4fyuZDzwc2efHMTl/rbTwWMLK70sekScLHFI0drROzBGifmo
+ScsYX+PY4iA=
+-----END CERTIFICATE-----
+"""
+TEST_TLS_KEY = """-----BEGIN RSA PRIVATE KEY-----
+MIIEoQIBAAKCAQEAqmsxl4ovgLFXNoQDt4+ZSZycM2HXdEVhuku3p16mgTZOCrUF
+g5FEMV+tHXD4mzUwZkVyjUHWN5P9f0v4tG/t6Zs7uGiPXxRQH3Lrw4XZ7XEtWwLt
+lg4Gx8qGSBGl8jC8HSIgr80xky4k6GMPR1FJHfYgSJLe2wBYBUm/JgA5MBI1UvWS
+pMR9yXuXejBdWrHZCtNQzclCtfMeq+NTCrz+7T1j+8uz2LxCl91Lf0vEyuZLb/iE
+cL56sm18GWF8zrwoQDto1oQAhhhd5Hne5T2S9yAYarLWK/ZK+UBKGB1soxW4nM4g
+MN+IfSpqdD85dZyS4BHEyXbzd7M47cqFLIUeeQIDAQABAoH/XpxkS91LwgayhHGG
+HsJ6N4PatCv9kW9zchnXO/QwPEwJx6f4B7L+SOr1EQNHAePlmuGzVvjWFMT0V1e2
+G3aIfsjPvvFNp1t/n/YNLd+BvXC33W8it8vRt9mX8yrZFjw4M3Re8TrZ6vwTQXC9
+arqV/SxHgAMJ9kuaklT+6fn1xdlshonPClFs4QNTDt/pEdl+rZiyebk4AlrPbgkO
+/f1j8JHBItLcZMxv25PwZQGdt1+eEB2ck+PaInwV2yRpqUVSjWzX2pC/2bfXVNqB
+ElHfv1y5mVKqm6wZssI3n6GkMu1GKj8loRa4icjnWXRVo4yfMzF+Bpb8kycRsjhV
+NVlRAoGBAOqIh5d75RzQ/nRvkm9OZPL8SjA+aCaim8v0BT0u3yp4WUnr+4w39xK7
+VmSVaGF/hIi6mNYvBMhExXiwzEOYIAFE+ShGivROMOj4XxmYKNJugFxsvvMwRLBF
+30WHziAVanQmo7O8gCyBW0IL8VVA3L6WOVAIMcvVYZXHrkkU6AuRAoGBALoEXLey
+cDb2WTI5UMI+RDn9Qm2og6iaTRDpOqUB1JXD/hhXRXcqgJhGxdxhixu+re/ajfkc
+HySJa0aQ7P/tjf849Il1y2F6Yguvo0jtCD3SuXOP/cQJRLRgU29/sh1Z/F8W42Ny
+Xy3S0jB/Ez7GaHM/mJ3J5z5NoqiZiy7v4mBpAoGAV3ysj86QrcosUUTZbBnjQFzq
+U8rD0T2xPkh9t9AHQXF5ZUDZKfoqeVtWo9i0AkKuLs7kemk5sHcu7pGM8N4Lek2/
+X83Iwc91IUKdPw/qkmzUByYtqMvlo5e87NP3CTLT7hYH1OFJMtDiOOX5lWLHtXSW
+Votn//BOIbBGDE73LHECgYEAkIDZAf8FOz0uV1y9BthWKfI7C3LQLEcJvSxhWVPN
+sDZcCs6o8QS8dw7rn+LKrNf4yQ4wIiedbcWu51eoNLx3BaBaHvq57tSim89qejlg
+oJ41YLen/ATzMWhvCHvbgv+nlLr0FAoCNFfE3tWovqhk9bqetVzmXbjztiPpQqIp
+apkCgYAkpt2DLGZsYANjJkHPmS/XoeMu2/HXjS0XMJ7LkxFAL1lr4jjuLM5EDo7S
+5YNpp/gqyOQ00ygD6OniD/lXYdB/nKHpPwVyd+HpxCBKTp7azgywu8dmYGPTa6IE
+Zcfss6uRVVB/g03ZX5HUdqSGg505DLddjt24+Rkog6BwM138zg==
+-----END RSA PRIVATE KEY-----
+"""
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _status_server_test_tls(monkeypatch, tmp_path):
+    """Use static test TLS material for API-contract server startups."""
+    cert_path = tmp_path / "status-test.crt"
+    key_path = tmp_path / "status-test.key"
+    cert_path.write_text(TEST_TLS_CERT, encoding="ascii")
+    key_path.write_text(TEST_TLS_KEY, encoding="ascii")
+    monkeypatch.setattr(
+        "camera_streamer.status_server._ensure_tls_material",
+        lambda _config: (str(cert_path), str(key_path)),
+    )
 
 
 def _assert_fields(data, required_fields, msg=""):

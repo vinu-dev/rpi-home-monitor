@@ -57,7 +57,7 @@ misconfigurations without manual SSH debugging.
 2. Camera reports throttle state in the next heartbeat.
 3. Server persists throttle state in camera record.
 4. Dashboard shows a throttle badge on the camera card (e.g., "⚠ Throttled: Under-voltage").
-5. On first sticky-bit state change, operator receives an alert (email / push, per notification policy).
+5. On first sticky-bit state change, operator receives an alert (email / push, per notification policy). Active browser notification delivery respects quiet-hours schedules from #245; dashboard state and audit history still persist immediately.
 
 ### Success state
 - Operator quickly understands which Pi is throttled and what condition triggered it.
@@ -85,8 +85,8 @@ misconfigurations without manual SSH debugging.
   - *Validation*: Browser smoke test showing throttle badge with mocked throttle data.
 - **Dashboard persistence**: Throttle state survives server restart (persisted in `cameras.json`).
   - *Validation*: Integration test: heartbeat → server restart → verify stored throttle state.
-- **Alert on first transition**: Operator receives one notification per sticky-bit condition per boot cycle (not repeatedly while throttled).
-  - *Validation*: Unit test of notification policy trigger logic; integration test verifying alert is sent once.
+- **Alert on first transition**: Operator receives one notification per sticky-bit condition per boot cycle (not repeatedly while throttled). Quiet hours suppress active delivery but do not suppress persisted throttle state or audit evidence.
+  - *Validation*: Unit test of notification policy trigger logic; integration test verifying alert is sent once; unit test verifying quiet-hours suppression for throttle audit notifications.
 - **Non-Pi graceful**: Non-Pi platforms report `null` throttle state; no errors, no badge.
   - *Validation*: Unit test disabling throttle collection on mock non-Pi platform.
 

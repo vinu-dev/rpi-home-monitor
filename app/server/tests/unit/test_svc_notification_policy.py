@@ -59,7 +59,7 @@ def _make_user(username="alice", **overrides):
     return SimpleNamespace(**defaults)
 
 
-def _make_service(*, cameras=None, users=None, motion_events=None):
+def _make_service(*, cameras=None, users=None, motion_events=None, audit_events=None):
     store = MagicMock()
     store.get_cameras.return_value = cameras or []
     store.get_users.return_value = users or []
@@ -72,9 +72,15 @@ def _make_service(*, cameras=None, users=None, motion_events=None):
     motion.get.side_effect = lambda eid: next(
         (e for e in (motion_events or []) if e.id == eid), None
     )
+    audit = MagicMock()
+    audit.get_events.return_value = audit_events or []
 
     return (
-        NotificationPolicyService(store=store, motion_event_store=motion),
+        NotificationPolicyService(
+            store=store,
+            motion_event_store=motion,
+            audit_logger=audit,
+        ),
         store,
         motion,
     )
@@ -452,6 +458,78 @@ class TestInProgressEvents:
         assert svc.select_for_user(user="alice") == []
 
 
+class TestThrottleAuditNotifications:
+    def test_emits_throttle_audit_notification(self):
+        cam = _make_camera(id="cam-d8ee", name="Front Door")
+        usr = _make_user()
+        audit_events = [
+            {
+                "timestamp": "2026-05-04T12:00:00Z",
+                "event": "CAMERA_THROTTLED",
+                "user": "camera",
+                "ip": "",
+                "detail": (
+                    "camera cam-d8ee sticky throttle bits set: "
+                    "Under-voltage, Frequency capped"
+                ),
+            }
+        ]
+        svc, _, _ = _make_service(cameras=[cam], users=[usr], audit_events=audit_events)
+        result = svc.select_for_user(user="alice")
+        assert len(result) == 1
+        assert result[0]["alert_id"].startswith("throttle:")
+        assert result[0]["camera_name"] == "Front Door"
+        assert result[0]["deep_link"] == "/dashboard#camera-cam-d8ee"
+        assert result[0]["title"] == "Camera health warning: Front Door"
+        assert "Under-voltage" in result[0]["body"]
+
+    def test_camera_disable_suppresses_throttle_audit_notification(self):
+        cam = _make_camera(
+            notification_rule={
+                "enabled": False,
+                "min_duration_seconds": 3,
+                "coalesce_seconds": 60,
+            }
+        )
+        usr = _make_user()
+        audit_events = [
+            {
+                "timestamp": "2026-05-04T12:00:00Z",
+                "event": "CAMERA_THROTTLED",
+                "user": "camera",
+                "ip": "",
+                "detail": "camera cam-d8ee sticky throttle bits set: Under-voltage",
+            }
+        ]
+        svc, _, _ = _make_service(cameras=[cam], users=[usr], audit_events=audit_events)
+        assert svc.select_for_user(user="alice") == []
+
+    def test_quiet_hours_suppresses_throttle_audit_notification(self):
+        cam = _make_camera(id="cam-d8ee", name="Front Door")
+        usr = _make_user(
+            notification_schedule=[
+                {"days": ["mon"], "start": "22:00", "end": "06:00"},
+            ]
+        )
+        audit_events = [
+            {
+                "timestamp": "2026-06-01T21:30:00Z",
+                "event": "CAMERA_THROTTLED",
+                "user": "camera",
+                "ip": "",
+                "detail": "camera cam-d8ee sticky throttle bits set: Under-voltage",
+            }
+        ]
+        svc, _, _ = _make_service(cameras=[cam], users=[usr], audit_events=audit_events)
+
+        assert svc.select_for_user(user="alice") == []
+        svc._audit.log_event.assert_called_once()
+        assert svc._audit.log_event.call_args[0][0] == "NOTIFICATION_QUIETED"
+        detail = svc._audit.log_event.call_args.kwargs["detail"]
+        assert "camera_id=cam-d8ee" in detail
+        assert "class=throttle" in detail
+
+
 class TestWireFormat:
     def test_wire_includes_camera_name_and_deep_link(self):
         cam = _make_camera(name="Front Door")
@@ -549,6 +627,28 @@ class TestMarkSeen:
         assert marked == 1  # we did process it
         assert usr.last_notification_seen_at == seen  # but pointer didn't go back
         store.save_user.assert_not_called()
+
+    def test_throttle_alert_advances_last_seen_pointer(self):
+        cam = _make_camera(id="cam-d8ee")
+        usr = _make_user(last_notification_seen_at=_now_z(-300))
+        event_ts = _now_z(-100)
+        audit_event = {
+            "timestamp": event_ts,
+            "event": "CAMERA_THROTTLED",
+            "user": "camera",
+            "ip": "",
+            "detail": "camera cam-d8ee sticky throttle bits set: Under-voltage",
+        }
+        svc, store, _ = _make_service(
+            cameras=[cam],
+            users=[usr],
+            audit_events=[audit_event],
+        )
+        alert_id = svc.select_for_user(user="alice")[0]["alert_id"]
+        marked = svc.mark_seen(user="alice", alert_ids=[alert_id])
+        assert marked == 1
+        assert usr.last_notification_seen_at == event_ts
+        store.save_user.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
