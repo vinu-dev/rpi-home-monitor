@@ -31,8 +31,10 @@ $TargetRoot = Split-Path -Parent $ScriptDir
 $Venv = Join-Path $ScriptDir '.venv'
 $InstallRefFile = Join-Path $Venv '.agentry-install-ref'
 $AgentryRepo = 'https://github.com/vinu-dev/agentry.git'
-$AgentryRef = 'e7c8c9c18b9464b819549cea495c340532545ecb'
+$AgentryRef = '79714f02dd0de8b94817ae4b676791cb5bd3b0d5'
 if ($env:AGENTRY_INSTALL_REF) { $AgentryRef = $env:AGENTRY_INSTALL_REF }
+$AgentryExe = Join-Path $Venv 'Scripts\agentry.exe'
+$ForceInstall = $env:AGENTRY_FORCE_INSTALL -in @('1', 'true', 'TRUE', 'yes', 'YES')
 
 # Locate Python.
 $python = $null
@@ -63,17 +65,21 @@ if (Test-Path $InstallRefFile) {
     $InstalledRef = (Get-Content $InstallRefFile -Raw).Trim()
 }
 if ($InstalledRef -ne $AgentryRef) {
-    Write-Host "==> Installing agentry from GitHub at $AgentryRef" -ForegroundColor Cyan
-    & (Join-Path $Venv 'Scripts\python.exe') -m pip install --upgrade --force-reinstall "git+$AgentryRepo@$AgentryRef"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "agentry install failed" -ForegroundColor Red
-        exit 1
+    if (($AgentryArgs.Count -gt 0) -and (Test-Path $AgentryExe) -and (-not $ForceInstall)) {
+        Write-Host "==> Agentry install ref is missing or different; using existing venv for this CLI command." -ForegroundColor Yellow
+        Write-Host "==> Stop Agentry and set AGENTRY_FORCE_INSTALL=1 to refresh the venv to $AgentryRef." -ForegroundColor Yellow
+    } else {
+        Write-Host "==> Installing agentry from GitHub at $AgentryRef" -ForegroundColor Cyan
+        & (Join-Path $Venv 'Scripts\python.exe') -m pip install --upgrade --force-reinstall "git+$AgentryRepo@$AgentryRef"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "agentry install failed" -ForegroundColor Red
+            exit 1
+        }
+        Set-Content -Path $InstallRefFile -Value $AgentryRef -Encoding ASCII
+        Write-Host "==> Agentry install complete" -ForegroundColor Green
     }
-    Set-Content -Path $InstallRefFile -Value $AgentryRef -Encoding ASCII
-    Write-Host "==> Agentry install complete" -ForegroundColor Green
 }
 
-$AgentryExe = Join-Path $Venv 'Scripts\agentry.exe'
 if (-not (Test-Path $AgentryExe)) {
     Write-Host "agentry binary not found at $AgentryExe - venv may be corrupted" -ForegroundColor Red
     Write-Host "Delete agentry\.venv and re-run this script." -ForegroundColor Yellow
