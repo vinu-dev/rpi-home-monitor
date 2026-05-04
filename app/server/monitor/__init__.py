@@ -208,6 +208,7 @@ def _init_infrastructure(app):
     app.notification_policy = NotificationPolicyService(
         store=app.store,
         motion_event_store=app.motion_event_store,
+        audit=app.audit,
     )
     app.webhook_delivery_service = WebhookDeliveryService(
         store=app.store,

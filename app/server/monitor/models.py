@@ -208,6 +208,10 @@ class User:
             "cameras": {},
         }
     )
+    # Quiet-hours default schedule (#245). The per-user baseline;
+    # camera-specific overrides live in notification_prefs.cameras[cam_id]
+    # under quiet_schedule. Empty = no quiet hours.
+    notification_schedule: list[dict] = field(default_factory=list)
     # Cross-session continuity for the polling client — the most
     # recent timestamp this user's browser confirmed it had delivered
     # via /notifications/seen. Subsequent polls filter by this.

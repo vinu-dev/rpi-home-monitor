@@ -27,70 +27,12 @@ import logging
 import threading
 import time
 from datetime import datetime
-from datetime import time as dtime
+
+from monitor.services.time_window import now_in_window
 
 log = logging.getLogger("monitor.recording_scheduler")
 
-DAY_INDEX = {
-    "mon": 0,
-    "tue": 1,
-    "wed": 2,
-    "thu": 3,
-    "fri": 4,
-    "sat": 5,
-    "sun": 6,
-}
-
 TICK_INTERVAL_SECONDS = 60
-
-
-def _parse_hhmm(s: str) -> dtime | None:
-    """Parse a HH:MM string into a datetime.time, returning None on error."""
-    try:
-        hh, mm = s.split(":")
-        return dtime(int(hh), int(mm))
-    except (ValueError, AttributeError):
-        return None
-
-
-def now_in_window(schedule: list[dict], now: datetime) -> bool:
-    """Return True if `now` falls inside any window in `schedule`.
-
-    Each window: {"days": [...], "start": "HH:MM", "end": "HH:MM"}.
-    Overnight windows (end <= start) split into two halves:
-        day D        from start to 24:00
-        day D+1      from 00:00 to end
-    """
-    if not schedule:
-        return False
-
-    today_idx = now.weekday()
-    yesterday_idx = (today_idx - 1) % 7
-    current = now.time()
-
-    for item in schedule:
-        days = item.get("days") or []
-        start = _parse_hhmm(item.get("start", ""))
-        end = _parse_hhmm(item.get("end", ""))
-        if start is None or end is None:
-            continue
-
-        day_keys = {d for d in days if d in DAY_INDEX}
-        today_match = any(DAY_INDEX[d] == today_idx for d in day_keys)
-        yest_match = any(DAY_INDEX[d] == yesterday_idx for d in day_keys)
-
-        if end > start:
-            # Same-day window [start, end).
-            if today_match and start <= current < end:
-                return True
-        else:
-            # Overnight — end <= start.
-            # Day of record: start side (D), and spillover into D+1 morning.
-            if today_match and current >= start:
-                return True
-            if yest_match and current < end:
-                return True
-    return False
 
 
 class RecordingScheduler:

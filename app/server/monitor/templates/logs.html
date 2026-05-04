@@ -143,7 +143,7 @@ function logsPage() {
             { value: 'cameras',  label: 'Cameras',        codes: ['CAMERA_PAIRED', 'CAMERA_REMOVED', 'CAMERA_ONLINE', 'CAMERA_OFFLINE'] },
             { value: 'users',    label: 'Users',          codes: ['USER_CREATED', 'USER_DELETED', 'PASSWORD_CHANGED'] },
             { value: 'ota',      label: 'OTA',            codes: ['OTA_STARTED', 'OTA_COMPLETED', 'OTA_FAILED', 'OTA_ROLLBACK'] },
-            { value: 'system',   label: 'System',         codes: ['SETTINGS_CHANGED', 'FACTORY_RESET', 'CERT_GENERATED', 'CERT_REVOKED'] },
+            { value: 'system',   label: 'System',         codes: ['SETTINGS_CHANGED', 'NOTIFICATION_QUIETED', 'FACTORY_RESET', 'CERT_GENERATED', 'CERT_REVOKED'] },
         ],
 
         // Data
@@ -301,6 +301,7 @@ function logsPage() {
                 OTA_ROLLBACK: 'OTA rolled back',
                 FACTORY_RESET: 'Factory reset',
                 SETTINGS_CHANGED: 'Settings changed',
+                NOTIFICATION_QUIETED: 'Notification quieted',
                 CERT_GENERATED: 'Cert generated',
                 CERT_REVOKED: 'Cert revoked',
                 FIREWALL_BLOCKED: 'Firewall blocked',
