@@ -514,7 +514,7 @@ class TestPriority:
         )
         out = svc.compute_summary()
         assert out["state"] == "amber"
-        assert out["summary"] == "Camera *Living Room* clock drifted +4.2s — resync"
+        assert out["summary"] == "Camera Living Room clock drifted +4.2s — resync"
         assert out["deep_link"] == "/settings#time-health"
 
     def test_time_health_server_sentence_is_used_when_it_dominates(self):

@@ -582,4 +582,4 @@ def _time_sentence(time_detail: dict) -> str:
     worst_drift = time_detail.get("worst_drift_seconds")
     if not worst_camera or worst_drift is None:
         return ""
-    return f"Camera *{worst_camera}* clock drifted {worst_drift:+g}s — resync"
+    return f"Camera {worst_camera} clock drifted {worst_drift:+g}s — resync"

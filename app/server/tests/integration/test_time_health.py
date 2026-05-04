@@ -41,7 +41,7 @@ class TestTimeHealthSummary:
         assert data["state"] == "amber"
         assert data["deep_link"] == "/settings#time-health"
         assert match(
-            r"^Camera \*Living Room\* clock drifted \+4s — resync$",
+            r"^Camera Living Room clock drifted \+4s — resync$",
             data["summary"],
         )
         assert data["details"]["time_health"]["state"] == "amber"
