@@ -47,6 +47,52 @@ def update_settings():
     return jsonify({"message": msg}), status
 
 
+@settings_bp.route("/offsite-backup", methods=["GET"])
+@admin_required
+def get_offsite_backup_settings():
+    """Return offsite-backup configuration and queue status. Admin only."""
+    result = current_app.offsite_backup_service.get_settings_status()
+    return jsonify(result), 200
+
+
+@settings_bp.route("/offsite-backup", methods=["PUT"])
+@admin_required
+@csrf_protect
+def update_offsite_backup_settings():
+    """Update offsite-backup configuration. Admin only."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    msg, status = current_app.offsite_backup_service.update_config(
+        payload=data,
+        requesting_user=session.get("username", ""),
+        requesting_ip=request.remote_addr or "",
+    )
+    if status != 200:
+        return jsonify({"error": msg}), status
+    return jsonify({"message": msg}), status
+
+
+@settings_bp.route("/offsite-backup/test-connection", methods=["POST"])
+@admin_required
+@csrf_protect
+def test_offsite_backup_connection():
+    """Test offsite-backup connectivity with the supplied or saved settings."""
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+
+    msg, status = current_app.offsite_backup_service.test_connection(
+        payload=data,
+        requesting_user=session.get("username", ""),
+        requesting_ip=request.remote_addr or "",
+    )
+    if status != 200:
+        return jsonify({"error": msg}), status
+    return jsonify({"message": msg}), status
+
+
 @settings_bp.route("/time", methods=["GET"])
 @login_required
 def get_time():

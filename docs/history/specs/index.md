@@ -16,6 +16,7 @@ be able to pick up a spec from here and work without inventing product behavior.
 
 - [TOTP-based 2FA for admin and remote users](238-totp-2fa.md)
 - [Outbound webhook delivery](239-outbound-webhooks.md)
+- [Offsite / cloud backup of recordings](243-offsite-backup.md)
 - [Rich motion notifications](r1-rich-motion-notifications.md)
 - [Local alert center and Tailscale-remote review](r1-local-alert-center-and-tailscale-remote-review.md)
 - [Camera offline alerts](r1-camera-offline-alerts.md)

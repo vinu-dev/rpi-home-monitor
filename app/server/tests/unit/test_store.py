@@ -220,6 +220,26 @@ class TestSettingsStore:
             "storage_low",
         )
 
+    def test_round_trips_offsite_backup_fields(self, data_dir):
+        store = Store(str(data_dir / "config"))
+        settings = Settings(
+            offsite_backup_enabled=True,
+            offsite_backup_endpoint="minio.example.com:9000",
+            offsite_backup_bucket="hm-backups",
+            offsite_backup_access_key_id="AKIATEST",
+            offsite_backup_secret_access_key="secret-value",
+            offsite_backup_prefix="backups/home-monitor",
+            offsite_backup_retention_days=90,
+            offsite_backup_bandwidth_cap_mbps=12.5,
+        )
+        store.save_settings(settings)
+
+        loaded = store.get_settings()
+        assert loaded.offsite_backup_enabled is True
+        assert loaded.offsite_backup_bucket == "hm-backups"
+        assert loaded.offsite_backup_secret_access_key == "secret-value"
+        assert loaded.offsite_backup_bandwidth_cap_mbps == 12.5
+
 
 class TestAtomicWrite:
     """Test that writes are atomic (no .tmp files left behind)."""

@@ -13,5 +13,6 @@ RDEPENDS:${PN} = " \
     python3-requests \
     python3-bcrypt \
     python3-pyotp \
+    python3-boto3 \
     python3-pip \
     "

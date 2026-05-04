@@ -79,6 +79,9 @@ class TestSettings:
         assert s.hostname == "home-monitor"
         assert s.setup_completed is False
         assert s.firmware_version == "1.0.0"
+        assert s.offsite_backup_enabled is False
+        assert s.offsite_backup_retention_days == 30
+        assert s.offsite_backup_bandwidth_cap_mbps is None
 
     def test_custom_settings(self):
         s = Settings(timezone="US/Eastern", storage_threshold_percent=85)
@@ -90,14 +93,17 @@ class TestSettings:
         assert d["timezone"] == "Europe/Dublin"
         assert isinstance(d, dict)
         # 9 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
-        # + 1 motion post-roll + 1 TOTP 2FA policy + 2 outbound webhook settings
-        # + 1 backup snapshot-retention setting
-        assert len(d) == 22
+        # + 1 motion post-roll + 1 TOTP 2FA policy + 8 offsite-backup fields
+        # + 2 outbound webhook settings + 1 backup snapshot-retention setting
+        assert len(d) == 30
         assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
         assert d["motion_post_roll_seconds"] == 10
         assert d["require_2fa_for_remote"] is False
+        assert d["offsite_backup_enabled"] is False
+        assert d["offsite_backup_retention_days"] == 30
+        assert d["offsite_backup_bandwidth_cap_mbps"] is None
         assert d["webhook_destinations"] == []
         assert d["webhook_delivery_history_retention_days"] == 30
         assert d["backup_max_history"] == 3

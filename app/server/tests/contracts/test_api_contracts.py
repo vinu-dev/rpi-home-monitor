@@ -12,6 +12,7 @@ import io
 import json
 import os
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
@@ -537,6 +538,25 @@ SETTINGS_FIELDS = {
     "firmware_version",
 }
 
+OFFSITE_BACKUP_FIELDS = {
+    "enabled",
+    "configured",
+    "secret_configured",
+    "endpoint",
+    "bucket",
+    "access_key_id",
+    "prefix",
+    "retention_days",
+    "bandwidth_cap_mbps",
+    "queue_size",
+    "queue_limit",
+    "failed_count",
+    "last_success_at",
+    "next_retry_at",
+    "last_error",
+    "last_error_at",
+}
+
 WEBHOOK_DESTINATION_FIELDS = {
     "id",
     "url",
@@ -583,6 +603,67 @@ class TestSettingsUpdateContract:
         )
         data = resp.get_json()
         _assert_fields(data, {"error"})
+
+
+class TestOffsiteBackupGetContract:
+    """GET /api/v1/settings/offsite-backup."""
+
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.get("/api/v1/settings/offsite-backup")
+        data = resp.get_json()
+        _assert_has_fields(data, OFFSITE_BACKUP_FIELDS)
+
+
+class TestOffsiteBackupUpdateContract:
+    """PUT /api/v1/settings/offsite-backup."""
+
+    def test_success_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.put(
+            "/api/v1/settings/offsite-backup",
+            json={
+                "enabled": True,
+                "endpoint": "minio.example.com:9000",
+                "bucket": "hm-backups",
+                "access_key_id": "AKIATEST",
+                "secret_access_key": "secret-value",
+            },
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"message"})
+
+    def test_error_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.put(
+            "/api/v1/settings/offsite-backup",
+            json={"enabled": True},
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"error"})
+
+
+class TestOffsiteBackupProbeContract:
+    """POST /api/v1/settings/offsite-backup/test-connection."""
+
+    def test_success_fields(self, app, logged_in_client):
+        app.offsite_backup_service._client_factory = lambda _config: SimpleNamespace(
+            write_probe=lambda *_args, **_kwargs: None,
+            delete_object=lambda *_args, **_kwargs: None,
+        )
+        client = logged_in_client()
+        resp = client.post(
+            "/api/v1/settings/offsite-backup/test-connection",
+            json={
+                "enabled": True,
+                "endpoint": "minio.example.com:9000",
+                "bucket": "hm-backups",
+                "access_key_id": "AKIATEST",
+                "secret_access_key": "secret-value",
+            },
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"message"})
 
 
 class TestWebhooksListContract:

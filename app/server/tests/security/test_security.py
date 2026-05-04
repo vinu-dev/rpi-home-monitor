@@ -105,6 +105,18 @@ class TestPathTraversal:
 # Each tuple: (method, url, minimal_valid_body)
 _CSRF_PROTECTED_ENDPOINTS = [
     ("PUT", "/api/v1/settings", {"hostname": "test-host"}),
+    (
+        "PUT",
+        "/api/v1/settings/offsite-backup",
+        {
+            "enabled": True,
+            "endpoint": "minio.example.com:9000",
+            "bucket": "hm-backups",
+            "access_key_id": "AKIATEST",
+            "secret_access_key": "secret-value",
+        },
+    ),
+    ("POST", "/api/v1/settings/offsite-backup/test-connection", {}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "MyNet", "password": "pass1234"}),
     ("POST", "/api/v1/users", {"username": "newuser1", "password": "password1234"}),

@@ -39,6 +39,7 @@ RDEPENDS:${PN} = " \
     python3-jinja2 \
     python3-bcrypt \
     python3-pyotp \
+    python3-boto3 \
     ffmpeg \
     nginx \
     openssl \

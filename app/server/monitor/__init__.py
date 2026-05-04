@@ -28,6 +28,7 @@ from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.motion_clip_correlator import MotionClipCorrelator
 from monitor.services.motion_event_store import MotionEventStore
 from monitor.services.notification_policy_service import NotificationPolicyService
+from monitor.services.offsite_backup import OffsiteBackupService
 from monitor.services.ota_service import OTAService
 from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
@@ -269,6 +270,13 @@ def _init_services(app):
         default_recordings_dir=app.config["RECORDINGS_DIR"],
     )
 
+    app.offsite_backup_service = OffsiteBackupService(
+        store=app.store,
+        audit=app.audit,
+        config_dir=app.config["CONFIG_DIR"],
+        recordings_dir=recordings_dir,
+    )
+
     # User service — user CRUD + password management
     app.user_service = UserService(store=app.store, audit=app.audit)
 
@@ -360,6 +368,8 @@ def _init_services(app):
             app.motion_clip_correlator.set_recordings_dir(new_dir)
         if getattr(app, "loop_recorder", None) is not None:
             app.loop_recorder.set_base_dir(new_dir)
+        if getattr(app, "offsite_backup_service", None) is not None:
+            app.offsite_backup_service.set_recordings_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -449,6 +459,7 @@ def _startup(app):
     app.cert_service.start()
     app.recording_scheduler.start()
     app.loop_recorder.start()
+    app.offsite_backup_service.start()
 
     # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
     app.discovery_service.start_mdns_browser()
