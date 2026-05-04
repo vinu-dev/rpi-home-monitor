@@ -99,10 +99,13 @@ new autonomous issue discovery or release automation.
 instead of pinning a dated Claude model unless a rollback is intentional.
 
 The start scripts currently pin Agentry to
-`e7c8c9c18b9464b819549cea495c340532545ecb`, which includes the reviewer
+`79714f02dd0de8b94817ae4b676791cb5bd3b0d5`, which includes the reviewer
 comment workflow, the stream-json watchdog fix for active Claude Code tool
 activity during check-ins, branch-reset hardening, and Tester PR body-file
-creation.
+creation, plus safe wrapper subcommands. Wrapper subcommands such as `status`,
+`doctor`, `configure`, and `gui` reuse an existing venv instead of
+force-reinstalling only because the local install-ref marker is missing or
+stale, so health checks are safe while Agentry is live.
 
 ## Start
 
@@ -136,12 +139,13 @@ so a visible PID means there is still an active role process to inspect or stop.
 ## Upgrade
 
 The start scripts install Agentry from the Git ref pinned in the script. To
-upgrade intentionally, update that ref or set `AGENTRY_INSTALL_REF`, delete
-`.venv/`, and rerun the start script.
+upgrade intentionally, update that ref or set `AGENTRY_INSTALL_REF`, stop any
+running Agentry process that uses this venv, and rerun the wrapper with
+`AGENTRY_FORCE_INSTALL=1`. If the venv is already corrupted, delete `.venv/`
+and rerun the start script.
 
-On Windows, stop any running Agentry process before changing the pin. The venv
-cannot replace `agentry\.venv\Scripts\agentry.exe` while an old supervisor is
-still using it.
+On Windows, the venv cannot replace `agentry\.venv\Scripts\agentry.exe` while
+an old supervisor is still using it.
 
 ## Remove
 
