@@ -1,4 +1,4 @@
-# REQ: SWR-023; RISK: RISK-011; SEC: SC-011; TEST: TC-022
+# REQ: SWR-023, SWR-099; RISK: RISK-011, RISK-099; SEC: SC-011, SC-099; TEST: TC-022, TC-099
 """Unit tests for UserService — user CRUD and password management."""
 
 from types import SimpleNamespace
@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from monitor.services.audit import PASSWORD_RESET_BY_ADMIN
 from monitor.services.user_service import UserService
 
 
@@ -374,7 +375,7 @@ class TestChangePassword:
 
 
 # ---------------------------------------------------------------------------
-# Admin-reset-another-user path (issue #99 slice 1)
+# Admin-reset-another-user path
 # ---------------------------------------------------------------------------
 class TestAdminResetAnotherUser:
     @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
@@ -409,7 +410,7 @@ class TestAdminResetAnotherUser:
             force_change_next_login=True,
         )
         audit.log_event.assert_called_once()
-        assert audit.log_event.call_args[0][0] == "PASSWORD_RESET_BY_ADMIN"
+        assert audit.log_event.call_args[0][0] == PASSWORD_RESET_BY_ADMIN
 
     @patch("monitor.services.user_service.hash_password", return_value="$2b$12$h")
     def test_self_change_never_sets_must_change_flag(self, mock_hash, svc, store):

@@ -1,11 +1,11 @@
-# REQ: SWR-009, SWR-101-A; RISK: RISK-020, RISK-101-3; SEC: SC-008, SC-101; TEST: TC-017, TC-101-AC-4
+# REQ: SWR-009, SWR-099, SWR-101-A; RISK: RISK-020, RISK-099, RISK-101-3; SEC: SC-008, SC-099, SC-101; TEST: TC-017, TC-099, TC-101-AC-4
 """Tests for the audit logging service."""
 
 import json
 from unittest.mock import patch
 
 import monitor.services.audit as audit_module
-from monitor.services.audit import AuditLogger
+from monitor.services.audit import PASSWORD_RESET_BY_ADMIN, AuditLogger
 
 
 class TestAuditLoggerInit:
@@ -19,6 +19,10 @@ class TestAuditLoggerInit:
     def test_works_with_existing_dir(self, data_dir):
         logger = AuditLogger(str(data_dir / "logs"))
         assert logger.logs_dir.exists()
+
+    def test_docstring_catalogues_admin_password_reset_event(self):
+        assert audit_module.__doc__ is not None
+        assert PASSWORD_RESET_BY_ADMIN in audit_module.__doc__
 
 
 class TestLogEvent:

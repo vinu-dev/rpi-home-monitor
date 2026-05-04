@@ -12,7 +12,21 @@ Two very different cases. Pick the one that applies.
 
 Any other admin user signs in and opens **Settings → Users → "Reset password"** on the locked-out user's row. They pick a temporary password (≥ 12 chars) and hand it to the user. The locked-out admin signs in with the temporary password and is immediately forced to rotate it to something only they know. The admin who did the reset never learns the final password.
 
-Audit events `PASSWORD_RESET_BY_ADMIN` + `PASSWORD_CHANGED` are written to `/logs`.
+If the user also lost their TOTP factor, also click **Reset 2FA** on the same row before they log in again — the password reset and TOTP reset are separate actions.
+
+Coordinate before issuing a reset — if two admins reset the same user in parallel, whichever temporary password lands second wins. That's a communications hazard, not a new privilege path.
+
+### What hits the audit log
+
+- `PASSWORD_RESET_BY_ADMIN` when the admin sets the temporary password.
+- `PASSWORD_CHANGED` when the user rotates to their final password.
+
+Example checks on the device shell:
+
+```bash
+grep -F 'PASSWORD_RESET_BY_ADMIN' /data/logs/audit.log
+grep -F 'PASSWORD_CHANGED' /data/logs/audit.log
+```
 
 ---
 

@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from monitor.auth import hash_password
 from monitor.models import User
 from monitor.password_policy import validate_password
+from monitor.services.audit import PASSWORD_RESET_BY_ADMIN
 
 log = logging.getLogger("monitor.services.user_service")
 
@@ -134,6 +135,7 @@ class UserService:
 
         return "User deleted", 200
 
+    # REQ: SWR-023, SWR-099; RISK: RISK-011, RISK-099; SEC: SC-011, SC-099; TEST: TC-022, TC-099
     def change_password(
         self,
         user_id: str,
@@ -149,10 +151,9 @@ class UserService:
         Args:
             force_change_next_login: When True, leave ``must_change_password``
                 set so the target user is forced to rotate their password on
-                next login. Intended for the admin-resets-another-user path
-                (issue #99 slice 1) — the admin never needs to know the final
-                password. Refused on self-reset so an admin can't loop
-                themselves.
+                next login for the admin-assisted recovery flow described in
+                ``docs/guides/admin-recovery.md``. Refused on self-reset so an
+                admin can't loop themselves.
 
         Returns (message, status_code).
         """
@@ -191,7 +192,7 @@ class UserService:
 
         if is_admin_reset:
             self._log_audit(
-                "PASSWORD_RESET_BY_ADMIN",
+                PASSWORD_RESET_BY_ADMIN,
                 requesting_user,
                 requesting_ip,
                 f"admin reset password for user {user_id}; must_change_password=true",

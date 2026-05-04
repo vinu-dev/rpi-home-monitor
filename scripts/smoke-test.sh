@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REQ: SWR-048, SWR-071, SWR-101-C; RISK: RISK-019, RISK-022, RISK-027, RISK-101-1; SEC: SC-018, SC-026, SC-101; TEST: TC-045, TC-047, TC-056, TC-101-AC-10
+# REQ: SWR-048, SWR-071, SWR-099, SWR-101-C; RISK: RISK-019, RISK-022, RISK-027, RISK-099, RISK-101-1; SEC: SC-018, SC-026, SC-099, SC-101; TEST: TC-045, TC-047, TC-056, TC-099, TC-101-AC-10
 # =============================================================================
 # smoke-test.sh - Layer 5 hardware verification for RPi Home Monitor
 #
@@ -20,6 +20,13 @@
 #                                        authenticated Flask session cookie.
 #   SMOKE_CAMERA_COOKIE="cam_session=..." Skip camera login and reuse a valid
 #                                        authenticated camera session cookie.
+#   SMOKE_RESET_USERNAME="viewer1"        Exercise the admin-assisted password
+#                                        reset flow against this existing user.
+#   SMOKE_RESET_TEMP_PASSWORD="..."       Temporary password to set during the
+#                                        recovery flow.
+#   SMOKE_RESET_FINAL_PASSWORD="..."      Final password the target user rotates
+#                                        to. When any reset variable is unset,
+#                                        the recovery row is skipped.
 #
 # Camera password defaults to the server password only when the server login
 # path is being used. If the camera requires authentication and no camera
@@ -44,6 +51,10 @@ AUDIT_EXPORT_TMP="/tmp/smoke-test-audit-export.csv"
 DIAGNOSTICS_EXPORT_TMP="/tmp/smoke-test-diagnostics.tar.gz"
 DIAGNOSTICS_EXTRACT_DIR="/tmp/smoke-test-diagnostics-$$"
 CAM_COOKIE_JAR="/tmp/smoke-test-cam-cookies.txt"
+RESET_COOKIE_JAR="/tmp/smoke-test-reset-cookies.txt"
+SMOKE_RESET_USERNAME="${SMOKE_RESET_USERNAME:-}"
+SMOKE_RESET_TEMP_PASSWORD="${SMOKE_RESET_TEMP_PASSWORD:-}"
+SMOKE_RESET_FINAL_PASSWORD="${SMOKE_RESET_FINAL_PASSWORD:-}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -109,11 +120,15 @@ server_curl() {
     fi
 }
 
+reset_viewer_curl() {
+    curl "${CURL_OPTS[@]}" -b "$RESET_COOKIE_JAR" "$@"
+}
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
 
-trap 'rm -f "$COOKIE_JAR" "$AUDIT_EXPORT_TMP" "$DIAGNOSTICS_EXPORT_TMP" "$CAM_COOKIE_JAR"; rm -rf "$DIAGNOSTICS_EXTRACT_DIR"' EXIT
+trap 'rm -f "$COOKIE_JAR" "$AUDIT_EXPORT_TMP" "$DIAGNOSTICS_EXPORT_TMP" "$CAM_COOKIE_JAR" "$RESET_COOKIE_JAR"; rm -rf "$DIAGNOSTICS_EXTRACT_DIR"' EXIT
 
 # ===========================================================================
 echo ""
@@ -308,6 +323,90 @@ PY
     fi
 else
     skip "Secrets inventory smoke skipped: no CSRF token available from /auth/me"
+fi
+
+if [ -n "$SMOKE_RESET_USERNAME$SMOKE_RESET_TEMP_PASSWORD$SMOKE_RESET_FINAL_PASSWORD" ]; then
+    if [ -z "$SMOKE_RESET_USERNAME" ] || [ -z "$SMOKE_RESET_TEMP_PASSWORD" ] || [ -z "$SMOKE_RESET_FINAL_PASSWORD" ]; then
+        fail "Admin password reset smoke requires SMOKE_RESET_USERNAME, SMOKE_RESET_TEMP_PASSWORD, and SMOKE_RESET_FINAL_PASSWORD"
+    elif [ -z "${CSRF:-}" ]; then
+        skip "Admin password reset smoke skipped: no CSRF token available"
+    else
+        USERS_JSON=$(server_curl "${API_BASE}/users" 2>/dev/null) || true
+        RESET_USER_ID=$(echo "$USERS_JSON" | python3 -c "import json,os,sys; users=json.load(sys.stdin); target=os.environ['SMOKE_RESET_USERNAME']; print(next((u['id'] for u in users if u.get('username') == target), ''))" 2>/dev/null) || true
+        if [ -z "$RESET_USER_ID" ]; then
+            fail "Admin password reset smoke could not find user '${SMOKE_RESET_USERNAME}'"
+        else
+            RESET_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_TEMP_PASSWORD'], 'force_change': True}))")
+            RESET_STATUS=$(server_curl -o /dev/null -w "%{http_code}" \
+                -X PUT \
+                -H "Content-Type: application/json" \
+                -H "X-CSRF-Token: ${CSRF}" \
+                -d "$RESET_PAYLOAD" \
+                "${API_BASE}/users/${RESET_USER_ID}/password" 2>/dev/null) || true
+            if [ "$RESET_STATUS" = "200" ]; then
+                pass "Admin can reset ${SMOKE_RESET_USERNAME} and force a password change"
+            else
+                fail "Admin password reset for ${SMOKE_RESET_USERNAME} failed (HTTP ${RESET_STATUS:-000})"
+            fi
+
+            if [ "$RESET_STATUS" = "200" ]; then
+                VIEWER_LOGIN_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'username': os.environ['SMOKE_RESET_USERNAME'], 'password': os.environ['SMOKE_RESET_TEMP_PASSWORD']}))")
+                VIEWER_LOGIN=$(curl "${CURL_OPTS[@]}" -c "$RESET_COOKIE_JAR" \
+                    -H "Content-Type: application/json" \
+                    -d "$VIEWER_LOGIN_PAYLOAD" \
+                    "${API_BASE}/auth/login" 2>/dev/null) || true
+
+                if echo "$VIEWER_LOGIN" | python3 -c "import json,sys; body=json.load(sys.stdin); assert body.get('must_change_password') is True; assert 'csrf_token' in body; assert 'user' in body" 2>/dev/null; then
+                    pass "Reset target login returns must_change_password=true"
+                    RESET_VIEWER_CSRF=$(echo "$VIEWER_LOGIN" | python3 -c "import json,sys; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+                    RESET_VIEWER_ID=$(echo "$VIEWER_LOGIN" | python3 -c "import json,sys; print(json.load(sys.stdin)['user']['id'])" 2>/dev/null) || true
+                else
+                    fail "Reset target login did not return a forced-change challenge"
+                    RESET_VIEWER_CSRF=""
+                    RESET_VIEWER_ID=""
+                fi
+
+                if [ -n "$RESET_VIEWER_CSRF" ] && [ -n "$RESET_VIEWER_ID" ]; then
+                    BLOCK_STATUS=$(reset_viewer_curl -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" "${API_BASE}/cameras" 2>/dev/null) || true
+                    if [ "$BLOCK_STATUS" = "403" ] && python3 -c "import json,sys; body=json.load(open(sys.argv[1], encoding='utf-8')); assert body.get('must_change_password') is True" "$AUDIT_EXPORT_TMP" 2>/dev/null; then
+                        pass "Forced-change gate blocks protected routes until the target rotates"
+                    else
+                        fail "Forced-change gate did not block /cameras for the reset target"
+                    fi
+
+                    FINAL_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_FINAL_PASSWORD']}))")
+                    FINAL_STATUS=$(reset_viewer_curl -o /dev/null -w "%{http_code}" \
+                        -X PUT \
+                        -H "Content-Type: application/json" \
+                        -H "X-CSRF-Token: ${RESET_VIEWER_CSRF}" \
+                        -d "$FINAL_PAYLOAD" \
+                        "${API_BASE}/users/${RESET_VIEWER_ID}/password" 2>/dev/null) || true
+                    if [ "$FINAL_STATUS" = "200" ]; then
+                        pass "Reset target can rotate to a final password on the same session"
+                    else
+                        fail "Reset target final password rotation failed (HTTP ${FINAL_STATUS:-000})"
+                    fi
+
+                    UNBLOCK_STATUS=$(reset_viewer_curl -o /dev/null -w "%{http_code}" "${API_BASE}/cameras" 2>/dev/null) || true
+                    if [ "$UNBLOCK_STATUS" = "200" ]; then
+                        pass "Reset target reaches /cameras after rotating the password"
+                    else
+                        fail "Reset target stayed blocked after rotating the password (HTTP ${UNBLOCK_STATUS:-000})"
+                    fi
+
+                    EXPORT_STATUS=$(server_curl -H "X-CSRF-Token: ${CSRF}" -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" \
+                        "${API_BASE}/audit/events/export?format=csv" 2>/dev/null) || true
+                    if [ "$EXPORT_STATUS" = "200" ] && python3 -c "import csv,sys; rows=list(csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8'))); target=sys.argv[2]; reset=any(row.get('event') == 'PASSWORD_RESET_BY_ADMIN' and target in row.get('detail', '') for row in rows); changed=any(row.get('event') == 'PASSWORD_CHANGED' and target in row.get('detail', '') for row in rows); assert reset and changed" "$AUDIT_EXPORT_TMP" "$RESET_USER_ID" 2>/dev/null; then
+                        pass "Audit export records PASSWORD_RESET_BY_ADMIN and PASSWORD_CHANGED for the reset target"
+                    else
+                        fail "Audit export did not show the expected reset/change event pair"
+                    fi
+                fi
+            fi
+        fi
+    fi
+else
+    skip "Admin password reset smoke skipped: set SMOKE_RESET_USERNAME, SMOKE_RESET_TEMP_PASSWORD, and SMOKE_RESET_FINAL_PASSWORD"
 fi
 
 # ---------------------------------------------------------------------------

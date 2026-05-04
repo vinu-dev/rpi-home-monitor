@@ -30,6 +30,7 @@ compliance with any cybersecurity regulation or standard.
 | SEC-016 | Public API contracts | Server API, camera API, machine-client schemas, and browser/API compatibility records. | SYS-027, SWR-045 |
 | SEC-017 | Public share-link surfaces | Share-link tokens, recipient viewer routes, share metadata, and unauthenticated token-scoped media delivery. | SYS-032, SWR-058, SWR-059, SWR-060, SWR-061 |
 | SEC-018 | Server dependency floor evidence | Flask version constraints, dependency manifests, SBOM entries, and release-image checks that prove the server install path excludes known-vulnerable framework versions. | SYS-023, SYS-035, SWR-071 |
+| SEC-099 | Admin-assisted password recovery surface | Temporary-password reset flow, forced-change state, pre-auth recovery hint, and recovery audit evidence. | SYS-099, SWR-099 |
 
 ## Security Objectives
 
