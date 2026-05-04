@@ -5,6 +5,9 @@ pytest-timeout>=2.3
 schemathesis>=3.35.0
 PyYAML>=6.0.2
 hypothesis>=6.100
+# Camera integration tests exercise the HTTPS cert fallback path that uses
+# cryptography when openssl is unavailable in the host environment.
+cryptography>=42.0
 # numpy is a runtime dep (motion detector); list here too so CI
 # pulls it in when installing only the test deps. Production Yocto
 # image gets it via ``python3-numpy`` in the camera packagegroup.

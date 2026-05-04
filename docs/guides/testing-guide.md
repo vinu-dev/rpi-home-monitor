@@ -94,6 +94,10 @@ npm install
 npx playwright install --with-deps chromium
 ```
 
+The camera test requirements include `cryptography` so integration tests can
+exercise the HTTPS certificate fallback path when `openssl` is absent or mocked
+unavailable.
+
 ### 3.2 Run by layer
 
 ```bash
