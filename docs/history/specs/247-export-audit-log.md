@@ -312,6 +312,7 @@ Pulled from `docs/ai/validation-and-release.md`:
 | Repository governance | `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files` |
 | Coverage | server `--cov-fail-under=85` must hold after the new code lands |
 | Hardware behavior | one row added to `scripts/smoke-test.sh`: "admin downloads CSV export; file opens in Excel; row count matches `wc -l` of `/data/logs/audit.log` minus 1 for header" |
+| Shell script hygiene | `bash -n scripts/smoke-test.sh` and `shellcheck scripts/smoke-test.sh` stay clean after touching the smoke test |
 
 The Implementer must include the depot-rule validation evidence block
 listed in `docs/ai/validation-and-release.md` "Depot Rule Gate".
