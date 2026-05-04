@@ -39,7 +39,7 @@ Per `docs/ai/validation-and-release.md`. Run only the rows that apply:
 |---|---|
 | `app/server/**` | `pytest app/server/tests/ -v --cov=app/server --cov-fail-under=85`, `ruff check .`, `ruff format --check .` |
 | `app/camera/**` | `pytest app/camera/tests/ -v --cov=app/camera --cov-fail-under=80`, `ruff check .`, `ruff format --check .` |
-| any code change | `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `python scripts/check_version_consistency.py`, `python scripts/check_versioning_design.py`, `pre-commit run --all-files` |
+| any code change | `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `python scripts/ai/check_doc_links.py`, `python scripts/ai/check_shell_scripts.py`, `python scripts/check_version_consistency.py`, `python scripts/check_versioning_design.py`, `python -m pre_commit run --all-files` |
 | `meta-home-monitor/**`, `config/**` | `bitbake -p` (skip if no Yocto SDK on host — note in PR) |
 | `docs/ai/**`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-*` | the full "any code change" row plus adapter-specific checks |
 | traceability files (REQ, RISK, SEC, TEST IDs touched) | `python tools/traceability/check_traceability.py` |

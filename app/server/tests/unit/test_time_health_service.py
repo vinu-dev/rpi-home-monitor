@@ -135,7 +135,7 @@ class TestComputeHealth:
         assert result["server"]["ntp_active"] is False
 
     def test_amber_hysteresis_requires_clear_margin(self):
-        now = datetime.now(UTC)
+        now = datetime(2026, 5, 4, 12, 0, 0, tzinfo=UTC)
         svc, store, _ = _service(
             cameras=[
                 _camera(

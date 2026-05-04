@@ -33,7 +33,7 @@ Core rules:
 - do not commit directly to `main`
 
 Key validation:
-- repo governance: `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `pre-commit run --all-files`
+- repo governance: `python tools/docs/check_doc_map.py`, `python scripts/ai/validate_repo_ai_setup.py`, `python -m pre_commit run --all-files`
 - server: `pytest app/server/tests/ -v`, `ruff check .`, `ruff format --check .`
 - camera: `pytest app/camera/tests/ -v`, `ruff check .`, `ruff format --check .`
 - Yocto: `bitbake -p` and VM build for affected images
