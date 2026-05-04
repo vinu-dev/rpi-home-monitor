@@ -136,6 +136,7 @@ def _make_config(server_ip="192.168.1.1", camera_id="cam-001", paired=True):
     cfg.rotation = 0
     cfg.hflip = False
     cfg.vflip = False
+    cfg.motion_masks = []
     return cfg
 
 

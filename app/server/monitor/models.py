@@ -91,6 +91,11 @@ class Camera:
     # tune this per camera from Camera Settings; the server pushes changes
     # over the existing control channel (ADR-0015).
     motion_sensitivity: int = 5
+    # Per-camera motion exclusion regions (#241). Stored as a JSON-safe
+    # list of mask dicts so the same payload can travel server storage,
+    # API responses, and the camera control channel without ORM-specific
+    # translation.
+    motion_masks: list[dict] = field(default_factory=list)
     config_sync: str = "unknown"  # synced | pending | error | unknown
     # Live status fields — populated by heartbeat (ADR-0016)
     streaming: bool = False  # is camera actively streaming RTSP?

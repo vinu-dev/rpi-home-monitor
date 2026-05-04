@@ -43,6 +43,7 @@ def _cfg():
     c.server_ip = "192.0.2.100"
     c.camera_id = "cam-001"
     c.certs_dir = "/nonexistent"
+    c.motion_masks = []
     return c
 
 
@@ -122,6 +123,53 @@ class TestEmission:
         )
         runner.start()
         # Wait for the generator to drain; stop only if still running.
+        if runner._thread is not None:
+            runner._thread.join(timeout=5)
+        runner.stop()
+
+        assert poster.calls == []
+
+    def test_masked_motion_is_suppressed(self):
+        poster = _FakePoster()
+
+        def reader():
+            yield from (
+                [_blank() for _ in range(5)]
+                + [_moving(10 + i * 2) for i in range(12)]
+                + [_blank() for _ in range(10)]
+            )
+
+        cfg = _cfg()
+        cfg.motion_masks = [
+            {
+                "id": "mask-top-left",
+                "type": "motion_mask",
+                "name": "Top-left exclusion",
+                "enabled": True,
+                "redaction_type": None,
+                "regions": [
+                    {
+                        "shape": "rectangle",
+                        "coordinates": {
+                            "x": 0,
+                            "y": 0,
+                            "width": 50,
+                            "height": 50,
+                        },
+                    }
+                ],
+            }
+        ]
+
+        runner = MotionRunner(
+            config=cfg,
+            pairing_manager=_pairing(),
+            motion_config=_motion_cfg(),
+            poster_factory=lambda *a, **kw: poster,
+            frame_reader=reader,
+            warmup_seconds=0.0,
+        )
+        runner.start()
         if runner._thread is not None:
             runner._thread.join(timeout=5)
         runner.stop()

@@ -513,6 +513,152 @@
                     <div class="text-small text-muted" style="margin-top:6px;"
                          x-text="motionSensitivityHint(editForm.motion_sensitivity)"></div>
                 </div>
+                <div style="margin-top:18px;border-top:1px solid var(--border, #e2e2e2);padding-top:14px;">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                        <strong>Motion masks</strong>
+                        <button class="btn btn--secondary btn--small" type="button" @click="refreshMaskPreview()">Refresh preview</button>
+                    </div>
+                    <div class="text-small text-muted" style="margin-top:6px;">
+                        Draw on the latest camera snapshot to exclude noisy regions from motion detection. Privacy-zone definitions are saved here too, but visual redaction for live view and recordings still depends on the downstream media pipeline.
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                        <button class="btn btn--secondary btn--small" type="button"
+                                :class="{ 'btn--primary': maskEditor.tool === 'rect' }"
+                                @click="beginRectMask()">Draw rectangle</button>
+                        <button class="btn btn--secondary btn--small" type="button"
+                                :class="{ 'btn--primary': maskEditor.tool === 'polygon' }"
+                                @click="beginPolygonMask()">Draw polygon</button>
+                        <button class="btn btn--secondary btn--small" type="button"
+                                x-show="maskEditor.tool === 'polygon'"
+                                @click="finishPolygonMask()">Finish polygon</button>
+                        <button class="btn btn--secondary btn--small" type="button"
+                                x-show="maskEditor.tool !== 'select' || maskEditor.draftPolygon.length || maskEditor.draftRect"
+                                @click="cancelMaskDraft()">Cancel draft</button>
+                        <select class="form-input" style="width:auto;min-width:180px;"
+                                x-model="maskEditor.nextType">
+                            <option value="motion_mask">Next shape: motion mask</option>
+                            <option value="privacy_zone">Next shape: privacy zone</option>
+                        </select>
+                    </div>
+                    <div class="text-small text-muted" style="margin-top:8px;">
+                        Rectangle: click and drag. Polygon: click points, then double-click or press “Finish polygon”.
+                    </div>
+                    <div :style="'position:relative;margin-top:12px;border:1px solid var(--border, #d7d7d7);border-radius:12px;overflow:hidden;background:#0f172a;aspect-ratio:' + (((editCam && editCam.width) || 16)) + ' / ' + (((editCam && editCam.height) || 9)) + ';'"
+                         @mousedown="maskStagePointerDown($event)"
+                         @mousemove="maskStagePointerMove($event)"
+                         @mouseup="maskStagePointerUp($event)"
+                         @mouseleave="maskStagePointerUp($event)"
+                         @click="maskStageClick($event)"
+                         @dblclick="maskStageDoubleClick($event)">
+                        <img x-show="maskEditor.snapshotUrl"
+                             :src="maskEditor.snapshotUrl"
+                             alt="Camera snapshot preview"
+                             style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"
+                             @error="maskEditor.previewError = 'Snapshot unavailable — use the saved regions list below.'"
+                             @load="maskEditor.previewError = ''">
+                        <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+                             style="position:absolute;inset:0;width:100%;height:100%;">
+                            <template x-for="mask in (editForm.motion_masks || [])" :key="mask.id">
+                                <g>
+                                    <template x-for="region in (mask.regions || [])" :key="mask.id + '-' + region.shape + '-' + JSON.stringify(region.coordinates)">
+                                        <g>
+                                            <template x-if="region.shape === 'rectangle'">
+                                                <rect :x="region.coordinates.x"
+                                                      :y="region.coordinates.y"
+                                                      :width="region.coordinates.width"
+                                                      :height="region.coordinates.height"
+                                                      :fill="maskFill(mask)"
+                                                      :stroke="maskStroke(mask)"
+                                                      :stroke-width="maskEditor.selectedMaskId === mask.id ? 1.3 : 0.8"
+                                                      stroke-dasharray="3 2"
+                                                      style="cursor:pointer"
+                                                      @click.stop="maskSelect(mask.id)"></rect>
+                                            </template>
+                                            <template x-if="region.shape === 'polygon'">
+                                                <polygon :points="maskSvgPoints(region.coordinates.points)"
+                                                         :fill="maskFill(mask)"
+                                                         :stroke="maskStroke(mask)"
+                                                         :stroke-width="maskEditor.selectedMaskId === mask.id ? 1.3 : 0.8"
+                                                         stroke-dasharray="3 2"
+                                                         style="cursor:pointer"
+                                                         @click.stop="maskSelect(mask.id)"></polygon>
+                                            </template>
+                                        </g>
+                                    </template>
+                                </g>
+                            </template>
+                            <template x-if="maskEditor.draftRect">
+                                <rect :x="maskEditor.draftRect.x"
+                                      :y="maskEditor.draftRect.y"
+                                      :width="maskEditor.draftRect.width"
+                                      :height="maskEditor.draftRect.height"
+                                      fill="rgba(59, 130, 246, 0.18)"
+                                      stroke="#3b82f6"
+                                      stroke-width="0.9"
+                                      stroke-dasharray="3 2"></rect>
+                            </template>
+                            <template x-if="maskEditor.draftPolygon.length">
+                                <g>
+                                    <polyline :points="maskSvgPoints(maskEditor.draftPolygon)"
+                                              fill="rgba(59, 130, 246, 0.12)"
+                                              stroke="#3b82f6"
+                                              stroke-width="0.9"
+                                              stroke-dasharray="3 2"></polyline>
+                                    <template x-for="(point, pointIndex) in maskEditor.draftPolygon" :key="'draft-' + pointIndex">
+                                        <circle :cx="point.x" :cy="point.y" r="0.8" fill="#3b82f6"></circle>
+                                    </template>
+                                </g>
+                            </template>
+                        </svg>
+                        <div x-show="maskEditor.previewError"
+                             class="text-small"
+                             style="position:absolute;left:12px;right:12px;bottom:12px;padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.78);color:#e5e7eb;"
+                             x-text="maskEditor.previewError"></div>
+                    </div>
+                    <div x-show="!editForm.motion_masks || editForm.motion_masks.length === 0"
+                         class="text-small text-muted"
+                         style="margin-top:10px;">No regions saved yet.</div>
+                    <div x-show="editForm.motion_masks && editForm.motion_masks.length > 0"
+                         style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+                        <template x-for="mask in (editForm.motion_masks || [])" :key="mask.id">
+                            <div class="card"
+                                 :style="maskEditor.selectedMaskId === mask.id ? 'border-color:#2563eb; box-shadow:0 0 0 1px rgba(37,99,235,0.16);' : ''"
+                                 @click="maskSelect(mask.id)">
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                                    <input type="text" class="form-input" x-model="mask.name" maxlength="64"
+                                           placeholder="Mask name">
+                                    <button class="btn btn--danger btn--small" type="button"
+                                            @click.stop="maskDelete(mask.id)">Delete</button>
+                                </div>
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-top:10px;">
+                                    <div class="form-group" style="margin:0;">
+                                        <label>Type</label>
+                                        <select class="form-input" x-model="mask.type">
+                                            <option value="motion_mask">Motion mask</option>
+                                            <option value="privacy_zone">Privacy zone</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="margin:0;">
+                                        <label>Redaction type</label>
+                                        <select class="form-input"
+                                                x-model="mask.redaction_type"
+                                                :disabled="mask.type !== 'privacy_zone'">
+                                            <option value="black_box">Black box</option>
+                                            <option value="blur">Blur</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="margin:0;">
+                                        <label style="display:flex;align-items:center;gap:8px;margin-top:26px;">
+                                            <input type="checkbox" x-model="mask.enabled">
+                                            <span>Enabled</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="text-small text-muted" style="margin-top:8px;" x-text="maskRegionSummary(mask)"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
                 <!-- Image Quality panel (#182). Capability-driven: rows
                      render only for controls the camera reported in
                      ``image_controls``. Empty for cameras still on pre-#182
@@ -604,7 +750,17 @@ function dashboardPage() {
         pairingCameraId: '',
         scanning: false,
         editCam: null,
-        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, recording_motion_enabled: false, motion_sensitivity: 5, maxFps: 30 },
+        editForm: { resolution: '1920x1080', fps: 25, bitrateMbps: 4, h264_profile: 'high', keyframe_interval: 30, rotation: 0, hflip: false, vflip: false, recording_motion_enabled: false, motion_sensitivity: 5, motion_masks: [], maxFps: 30 },
+        maskEditor: {
+            tool: 'select',
+            nextType: 'motion_mask',
+            snapshotUrl: '',
+            previewError: '',
+            dragStart: null,
+            draftRect: null,
+            draftPolygon: [],
+            selectedMaskId: '',
+        },
         savingStream: false,
         streamSaveMsg: '',
         streamSaveOk: false,
@@ -1158,6 +1314,7 @@ function dashboardPage() {
                 // /data/config default (ADR-0021).
                 motion_sensitivity: (typeof cam.motion_sensitivity === 'number')
                     ? cam.motion_sensitivity : 5,
+                motion_masks: this._cloneMotionMasks(cam.motion_masks || []),
                 // #137 — per-camera mute for the alert-center offline
                 // emission. Backend field offline_alerts_enabled defaults
                 // True (safe-by-default for a security product). A
@@ -1194,7 +1351,210 @@ function dashboardPage() {
                     cam, this._imageQualityRowsFor(cam)
                 ),
             };
+            this._resetMaskEditor();
+            this.refreshMaskPreview();
             this.streamSaveMsg = '';
+        },
+
+        _resetMaskEditor() {
+            this.maskEditor = {
+                tool: 'select',
+                nextType: 'motion_mask',
+                snapshotUrl: '',
+                previewError: '',
+                dragStart: null,
+                draftRect: null,
+                draftPolygon: [],
+                selectedMaskId: '',
+            };
+        },
+
+        _cloneMotionMasks(masks) {
+            return JSON.parse(JSON.stringify(Array.isArray(masks) ? masks : []));
+        },
+
+        _motionMasksForSave() {
+            var masks = this._cloneMotionMasks(this.editForm.motion_masks || []);
+            return masks.map(function(mask, index) {
+                var type = mask.type === 'privacy_zone' ? 'privacy_zone' : 'motion_mask';
+                return {
+                    id: String(mask.id || ('mask-' + (index + 1))),
+                    name: String((mask.name || '').trim() || (
+                        type === 'privacy_zone'
+                            ? ('Privacy zone ' + (index + 1))
+                            : ('Motion mask ' + (index + 1))
+                    )),
+                    type: type,
+                    enabled: mask.enabled !== false,
+                    redaction_type: type === 'privacy_zone'
+                        ? (mask.redaction_type || 'black_box')
+                        : null,
+                    regions: Array.isArray(mask.regions) ? mask.regions : [],
+                };
+            });
+        },
+
+        refreshMaskPreview() {
+            if (!this.editCam) return;
+            this.maskEditor.previewError = '';
+            this.maskEditor.snapshotUrl =
+                '/api/v1/live/' + encodeURIComponent(this.editCam.id)
+                + '/snapshot?ts=' + Date.now();
+        },
+
+        maskSvgPoints(points) {
+            return (points || []).map(function(point) {
+                return point.x + ',' + point.y;
+            }).join(' ');
+        },
+
+        maskStroke(mask) {
+            return mask.type === 'privacy_zone' ? '#d73a49' : '#f2b01e';
+        },
+
+        maskFill(mask) {
+            return mask.type === 'privacy_zone'
+                ? 'rgba(215, 58, 73, 0.18)'
+                : 'rgba(242, 176, 30, 0.14)';
+        },
+
+        maskRegionSummary(mask) {
+            var regions = Array.isArray(mask.regions) ? mask.regions : [];
+            if (regions.length === 0) return 'No regions';
+            if (regions.length === 1) {
+                return regions[0].shape === 'polygon' ? 'Polygon region' : 'Rectangle region';
+            }
+            return regions.length + ' regions';
+        },
+
+        maskSelect(maskId) {
+            this.maskEditor.selectedMaskId = maskId;
+        },
+
+        maskDelete(maskId) {
+            this.editForm.motion_masks = (this.editForm.motion_masks || []).filter(
+                function(mask) { return mask.id !== maskId; }
+            );
+            if (this.maskEditor.selectedMaskId === maskId) {
+                this.maskEditor.selectedMaskId = '';
+            }
+        },
+
+        beginRectMask() {
+            this.maskEditor.tool = 'rect';
+            this.maskEditor.dragStart = null;
+            this.maskEditor.draftRect = null;
+            this.maskEditor.draftPolygon = [];
+        },
+
+        beginPolygonMask() {
+            this.maskEditor.tool = 'polygon';
+            this.maskEditor.dragStart = null;
+            this.maskEditor.draftRect = null;
+            this.maskEditor.draftPolygon = [];
+        },
+
+        cancelMaskDraft() {
+            this.maskEditor.tool = 'select';
+            this.maskEditor.dragStart = null;
+            this.maskEditor.draftRect = null;
+            this.maskEditor.draftPolygon = [];
+        },
+
+        finishPolygonMask() {
+            if ((this.maskEditor.draftPolygon || []).length < 3) return;
+            this._appendMotionMask({
+                shape: 'polygon',
+                coordinates: { points: this._cloneMotionMasks(this.maskEditor.draftPolygon) },
+            });
+            this.maskEditor.draftPolygon = [];
+            this.maskEditor.tool = 'select';
+        },
+
+        maskStagePointerDown(event) {
+            if (this.maskEditor.tool !== 'rect') return;
+            var point = this._maskPointFromEvent(event);
+            this.maskEditor.dragStart = point;
+            this.maskEditor.draftRect = {
+                x: point.x,
+                y: point.y,
+                width: 0,
+                height: 0,
+            };
+        },
+
+        maskStagePointerMove(event) {
+            if (this.maskEditor.tool !== 'rect' || !this.maskEditor.dragStart) return;
+            var start = this.maskEditor.dragStart;
+            var point = this._maskPointFromEvent(event);
+            this.maskEditor.draftRect = {
+                x: Math.min(start.x, point.x),
+                y: Math.min(start.y, point.y),
+                width: Math.abs(point.x - start.x),
+                height: Math.abs(point.y - start.y),
+            };
+        },
+
+        maskStagePointerUp(event) {
+            if (this.maskEditor.tool !== 'rect' || !this.maskEditor.dragStart) return;
+            this.maskStagePointerMove(event);
+            var rect = this.maskEditor.draftRect;
+            this.maskEditor.dragStart = null;
+            this.maskEditor.draftRect = null;
+            if (!rect || rect.width < 0.5 || rect.height < 0.5) return;
+            this._appendMotionMask({
+                shape: 'rectangle',
+                coordinates: rect,
+            });
+            this.maskEditor.tool = 'select';
+        },
+
+        maskStageClick(event) {
+            if (this.maskEditor.tool !== 'polygon') return;
+            var point = this._maskPointFromEvent(event);
+            this.maskEditor.draftPolygon = (this.maskEditor.draftPolygon || []).concat([
+                point,
+            ]);
+        },
+
+        maskStageDoubleClick(event) {
+            if (this.maskEditor.tool !== 'polygon') return;
+            event.preventDefault();
+            this.finishPolygonMask();
+        },
+
+        _appendMotionMask(region) {
+            var masks = this.editForm.motion_masks || [];
+            var type = this.maskEditor.nextType === 'privacy_zone'
+                ? 'privacy_zone'
+                : 'motion_mask';
+            var newMask = {
+                id: this._newMaskId(),
+                name: type === 'privacy_zone'
+                    ? ('Privacy zone ' + (masks.length + 1))
+                    : ('Motion mask ' + (masks.length + 1)),
+                type: type,
+                enabled: true,
+                redaction_type: type === 'privacy_zone' ? 'black_box' : null,
+                regions: [region],
+            };
+            this.editForm.motion_masks = masks.concat([newMask]);
+            this.maskEditor.selectedMaskId = newMask.id;
+        },
+
+        _newMaskId() {
+            return 'mask-' + Math.random().toString(36).slice(2, 10)
+                + Date.now().toString(36).slice(-4);
+        },
+
+        _maskPointFromEvent(event) {
+            var rect = event.currentTarget.getBoundingClientRect();
+            var x = ((event.clientX - rect.left) / rect.width) * 100;
+            var y = ((event.clientY - rect.top) / rect.height) * 100;
+            return {
+                x: Math.max(0, Math.min(100, Math.round(x * 1000) / 1000)),
+                y: Math.max(0, Math.min(100, Math.round(y * 1000) / 1000)),
+            };
         },
 
         motionSensitivityLabel(v) {
@@ -1255,6 +1615,7 @@ function dashboardPage() {
                 recording_motion_enabled: Boolean(this.editForm.recording_motion_enabled),
                 motion_sensitivity: Math.max(1, Math.min(10,
                     parseInt(this.editForm.motion_sensitivity) || 5)),
+                motion_masks: this._motionMasksForSave(),
                 // #137 — round-trip the per-camera offline-alert mute.
                 offline_alerts_enabled: Boolean(this.editForm.offline_alerts_enabled),
                 // #182 — only customised image-quality keys travel

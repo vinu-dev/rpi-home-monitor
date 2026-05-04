@@ -30,6 +30,7 @@ import os
 import tempfile
 import time
 
+from camera_streamer.motion_masks import validate_motion_masks
 from camera_streamer.sensor_info import (
     KNOWN_SENSOR_MODES,
     SensorCapabilities,
@@ -70,6 +71,8 @@ PARAM_SCHEMA: dict[str, dict] = {
     # catalogue. Stored in camera.conf as a JSON string under
     # IMAGE_QUALITY. Empty dict clears all overrides.
     "image_quality": {"type": dict},
+    # #241 per-camera motion masks / privacy-zone definitions.
+    "motion_masks": {"type": list},
 }
 
 # Highest framerate the schema will accept regardless of resolution.
@@ -283,6 +286,7 @@ class ControlHandler:
                 "vflip": {"type": "bool"},
                 "motion_sensitivity": {"type": "int", "min": 1, "max": 10},
                 "motion_detection": {"type": "bool"},
+                "motion_masks": {"type": "list"},
             },
         }
 
@@ -301,6 +305,7 @@ class ControlHandler:
             "motion_sensitivity": self._config.motion_sensitivity,
             "motion_detection": self._config.motion_detection,
             "image_quality": self._config.image_quality,
+            "motion_masks": self._config.motion_masks,
         }
 
     def set_config(self, params, request_id=0, origin="server"):
@@ -464,6 +469,10 @@ class ControlHandler:
             # the PUT than silently store garbage.
             if key == "image_quality":
                 err = self._validate_image_quality(value)
+                if err:
+                    return err
+            if key == "motion_masks":
+                err = validate_motion_masks(value)
                 if err:
                     return err
 

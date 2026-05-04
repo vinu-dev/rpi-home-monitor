@@ -57,6 +57,11 @@ DEFAULTS = {
     # existing control channel; applied by ``picam_backend`` after
     # ``start_recording`` via ``Picamera2.set_controls``.
     "IMAGE_QUALITY": "{}",
+    # #241 motion mask / privacy-zone definitions. JSON-encoded list of
+    # mask dicts. The camera runtime consumes this to exclude masked
+    # regions from motion detection; visual redaction is handled by a
+    # separate pipeline.
+    "MOTION_MASKS": "[]",
 }
 
 
@@ -156,6 +161,22 @@ class ConfigManager:
         if not isinstance(data, dict):
             log.warning("IMAGE_QUALITY is not a JSON object (%r) — ignoring", data)
             return {}
+        return data
+
+    @property
+    def motion_masks(self) -> list[dict]:
+        """Validated-on-write motion mask payload, decoded from JSON."""
+        import json
+
+        raw = self._values.get("MOTION_MASKS", "[]")
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            log.warning("MOTION_MASKS is not valid JSON (%r) — ignoring", raw)
+            return []
+        if not isinstance(data, list):
+            log.warning("MOTION_MASKS is not a JSON list (%r) — ignoring", data)
+            return []
         return data
 
     @property

@@ -42,6 +42,7 @@ def _make_camera(**overrides):
         "recording_motion_enabled": False,
         "desired_stream_state": "stopped",
         "motion_sensitivity": 5,
+        "motion_masks": [],
         "image_controls": {},
         "image_quality": {},
         # #136 offline alerts
@@ -474,6 +475,206 @@ class TestUpdate:
         svc.update("cam-001", {"name": "New Name"})
         streaming.start_camera.assert_not_called()
         streaming.stop_camera.assert_not_called()
+
+    def test_updates_motion_masks(self):
+        cam = _make_camera(status="online", ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        control = MagicMock()
+        control.set_config.return_value = ({"status": "ok"}, "")
+        svc = CameraService(store, control_client=control)
+        error, status = svc.update(
+            "cam-001",
+            {
+                "motion_masks": [
+                    {
+                        "id": "mask-1",
+                        "type": "motion_mask",
+                        "name": "Driveway tree",
+                        "enabled": True,
+                        "redaction_type": None,
+                        "regions": [
+                            {
+                                "shape": "rectangle",
+                                "coordinates": {
+                                    "x": 10,
+                                    "y": 10,
+                                    "width": 20,
+                                    "height": 30,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        assert status == 200, error
+        assert cam.motion_masks[0]["id"] == "mask-1"
+        pushed = control.set_config.call_args[0][1]
+        assert pushed["motion_masks"][0]["name"] == "Driveway tree"
+
+    def test_rejects_invalid_motion_masks(self):
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update(
+            "cam-001",
+            {
+                "motion_masks": [
+                    {
+                        "id": "mask-1",
+                        "type": "motion_mask",
+                        "name": "Bad rectangle",
+                        "enabled": True,
+                        "redaction_type": None,
+                        "regions": [
+                            {
+                                "shape": "rectangle",
+                                "coordinates": {
+                                    "x": 95,
+                                    "y": 5,
+                                    "width": 10,
+                                    "height": 10,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        assert status == 400
+        assert "motion_masks" in error
+
+
+class TestMotionMaskCrud:
+    def test_get_motion_masks_returns_existing_masks(self):
+        cam = _make_camera(
+            motion_masks=[
+                {
+                    "id": "mask-1",
+                    "type": "motion_mask",
+                    "name": "Porch light",
+                    "enabled": True,
+                    "redaction_type": None,
+                    "regions": [
+                        {
+                            "shape": "rectangle",
+                            "coordinates": {
+                                "x": 5,
+                                "y": 5,
+                                "width": 10,
+                                "height": 10,
+                            },
+                        }
+                    ],
+                }
+            ]
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        masks, error, status = svc.get_motion_masks("cam-001")
+        assert status == 200
+        assert error == ""
+        assert masks[0]["id"] == "mask-1"
+
+    def test_add_motion_mask_generates_id_and_persists(self):
+        cam = _make_camera(status="online")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        created, error, status = svc.add_motion_mask(
+            "cam-001",
+            {
+                "type": "motion_mask",
+                "name": "Patio fan",
+                "enabled": True,
+                "redaction_type": None,
+                "regions": [
+                    {
+                        "shape": "rectangle",
+                        "coordinates": {
+                            "x": 20,
+                            "y": 20,
+                            "width": 20,
+                            "height": 20,
+                        },
+                    }
+                ],
+            },
+        )
+        assert status == 201, error
+        assert created["id"].startswith("mask-")
+        assert cam.motion_masks[0]["name"] == "Patio fan"
+
+    def test_patch_motion_mask_updates_existing_entry(self):
+        cam = _make_camera(
+            status="online",
+            motion_masks=[
+                {
+                    "id": "mask-1",
+                    "type": "motion_mask",
+                    "name": "Original",
+                    "enabled": True,
+                    "redaction_type": None,
+                    "regions": [
+                        {
+                            "shape": "rectangle",
+                            "coordinates": {
+                                "x": 10,
+                                "y": 10,
+                                "width": 20,
+                                "height": 20,
+                            },
+                        }
+                    ],
+                }
+            ],
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        updated, error, status = svc.patch_motion_mask(
+            "cam-001",
+            "mask-1",
+            {"name": "Updated", "enabled": False},
+        )
+        assert status == 200, error
+        assert updated["name"] == "Updated"
+        assert cam.motion_masks[0]["enabled"] is False
+
+    def test_remove_motion_mask_deletes_entry(self):
+        cam = _make_camera(
+            status="online",
+            motion_masks=[
+                {
+                    "id": "mask-1",
+                    "type": "motion_mask",
+                    "name": "Original",
+                    "enabled": True,
+                    "redaction_type": None,
+                    "regions": [
+                        {
+                            "shape": "rectangle",
+                            "coordinates": {
+                                "x": 10,
+                                "y": 10,
+                                "width": 20,
+                                "height": 20,
+                            },
+                        }
+                    ],
+                }
+            ],
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.remove_motion_mask("cam-001", "mask-1")
+        assert status == 200
+        assert error == ""
+        assert cam.motion_masks == []
 
 
 class TestDelete:

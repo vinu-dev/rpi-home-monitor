@@ -39,6 +39,7 @@ from collections.abc import Callable
 import numpy as np
 
 from camera_streamer.motion import MotionConfig, MotionDetector
+from camera_streamer.motion_masks import apply_motion_mask, build_motion_exclusion_mask
 
 log = logging.getLogger("camera-streamer.motion_runner")
 
@@ -263,6 +264,7 @@ class MotionRunner:
         self._passive_lock = threading.Lock()
         self._warmup_seconds = warmup_seconds
         self._warmup_until: float = 0.0
+        self._motion_exclusion_mask = self._build_motion_exclusion_mask()
 
     def start(self) -> bool:
         if self._thread and self._thread.is_alive():
@@ -306,7 +308,9 @@ class MotionRunner:
         if time.monotonic() < self._warmup_until:
             return
         with self._passive_lock:
-            self._detector.process_frame(y_plane)
+            self._detector.process_frame(
+                apply_motion_mask(y_plane, self._motion_exclusion_mask)
+            )
             transition = self._detector.poll_event()
             if transition is not None:
                 self._emit_transition(transition)
@@ -335,7 +339,9 @@ class MotionRunner:
                 continue
             if time.monotonic() < self._warmup_until:
                 continue
-            self._detector.process_frame(frame)
+            self._detector.process_frame(
+                apply_motion_mask(frame, self._motion_exclusion_mask)
+            )
             transition = self._detector.poll_event()
             if transition is not None:
                 self._emit_transition(transition)
@@ -383,6 +389,15 @@ class MotionRunner:
             duration_seconds=evt.duration_seconds,
             started_at_epoch=evt.started_at,
         )
+
+    def _build_motion_exclusion_mask(self) -> np.ndarray | None:
+        """Build the cached exclusion bitmap from config.motion_masks."""
+        raw_masks = getattr(self._config, "motion_masks", []) or []
+        try:
+            return build_motion_exclusion_mask(raw_masks, (LORES_HEIGHT, LORES_WIDTH))
+        except ValueError as exc:
+            log.warning("Invalid motion_masks config — ignoring: %s", exc)
+            return None
 
     def _new_event_id(self, started_at_epoch: float) -> str:
         ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(started_at_epoch))

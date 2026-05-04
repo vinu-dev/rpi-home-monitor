@@ -185,6 +185,9 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # camera-level baseline; per-user overrides live separately
     # in user.notification_prefs.cameras{}.
     "notification_rule",
+    # #241 motion-mask and privacy-zone definitions are surfaced to
+    # admins so the camera settings modal can load and edit them.
+    "motion_masks",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)
@@ -193,6 +196,7 @@ CAMERA_LIST_FIELDS_VIEWER = CAMERA_LIST_FIELDS_ADMIN - {
     "cpu_temp",
     "memory_percent",
     "uptime_seconds",
+    "motion_masks",
 }
 
 # Backwards-compat alias (most tests use admin login)

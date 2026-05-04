@@ -7,6 +7,10 @@ Endpoints:
   POST   /cameras              - register a new camera as pending (admin)
   POST   /cameras/<id>/confirm - confirm a discovered camera (admin)
   PUT    /cameras/<id>         - update name, location, recording mode (admin)
+  GET    /cameras/<id>/motion-masks - list motion masks (admin)
+  POST   /cameras/<id>/motion-masks - create motion mask (admin)
+  PATCH  /cameras/<id>/motion-masks/<mask_id> - update motion mask (admin)
+  DELETE /cameras/<id>/motion-masks/<mask_id> - delete motion mask (admin)
   DELETE /cameras/<id>         - remove camera and revoke cert (admin)
   GET    /cameras/<id>/status  - live status (online, fps, uptime)
   POST   /cameras/scan         - trigger mDNS scan + return camera list (admin)
@@ -521,6 +525,71 @@ def update_camera(camera_id):
     if error:
         return jsonify({"error": error}), status
     return jsonify({"message": "Camera updated"}), 200
+
+
+@cameras_bp.route("/<camera_id>/motion-masks", methods=["GET"])
+@admin_required
+def list_motion_masks(camera_id):
+    """List persisted motion masks for a camera. Admin only."""
+    result, error, status = current_app.camera_service.get_motion_masks(camera_id)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), 200
+
+
+@cameras_bp.route("/<camera_id>/motion-masks", methods=["POST"])
+@admin_required
+@csrf_protect
+def add_motion_mask(camera_id):
+    """Create a motion mask / privacy zone. Admin only."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+    result, error, status = current_app.camera_service.add_motion_mask(
+        camera_id,
+        data,
+        user=session.get("username", ""),
+        ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
+
+
+@cameras_bp.route("/<camera_id>/motion-masks/<mask_id>", methods=["PATCH"])
+@admin_required
+@csrf_protect
+def patch_motion_mask(camera_id, mask_id):
+    """Patch a persisted motion mask. Admin only."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+    result, error, status = current_app.camera_service.patch_motion_mask(
+        camera_id,
+        mask_id,
+        data,
+        user=session.get("username", ""),
+        ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), 200
+
+
+@cameras_bp.route("/<camera_id>/motion-masks/<mask_id>", methods=["DELETE"])
+@admin_required
+@csrf_protect
+def delete_motion_mask(camera_id, mask_id):
+    """Delete a persisted motion mask. Admin only."""
+    error, status = current_app.camera_service.remove_motion_mask(
+        camera_id,
+        mask_id,
+        user=session.get("username", ""),
+        ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify({"message": "Motion mask deleted"}), 200
 
 
 @cameras_bp.route("/<camera_id>", methods=["DELETE"])

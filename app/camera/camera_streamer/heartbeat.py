@@ -289,6 +289,7 @@ class HeartbeatSender:
                 "rotation": config.rotation,
                 "hflip": config.hflip,
                 "vflip": config.vflip,
+                "motion_masks": config.motion_masks,
             },
         }
         if capabilities is not None:

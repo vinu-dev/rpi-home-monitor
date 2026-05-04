@@ -159,6 +159,7 @@ class TestPerSensorCapabilities:
             # (renamed from recording_motion_enabled) when the admin
             # toggles motion on from the Camera Settings modal.
             "motion_detection",
+            "motion_masks",
         }
         assert set(params.keys()) == expected
 
@@ -194,6 +195,7 @@ class TestGetConfig:
             "motion_detection",
             # #182 image-quality controls dict.
             "image_quality",
+            "motion_masks",
         }
         assert set(cfg.keys()) == expected
 
@@ -262,6 +264,34 @@ class TestSetConfigValidation:
         result, err, status = control.set_config({})
         assert status == 400
         assert "No parameters" in err
+
+    def test_rejects_invalid_motion_masks(self, control):
+        result, err, status = control.set_config(
+            {
+                "motion_masks": [
+                    {
+                        "id": "mask-1",
+                        "type": "motion_mask",
+                        "name": "Bad",
+                        "enabled": True,
+                        "redaction_type": None,
+                        "regions": [
+                            {
+                                "shape": "rectangle",
+                                "coordinates": {
+                                    "x": 95,
+                                    "y": 10,
+                                    "width": 10,
+                                    "height": 10,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        assert status == 400
+        assert "motion_masks" in err
 
 
 # --- set_config success ---

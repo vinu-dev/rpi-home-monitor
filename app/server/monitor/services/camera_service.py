@@ -11,9 +11,17 @@ Design patterns:
 - Fail-Silent (audit failures don't break operations)
 """
 
+import copy
 import logging
 import re
 from datetime import UTC, datetime
+
+from monitor.services.motion_masks import (
+    create_motion_mask,
+    delete_motion_mask,
+    normalize_motion_masks,
+    update_motion_mask,
+)
 
 log = logging.getLogger("monitor.camera_service")
 
@@ -64,6 +72,10 @@ STREAM_PARAM_FIELDS = (
     # JSON-encoded value via the existing control channel; camera
     # decodes and applies via Picamera2.set_controls.
     "image_quality",
+    # #241 motion mask / privacy-zone definitions. Stored as a JSON-safe
+    # list of dicts and pushed through the control channel so the
+    # camera-side detector can exclude masked regions.
+    "motion_masks",
 )
 STREAM_PARAMS = set(STREAM_PARAM_FIELDS)
 
@@ -80,6 +92,7 @@ STREAM_PARAM_DEFAULTS = {
     "motion_sensitivity": 5,
     "recording_motion_enabled": False,
     "image_quality": {},
+    "motion_masks": [],
 }
 
 
@@ -111,6 +124,8 @@ def _stream_params_from_camera(camera) -> dict:
         value = getattr(camera, key, STREAM_PARAM_DEFAULTS[key])
         if key == "image_quality" and isinstance(value, dict):
             value = dict(value)
+        if key == "motion_masks" and isinstance(value, list):
+            value = copy.deepcopy(value)
         params[key] = value
     return params
 
@@ -397,6 +412,9 @@ class CameraService:
                 cam["cpu_temp"] = c.cpu_temp
                 cam["memory_percent"] = c.memory_percent
                 cam["uptime_seconds"] = c.uptime_seconds
+                cam["motion_masks"] = copy.deepcopy(
+                    getattr(c, "motion_masks", []) or []
+                )
             result.append(cam)
         return result
 
@@ -441,6 +459,97 @@ class CameraService:
             "encoder_max_pixels": int(getattr(camera, "encoder_max_pixels", 0) or 0),
             "board_name": getattr(camera, "board_name", "") or "",
         }, ""
+
+    def get_motion_masks(self, camera_id: str) -> tuple[list[dict] | None, str, int]:
+        """Return the persisted motion masks for one camera."""
+        camera = self._store.get_camera(camera_id)
+        if camera is None:
+            return None, "Camera not found", 404
+        return copy.deepcopy(getattr(camera, "motion_masks", []) or []), "", 200
+
+    def add_motion_mask(
+        self, camera_id: str, raw_mask: dict, user: str = "", ip: str = ""
+    ) -> tuple[dict | None, str, int]:
+        """Append one motion mask / privacy zone to a camera."""
+        camera = self._store.get_camera(camera_id)
+        if camera is None:
+            return None, "Camera not found", 404
+        try:
+            masks, created = create_motion_mask(
+                getattr(camera, "motion_masks", []) or [], raw_mask
+            )
+        except ValueError as exc:
+            return None, str(exc), 400
+
+        camera.motion_masks = masks
+        self._push_camera_masks(camera)
+        self._store.save_camera(camera)
+        self._log_audit(
+            "CAMERA_MASK_CREATED",
+            user,
+            ip,
+            f"created motion mask {created['id']} on {camera_id}",
+        )
+        return created, "", 201
+
+    def patch_motion_mask(
+        self,
+        camera_id: str,
+        mask_id: str,
+        raw_patch: dict,
+        user: str = "",
+        ip: str = "",
+    ) -> tuple[dict | None, str, int]:
+        """Patch one existing mask."""
+        camera = self._store.get_camera(camera_id)
+        if camera is None:
+            return None, "Camera not found", 404
+        try:
+            masks, updated = update_motion_mask(
+                getattr(camera, "motion_masks", []) or [],
+                mask_id,
+                raw_patch,
+            )
+        except KeyError:
+            return None, "Motion mask not found", 404
+        except ValueError as exc:
+            return None, str(exc), 400
+
+        camera.motion_masks = masks
+        self._push_camera_masks(camera)
+        self._store.save_camera(camera)
+        self._log_audit(
+            "CAMERA_MASK_UPDATED",
+            user,
+            ip,
+            f"updated motion mask {mask_id} on {camera_id}",
+        )
+        return updated, "", 200
+
+    def remove_motion_mask(
+        self, camera_id: str, mask_id: str, user: str = "", ip: str = ""
+    ) -> tuple[str, int]:
+        """Delete one existing mask."""
+        camera = self._store.get_camera(camera_id)
+        if camera is None:
+            return "Camera not found", 404
+        try:
+            masks, deleted = delete_motion_mask(
+                getattr(camera, "motion_masks", []) or [], mask_id
+            )
+        except KeyError:
+            return "Motion mask not found", 404
+
+        camera.motion_masks = masks
+        self._push_camera_masks(camera)
+        self._store.save_camera(camera)
+        self._log_audit(
+            "CAMERA_MASK_DELETED",
+            user,
+            ip,
+            f"deleted motion mask {deleted['id']} from {camera_id}",
+        )
+        return "", 200
 
     def confirm(
         self,
@@ -508,6 +617,10 @@ class CameraService:
         error = self._validate_update(data, camera=camera)
         if error:
             return error, 400
+
+        if "motion_masks" in data:
+            data = dict(data)
+            data["motion_masks"] = normalize_motion_masks(data["motion_masks"])
 
         old_recording_mode = camera.recording_mode
 
@@ -805,6 +918,7 @@ class CameraService:
             "hflip",
             "vflip",
             "motion_sensitivity",
+            "motion_masks",
             # #182 image-quality controls dict
             "image_quality",
             # #136 per-camera offline alert toggle
@@ -929,6 +1043,12 @@ class CameraService:
             if not isinstance(ms, int) or ms < 1 or ms > 10:
                 return "motion_sensitivity must be an integer between 1 and 10"
 
+        if "motion_masks" in data:
+            try:
+                normalize_motion_masks(data["motion_masks"])
+            except ValueError as exc:
+                return str(exc)
+
         if "recording_schedule" in data:
             err = _validate_schedule(data["recording_schedule"])
             if err:
@@ -958,6 +1078,24 @@ class CameraService:
             "status": camera.status,
             "paired_at": camera.paired_at,
         }
+
+    def _push_camera_masks(self, camera) -> None:
+        """Best-effort push of motion masks to a live camera."""
+        masks = copy.deepcopy(getattr(camera, "motion_masks", []) or [])
+        if not masks and not camera.ip:
+            return
+        if camera.ip and self._control:
+            result, err = self._control.set_config(camera.ip, {"motion_masks": masks})
+            if err:
+                log.warning(
+                    "Failed to push motion masks to camera %s: %s", camera.id, err
+                )
+                camera.config_sync = "pending"
+            else:
+                _ = result
+                camera.config_sync = "synced"
+        elif not camera.ip:
+            camera.config_sync = "pending"
 
     def _log_audit(self, event, user, ip, detail):
         """Log audit event, swallowing errors."""
