@@ -16,12 +16,16 @@ from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from monitor.logging_config import configure_logging
+from monitor.models import ServerMeta
+from monitor.release_version import release_version
 from monitor.services.alert_center_service import AlertCenterService
 from monitor.services.audit import AuditLogger
 from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_ota_client import CameraOTAClient
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
+from monitor.services.clip_stamp_queue import ClipStampQueue
+from monitor.services.clip_stamper import ClipStamper
 from monitor.services.config_backup_service import ConfigBackupService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
@@ -45,6 +49,7 @@ from monitor.services.streaming_service import StreamingService
 from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
 from monitor.services.time_health_service import TimeHealthService
+from monitor.services.timestamp_backfill_service import TimestampBackfillService
 from monitor.services.totp_service import TotpService
 from monitor.services.user_service import UserService
 from monitor.services.watchdog_notifier import WatchdogNotifier
@@ -249,11 +254,39 @@ def _load_persisted_settings(app, explicit_config_keys=None):
 def _init_services(app):
     """Initialize application services with dependency injection."""
     recordings_dir = app.config["RECORDINGS_DIR"]
+    app.settings_service = SettingsService(store=app.store, audit=app.audit)
+
+    # Settings is initialized before timestamp services consume time status.
+    def _server_meta_provider():
+        settings = app.settings_service.get_settings()
+        return ServerMeta(
+            hostname=settings.get("hostname") or socket.gethostname(),
+            server_version=release_version(),
+        )
+
+    app.clip_stamper = ClipStamper(
+        audit=app.audit,
+        clock_state_provider=app.settings_service.get_time_status,
+    )
+    app.clip_stamp_queue = ClipStampQueue(
+        stamper=app.clip_stamper,
+        audit=app.audit,
+        camera_provider=lambda camera_id: app.store.get_camera(camera_id),
+        server_meta_provider=_server_meta_provider,
+    )
+    app.timestamp_backfill_service = TimestampBackfillService(
+        recordings_dir=recordings_dir,
+        stamper=app.clip_stamper,
+        store=app.store,
+        audit=app.audit,
+        server_meta_provider=_server_meta_provider,
+    )
 
     app.streaming = StreamingService(
         live_dir=app.config["LIVE_DIR"],
         recordings_dir=recordings_dir,
         clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
+        clip_stamp_queue=app.clip_stamp_queue,
     )
 
     # Camera control client — pushes config to cameras via mTLS (ADR-0015)
@@ -327,10 +360,6 @@ def _init_services(app):
     app.discovery_service = DiscoveryService(store=app.store, audit=app.audit)
 
     # Settings service — system config + WiFi management
-    app.settings_service = SettingsService(store=app.store, audit=app.audit)
-    # Re-apply persisted timezone/NTP after every startup so an OTA
-    # rootfs swap (which reverts /etc/timezone + /etc/systemd/timesyncd.conf
-    # to factory defaults) is transparent to the user (ADR-0019).
     try:
         app.settings_service.reapply_persisted_time_settings()
     except Exception as _e:  # pragma: no cover — best-effort
@@ -397,6 +426,8 @@ def _init_services(app):
             app.loop_recorder.set_base_dir(new_dir)
         if getattr(app, "offsite_backup_service", None) is not None:
             app.offsite_backup_service.set_recordings_dir(new_dir)
+        if getattr(app, "timestamp_backfill_service", None) is not None:
+            app.timestamp_backfill_service.set_recordings_dir(new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -656,6 +687,7 @@ def _register_blueprints(app):
     from monitor.api.share import share_api_bp, share_public_bp
     from monitor.api.storage import storage_bp
     from monitor.api.system import system_bp
+    from monitor.api.timestamp_backfill import timestamp_backfill_bp
     from monitor.api.users import users_bp
     from monitor.api.webhooks import webhooks_bp
     from monitor.api.webrtc import webrtc_bp
@@ -671,6 +703,9 @@ def _register_blueprints(app):
     app.register_blueprint(users_totp_bp, url_prefix="/api/v1/users")
     app.register_blueprint(cameras_bp, url_prefix="/api/v1/cameras")
     app.register_blueprint(recordings_bp, url_prefix="/api/v1/recordings")
+    app.register_blueprint(
+        timestamp_backfill_bp, url_prefix="/api/v1/recordings/timestamp-backfill"
+    )
     app.register_blueprint(share_api_bp, url_prefix="/api/v1/share")
     app.register_blueprint(live_bp, url_prefix="/api/v1/live")
     app.register_blueprint(system_bp, url_prefix="/api/v1/system")

@@ -93,10 +93,17 @@ class StreamingService:
         clip_duration: recorder segment length (seconds).
     """
 
-    def __init__(self, live_dir, recordings_dir, clip_duration=CLIP_DURATION):
+    def __init__(
+        self,
+        live_dir,
+        recordings_dir,
+        clip_duration=CLIP_DURATION,
+        clip_stamp_queue=None,
+    ):
         self._live_dir = Path(live_dir)
         self._recordings_dir = Path(recordings_dir)
         self._clip_duration = clip_duration
+        self._clip_stamp_queue = clip_stamp_queue
         self._snap_procs: dict = {}  # cam_id -> Popen (long-lived snapshot ffmpeg)
         self._rec_procs: dict = {}  # cam_id -> Popen (recorder — owned here)
         self._snap_intent: dict = {}  # cam_id -> "wanted" | "stopped"
@@ -162,6 +169,8 @@ class StreamingService:
             self.stop_snapshot(cam_id)
         for cam_id in rec_ids:
             self.stop_recorder(cam_id)
+        if self._clip_stamp_queue is not None:
+            self._clip_stamp_queue.shutdown()
         log.info("Streaming service stopped")
 
     # --- Per-camera convenience wrappers ----------------------------------
@@ -362,11 +371,26 @@ class StreamingService:
 
         def _loop():
             last_offset = 0
+            seen_names: set[str] = set()
+
+            def _enqueue_new_segments():
+                nonlocal seen_names
+                current_names = completed_segment_names(segments_log)
+                new_names = sorted(current_names.difference(seen_names))
+                seen_names = current_names
+                if self._clip_stamp_queue is None:
+                    return
+                for name in new_names:
+                    clip_path = cam_rec_dir / name
+                    if clip_path.exists():
+                        self._clip_stamp_queue.enqueue(cam_id, clip_path)
+
             while self._running:
                 try:
                     last_offset = finalize_completed_segments(
                         cam_rec_dir, segments_log, last_offset
                     )
+                    _enqueue_new_segments()
                 except Exception as exc:  # pragma: no cover — defensive
                     log.warning("Finalizer error for %s: %s", cam_id, exc)
                 # Exit cleanly when the recorder has been stopped.
@@ -379,6 +403,7 @@ class StreamingService:
                                 finalize_completed_segments(
                                     cam_rec_dir, segments_log, last_offset
                                 )
+                                _enqueue_new_segments()
                             except Exception:  # pragma: no cover
                                 pass
                             return

@@ -85,8 +85,11 @@ class TestBlueprintRegistration:
     def test_setup_blueprint_registered(self, app):
         assert "provisioning" in app.blueprints
 
+    def test_timestamp_backfill_blueprint_registered(self, app):
+        assert "timestamp_backfill" in app.blueprints
+
     def test_all_blueprints_count(self, app):
-        """We expect exactly 26 blueprints.
+        """We expect exactly 27 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -99,8 +102,9 @@ class TestBlueprintRegistration:
           24 after #244 added admin + public share-link blueprints.
           25 after #246 added active-session enumeration + revoke APIs.
           26 after #249 added the watchdog `healthz` blueprint.
+          27 after #251 added timestamp-backfill controls.
         """
-        assert len(app.blueprints) == 26
+        assert len(app.blueprints) == 27
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints

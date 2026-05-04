@@ -327,6 +327,15 @@ class MotionEvent:
 
 
 @dataclass
+class ServerMeta:
+    """Server identity stamped into exported clips."""
+
+    hostname: str = "home-monitor"
+    server_version: str = ""
+    git_sha: str = ""
+
+
+@dataclass
 class Clip:
     """Represents a single recorded video clip."""
 
@@ -337,6 +346,7 @@ class Clip:
     duration_seconds: int = 180
     size_bytes: int = 0
     thumbnail: str = ""  # HH-MM-SS.thumb.jpg
+    stamped: bool = False
 
     @property
     def started_at(self) -> str:
