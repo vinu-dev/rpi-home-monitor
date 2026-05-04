@@ -1,4 +1,4 @@
-# REQ: SWR-012, SWR-037; RISK: RISK-001, RISK-022; TEST: TC-005, TC-035
+# REQ: SWR-012, SWR-037, SWR-062; RISK: RISK-001, RISK-008, RISK-022; TEST: TC-005, TC-035, TC-047
 """
 Camera streamer entry point.
 
@@ -18,6 +18,7 @@ log = logging.getLogger("camera-streamer")
 
 # Global shutdown flag
 _shutdown = False
+_watchdog_notifier = None
 
 # Graceful-shutdown budget. If lifecycle.shutdown() does not return within
 # this many seconds of receiving SIGTERM, we force the process to exit so
@@ -47,6 +48,8 @@ def _handle_signal(signum, frame):
         _SHUTDOWN_WATCHDOG_SECONDS,
     )
     _shutdown = True
+    if _watchdog_notifier is not None:
+        _watchdog_notifier.stop(stopping=True)
 
     def _force_exit():
         log.warning(
@@ -86,17 +89,26 @@ def main():
 
     # Run lifecycle state machine
     from camera_streamer.lifecycle import CameraLifecycle
+    from camera_streamer.watchdog_notifier import WatchdogNotifier
+
+    global _watchdog_notifier
+    _watchdog_notifier = WatchdogNotifier()
+    _watchdog_notifier.start()
 
     lifecycle = CameraLifecycle(
         config=config,
         platform=platform,
         shutdown_event=lambda: _shutdown,
+        notifier=_watchdog_notifier,
     )
 
     try:
         lifecycle.run()
     except KeyboardInterrupt:
         lifecycle.shutdown()
+    finally:
+        if _watchdog_notifier is not None:
+            _watchdog_notifier.stop(stopping=False)
 
 
 if __name__ == "__main__":

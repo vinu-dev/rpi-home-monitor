@@ -31,6 +31,7 @@ Invariants under test:
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -40,16 +41,19 @@ import pytest
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2] / "config" / "ensure-camera-overlay.sh"
 )
+SHELL_PATH = shutil.which("sh") or shutil.which("bash")
 
 
 def _run(
     config_path: Path, override_path: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Invoke the script in self-test mode against the given fixture."""
+    if SHELL_PATH is None:
+        pytest.skip("POSIX shell not available on this host")
     env = os.environ.copy()
     env["HM_OVERRIDE_FILE"] = str(override_path) if override_path else "/dev/null"
     return subprocess.run(
-        ["sh", str(SCRIPT_PATH), "--self-test", str(config_path)],
+        [SHELL_PATH, str(SCRIPT_PATH), "--self-test", str(config_path)],
         check=True,
         env=env,
         capture_output=True,

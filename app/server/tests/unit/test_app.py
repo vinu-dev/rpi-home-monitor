@@ -79,11 +79,14 @@ class TestBlueprintRegistration:
     def test_views_blueprint_registered(self, app):
         assert "views" in app.blueprints
 
+    def test_healthz_blueprint_registered(self, app):
+        assert "healthz" in app.blueprints
+
     def test_setup_blueprint_registered(self, app):
         assert "provisioning" in app.blueprints
 
     def test_all_blueprints_count(self, app):
-        """We expect exactly 25 blueprints.
+        """We expect exactly 26 blueprints.
 
         Count history:
           14 after ADR-0017 added `on_demand`.
@@ -95,8 +98,9 @@ class TestBlueprintRegistration:
           22 after #238 added TOTP 2FA (auth_totp + users_totp blueprints).
           24 after #244 added admin + public share-link blueprints.
           25 after #246 added active-session enumeration + revoke APIs.
+          26 after #249 added the watchdog `healthz` blueprint.
         """
-        assert len(app.blueprints) == 25
+        assert len(app.blueprints) == 26
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints

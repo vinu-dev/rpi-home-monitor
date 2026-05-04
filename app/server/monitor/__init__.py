@@ -1,4 +1,4 @@
-# REQ: SWR-001, SWR-045, SWR-056, SWR-057; RISK: RISK-002, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-012, SC-020, SC-021; TEST: TC-004, TC-042, TC-048, TC-049
+# REQ: SWR-001, SWR-045, SWR-056, SWR-057, SWR-063, SWR-064; RISK: RISK-001, RISK-002, RISK-017, RISK-018, RISK-020, RISK-021; SEC: SC-001, SC-012, SC-019, SC-020, SC-021; TEST: TC-004, TC-005, TC-042, TC-044, TC-047, TC-048, TC-049
 """
 RPi Home Monitor - Server Application
 
@@ -6,6 +6,7 @@ Flask-based web server that manages RTSP camera streams,
 records video clips, and provides a mobile-friendly web dashboard.
 """
 
+import atexit
 import logging
 import os
 import socket
@@ -45,6 +46,7 @@ from monitor.services.system_summary_service import SystemSummaryService
 from monitor.services.tailscale_service import TailscaleService
 from monitor.services.totp_service import TotpService
 from monitor.services.user_service import UserService
+from monitor.services.watchdog_notifier import WatchdogNotifier
 from monitor.services.webhook_delivery_service import WebhookDeliveryService
 from monitor.store import Store
 
@@ -141,6 +143,7 @@ def create_app(config=None):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
         SESSION_COOKIE_SECURE=True,
+        WATCHDOG_PROBE_URL="http://127.0.0.1:5000/healthz",
     )
     if config:
         app.config.update(config)
@@ -424,6 +427,7 @@ def _init_services(app):
         recordings_service=app.recordings_service,
         health_module=_health_module,
     )
+    app.watchdog_notifier = WatchdogNotifier(probe_url=app.config["WATCHDOG_PROBE_URL"])
 
 
 def _restore_hostname(data_dir: str):
@@ -479,6 +483,8 @@ def _startup(app):
     app.recording_scheduler.start()
     app.loop_recorder.start()
     app.offsite_backup_service.start()
+    app.watchdog_notifier.start()
+    atexit.register(app.watchdog_notifier.stop)
 
     # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
     app.discovery_service.start_mdns_browser()
@@ -631,6 +637,7 @@ def _register_blueprints(app):
     from monitor.api.audit import audit_bp
     from monitor.api.auth_totp import auth_totp_bp, users_totp_bp
     from monitor.api.cameras import cameras_bp
+    from monitor.api.healthz import healthz_bp
     from monitor.api.live import live_bp
     from monitor.api.motion_events import events_router_bp, motion_events_bp
     from monitor.api.notifications import notifications_bp
@@ -651,6 +658,7 @@ def _register_blueprints(app):
     from monitor.views import views_bp
 
     app.register_blueprint(views_bp)
+    app.register_blueprint(healthz_bp)
     app.register_blueprint(setup_bp, url_prefix="/api/v1/setup")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
     app.register_blueprint(auth_totp_bp, url_prefix="/api/v1/auth/totp")

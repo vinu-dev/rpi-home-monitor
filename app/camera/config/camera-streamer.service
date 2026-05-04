@@ -1,4 +1,4 @@
-# REQ: SWR-006, SWR-012, SWR-050; RISK: RISK-001, RISK-018; SEC: SC-019; TEST: TC-001, TC-005, TC-044
+# REQ: SWR-006, SWR-012, SWR-050, SWR-062; RISK: RISK-001, RISK-008, RISK-018; SEC: SC-019; TEST: TC-001, TC-005, TC-044, TC-047
 [Unit]
 Description=Camera RTSP Streamer
 # camera-hotspot.service (oneshot) completes in ~6s and signals either:
@@ -10,7 +10,8 @@ After=avahi-daemon.service local-fs.target NetworkManager.service camera-hotspot
 Wants=NetworkManager.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=camera
 Group=camera
 WorkingDirectory=/opt/camera
@@ -19,6 +20,9 @@ ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds
 ExecStart=/usr/bin/python3 -m camera_streamer.main
 Restart=always
 RestartSec=5
+WatchdogSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
 Environment=PYTHONPATH=/opt/camera
 Environment=CAMERA_DATA_DIR=/data
 Environment=CAMERA_CONFIG_DIR=/data/config
