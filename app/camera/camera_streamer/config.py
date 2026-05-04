@@ -340,7 +340,10 @@ class ConfigManager:
         if os.environ.get("CAMERA_SKIP_MOUNT_CHECK") == "1":
             return True
         try:
-            return os.stat(self._data_dir).st_dev != os.stat("/").st_dev
+            data_dir = os.path.abspath(self._data_dir)
+            if not os.path.ismount(data_dir):
+                return False
+            return os.stat(data_dir).st_dev != os.stat("/").st_dev
         except OSError:
             return False
 

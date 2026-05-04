@@ -2,6 +2,7 @@
 """Tests for camera_streamer.config module."""
 
 import os
+from types import SimpleNamespace
 from unittest.mock import mock_open, patch
 
 from camera_streamer.config import ConfigManager, _get_hardware_serial
@@ -165,6 +166,21 @@ class TestConfigManager:
         monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
         mgr = ConfigManager(data_dir=str(data_dir))
         assert mgr._is_data_persisted() is False
+
+    def test_is_data_persisted_accepts_distinct_mountpoint(self, data_dir, monkeypatch):
+        """A real mountpoint on a different device counts as persisted /data."""
+        monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+        mgr = ConfigManager(data_dir=str(data_dir))
+
+        def fake_stat(path):
+            if os.path.abspath(path) == os.path.abspath(str(data_dir)):
+                return SimpleNamespace(st_dev=2)
+            return SimpleNamespace(st_dev=1)
+
+        monkeypatch.setattr("camera_streamer.config.os.path.ismount", lambda path: True)
+        monkeypatch.setattr("camera_streamer.config.os.stat", fake_stat)
+
+        assert mgr._is_data_persisted() is True
 
 
 class TestMTLSConfig:
