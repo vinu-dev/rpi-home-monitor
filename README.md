@@ -15,7 +15,7 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 ## Why RPi Home Monitor?
 
 - **Your data stays home.** Video never leaves your network. No cloud uploads, no third-party access, no monthly fees.
-- **Security by design.** HTTPS for web, mTLS camera streaming, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with rate limiting, PIN-based camera pairing.
+- **Security by design.** HTTPS for web, mTLS camera streaming, encrypted storage (LUKS), firewall-hardened OS, bcrypt auth with TOTP 2FA and rate limiting, PIN-based camera pairing.
 - **Built on real hardware.** Runs on a $35 Raspberry Pi 4B (server) and $15 Zero 2W (cameras). No proprietary hardware required.
 - **Automatic camera discovery.** Plug in a camera node, connect it to WiFi, and it appears in your dashboard via mDNS.
 - **OTA with rollback, validated end-to-end.** A/B SWUpdate with bootlimit rollback, signed bundles, dual-transport (admin GUI and server-pushed), and a camera-side privilege-separated installer. All three install paths have been exercised on real Pi 4B + Pi Zero 2W hardware.
@@ -77,7 +77,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Recording | Continuous 3-minute MP4 clips, organized by camera/date. Four modes: off / continuous / schedule / motion-only |
 | Motion Detection | On-camera two-frame differencing at 5 fps on the Picamera2 lores stream. HMAC-signed events posted to the server, listed on the dashboard with wall-clock time, and click-through seeks into the recording at the motion timestamp. Motion-only recording mode records just the event windows + 10 s post-roll. See ADR-0021 |
 | Camera Management | Auto-discovery, confirm/rename/remove via dashboard |
-| User Auth | Server: bcrypt + CSRF + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
+| User Auth | Server: bcrypt + CSRF + TOTP 2FA + rate limiting. Camera: PBKDF2-SHA256 + sessions. **Note:** a default `admin`/`admin` account is created on first boot — change the password during setup |
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
@@ -92,6 +92,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 |---------|--------|-------|
 | HTTPS (TLS) | **Implemented** | Self-signed certs, NGINX terminates TLS |
 | bcrypt auth + CSRF | **Implemented** | Cost 12, rate limiting (warn at 5, block at 10) |
+| TOTP two-factor auth | **Implemented** | Account enrollment, recovery codes, admin reset, optional remote-access enforcement |
 | Session management | **Implemented** | 30min idle / 24hr absolute timeout |
 | LUKS encryption | **Partial** | Design and implementation work exist, but production-grade validation is still in progress |
 | nftables firewall | **Implemented** | Default DROP, minimal open ports |

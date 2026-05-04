@@ -296,17 +296,19 @@ Tests (new):
 - `app/server/tests/test_remote_2fa_policy.py`
 - `app/server/tests/test_audit_totp.py`
 
-Dependency:
+Dependencies:
 
-- Add `pyotp` to `app/server/requirements.txt` (already named in
-  ADR-0011). The UI exposes the otpauth URI and secret directly, so no
-  QR/Pillow dependency is required in this slice.
+- `pyotp` is declared in `app/server/requirements.txt`, `app/server/setup.py`,
+  and `app/server/requirements.lock`, and is carried into the Yocto server
+  image through `python3-pyotp` runtime dependencies.
+- The UI exposes the otpauth URI and secret directly, so no QR/Pillow
+  dependency is required in this slice.
 
 Out-of-tree:
 
 - No camera-side change.
-- No Yocto recipe change beyond pulling the new Python deps into the
-  server packagegroup if not transitively present (`recipes-python`).
+- Yocto image packaging is limited to the server runtime dependency; camera
+  image composition is unchanged.
 
 ## Validation Plan
 

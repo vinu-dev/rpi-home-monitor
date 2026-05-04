@@ -10,6 +10,9 @@ setup(
     install_requires=[
         "flask>=3.0",
         "bcrypt>=4.0",
+        "jinja2>=3.0",
+        "pyotp>=2.9",
+        "zeroconf>=0.100",
     ],
     entry_points={
         "console_scripts": [
