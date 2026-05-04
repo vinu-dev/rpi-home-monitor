@@ -1,7 +1,7 @@
-# REQ: SWR-238-A, SWR-238-B, SWR-238-C
-# RISK: RISK-238-2, RISK-238-3, RISK-238-4
-# SEC: SEC-238-A, SEC-238-B, SEC-238-C
-# TEST: TC-238-AC-2, TC-238-AC-5, TC-238-AC-6, TC-238-AC-7, TC-238-AC-14
+# REQ: SWR-002, SWR-023
+# RISK: RISK-002, RISK-011, RISK-020
+# SEC: SC-001, SC-011, SC-020
+# TEST: TC-004, TC-011, TC-022
 """Pure-logic tests for monitor.services.totp_service.TotpService."""
 
 import time

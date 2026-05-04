@@ -113,11 +113,15 @@ class SettingsService:
         # Guard: prevent enabling require_2fa_for_remote without TOTP on the requesting admin
         if data.get("require_2fa_for_remote") is True:
             from flask import session
+
             user_id = session.get("user_id")
             if user_id:
                 user = self._store.get_user(user_id)
                 if not user or not user.totp_enabled:
-                    return "You must enroll in two-factor authentication before requiring it for remote access", 400
+                    return (
+                        "You must enroll in two-factor authentication before requiring it for remote access",
+                        400,
+                    )
 
         settings = self._store.get_settings()
         for key, value in data.items():

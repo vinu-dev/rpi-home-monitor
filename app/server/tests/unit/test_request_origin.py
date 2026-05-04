@@ -1,5 +1,7 @@
-# REQ: SWR-238-F; RISK: RISK-238-6; SEC: SEC-238-A
-# TEST: TC-238-AC-10
+# REQ: SWR-020, SWR-024
+# RISK: RISK-002, RISK-012
+# SEC: SC-004, SC-012
+# TEST: TC-010, TC-023
 """Tests for the LAN-vs-Tailscale-Funnel request classifier."""
 
 import pytest

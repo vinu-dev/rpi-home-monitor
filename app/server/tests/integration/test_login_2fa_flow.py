@@ -1,8 +1,10 @@
-# REQ: SWR-238-A, SWR-238-B, SWR-238-C, SWR-238-D
-# RISK: RISK-238-1, RISK-238-2, RISK-238-3
-# SEC: SEC-238-A, SEC-238-C
-# TEST: TC-238-AC-1, TC-238-AC-3, TC-238-AC-4, TC-238-AC-7, TC-238-AC-9, TC-238-AC-10, TC-238-AC-11
+# REQ: SWR-002, SWR-023
+# RISK: RISK-002, RISK-011
+# SEC: SC-001, SC-011
+# TEST: TC-004, TC-011, TC-022
 """End-to-end login flow tests covering the 2FA challenge step."""
+
+from pathlib import Path
 
 import pyotp
 import pytest
@@ -44,6 +46,17 @@ def test_login_no_2fa_returns_session_directly(app, client):
     assert "csrf_token" in body
     assert body["user"]["username"] == "alice"
     assert "challenge" not in body
+
+
+def test_login_page_contains_totp_challenge_step(app, client):
+    (Path(app.config["DATA_DIR"]) / ".setup-done").write_text("done", encoding="utf-8")
+
+    resp = client.get("/login")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="totp-step"' in body
+    assert "/api/v1/auth/totp/verify" in body
+    assert 'autocomplete="one-time-code"' in body
 
 
 def test_login_with_2fa_returns_challenge_token(app, client):

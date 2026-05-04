@@ -41,6 +41,10 @@ class UserService:
                 "role": u.role,
                 "created_at": u.created_at,
                 "last_login": u.last_login,
+                "totp_enabled": bool(getattr(u, "totp_enabled", False)),
+                "recovery_codes_remaining": len(
+                    getattr(u, "recovery_code_hashes", []) or []
+                ),
             }
             for u in users
         ]

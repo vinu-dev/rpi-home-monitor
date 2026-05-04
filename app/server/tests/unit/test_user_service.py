@@ -18,6 +18,8 @@ def _make_user(**overrides):
         "role": "viewer",
         "created_at": "2026-01-15T10:00:00Z",
         "last_login": None,
+        "totp_enabled": False,
+        "recovery_code_hashes": [],
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -56,8 +58,26 @@ class TestListUsers:
         assert result[0]["role"] == "viewer"
         assert result[0]["created_at"] == "2026-01-15T10:00:00Z"
         assert result[0]["last_login"] is None
+        assert result[0]["totp_enabled"] is False
+        assert result[0]["recovery_codes_remaining"] == 0
         assert "password_hash" not in result[0]
         assert "password" not in result[0]
+        assert "totp_secret" not in result[0]
+        assert "recovery_code_hashes" not in result[0]
+
+    def test_returns_totp_status_without_secrets(self, svc, store):
+        store.get_users.return_value = [
+            _make_user(
+                totp_enabled=True,
+                totp_secret="SECRET",
+                recovery_code_hashes=["hash1", "hash2"],
+            )
+        ]
+        result = svc.list_users()
+        assert result[0]["totp_enabled"] is True
+        assert result[0]["recovery_codes_remaining"] == 2
+        assert "totp_secret" not in result[0]
+        assert "recovery_code_hashes" not in result[0]
 
     def test_returns_multiple_users(self, svc, store):
         store.get_users.return_value = [

@@ -1,4 +1,4 @@
-# Feature Spec: TOTP-Based 2FA For Admin And Remote Users
+﻿# Feature Spec: TOTP-Based 2FA For Admin And Remote Users
 
 Tracking issue: #238. Branch: `feature/238-totp-2fa`.
 
@@ -62,7 +62,7 @@ optional (must not block first-boot setup). ADR-0011 already names
 
 ### Primary path — enrollment (any user, from Settings)
 
-1. User opens Settings → Security → Two-factor authentication.
+1. User opens Settings → Account → Two-factor authentication.
 2. Page shows current state ("Off" or "On since 2026-05-03"). If off, an
    "Enable two-factor authentication" button is visible.
 3. User clicks Enable. Server provisions a fresh TOTP secret (not yet
@@ -110,8 +110,8 @@ optional (must not block first-boot setup). ADR-0011 already names
 
 ### Primary path — admin policy: require 2FA for remote sessions
 
-1. Admin opens Settings → Security → "Require 2FA for remote
-   (Tailscale Funnel) sessions" toggle. Off by default.
+1. Admin opens Settings → System → "Require two-factor authentication
+   for remote access" toggle. Off by default.
 2. When on:
    - LAN sessions are unchanged.
    - Sessions whose request IP matches Tailscale Funnel space (the
@@ -282,10 +282,9 @@ Modified code:
   `POLICY_REMOTE_2FA_DISABLED`.
 - `app/server/monitor/templates/login.html` — second step (TOTP /
   recovery-code switch view).
-- `app/server/monitor/templates/settings.html` — Security → Two-factor
-  authentication card; admin-only "require 2FA for remote" toggle.
-- `app/server/monitor/static/css/style.css` — small additions for the
-  recovery-codes display + QR.
+- `app/server/monitor/templates/settings.html` — Account → Two-factor
+  authentication card; admin-only "require 2FA for remote" toggle in
+  System settings.
 - `app/server/monitor/__init__.py` — wire `TotpService` into the
   app-factory, register new blueprint.
 
@@ -300,9 +299,8 @@ Tests (new):
 Dependency:
 
 - Add `pyotp` to `app/server/requirements.txt` (already named in
-  ADR-0011). Add `qrcode[pil]` for server-side QR PNG; or render the
-  otpauth URI as a `data:` SVG client-side to avoid a Pillow dep —
-  decide in Implementer review.
+  ADR-0011). The UI exposes the otpauth URI and secret directly, so no
+  QR/Pillow dependency is required in this slice.
 
 Out-of-tree:
 
@@ -386,32 +384,22 @@ Threat-model deltas (Implementer fills `THREAT-` / `SC-` IDs):
 
 ## Traceability
 
-Placeholder IDs (Implementer fills concrete numbers in
-`docs/traceability/traceability-matrix.md`):
+Implementation annotations map issue #238 onto the existing controlled
+traceability catalogue:
 
-- `UN-238` — User need: "I want my admin account safe even if my
-  password leaks, especially when reachable from outside my home."
-- `SYS-238` — System requirement: "The system shall support TOTP-based
-  second-factor authentication for the web admin and shall allow
-  admins to require it for sessions originating from Tailscale
-  Funnel."
-- `SWR-238-A` … `SWR-238-F` — Software requirements (one per AC group:
-  enroll, verify, recovery, disable, admin-reset, remote-policy).
-- `SWA-238` — Software architecture item: "TOTP service in
-  service-layer; Flask blueprint for endpoints; classifier service for
-  request origin; persisted state in `User` and `Settings`."
-- `HAZ-238-1` … `HAZ-238-7` — listed above.
-- `RISK-238-1` … `RISK-238-7` — one per hazard.
-- `RC-238-1` … `RC-238-7` — one per risk control.
-- `SEC-238-A` (TOTP secret confidentiality), `SEC-238-B` (recovery-code
-  hashing), `SEC-238-C` (challenge-token integrity + TTL), `SEC-238-D`
-  (audit completeness).
-- `THREAT-238-1` (credential stuffing on remote interface),
-  `THREAT-238-2` (TOTP replay), `THREAT-238-3` (recovery-code leak via
-  logs), `THREAT-238-4` (admin self-lockout via remote policy).
-- `SC-238-1` … `SC-238-N` — controls mapping to the threats above.
-- `TC-238-AC-1` … `TC-238-AC-15` — one test case per acceptance
-  criterion above.
+- User/admin authentication and TOTP flows: `SWR-002`, `SWR-023`,
+  `RISK-002`, `RISK-011`, `SC-001`, `SC-011`, verified by `TC-004`,
+  `TC-011`, and `TC-022`.
+- Remote-origin policy and settings: `SWR-020`, `SWR-024`, `RISK-012`,
+  `SC-004`, `SC-012`, verified by `TC-010` and `TC-023`.
+- Public API/contract surface for the new endpoints: `SWR-045`,
+  `RISK-021`, `SC-021`, verified by `TC-042`.
+- Secret and audit hygiene for TOTP/recovery-code handling: `RISK-020`,
+  `SC-020`, verified through the auth and user-management tests above.
+
+The `HAZ-238-*` / `RC-238-*` rows in this spec remain issue-local design
+records. They intentionally roll up to the controlled IDs above rather than
+introducing new global traceability IDs in this implementation slice.
 
 ## Deployment Impact
 

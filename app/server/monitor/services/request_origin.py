@@ -1,5 +1,7 @@
-# REQ: SWR-238-F; RISK: RISK-238-6; SEC: SEC-238-A
-# TEST: TC-238-AC-10, TC-238-AC-11
+# REQ: SWR-020, SWR-024
+# RISK: RISK-002, RISK-012
+# SEC: SC-004, SC-012
+# TEST: TC-010, TC-023
 """Request-origin classifier — LAN vs Tailscale Funnel.
 
 Used by the "require 2FA for remote sessions" policy (issue #238).

@@ -1,7 +1,7 @@
-# REQ: SWR-238-A, SWR-238-B, SWR-238-D, SWR-238-E
-# RISK: RISK-238-1, RISK-238-2, RISK-238-4
-# SEC: SEC-238-A, SEC-238-B, SEC-238-D
-# TEST: TC-238-AC-2, TC-238-AC-6, TC-238-AC-8, TC-238-AC-12, TC-238-AC-14
+# REQ: SWR-002, SWR-023, SWR-045
+# RISK: RISK-002, RISK-011, RISK-021
+# SEC: SC-001, SC-011, SC-021
+# TEST: TC-004, TC-011, TC-022, TC-042
 """TOTP enrollment / disable / recovery-code endpoints (issue #238).
 
 Thin HTTP adapters; business logic lives in
@@ -261,10 +261,9 @@ def verify():
     audit = _audit()
 
     # Get challenge token (try cookie first, then body)
-    challenge_token = (
-        request.cookies.get("totp_challenge")
-        or (request.get_json(silent=True) or {}).get("challenge_token", "")
-    )
+    challenge_token = request.cookies.get("totp_challenge") or (
+        request.get_json(silent=True) or {}
+    ).get("challenge_token", "")
     if not challenge_token:
         return jsonify({"error": "Challenge token required"}), 400
 
@@ -272,7 +271,9 @@ def verify():
     result = totp.verify_challenge_token(challenge_token)
     if not result:
         if audit:
-            audit.log_event("LOGIN_2FA_FAILED", ip=ip, detail="challenge token invalid/expired")
+            audit.log_event(
+                "LOGIN_2FA_FAILED", ip=ip, detail="challenge token invalid/expired"
+            )
         return jsonify({"error": "Your sign-in expired. Please sign in again."}), 401
 
     user_id, require_remote = result
@@ -284,7 +285,12 @@ def verify():
     allowed, warn = _check_rate_limit(ip)
     if not allowed:
         if audit:
-            audit.log_event("LOGIN_BLOCKED", user=user.username, ip=ip, detail="rate limited (hard block)")
+            audit.log_event(
+                "LOGIN_BLOCKED",
+                user=user.username,
+                ip=ip,
+                detail="rate limited (hard block)",
+            )
         return jsonify({"error": "Too many login attempts. Try again later."}), 429
 
     data = request.get_json(silent=True) or {}
@@ -299,7 +305,12 @@ def verify():
     if not user.totp_enabled and not require_remote:
         _record_attempt(ip)
         if audit:
-            audit.log_event("LOGIN_2FA_FAILED", user=user.username, ip=ip, detail="user has no TOTP enrolled")
+            audit.log_event(
+                "LOGIN_2FA_FAILED",
+                user=user.username,
+                ip=ip,
+                detail="user has no TOTP enrolled",
+            )
         return jsonify({"error": "Two-factor authentication is not enabled"}), 401
 
     # If user has no TOTP but remote policy requires it, they can't log in
@@ -311,9 +322,11 @@ def verify():
                 ip=ip,
                 detail="remote policy requires 2FA; user not enrolled",
             )
-        return jsonify({
-            "error": "Two-factor authentication is required for remote access. Please enroll on the local network first."
-        }), 401
+        return jsonify(
+            {
+                "error": "Two-factor authentication is required for remote access. Please enroll on the local network first."
+            }
+        ), 401
 
     # Verify code (TOTP or recovery)
     ok = False
@@ -341,12 +354,15 @@ def verify():
         lockout_secs = _get_lockout_duration(user.failed_logins)
         if lockout_secs > 0:
             from datetime import timedelta
+
             user.locked_until = (
                 datetime.now(UTC) + timedelta(seconds=lockout_secs)
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
         current_app.store.save_user(user)
         if audit:
-            audit.log_event("LOGIN_2FA_FAILED", user=user.username, ip=ip, detail="code rejected")
+            audit.log_event(
+                "LOGIN_2FA_FAILED", user=user.username, ip=ip, detail="code rejected"
+            )
         return jsonify({"error": "That code didn't match. Try again."}), 401
 
     # Success: create session (replicate the normal login flow)
@@ -365,7 +381,12 @@ def verify():
     csrf_token = generate_csrf_token()
 
     if audit:
-        audit.log_event("LOGIN_SUCCESS", user=user.username, ip=ip, detail="TOTP verified, session created")
+        audit.log_event(
+            "LOGIN_SUCCESS",
+            user=user.username,
+            ip=ip,
+            detail="TOTP verified, session created",
+        )
 
     response_data = {
         "user": {

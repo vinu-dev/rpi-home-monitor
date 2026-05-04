@@ -272,7 +272,9 @@ def _init_services(app):
     app.user_service = UserService(store=app.store, audit=app.audit)
 
     # TOTP service — two-factor authentication (issue #238)
-    app.totp_service = TotpService(secret_key=app.config["SECRET_KEY"], issuer="Home Monitor")
+    app.totp_service = TotpService(
+        secret_key=app.config["SECRET_KEY"], issuer="Home Monitor"
+    )
 
     # Recordings service — clip queries, deletion, audit
     app.recordings_service = RecordingsService(

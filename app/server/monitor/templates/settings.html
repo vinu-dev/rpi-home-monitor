@@ -1,4 +1,4 @@
-{# REQ: SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
+{# REQ: SWR-002, SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-002, RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-004, TC-011, TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
 {% extends "base.html" %}
 
 {% block title %}Settings - Home Monitor{% endblock %}
@@ -10,8 +10,8 @@
 <!-- Settings Tab Bar -->
 <div class="settings-tabs">
     <!-- Admin-only configuration tabs. Viewers don't see these — they
-         get the Notifications tab below as their only Settings
-         surface (their own per-user prefs are personal, not system). -->
+         get Account and Notifications below as their personal Settings
+         surfaces. -->
     <template x-if="isAdmin">
         <span style="display:contents;">
             <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
@@ -24,6 +24,7 @@
             <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
         </span>
     </template>
+    <button class="settings-tab" :class="{ active: tab === 'account' }" @click="tab = 'account'; loadTotpStatus()">Account</button>
     <!-- Notifications tab is per-user — visible to admins AND viewers
          (#129, ADR-0027). Each user manages their own browser-
          notification opt-in here; admins additionally see the
@@ -80,6 +81,13 @@
                         <label for="set-session-timeout">Session Timeout (min)</label>
                         <input type="number" id="set-session-timeout" class="form-input" min="5" max="1440" x-model.number="settings.session_timeout_minutes">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                        <input type="checkbox" x-model="settings.require_2fa_for_remote">
+                        <span>Require two-factor authentication for remote access</span>
+                    </label>
+                    <span class="form-hint">Admins must enable two-factor authentication before turning this on.</span>
                 </div>
                 <button type="submit" class="btn btn--primary">Save Settings</button>
             </form>
@@ -534,13 +542,14 @@
                         <tr>
                             <th>Username</th>
                             <th>Role</th>
+                            <th>2FA</th>
                             <th>Created</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         <template x-if="users.length === 0">
-                            <tr><td colspan="4" class="text-muted text-center">Loading...</td></tr>
+                            <tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>
                         </template>
                         <template x-for="u in users" :key="u.id">
                             <tr>
@@ -549,6 +558,9 @@
                                     <span x-show="currentUser && currentUser.id === u.id" class="text-muted"> (you)</span>
                                 </td>
                                 <td><span class="badge" :class="u.role === 'admin' ? 'badge--pending' : 'badge--offline'" x-text="u.role"></span></td>
+                                <td>
+                                    <span class="badge" :class="u.totp_enabled ? 'badge--ok' : 'badge--offline'" x-text="u.totp_enabled ? 'on' : 'off'"></span>
+                                </td>
                                 <td class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
                                 <td style="display:flex; gap:6px; align-items:center;">
                                     <!-- Reset password — admin-only, and
@@ -563,6 +575,12 @@
                                             @click="openResetPassword(u)"
                                             title="Reset this user's password">
                                         Reset password
+                                    </button>
+                                    <button x-show="currentUser && currentUser.id !== u.id && u.totp_enabled"
+                                            class="btn btn--secondary btn--small"
+                                            @click="resetUserTotp(u)"
+                                            title="Reset this user's two-factor authentication">
+                                        Reset 2FA
                                     </button>
                                     <button x-show="!currentUser || currentUser.id !== u.id"
                                             class="btn btn--danger btn--icon"
@@ -627,6 +645,120 @@
                 </div>
                 <button type="submit" class="btn btn--primary">Change Password</button>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ACCOUNT TAB (all users)
+     ═══════════════════════════════════════════════════════════ -->
+<div x-show="tab === 'account'" x-cloak>
+    <div class="settings-section">
+        <div class="settings-section__title">Change Password</div>
+        <div class="card">
+            <form @submit.prevent="changePassword()">
+                <div class="form-group">
+                    <label for="pw-new-account">New Password</label>
+                    <input type="password" id="pw-new-account" class="form-input" minlength="12" x-model="pw.newPassword" required>
+                    <span class="form-hint">Minimum 12 characters</span>
+                </div>
+                <div class="form-group">
+                    <label for="pw-confirm-account">Confirm New Password</label>
+                    <input type="password" id="pw-confirm-account" class="form-input" minlength="12" x-model="pw.confirmPassword" required>
+                </div>
+                <button type="submit" class="btn btn--primary">Change Password</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section__title">Two-Factor Authentication</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">Status</span>
+                <span class="info-row__value">
+                    <span class="badge" :class="totp.status.enabled ? 'badge--ok' : 'badge--offline'" x-text="totp.status.enabled ? 'Enabled' : 'Disabled'"></span>
+                </span>
+            </div>
+            <div class="info-row" style="border-bottom:none;" x-show="totp.status.enabled">
+                <span class="info-row__label">Recovery Codes</span>
+                <span class="info-row__value" x-text="totp.status.recovery_codes_remaining + ' remaining'"></span>
+            </div>
+            <div class="text-small text-muted" x-show="totp.status.enabled && totp.status.recovery_codes_remaining <= 3" style="margin-top:var(--space-2);">
+                Recovery codes are low. Regenerate a new set.
+            </div>
+
+            <template x-if="!totp.status.enabled && !totp.enrolling">
+                <button type="button" class="btn btn--primary" @click="startTotpEnroll()" :disabled="totp.busy">
+                    Enable 2FA
+                </button>
+            </template>
+
+            <div x-show="totp.enrolling" style="margin-top:var(--space-3);">
+                <div class="form-group">
+                    <label for="totp-secret">Secret</label>
+                    <input id="totp-secret" class="form-input" readonly x-model="totp.secret">
+                </div>
+                <div class="form-group">
+                    <label for="totp-uri">Authenticator URI</label>
+                    <input id="totp-uri" class="form-input" readonly x-model="totp.otpauthUri">
+                </div>
+                <form @submit.prevent="confirmTotpEnroll()">
+                    <div class="form-group">
+                        <label for="totp-confirm-code">Authentication code</label>
+                        <input id="totp-confirm-code" class="form-input" inputmode="numeric" autocomplete="one-time-code" x-model.trim="totp.confirmCode">
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button type="submit" class="btn btn--primary" :disabled="totp.busy">Confirm</button>
+                        <button type="button" class="btn btn--secondary" @click="cancelTotpEnroll()" :disabled="totp.busy">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div x-show="totp.recoveryCodes.length > 0" style="margin-top:var(--space-3);">
+                <label for="totp-recovery-codes" class="info-row__label">New Recovery Codes</label>
+                <textarea id="totp-recovery-codes" class="form-input" rows="6" readonly :value="totp.recoveryCodes.join('\n')"></textarea>
+            </div>
+
+            <div x-show="totp.status.enabled" style="margin-top:var(--space-3);">
+                <form @submit.prevent="regenerateTotpCodes()" style="margin-bottom:var(--space-4);">
+                    <div class="settings-section__title" style="font-size:var(--text-base); margin-bottom:var(--space-2);">Regenerate Recovery Codes</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="totp-regen-password">Current Password</label>
+                            <input id="totp-regen-password" type="password" class="form-input" autocomplete="current-password" x-model="totp.regenPassword">
+                        </div>
+                        <div class="form-group">
+                            <label for="totp-regen-code">Code</label>
+                            <input id="totp-regen-code" class="form-input" inputmode="numeric" autocomplete="one-time-code" x-model.trim="totp.regenCode">
+                        </div>
+                    </div>
+                    <label class="text-small text-muted" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                        <input type="checkbox" x-model="totp.regenRecovery">
+                        <span>Use recovery code</span>
+                    </label>
+                    <button type="submit" class="btn btn--secondary" :disabled="totp.busy">Regenerate codes</button>
+                </form>
+
+                <form @submit.prevent="disableTotp()">
+                    <div class="settings-section__title" style="font-size:var(--text-base); margin-bottom:var(--space-2);">Disable 2FA</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="totp-disable-password">Current Password</label>
+                            <input id="totp-disable-password" type="password" class="form-input" autocomplete="current-password" x-model="totp.disablePassword">
+                        </div>
+                        <div class="form-group">
+                            <label for="totp-disable-code">Code</label>
+                            <input id="totp-disable-code" class="form-input" inputmode="numeric" autocomplete="one-time-code" x-model.trim="totp.disableCode">
+                        </div>
+                    </div>
+                    <label class="text-small text-muted" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                        <input type="checkbox" x-model="totp.disableRecovery">
+                        <span>Use recovery code</span>
+                    </label>
+                    <button type="submit" class="btn btn--danger" :disabled="totp.busy">Disable 2FA</button>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -1294,7 +1426,7 @@
     </div>
 </div>
 
-<div x-show="!isAdmin && tab !== 'notifications'" x-cloak>
+<div x-show="!isAdmin && tab !== 'notifications' && tab !== 'account'" x-cloak>
     <div class="settings-section">
         <div class="settings-section__title">System Info</div>
         <div class="card">
@@ -1468,7 +1600,7 @@ function settingsPage() {
         showWifiForm: false,
 
         networkInterfaces: [],
-        settings: { hostname: '', timezone: '', ntp_mode: 'auto', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60 },
+        settings: { hostname: '', timezone: '', ntp_mode: 'auto', storage_threshold_percent: 90, clip_duration_seconds: 180, session_timeout_minutes: 60, require_2fa_for_remote: false },
         timeStatus: { timezone: '', ntp_mode: 'auto', ntp_active: false, ntp_synchronized: false, system_time: '' },
         manualTimeInput: '',
         manualTimeMsg: '',
@@ -1484,6 +1616,21 @@ function settingsPage() {
         resetTarget: null,       // user object whose password is being reset
         resetTempPassword: '',   // admin-picked temporary password (>=12 chars)
         pw: { newPassword: '', confirmPassword: '' },
+        totp: {
+            busy: false,
+            enrolling: false,
+            status: { enabled: false, recovery_codes_remaining: 0 },
+            secret: '',
+            otpauthUri: '',
+            confirmCode: '',
+            recoveryCodes: [],
+            regenPassword: '',
+            regenCode: '',
+            regenRecovery: false,
+            disablePassword: '',
+            disableCode: '',
+            disableRecovery: false,
+        },
 
         wifi: { currentSsid: '', networks: [], selectedSsid: '', password: '', scanning: false },
 
@@ -1537,7 +1684,7 @@ function settingsPage() {
             // deep-links (/settings#system, /settings#storage etc.) open
             // directly on the correct tab instead of bouncing the user
             // through the default tab. Unknown fragments are ignored.
-            var validTabs = ['system','network','tailscale','users','recording','storage','webhooks','updates','security'];
+            var validTabs = ['system','network','tailscale','users','account','recording','storage','webhooks','updates','security'];
             var frag = (window.location.hash || '').replace('#','').toLowerCase();
             if (frag && validTabs.indexOf(frag) !== -1) {
                 this.tab = frag;
@@ -1546,6 +1693,7 @@ function settingsPage() {
 
             this.loadSystemInfo();
             this.loadTimeStatus();
+            this.loadTotpStatus();
 
             if (this.isAdmin) {
                 this.loadSettings();
@@ -1855,6 +2003,7 @@ function settingsPage() {
                     storage_threshold_percent: data.storage_threshold_percent || 90,
                     clip_duration_seconds: data.clip_duration_seconds || 180,
                     session_timeout_minutes: data.session_timeout_minutes || 60,
+                    require_2fa_for_remote: !!data.require_2fa_for_remote,
                 };
             } catch(e) { window.HM.toast('Failed to load settings', 'error'); }
         },
@@ -2046,6 +2195,17 @@ function settingsPage() {
             }
         },
 
+        async resetUserTotp(user) {
+            if (!confirm('Reset 2FA for "' + user.username + '"?')) return;
+            try {
+                await window.HM.api.post('/api/v1/users/' + encodeURIComponent(user.id) + '/totp/reset', {});
+                window.HM.toast('Two-factor authentication reset for ' + user.username, 'success');
+                this.loadUsers();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to reset two-factor authentication', 'error');
+            }
+        },
+
         async changePassword() {
             if (this.pw.newPassword.length < 12) {
                 window.HM.toast('Password must be at least 12 characters', 'error'); return;
@@ -2059,6 +2219,116 @@ function settingsPage() {
                 window.HM.toast('Password changed', 'success');
                 this.pw = { newPassword: '', confirmPassword: '' };
             } catch(e) { window.HM.toast(e.message || 'Failed to change password', 'error'); }
+        },
+
+        resetTotpInputs() {
+            this.totp.confirmCode = '';
+            this.totp.regenPassword = '';
+            this.totp.regenCode = '';
+            this.totp.regenRecovery = false;
+            this.totp.disablePassword = '';
+            this.totp.disableCode = '';
+            this.totp.disableRecovery = false;
+        },
+
+        async loadTotpStatus() {
+            try {
+                var data = await window.HM.api.get('/api/v1/auth/totp/status');
+                this.totp.status = {
+                    enabled: !!data.enabled,
+                    recovery_codes_remaining: data.recovery_codes_remaining || 0,
+                };
+            } catch(e) {}
+        },
+
+        async startTotpEnroll() {
+            this.totp.busy = true;
+            this.totp.recoveryCodes = [];
+            try {
+                var data = await window.HM.api.post('/api/v1/auth/totp/enroll/start', {});
+                this.totp.secret = data.secret || '';
+                this.totp.otpauthUri = data.otpauth_uri || '';
+                this.totp.confirmCode = '';
+                this.totp.enrolling = true;
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to start two-factor setup', 'error');
+            } finally {
+                this.totp.busy = false;
+            }
+        },
+
+        cancelTotpEnroll() {
+            this.totp.enrolling = false;
+            this.totp.secret = '';
+            this.totp.otpauthUri = '';
+            this.totp.confirmCode = '';
+        },
+
+        async confirmTotpEnroll() {
+            if (!this.totp.confirmCode) {
+                window.HM.toast('Authentication code is required', 'error');
+                return;
+            }
+            this.totp.busy = true;
+            try {
+                var data = await window.HM.api.post('/api/v1/auth/totp/enroll/confirm', { code: this.totp.confirmCode });
+                this.totp.recoveryCodes = data.recovery_codes || [];
+                this.cancelTotpEnroll();
+                await this.loadTotpStatus();
+                if (this.isAdmin) await this.loadUsers();
+                window.HM.toast('Two-factor authentication enabled', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to confirm two-factor setup', 'error');
+            } finally {
+                this.totp.busy = false;
+            }
+        },
+
+        async regenerateTotpCodes() {
+            if (!this.totp.regenPassword || !this.totp.regenCode) {
+                window.HM.toast('Password and code are required', 'error');
+                return;
+            }
+            this.totp.busy = true;
+            try {
+                var data = await window.HM.api.post('/api/v1/auth/totp/recovery-codes/regenerate', {
+                    password: this.totp.regenPassword,
+                    code: this.totp.regenCode,
+                    recovery: this.totp.regenRecovery,
+                });
+                this.totp.recoveryCodes = data.recovery_codes || [];
+                this.resetTotpInputs();
+                await this.loadTotpStatus();
+                window.HM.toast('Recovery codes regenerated', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to regenerate recovery codes', 'error');
+            } finally {
+                this.totp.busy = false;
+            }
+        },
+
+        async disableTotp() {
+            if (!this.totp.disablePassword || !this.totp.disableCode) {
+                window.HM.toast('Password and code are required', 'error');
+                return;
+            }
+            this.totp.busy = true;
+            try {
+                await window.HM.api.post('/api/v1/auth/totp/disable', {
+                    password: this.totp.disablePassword,
+                    code: this.totp.disableCode,
+                    recovery: this.totp.disableRecovery,
+                });
+                this.totp.recoveryCodes = [];
+                this.resetTotpInputs();
+                await this.loadTotpStatus();
+                if (this.isAdmin) await this.loadUsers();
+                window.HM.toast('Two-factor authentication disabled', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to disable two-factor authentication', 'error');
+            } finally {
+                this.totp.busy = false;
+            }
         },
 
         /* --- WiFi --- */

@@ -400,7 +400,15 @@ class TestSetupCompleteContract:
 # Users contracts (/api/v1/users/*)
 # ===========================================================================
 
-USER_LIST_FIELDS = {"id", "username", "role", "created_at", "last_login"}
+USER_LIST_FIELDS = {
+    "id",
+    "username",
+    "role",
+    "created_at",
+    "last_login",
+    "totp_enabled",
+    "recovery_codes_remaining",
+}
 
 
 class TestUsersListContract:
@@ -418,6 +426,8 @@ class TestUsersListContract:
         data = client.get("/api/v1/users").get_json()
         for user in data:
             assert "password_hash" not in user
+            assert "totp_secret" not in user
+            assert "recovery_code_hashes" not in user
 
 
 class TestUsersCreateContract:

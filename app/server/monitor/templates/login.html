@@ -13,19 +13,41 @@
         <div class="login-card__error" id="login-error"></div>
 
         <form id="login-form" autocomplete="on">
-            <div class="form-group">
-                <label for="login-username">Username</label>
-                <input type="text" id="login-username" name="username" class="form-input"
-                       placeholder="Enter username" autocomplete="username" required>
+            <div id="password-step">
+                <div class="form-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" name="username" class="form-input"
+                           placeholder="Enter username" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" name="password" class="form-input"
+                           placeholder="Enter password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn btn--primary btn--full" id="btn-login">
+                    Sign In
+                </button>
             </div>
-            <div class="form-group">
-                <label for="login-password">Password</label>
-                <input type="password" id="login-password" name="password" class="form-input"
-                       placeholder="Enter password" autocomplete="current-password" required>
+
+            <div id="totp-step" hidden>
+                <div class="form-group">
+                    <label for="login-totp-code">Authentication code</label>
+                    <input type="text" id="login-totp-code" name="totp_code" class="form-input"
+                           inputmode="numeric" autocomplete="one-time-code"
+                           maxlength="24" placeholder="Enter code">
+                </div>
+                <label class="text-small text-muted"
+                       style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                    <input type="checkbox" id="login-totp-recovery">
+                    <span>Use recovery code</span>
+                </label>
+                <button type="submit" class="btn btn--primary btn--full" id="btn-verify-totp">
+                    Verify
+                </button>
+                <button type="button" class="btn btn--secondary btn--full" id="btn-back-login" style="margin-top:8px;">
+                    Back
+                </button>
             </div>
-            <button type="submit" class="btn btn--primary btn--full" id="btn-login">
-                Sign In
-            </button>
             <!-- Pre-auth surface. Deliberately one line, no mention of
                  any recovery path, command, or documentation location.
                  Anyone on the LAN can read this; we don't leak attack
@@ -45,11 +67,24 @@
     var form = document.getElementById('login-form');
     var errorEl = document.getElementById('login-error');
     var btnLogin = document.getElementById('btn-login');
+    var passwordStep = document.getElementById('password-step');
+    var totpStep = document.getElementById('totp-step');
+    var totpCode = document.getElementById('login-totp-code');
+    var totpRecovery = document.getElementById('login-totp-recovery');
+    var btnVerifyTotp = document.getElementById('btn-verify-totp');
+    var btnBackLogin = document.getElementById('btn-back-login');
+    var challengeToken = '';
 
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         errorEl.classList.remove('visible');
         errorEl.textContent = '';
+
+        if (challengeToken) {
+            verifyTotp();
+            return;
+        }
+
         btnLogin.disabled = true;
         btnLogin.textContent = 'Signing in...';
 
@@ -63,6 +98,16 @@
 
         window.HM.api.post('/api/v1/auth/login', { username: username, password: password })
             .then(function(data) {
+                if (data.challenge === 'totp' && data.challenge_token) {
+                    challengeToken = data.challenge_token;
+                    passwordStep.hidden = true;
+                    totpStep.hidden = false;
+                    btnLogin.disabled = false;
+                    btnLogin.textContent = 'Sign In';
+                    totpCode.value = '';
+                    totpCode.focus();
+                    return;
+                }
                 window.HM.auth.setCsrfToken(data.csrf_token);
                 window.HM.auth.setUser(data.user);
                 window.location.href = '/dashboard';
@@ -72,11 +117,43 @@
             });
     });
 
+    btnBackLogin.addEventListener('click', function() {
+        challengeToken = '';
+        totpStep.hidden = true;
+        passwordStep.hidden = false;
+        totpCode.value = '';
+        totpRecovery.checked = false;
+        document.getElementById('login-password').focus();
+    });
+
+    function verifyTotp() {
+        var code = totpCode.value.trim();
+        if (!code) {
+            showError('Authentication code is required.');
+            return;
+        }
+        btnVerifyTotp.disabled = true;
+        btnVerifyTotp.textContent = 'Verifying...';
+        window.HM.api.post('/api/v1/auth/totp/verify', {
+            challenge_token: challengeToken,
+            code: code,
+            recovery: totpRecovery.checked
+        }).then(function(data) {
+            window.HM.auth.setCsrfToken(data.csrf_token);
+            window.HM.auth.setUser(data.user);
+            window.location.href = '/dashboard';
+        }).catch(function(err) {
+            showError(err.message || 'Authentication code rejected.');
+        });
+    }
+
     function showError(msg) {
         errorEl.textContent = msg;
         errorEl.classList.add('visible');
         btnLogin.disabled = false;
         btnLogin.textContent = 'Sign In';
+        btnVerifyTotp.disabled = false;
+        btnVerifyTotp.textContent = 'Verify';
     }
 })();
 </script>

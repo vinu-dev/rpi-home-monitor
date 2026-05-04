@@ -1,7 +1,7 @@
-# REQ: SWR-238-A, SWR-238-B, SWR-238-D, SWR-238-E
-# RISK: RISK-238-1, RISK-238-2, RISK-238-4
-# SEC: SEC-238-A, SEC-238-B, SEC-238-D
-# TEST: TC-238-AC-2, TC-238-AC-6, TC-238-AC-8, TC-238-AC-12, TC-238-AC-14
+# REQ: SWR-002, SWR-023, SWR-045
+# RISK: RISK-002, RISK-011, RISK-021
+# SEC: SC-001, SC-011, SC-021
+# TEST: TC-004, TC-011, TC-022, TC-042
 """End-to-end tests for /api/v1/auth/totp/* and /api/v1/users/<id>/totp/reset."""
 
 import time

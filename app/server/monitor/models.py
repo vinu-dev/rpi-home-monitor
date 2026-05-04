@@ -185,7 +185,9 @@ class User:
     last_login: str | None = None
     totp_secret: str = ""  # TOTP secret for 2FA (ADR-0011, issue #238)
     totp_enabled: bool = False  # whether TOTP is active for this user
-    recovery_code_hashes: list[str] = field(default_factory=list)  # bcrypt hashes of single-use recovery codes
+    recovery_code_hashes: list[str] = field(
+        default_factory=list
+    )  # bcrypt hashes of single-use recovery codes
     last_totp_step: int = 0  # anti-replay: last accepted TOTP step number
     failed_logins: int = 0  # consecutive failed login count
     locked_until: str = ""  # ISO timestamp, empty = not locked
