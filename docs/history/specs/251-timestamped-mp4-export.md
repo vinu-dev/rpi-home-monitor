@@ -268,8 +268,11 @@ Each bullet is testable; verification mechanism noted in brackets.
   -show_frames produces a frame whose pts equals 30000ms ±100ms]**
 - AC-12: ffmpeg invocation argv is constructed with no operator-controlled
   string interpolation; camera_id and filename are used as path components
-  only after `resolve_clip_path()` validation.
-  **[security review + unit test asserting no shell=True usage]**
+  only after `resolve_clip_path()` validation. Malformed filenames that match
+  the timestamp regex shape but contain invalid calendar values are treated as
+  unsupported, not as worker/backfill exceptions.
+  **[security review + unit test asserting no shell=True usage + invalid
+  filename unit test]**
 - AC-13: When the server clock is in `red` drift state at remux time
   (spec #250), the embedded `comment` field includes the warning string
   and the audit event records `clock_state=red`.

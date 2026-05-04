@@ -79,6 +79,22 @@ def test_stamp_returns_missing_ffmpeg_when_tool_unavailable(tmp_path):
     assert result.reason == "ffmpeg-missing"
 
 
+def test_stamp_treats_invalid_timestamp_filename_as_unsupported(tmp_path):
+    clip = tmp_path / "cam-001" / "20261399_999999.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"source")
+    stamper = ClipStamper()
+
+    with (
+        patch("monitor.services.clip_stamper.shutil.which", return_value="tool"),
+        patch.object(stamper, "_probe_clip", return_value=_unstamped_probe()),
+    ):
+        result = stamper.stamp(clip, _camera(), _server_meta())
+
+    assert result.ok is False
+    assert result.reason == "unsupported-filename"
+
+
 def test_stamp_runs_remux_and_writes_sentinel(tmp_path):
     clip = tmp_path / "cam-001" / "20260420_140000.mp4"
     clip.parent.mkdir(parents=True)

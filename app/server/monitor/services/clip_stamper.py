@@ -322,15 +322,23 @@ class ClipStamper:
         match = _FLAT_STEM_RE.match(stem)
         if match:
             year, month, day, hour, minute, second = (int(v) for v in match.groups())
-            return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
+            return self._datetime_or_none(year, month, day, hour, minute, second)
         parent = clip_path.parent.name
         if _DATED_DIR_RE.match(parent):
             match = _DATED_STEM_RE.match(stem)
             if match:
                 hour, minute, second = (int(v) for v in match.groups())
                 year, month, day = (int(v) for v in parent.split("-"))
-                return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
+                return self._datetime_or_none(year, month, day, hour, minute, second)
         return None
+
+    def _datetime_or_none(
+        self, year: int, month: int, day: int, hour: int, minute: int, second: int
+    ) -> datetime | None:
+        try:
+            return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
+        except ValueError:
+            return None
 
     def _build_srt(self, started_at: datetime, duration_seconds: int) -> str:
         lines: list[str] = []
