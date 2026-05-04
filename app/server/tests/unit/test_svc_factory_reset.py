@@ -90,6 +90,20 @@ class TestFactoryReset:
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
+    def test_reset_removes_shared_backup_sidecars(self, mock_restart, svc, data_dir):
+        (data_dir / "config" / "hostname").write_text("home-monitor\n")
+        (data_dir / "config" / "motion_events.json").write_text("[]")
+        (data_dir / "config" / "alert_read_state.json").write_text("{}")
+
+        svc.execute_reset()
+
+        assert not (data_dir / "config" / "hostname").exists()
+        assert not (data_dir / "config" / "motion_events.json").exists()
+        assert not (data_dir / "config" / "alert_read_state.json").exists()
+
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
     def test_reset_removes_certs(self, mock_restart, svc, data_dir):
         svc.execute_reset()
         assert not (data_dir / "certs").exists()

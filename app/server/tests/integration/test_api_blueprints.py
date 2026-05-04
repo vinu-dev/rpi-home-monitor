@@ -81,6 +81,7 @@ _AUTH_REQUIRED_GETS = [
     "/api/v1/users",
     "/api/v1/ota/status",
     "/api/v1/system/health",
+    "/api/v1/system/backup/snapshots",
     "/api/v1/audit/events",
     "/api/v1/auth/me",
 ]
@@ -139,6 +140,13 @@ _STATE_CHANGING_ROUTES = [
     ("DELETE", "/api/v1/users/user-nobody", None),
     ("PUT", "/api/v1/users/user-nobody/password", {"new_password": "newpass1234"}),
     ("POST", "/api/v1/ota/server/upload", None),
+    (
+        "POST",
+        "/api/v1/system/backup/export",
+        {"passphrase": "correct horse battery staple"},
+    ),
+    ("POST", "/api/v1/system/backup/preview", {}),
+    ("POST", "/api/v1/system/backup/import", {}),
 ]
 
 

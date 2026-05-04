@@ -8,13 +8,14 @@ tests but will break the frontend. Contract tests make field names explicit.
 Layer 4 of the testing pyramid (see docs/guides/development-guide.md Section 3.8).
 """
 
+import io
 import json
 import os
 import time
 from unittest.mock import MagicMock, patch
 
 from monitor.auth import hash_password
-from monitor.models import Camera, User
+from monitor.models import Camera, Settings, User, WebhookDestination
 from monitor.services.webhook_delivery_service import HttpResult
 
 # ---------------------------------------------------------------------------
@@ -34,6 +35,43 @@ def _add_camera(app, cam_id="cam-001", status="online"):
     )
     app.store.save_camera(cam)
     return cam
+
+
+def _seed_backup_state(app):
+    """Seed users, settings, hostname, and certs for backup API contracts."""
+    app.store.save_user(
+        User(
+            id="user-owner",
+            username="owner",
+            password_hash="hash-owner",
+            role="admin",
+            totp_secret="totp-owner",
+        )
+    )
+    _add_camera(app, "cam-001")
+    camera = app.store.get_camera("cam-001")
+    camera.pairing_secret = "ab" * 32
+    camera.cert_serial = "SER-001"
+    app.store.save_camera(camera)
+    app.store.save_settings(
+        Settings(
+            hostname="backup-box",
+            webhook_destinations=[
+                WebhookDestination(
+                    id="wh-001",
+                    url="https://hooks.example.com/inbound",
+                    auth_type="hmac",
+                    secret="whsec-test",
+                    event_classes=("motion",),
+                )
+            ],
+        )
+    )
+    os.makedirs(os.path.join(app.config["CERTS_DIR"], "cameras"), exist_ok=True)
+    with open(os.path.join(app.config["CONFIG_DIR"], "hostname"), "w") as handle:
+        handle.write("backup-box\n")
+    with open(os.path.join(app.config["CERTS_DIR"], "ca.crt"), "w") as handle:
+        handle.write("root-cert")
 
 
 def _assert_fields(data, required_fields, msg=""):
@@ -785,6 +823,155 @@ class TestSystemSummaryContract:
 
     def test_requires_login(self, client):
         resp = client.get("/api/v1/system/summary")
+        assert resp.status_code == 401
+
+
+class TestBackupExportContract:
+    """POST /api/v1/system/backup/export."""
+
+    PASSPHRASE = "correct horse battery staple"
+
+    def test_download_headers(self, app, logged_in_client):
+        _seed_backup_state(app)
+        client = logged_in_client()
+        resp = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+        assert resp.status_code == 200
+        assert "attachment" in resp.headers.get("Content-Disposition", "")
+        assert resp.data
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+        assert resp.status_code == 401
+
+
+class TestBackupPreviewContract:
+    """POST /api/v1/system/backup/preview."""
+
+    PASSPHRASE = "correct horse battery staple"
+
+    def test_fields(self, app, logged_in_client):
+        _seed_backup_state(app)
+        client = logged_in_client()
+        bundle = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        ).data
+        resp = client.post(
+            "/api/v1/system/backup/preview",
+            data={
+                "passphrase": self.PASSPHRASE,
+                "file": (io.BytesIO(bundle), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"filename", "preview"})
+        _assert_has_fields(
+            data["preview"],
+            {
+                "created_at",
+                "schema_version",
+                "scope",
+                "secret_policy",
+                "warnings",
+                "counts",
+                "users",
+                "cameras",
+                "settings",
+                "restore_defaults",
+            },
+        )
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.post("/api/v1/system/backup/preview", data={})
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.post("/api/v1/system/backup/preview", data={})
+        assert resp.status_code == 401
+
+
+class TestBackupImportContract:
+    """POST /api/v1/system/backup/import."""
+
+    PASSPHRASE = "correct horse battery staple"
+
+    def test_success_fields(self, app, logged_in_client):
+        _seed_backup_state(app)
+        client = logged_in_client()
+        bundle = client.post(
+            "/api/v1/system/backup/export",
+            json={
+                "passphrase": self.PASSPHRASE,
+                "include_user_credentials": True,
+                "include_webhook_secrets": True,
+            },
+        ).data
+        resp = client.post(
+            "/api/v1/system/backup/import",
+            data={
+                "passphrase": self.PASSPHRASE,
+                "file": (io.BytesIO(bundle), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+        data = resp.get_json()
+        _assert_fields(data, {"message", "snapshot", "preview", "restored_components"})
+        _assert_has_fields(
+            data["snapshot"],
+            {
+                "id",
+                "created_at",
+                "bundle_created_at",
+                "restore_components",
+                "counts",
+                "targets",
+            },
+        )
+        assert isinstance(data["restored_components"], list)
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.post("/api/v1/system/backup/import", data={})
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.post("/api/v1/system/backup/import", data={})
+        assert resp.status_code == 401
+
+
+class TestBackupSnapshotsContract:
+    """GET /api/v1/system/backup/snapshots."""
+
+    def test_fields(self, app, logged_in_client):
+        client = logged_in_client()
+        resp = client.get("/api/v1/system/backup/snapshots")
+        data = resp.get_json()
+        _assert_fields(data, {"snapshots"})
+        assert isinstance(data["snapshots"], list)
+
+    def test_requires_admin(self, app, logged_in_client):
+        client = logged_in_client("viewer")
+        resp = client.get("/api/v1/system/backup/snapshots")
+        assert resp.status_code == 403
+
+    def test_requires_auth(self, client):
+        resp = client.get("/api/v1/system/backup/snapshots")
         assert resp.status_code == 401
 
 

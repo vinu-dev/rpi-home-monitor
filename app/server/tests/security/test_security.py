@@ -110,6 +110,13 @@ _CSRF_PROTECTED_ENDPOINTS = [
     ("POST", "/api/v1/users", {"username": "newuser1", "password": "password1234"}),
     ("DELETE", "/api/v1/users/user-nobody", None),
     ("PUT", "/api/v1/users/user-nobody/password", {"new_password": "newpass1234"}),
+    (
+        "POST",
+        "/api/v1/system/backup/export",
+        {"passphrase": "correct horse battery staple"},
+    ),
+    ("POST", "/api/v1/system/backup/preview", {}),
+    ("POST", "/api/v1/system/backup/import", {}),
 ]
 
 

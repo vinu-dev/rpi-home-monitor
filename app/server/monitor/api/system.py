@@ -12,14 +12,20 @@ Endpoints:
   POST /system/tailscale/disable       - Disable tailscaled daemon
   POST /system/tailscale/apply-config  - Apply saved Tailscale settings
   POST /system/factory-reset           - Wipe all data and return to first-boot state
+  POST /system/backup/export           - Download a signed configuration bundle
+  POST /system/backup/preview          - Validate + preview a backup bundle
+  POST /system/backup/import           - Restore a backup bundle
+  GET  /system/backup/snapshots        - List rollback snapshots created on import
 """
 
 import time
 from datetime import datetime
+from io import BytesIO
 
-from flask import Blueprint, current_app, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, send_file, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.services.config_backup_service import ConfigBackupError
 from monitor.services.health import get_health_summary, get_uptime
 
 system_bp = Blueprint("system", __name__)
@@ -38,6 +44,107 @@ def _read_os_release():
             return result
     except OSError:
         return {}
+
+
+def _bool_from_request(value, default=False):
+    """Parse booleans from JSON/form data."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _log_backup_audit(event: str, *, user: str, ip: str, detail: str) -> None:
+    """Best-effort audit logging for backup actions."""
+    audit = getattr(current_app, "audit", None)
+    if not audit:
+        return
+    try:
+        audit.log_event(event, user=user, ip=ip, detail=detail)
+    except Exception:
+        current_app.logger.debug("Backup audit log failed for %s", event)
+
+
+def _backup_scope_from_body(body: dict | None) -> dict:
+    """Normalise export-scope booleans from a JSON request body."""
+    body = body or {}
+    scope = body.get("scope") if isinstance(body.get("scope"), dict) else {}
+    return {
+        "users": _bool_from_request(scope.get("users", body.get("users", True)), True),
+        "cameras": _bool_from_request(
+            scope.get("cameras", body.get("cameras", True)),
+            True,
+        ),
+        "settings": _bool_from_request(
+            scope.get("settings", body.get("settings", True)),
+            True,
+        ),
+        "include_user_credentials": _bool_from_request(
+            body.get("include_user_credentials", False),
+            False,
+        ),
+        "include_camera_trust": _bool_from_request(
+            body.get("include_camera_trust", True),
+            True,
+        ),
+        "include_webhook_secrets": _bool_from_request(
+            body.get("include_webhook_secrets", False),
+            False,
+        ),
+        "include_tailscale_auth_key": _bool_from_request(
+            body.get("include_tailscale_auth_key", False),
+            False,
+        ),
+    }
+
+
+def _backup_restore_scope(form) -> dict:
+    """Normalise explicit restore-scope booleans from a multipart upload."""
+    scope = {}
+    for key in ("users", "cameras", "settings", "camera_trust"):
+        if key in form:
+            scope[key] = _bool_from_request(form.get(key), False)
+    return scope
+
+
+def _scope_detail(scope: dict) -> str:
+    """Format enabled scope names for audit detail strings."""
+    enabled = [name for name, value in scope.items() if value]
+    return ",".join(enabled) if enabled else "none"
+
+
+def _read_uploaded_bundle() -> tuple[bytes, str]:
+    """Read the uploaded backup bundle from multipart form data."""
+    if "file" not in request.files:
+        raise ConfigBackupError("No backup bundle provided", reason="missing_bundle")
+    file = request.files["file"]
+    filename = file.filename or "backup.hmb"
+    payload = file.read()
+    if not payload:
+        raise ConfigBackupError(
+            "Uploaded backup bundle is empty", reason="empty_bundle"
+        )
+    return payload, filename
+
+
+def _read_passphrase(source: dict | None) -> str:
+    """Read and validate the backup passphrase from request data."""
+    source = source or {}
+    passphrase = source.get("passphrase")
+    if not isinstance(passphrase, str) or not passphrase.strip():
+        raise ConfigBackupError(
+            "Passphrase is required",
+            reason="missing_passphrase",
+        )
+    return passphrase
+
+
+def _backup_error_response(exc: ConfigBackupError):
+    """Return a consistent JSON error payload for backup routes."""
+    return jsonify({"error": str(exc), "reason": exc.reason}), exc.status_code
 
 
 @system_bp.route("/time", methods=["GET"])
@@ -251,3 +358,135 @@ def factory_reset():
         requesting_ip=ip,
     )
     return jsonify({"message": msg}), status
+
+
+@system_bp.route("/backup/export", methods=["POST"])
+@admin_required
+@csrf_protect
+def backup_export():
+    """Export a signed configuration backup bundle. Admin only."""
+    body = request.get_json(silent=True) or {}
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+
+    try:
+        passphrase = _read_passphrase(body)
+        options = _backup_scope_from_body(body)
+        filename, bundle_bytes, preview = (
+            current_app.config_backup_service.export_bundle(
+                passphrase=passphrase,
+                options=options,
+            )
+        )
+    except ConfigBackupError as exc:
+        _log_backup_audit(
+            "CONFIG_BACKUP_EXPORT_REJECTED",
+            user=user,
+            ip=ip,
+            detail=f"reason={exc.reason}",
+        )
+        return _backup_error_response(exc)
+
+    _log_backup_audit(
+        "CONFIG_BACKUP_EXPORTED",
+        user=user,
+        ip=ip,
+        detail=(
+            f"scope={_scope_detail(preview.get('scope', {}))}; "
+            f"users={preview.get('counts', {}).get('users', 0)}; "
+            f"cameras={preview.get('counts', {}).get('cameras', 0)}"
+        ),
+    )
+    return send_file(
+        BytesIO(bundle_bytes),
+        mimetype="application/vnd.home-monitor.backup+json",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@system_bp.route("/backup/preview", methods=["POST"])
+@admin_required
+@csrf_protect
+def backup_preview():
+    """Validate and preview a backup bundle before restore. Admin only."""
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+
+    try:
+        bundle_bytes, filename = _read_uploaded_bundle()
+        passphrase = _read_passphrase(request.form)
+        preview = current_app.config_backup_service.preview_bundle(
+            bundle_bytes,
+            passphrase=passphrase,
+        )
+    except ConfigBackupError as exc:
+        _log_backup_audit(
+            "CONFIG_BACKUP_PREVIEW_REJECTED",
+            user=user,
+            ip=ip,
+            detail=f"reason={exc.reason}",
+        )
+        return _backup_error_response(exc)
+
+    _log_backup_audit(
+        "CONFIG_BACKUP_PREVIEWED",
+        user=user,
+        ip=ip,
+        detail=f"filename={filename}; scope={_scope_detail(preview.get('scope', {}))}",
+    )
+    return jsonify({"filename": filename, "preview": preview}), 200
+
+
+@system_bp.route("/backup/import", methods=["POST"])
+@admin_required
+@csrf_protect
+def backup_import():
+    """Restore a validated backup bundle. Admin only."""
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+
+    try:
+        bundle_bytes, filename = _read_uploaded_bundle()
+        passphrase = _read_passphrase(request.form)
+        restore_options = _backup_restore_scope(request.form)
+        _log_backup_audit(
+            "CONFIG_BACKUP_IMPORT_ATTEMPT",
+            user=user,
+            ip=ip,
+            detail=(f"filename={filename}; scope={_scope_detail(restore_options)}"),
+        )
+        result = current_app.config_backup_service.import_bundle(
+            bundle_bytes,
+            passphrase=passphrase,
+            restore_options=restore_options,
+        )
+    except ConfigBackupError as exc:
+        _log_backup_audit(
+            "CONFIG_BACKUP_IMPORT_REJECTED",
+            user=user,
+            ip=ip,
+            detail=f"reason={exc.reason}",
+        )
+        return _backup_error_response(exc)
+
+    _log_backup_audit(
+        "CONFIG_BACKUP_IMPORTED",
+        user=user,
+        ip=ip,
+        detail=(
+            f"filename={filename}; "
+            f"snapshot={result.get('snapshot', {}).get('id', '')}; "
+            f"scope={_scope_detail({name: True for name in result.get('restored_components', [])})}"
+        ),
+    )
+    return jsonify(result), 200
+
+
+@system_bp.route("/backup/snapshots", methods=["GET"])
+@admin_required
+def backup_snapshots():
+    """List rollback snapshots created during restore. Admin only."""
+    return jsonify(
+        {"snapshots": current_app.config_backup_service.list_snapshots()}
+    ), 200

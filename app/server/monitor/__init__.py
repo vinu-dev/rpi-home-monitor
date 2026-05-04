@@ -21,6 +21,7 @@ from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_ota_client import CameraOTAClient
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
+from monitor.services.config_backup_service import ConfigBackupService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
 from monitor.services.loop_recorder import LoopRecorder
@@ -339,6 +340,14 @@ def _init_services(app):
         store=app.store,
         audit=app.audit,
         data_dir=app.config["DATA_DIR"],
+    )
+    app.config_backup_service = ConfigBackupService(
+        store=app.store,
+        audit=app.audit,
+        settings_service=app.settings_service,
+        data_dir=app.config["DATA_DIR"],
+        config_dir=app.config["CONFIG_DIR"],
+        certs_dir=app.config["CERTS_DIR"],
     )
 
     # Connect storage manager → streaming service for dir change notifications.

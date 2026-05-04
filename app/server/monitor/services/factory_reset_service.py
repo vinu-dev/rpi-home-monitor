@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import threading
 
+from monitor.services.backup_paths import build_backup_paths
+
 log = logging.getLogger("monitor.services.factory_reset")
 
 
@@ -28,6 +30,7 @@ class FactoryResetService:
         self._store = store
         self._audit = audit
         self._data_dir = data_dir
+        self._paths = build_backup_paths(data_dir=data_dir)
 
     def execute_reset(
         self,
@@ -56,42 +59,19 @@ class FactoryResetService:
         stamp = os.path.join(self._data_dir, ".setup-done")
         self._safe_remove(stamp, errors)
 
-        # 2. Clear config files (users, cameras, settings, secret key)
-        config_dir = os.path.join(self._data_dir, "config")
-        for filename in [
-            "cameras.json",
-            "users.json",
-            "settings.json",
-            ".secret_key",
-        ]:
-            self._safe_remove(os.path.join(config_dir, filename), errors)
+        # 2. Clear config files shared with backup/import. Keep the
+        # config directory itself so first-boot code can recreate
+        # defaults in place.
+        for target in self._paths.resettable_config_files:
+            self._safe_remove(str(target), errors)
 
-        # 3. Clear certificates (server certs regenerated on boot)
-        certs_dir = os.path.join(self._data_dir, "certs")
-        self._safe_rmtree(certs_dir, errors)
+        # 3. Clear mutable state directories shared with backup/import.
+        for target in self._paths.resettable_dirs:
+            if target == self._paths.recordings_dir and keep_recordings:
+                continue
+            self._safe_rmtree(str(target), errors)
 
-        # 4. Clear live streaming buffer
-        live_dir = os.path.join(self._data_dir, "live")
-        self._safe_rmtree(live_dir, errors)
-
-        # 5. Optionally clear recordings
-        if not keep_recordings:
-            recordings_dir = os.path.join(self._data_dir, "recordings")
-            self._safe_rmtree(recordings_dir, errors)
-
-        # 6. Clear logs (audit log already has the reset event)
-        logs_dir = os.path.join(self._data_dir, "logs")
-        self._safe_rmtree(logs_dir, errors)
-
-        # 7. Clear Tailscale state
-        ts_dir = os.path.join(self._data_dir, "tailscale")
-        self._safe_rmtree(ts_dir, errors)
-
-        # 8. Clear OTA staging area
-        ota_dir = os.path.join(self._data_dir, "ota")
-        self._safe_rmtree(ota_dir, errors)
-
-        # 9. Clear WiFi credentials via hotspot script (ADR-0013)
+        # 4. Clear WiFi credentials via hotspot script (ADR-0013)
         self._clear_wifi(errors)
 
         if errors:
@@ -157,12 +137,15 @@ class FactoryResetService:
 
         # 2. Always wipe /data/network/system-connections/ directly
         #    (nm-persist.sh restores connections from here on every boot)
-        persist_dir = os.path.join(self._data_dir, "network", "system-connections")
-        self._wipe_dir_contents(persist_dir, "persistent WiFi", errors)
+        self._wipe_dir_contents(
+            str(self._paths.wifi_connections_dir),
+            "persistent WiFi",
+            errors,
+        )
 
         # 3. Write a marker so nm-persist.sh skips re-seeding from rootfs
         #    (rootfs may have baked-in WiFi connections from dev builds)
-        marker = os.path.join(self._data_dir, "network", ".wifi-wiped")
+        marker = str(self._paths.wifi_wiped_marker)
         try:
             os.makedirs(os.path.dirname(marker), exist_ok=True)
             with open(marker, "w") as f:
