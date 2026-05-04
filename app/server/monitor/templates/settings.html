@@ -201,6 +201,151 @@
         </div>
     </div>
 
+    <div class="settings-section">
+        <div class="settings-section__title">Configuration Backup</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
+                Export server-side users, paired cameras, settings, and trust material into a signed `.hmb` bundle. Keep bundles secure if you include credentials or camera trust.
+            </p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="backup-export-passphrase">Passphrase</label>
+                    <input id="backup-export-passphrase" type="password" class="form-input"
+                           placeholder="At least 12 characters"
+                           x-model="backup.exportForm.passphrase">
+                </div>
+            </div>
+            <div class="form-row">
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                    <input type="checkbox" x-model="backup.exportForm.scope.users">
+                    <span>Users</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                    <input type="checkbox" x-model="backup.exportForm.scope.cameras">
+                    <span>Cameras</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                    <input type="checkbox" x-model="backup.exportForm.scope.settings">
+                    <span>Settings</span>
+                </label>
+            </div>
+            <div class="form-group" style="margin-top:var(--space-2);">
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                    <input type="checkbox" x-model="backup.exportForm.include_user_credentials">
+                    <span>Include user credentials and TOTP secrets</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer; margin-top:6px;">
+                    <input type="checkbox" x-model="backup.exportForm.include_camera_trust">
+                    <span>Include camera certificates and pairing trust</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer; margin-top:6px;">
+                    <input type="checkbox" x-model="backup.exportForm.include_webhook_secrets">
+                    <span>Include webhook secrets</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer; margin-top:6px;">
+                    <input type="checkbox" x-model="backup.exportForm.include_tailscale_auth_key">
+                    <span>Include Tailscale auth key</span>
+                </label>
+            </div>
+            <div class="text-small text-muted" style="margin-bottom:var(--space-3);">
+                Excluding credentials keeps restored accounts and integrations in a safer reset-required state.
+            </div>
+            <button class="btn btn--primary" @click="exportBackup()" :disabled="backup.exporting">
+                <span x-text="backup.exporting ? 'Preparing backup...' : 'Download Backup'"></span>
+            </button>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <div class="settings-section__title">Configuration Restore</div>
+        <div class="card">
+            <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
+                Upload a backup bundle, preview the changes, then confirm restore. A rollback snapshot is created automatically before import.
+            </p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="backup-import-passphrase">Passphrase</label>
+                    <input id="backup-import-passphrase" type="password" class="form-input"
+                           placeholder="Passphrase used during export"
+                           x-model="backup.importForm.passphrase">
+                </div>
+                <div class="form-group">
+                    <label for="backup-import-file">Bundle file</label>
+                    <input id="backup-import-file" type="file" class="form-input" accept=".hmb,.json"
+                           @change="setBackupFile($event)">
+                </div>
+            </div>
+            <div class="text-small text-muted" x-show="backup.importForm.filename" x-text="'Selected: ' + backup.importForm.filename"></div>
+            <div style="display:flex; gap:var(--space-2); margin-top:var(--space-3);">
+                <button class="btn btn--secondary" @click="previewBackupImport()" :disabled="backup.importForm.previewing || !backup.importForm.file">
+                    <span x-text="backup.importForm.previewing ? 'Validating...' : 'Preview Restore'"></span>
+                </button>
+                <button class="btn btn--danger" @click="importBackup()"
+                        :disabled="backup.importForm.importing || !backup.importForm.preview">
+                    <span x-text="backup.importForm.importing ? 'Restoring...' : 'Confirm Restore'"></span>
+                </button>
+            </div>
+
+            <template x-if="backup.importForm.preview">
+                <div style="margin-top:var(--space-4); border-top:1px solid var(--color-border); padding-top:var(--space-4);">
+                    <div class="info-row">
+                        <span class="info-row__label">Bundle created</span>
+                        <span class="info-row__value" x-text="formatLocalTime(backup.importForm.preview.created_at)"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-row__label">Users</span>
+                        <span class="info-row__value" x-text="backup.importForm.preview.users.incoming + ' incoming · ' + backup.importForm.preview.users.create + ' new · ' + backup.importForm.preview.users.update + ' updates · ' + backup.importForm.preview.users.remove + ' removals'"></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-row__label">Cameras</span>
+                        <span class="info-row__value" x-text="backup.importForm.preview.cameras.incoming + ' incoming · ' + backup.importForm.preview.cameras.create + ' new · ' + backup.importForm.preview.cameras.update + ' updates · ' + backup.importForm.preview.cameras.remove + ' removals'"></span>
+                    </div>
+                    <div class="info-row" style="border-bottom:none;">
+                        <span class="info-row__label">Settings changes</span>
+                        <span class="info-row__value" x-text="(backup.importForm.preview.settings.changed_keys || []).length ? backup.importForm.preview.settings.changed_keys.join(', ') : 'No settings changes detected'"></span>
+                    </div>
+                    <div class="form-row" style="margin-top:var(--space-3);">
+                        <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                            <input type="checkbox" x-model="backup.importForm.scope.users">
+                            <span>Restore users</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                            <input type="checkbox" x-model="backup.importForm.scope.cameras">
+                            <span>Restore cameras</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                            <input type="checkbox" x-model="backup.importForm.scope.settings">
+                            <span>Restore settings</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
+                            <input type="checkbox" x-model="backup.importForm.scope.camera_trust">
+                            <span>Restore camera trust</span>
+                        </label>
+                    </div>
+                    <template x-if="backup.importForm.preview.warnings && backup.importForm.preview.warnings.length">
+                        <div class="warnings-list" style="margin-top:var(--space-3);">
+                            <template x-for="warning in backup.importForm.preview.warnings" :key="warning">
+                                <div class="warning-item" x-text="warning"></div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <div class="settings-section" x-show="backup.snapshots.length > 0">
+        <div class="settings-section__title">Recent Rollback Snapshots</div>
+        <div class="card">
+            <template x-for="snapshot in backup.snapshots" :key="snapshot.id">
+                <div class="info-row">
+                    <span class="info-row__label" x-text="snapshot.id"></span>
+                    <span class="info-row__value" x-text="formatLocalTime(snapshot.created_at)"></span>
+                </div>
+            </template>
+        </div>
+    </div>
+
     <!-- Factory Reset -->
     <div class="settings-section">
         <div class="settings-section__title">Factory Reset</div>
@@ -1656,6 +1801,27 @@ function settingsPage() {
                 enabled: true,
             },
         },
+        backup: {
+            exporting: false,
+            snapshots: [],
+            exportForm: {
+                passphrase: '',
+                scope: { users: true, cameras: true, settings: true },
+                include_user_credentials: false,
+                include_camera_trust: true,
+                include_webhook_secrets: false,
+                include_tailscale_auth_key: false,
+            },
+            importForm: {
+                passphrase: '',
+                file: null,
+                filename: '',
+                preview: null,
+                previewing: false,
+                importing: false,
+                scope: { users: true, cameras: true, settings: true, camera_trust: true },
+            },
+        },
 
         resetConfirm: false,
         resetKeepRecordings: false,
@@ -1705,6 +1871,7 @@ function settingsPage() {
                 this.loadTailscale();
                 this.loadRecordingCameras();
                 this.loadWebhooks();
+                this.loadBackupSnapshots();
             }
         },
 
@@ -2014,6 +2181,151 @@ function settingsPage() {
                 window.HM.toast('Settings saved', 'success');
                 this.loadTimeStatus();
             } catch(e) { window.HM.toast(e.message || 'Failed to save settings', 'error'); }
+        },
+
+        setBackupFile(event) {
+            var file = event && event.target && event.target.files ? event.target.files[0] : null;
+            this.backup.importForm.file = file || null;
+            this.backup.importForm.filename = file ? file.name : '';
+            this.backup.importForm.preview = null;
+        },
+
+        async exportBackup() {
+            if (!this.backup.exportForm.passphrase || this.backup.exportForm.passphrase.length < 12) {
+                window.HM.toast('Backup passphrase must be at least 12 characters', 'error');
+                return;
+            }
+            this.backup.exporting = true;
+            try {
+                var resp = await fetch('/api/v1/system/backup/export', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': window.HM.auth.getCsrfToken() || '',
+                    },
+                    body: JSON.stringify(this.backup.exportForm),
+                });
+                if (!resp.ok) {
+                    var errData = await resp.json();
+                    throw new Error(errData.error || 'Backup export failed');
+                }
+                var blob = await resp.blob();
+                var disposition = resp.headers.get('Content-Disposition') || '';
+                var match = disposition.match(/filename="?([^";]+)"?/);
+                var filename = match ? match[1] : 'home-monitor-config-backup.hmb';
+                var url = window.URL.createObjectURL(blob);
+                var link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                window.HM.toast('Backup downloaded', 'success');
+            } catch (e) {
+                window.HM.toast(e.message || 'Backup export failed', 'error');
+            } finally {
+                this.backup.exporting = false;
+            }
+        },
+
+        async previewBackupImport() {
+            if (!this.backup.importForm.file) {
+                window.HM.toast('Choose a backup bundle first', 'error');
+                return;
+            }
+            if (!this.backup.importForm.passphrase || this.backup.importForm.passphrase.length < 12) {
+                window.HM.toast('Backup passphrase must be at least 12 characters', 'error');
+                return;
+            }
+            this.backup.importForm.previewing = true;
+            try {
+                var form = new FormData();
+                form.append('passphrase', this.backup.importForm.passphrase);
+                form.append('file', this.backup.importForm.file);
+                var resp = await fetch('/api/v1/system/backup/preview', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': window.HM.auth.getCsrfToken() || '',
+                    },
+                    body: form,
+                });
+                var data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Backup preview failed');
+                }
+                this.backup.importForm.preview = data.preview;
+                this.backup.importForm.filename = data.filename || this.backup.importForm.filename;
+                this.backup.importForm.scope = {
+                    users: !!data.preview.restore_defaults.users,
+                    cameras: !!data.preview.restore_defaults.cameras,
+                    settings: !!data.preview.restore_defaults.settings,
+                    camera_trust: !!data.preview.restore_defaults.camera_trust,
+                };
+                window.HM.toast('Backup preview ready', 'success');
+            } catch (e) {
+                this.backup.importForm.preview = null;
+                window.HM.toast(e.message || 'Backup preview failed', 'error');
+            } finally {
+                this.backup.importForm.previewing = false;
+            }
+        },
+
+        async importBackup() {
+            if (!this.backup.importForm.preview || !this.backup.importForm.file) {
+                window.HM.toast('Preview a backup before restoring it', 'error');
+                return;
+            }
+            if (!confirm('Restore this configuration bundle? Current users, cameras, settings, and trust material may be replaced.')) return;
+            this.backup.importForm.importing = true;
+            try {
+                var restoreCameraTrust = !!this.backup.importForm.scope.cameras && !!this.backup.importForm.scope.camera_trust;
+                var form = new FormData();
+                form.append('passphrase', this.backup.importForm.passphrase);
+                form.append('file', this.backup.importForm.file);
+                form.append('users', this.backup.importForm.scope.users ? 'true' : 'false');
+                form.append('cameras', this.backup.importForm.scope.cameras ? 'true' : 'false');
+                form.append('settings', this.backup.importForm.scope.settings ? 'true' : 'false');
+                form.append('camera_trust', restoreCameraTrust ? 'true' : 'false');
+                var resp = await fetch('/api/v1/system/backup/import', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': window.HM.auth.getCsrfToken() || '',
+                    },
+                    body: form,
+                });
+                var data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Backup restore failed');
+                }
+                window.HM.toast(data.message || 'Configuration restored', 'success');
+                this.backup.importForm.preview = null;
+                await Promise.all([
+                    this.loadSettings(),
+                    this.loadSystemInfo(),
+                    this.loadTimeStatus(),
+                    this.loadUsers(),
+                    this.loadRecordingCameras(),
+                    this.loadWebhooks(),
+                    this.loadBackupSnapshots(),
+                ]);
+            } catch (e) {
+                window.HM.toast(e.message || 'Backup restore failed', 'error');
+            } finally {
+                this.backup.importForm.importing = false;
+            }
+        },
+
+        async loadBackupSnapshots() {
+            try {
+                var data = await window.HM.api.get('/api/v1/system/backup/snapshots');
+                this.backup.snapshots = data.snapshots || [];
+            } catch (e) {
+                this.backup.snapshots = [];
+            }
         },
 
         /* --- Date & Time (ADR-0019) --- */

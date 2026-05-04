@@ -256,6 +256,7 @@ class Settings:
     require_2fa_for_remote: bool = False
     webhook_destinations: list[WebhookDestination] = field(default_factory=list)
     webhook_delivery_history_retention_days: int = 30
+    backup_max_history: int = 3
 
     def __post_init__(self) -> None:
         normalised: list[WebhookDestination] = []

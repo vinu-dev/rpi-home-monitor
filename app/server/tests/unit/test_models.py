@@ -91,7 +91,8 @@ class TestSettings:
         assert isinstance(d, dict)
         # 9 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
         # + 1 motion post-roll + 1 TOTP 2FA policy + 2 outbound webhook settings
-        assert len(d) == 21
+        # + 1 backup snapshot-retention setting
+        assert len(d) == 22
         assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
@@ -99,6 +100,7 @@ class TestSettings:
         assert d["require_2fa_for_remote"] is False
         assert d["webhook_destinations"] == []
         assert d["webhook_delivery_history_retention_days"] == 30
+        assert d["backup_max_history"] == 3
 
 
 class TestClip:

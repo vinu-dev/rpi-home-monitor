@@ -1,7 +1,11 @@
-# REQ: SWR-032, SWR-020, SWR-018; RISK: RISK-005, RISK-017, RISK-006; SEC: SC-020, SC-004, SC-006; TEST: TC-029, TC-010, TC-015
+# REQ: SWR-032, SWR-020, SWR-018, SWR-023, SWR-024, SWR-034, SWR-045; RISK: RISK-005, RISK-006, RISK-011, RISK-012, RISK-017, RISK-019, RISK-020; SEC: SC-004, SC-006, SC-011, SC-012, SC-017, SC-020, SC-021; TEST: TC-010, TC-015, TC-022, TC-023, TC-029, TC-032, TC-041, TC-042
 """Tests for the system API."""
 
+import io
+import json
 from unittest.mock import MagicMock, patch
+
+from monitor.models import Camera, Settings, User, WebhookDestination
 
 
 class TestHealthEndpoint:
@@ -255,3 +259,203 @@ class TestFactoryReset:
             requesting_ip=mock_log.call_args.kwargs.get("requesting_ip", ""),
             detail="keep_recordings=False",
         )
+
+
+class TestConfigBackup:
+    """Test configuration backup endpoints."""
+
+    PASSPHRASE = "correct horse battery staple"
+
+    def _seed_backup_state(self, app):
+        app.store.save_user(
+            User(
+                id="user-owner",
+                username="owner",
+                password_hash="hash-owner",
+                role="admin",
+                totp_secret="totp-owner",
+            )
+        )
+        app.store.save_camera(
+            Camera(
+                id="cam-001",
+                name="Front Door",
+                location="Porch",
+                status="online",
+                pairing_secret="ab" * 32,
+                cert_serial="SER-001",
+            )
+        )
+        app.store.save_settings(
+            Settings(
+                hostname="backup-box",
+                tailscale_auth_key="tskey-auth-test",
+                webhook_destinations=[
+                    WebhookDestination(
+                        id="wh-001",
+                        url="https://hooks.example.com/inbound",
+                        auth_type="hmac",
+                        secret="whsec-test",
+                        event_classes=("motion",),
+                    )
+                ],
+            )
+        )
+        config_dir = app.config["CONFIG_DIR"]
+        certs_dir = app.config["CERTS_DIR"]
+        with open(f"{config_dir}/hostname", "w") as handle:
+            handle.write("backup-box\n")
+        import os
+
+        os.makedirs(f"{certs_dir}/cameras", exist_ok=True)
+        with open(f"{certs_dir}/ca.crt", "w") as handle:
+            handle.write("root-cert")
+        with open(f"{certs_dir}/cameras/cam-001.crt", "w") as handle:
+            handle.write("camera-cert")
+
+    def _export_bundle(self, client):
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={
+                "passphrase": self.PASSPHRASE,
+                "include_user_credentials": True,
+                "include_webhook_secrets": True,
+                "include_tailscale_auth_key": True,
+            },
+        )
+        assert response.status_code == 200
+        return response.data
+
+    def test_backup_export_requires_admin(self, logged_in_client):
+        client = logged_in_client("viewer")
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+        assert response.status_code == 403
+
+    def test_backup_export_requires_auth(self, client):
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+        assert response.status_code == 401
+
+    def test_backup_export_downloads_bundle(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": self.PASSPHRASE},
+        )
+
+        assert response.status_code == 200
+        assert response.mimetype == "application/vnd.home-monitor.backup+json"
+        assert "attachment" in response.headers["Content-Disposition"]
+        bundle = json.loads(response.data)
+        assert bundle["manifest"]["schema_version"] == 1
+
+    def test_backup_preview_returns_summary(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        app.store.save_user(
+            User(
+                id="user-late",
+                username="late-user",
+                password_hash="hash-late",
+                role="viewer",
+            )
+        )
+
+        response = client.post(
+            "/api/v1/system/backup/preview",
+            data={
+                "passphrase": self.PASSPHRASE,
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["filename"] == "config-backup.hmb"
+        assert data["preview"]["users"]["remove"] == 1
+
+    def test_backup_import_restores_state(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        app.store.save_user(
+            User(
+                id="user-temp",
+                username="temp-user",
+                password_hash="hash-temp",
+                role="viewer",
+            )
+        )
+        app.store.save_camera(Camera(id="cam-999", name="Garage", status="offline"))
+        settings = app.store.get_settings()
+        settings.tailscale_auth_key = ""
+        settings.webhook_destinations = []
+        app.store.save_settings(settings)
+        with open(f"{app.config['CONFIG_DIR']}/hostname", "w") as handle:
+            handle.write("changed-host\n")
+        with open(f"{app.config['CERTS_DIR']}/ca.crt", "w") as handle:
+            handle.write("rotated-cert")
+
+        response = client.post(
+            "/api/v1/system/backup/import",
+            data={
+                "passphrase": self.PASSPHRASE,
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["message"] == "Configuration restored"
+        assert {user.username for user in app.store.get_users()} == {"admin", "owner"}
+        assert [camera.id for camera in app.store.get_cameras()] == ["cam-001"]
+        assert app.store.get_settings().tailscale_auth_key == "tskey-auth-test"
+        assert app.store.get_settings().webhook_destinations[0].secret == "whsec-test"
+
+    def test_backup_import_rejects_wrong_passphrase(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        response = client.post(
+            "/api/v1/system/backup/import",
+            data={
+                "passphrase": "this is the wrong secret",
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason"] == "signature_mismatch"
+
+    def test_backup_snapshots_lists_metadata(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        response = client.post(
+            "/api/v1/system/backup/import",
+            data={
+                "passphrase": self.PASSPHRASE,
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200
+
+        snapshots = client.get("/api/v1/system/backup/snapshots")
+        assert snapshots.status_code == 200
+        assert len(snapshots.get_json()["snapshots"]) == 1
