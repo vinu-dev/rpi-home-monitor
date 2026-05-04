@@ -263,11 +263,13 @@ Each bullet is testable; verification mechanism is in brackets.
   timeout=2)` (host/port read from `app.config["WATCHDOG_PROBE_URL"]` with
   that default) and only sends `WATCHDOG=1` on HTTP 200 with body `ok\n`.
   **[unit + integration with embedded WSGI server]**
-- AC-10: A new public route `GET /healthz` is registered (preferably in a
-  new tiny blueprint `app/server/monitor/api/healthz.py`). It is **not**
-  protected by `@admin_required` or CSRF. It returns HTTP 200,
-  `Content-Type: text/plain`, body `ok\n`. It performs no DB read, no audit
-  write, no template render, no settings load.
+- AC-10: A new loopback-only route `GET /healthz` is registered (preferably
+  in a new tiny blueprint `app/server/monitor/api/healthz.py`). It is **not**
+  protected by `@admin_required` or CSRF because the local systemd probe has
+  no session, but requests from non-loopback remote addresses return HTTP
+  403. Loopback probes return HTTP 200, `Content-Type: text/plain`, body
+  `ok\n`. The route performs no DB read, no audit write, no template render,
+  no settings load.
   **[unit, contract test, manual]**
 - AC-11: `/healthz` discloses no internal state — no version string, no
   hostname, no IP, no camera count, no settings flags. The body is the
@@ -505,11 +507,13 @@ Threat-model deltas (Implementer fills `THREAT-` / `SC-` IDs in
   `docs/ai/roles/architect.md` flagged here for extra scrutiny on the impl
   PR. No `**/auth/**`, `**/secrets/**`, OTA flow, pairing flow, or
   workflow change.
-- **New attack surface — `/healthz` (unauthenticated):** the only public
-  surface added. Returns the literal bytes `ok\n` and nothing else. No DB
-  access, no auth check (intentional — must work pre-login for systemd's
-  loopback probe), no version disclosure. Contract test (AC-11) pins the
-  exact body and headers as load-bearing.
+- **New attack surface — `/healthz` (loopback-only, unauthenticated):** the
+  only endpoint added. It returns the literal bytes `ok\n` and nothing else
+  to loopback probes. No DB access, no auth check (intentional — must work
+  pre-login for systemd's local probe), no version disclosure. Requests
+  arriving through nginx with a non-loopback remote address are rejected
+  before the success contract. Contract tests pin both the loopback success
+  body and the non-loopback rejection as load-bearing.
   - **Pre-auth surface check** per `docs/ai/design-standards.md`: passes.
     `/healthz` discloses nothing an attacker did not already know (the
     server exists and is listening on the LAN — visible from any TCP scan).
@@ -532,8 +536,9 @@ Threat-model deltas (Implementer fills `THREAT-` / `SC-` IDs in
   count visible to operator via `systemctl show <unit> -p NRestarts`. No
   new audit-log entries inside the application; the systemd journal is the
   authority for v1.
-- **No CORS / no public surface beyond `/healthz`.** No nginx exposure of
-  `/healthz` (loopback-only). No new env-var read at runtime beyond
+- **No CORS / no public success surface beyond the loopback probe.** nginx
+  may route `/healthz` through its existing catch-all proxy, but Flask rejects
+  non-loopback requests before returning `ok\n`. No new env-var read at runtime beyond
   `NOTIFY_SOCKET` and `WATCHDOG_USEC` (both systemd-set, both safe).
 
 ## Traceability
