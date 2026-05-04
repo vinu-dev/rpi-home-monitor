@@ -285,11 +285,14 @@ Each bullet is testable; verification mechanism noted in brackets.
   and emits start/complete audit events.
   **[integration with seeded unstamped clips]**
 - AC-16: Backfill cancellation stops at next clip boundary, leaving in-
-  flight clip either fully stamped or fully unstamped (never half).
+  flight clip either fully stamped or fully unstamped (never half). Cancelling
+  while already idle returns the current idle status without blocking.
   **[integration]**
 - AC-17: `GET /api/v1/recordings/timestamp-backfill/status` returns
   `{state: idle|running|cancelling, processed: int, total: int,
-  current_camera: str, started_at: ISO}` (admin-only).
+  current_camera: str, started_at: ISO}` (admin-only). Per-clip stamping
+  exceptions are counted as failures and do not leave the backfill service
+  stuck in `running`.
   **[contract]**
 - AC-18: Stamping a clip preserves bytewise A/V content (probed via frame
   hashing of first N keyframes, identical before and after stamp).

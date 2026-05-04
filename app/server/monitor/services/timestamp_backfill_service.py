@@ -82,10 +82,12 @@ class TimestampBackfillService:
 
         with self._lock:
             if self._state == "idle":
-                return self.get_status(), 200
-            self._cancel_requested = True
-            self._state = "cancelling"
-        return self.get_status(), 202
+                status = 200
+            else:
+                self._cancel_requested = True
+                self._state = "cancelling"
+                status = 202
+        return self.get_status(), status
 
     def get_status(self) -> dict:
         """Return current backfill state plus stamped/unstamped counts."""
@@ -118,14 +120,18 @@ class TimestampBackfillService:
                 cancel_requested = self._cancel_requested
             if cancel_requested:
                 break
-            camera = self._store.get_camera(camera_id)
-            result = self._stamper.stamp(
-                clip_path,
-                camera,
-                self._server_meta_provider() or ServerMeta(),
-            )
-            if not result.ok:
+            try:
+                camera = self._store.get_camera(camera_id)
+                result = self._stamper.stamp(
+                    clip_path,
+                    camera,
+                    self._server_meta_provider() or ServerMeta(),
+                )
+                if not result.ok:
+                    failures += 1
+            except Exception as exc:  # pragma: no cover - defensive
                 failures += 1
+                log.warning("timestamp_backfill: failed for %s: %s", clip_path, exc)
             with self._lock:
                 self._processed = index
             if self._throttle_seconds > 0 and index < len(inventory):

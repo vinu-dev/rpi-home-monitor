@@ -55,3 +55,42 @@ def test_backfill_status_and_start_flow(app, logged_in_client):
     assert last is not None
     assert last["summary"]["stamped"] == 1
     assert last["summary"]["unstamped"] == 0
+
+
+def test_cancel_when_idle_returns_status(app, logged_in_client):
+    client = logged_in_client()
+
+    resp = client.delete("/api/v1/recordings/timestamp-backfill")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["state"] == "idle"
+
+
+def test_backfill_recovers_from_stamp_exception(app, logged_in_client):
+    _write_flat_clip(app, "cam-001", "20260420_140000")
+    app.store.save_camera(Camera(id="cam-001", name="Front Door", status="online"))
+
+    def _raise(_clip_path, _camera, _server_meta):
+        raise RuntimeError("boom")
+
+    app.clip_stamper.stamp = _raise
+    app.clip_stamper.tools_available = lambda: True
+
+    client = logged_in_client()
+    start = client.post("/api/v1/recordings/timestamp-backfill")
+    assert start.status_code == 202
+
+    deadline = time.time() + 2
+    last = None
+    while time.time() < deadline:
+        resp = client.get("/api/v1/recordings/timestamp-backfill/status")
+        last = resp.get_json()
+        if last["state"] == "idle" and last["processed"] == 1:
+            break
+        time.sleep(0.05)
+
+    assert last is not None
+    assert last["state"] == "idle"
+    assert last["processed"] == 1
+    assert last["summary"]["unstamped"] == 1
