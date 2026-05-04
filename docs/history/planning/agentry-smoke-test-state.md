@@ -13,7 +13,7 @@ Two repositories stay separate:
 
 | Repository | Responsibility | Current baseline |
 |---|---|---|
-| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `d912825074a5a12d6658461e0facc40729aff728` |
+| `vinu-dev/agentry` | Universal platform, supervisor, prompts, session handling | `f7d0dc583440117c8b5f13e57d6cf9b5ade9903f` |
 | `vinu-dev/rpi-home-monitor` | Target config, product code, product docs, role guidance | pinned to the Agentry baseline above |
 
 Do not mix platform fixes into this repo. Do not put target project fixes in
@@ -33,7 +33,7 @@ the Agentry repo.
 The target Agentry scripts pin the platform to:
 
 ```text
-d912825074a5a12d6658461e0facc40729aff728
+f7d0dc583440117c8b5f13e57d6cf9b5ade9903f
 ```
 
 Model routing:
