@@ -958,6 +958,23 @@ class TestSystemInfoContract:
         )
 
 
+class TestSystemNetworkContract:
+    """GET /api/v1/system/network."""
+
+    def test_fields(self, client):
+        resp = client.get(
+            "/api/v1/system/network",
+            base_url="https://192.168.1.42:5443",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        _assert_fields(data, {"server_url", "ip", "port", "source"})
+        assert data["server_url"] == "https://192.168.1.42:5443/"
+        assert data["ip"] == "192.168.1.42"
+        assert data["port"] == 5443
+        assert data["source"] == "request_host"
+
+
 class TestSystemSummaryContract:
     """GET /api/v1/system/summary (ADR-0018 dashboard status strip)."""
 

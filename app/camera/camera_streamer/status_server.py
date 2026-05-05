@@ -18,6 +18,7 @@ import ssl
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 from camera_streamer import ota_installer, wifi
 from camera_streamer.control import parse_control_request
@@ -74,6 +75,7 @@ STATUS_ROUTE_MATRIX = {
         }
     ),
 }
+_STATIC_DIR = Path(__file__).parent / "static"
 
 # ---- Session store (in-memory) ----
 _sessions = {}
@@ -573,6 +575,8 @@ def _make_status_handler(
                 if not self._require_auth():
                     return
                 self._serve_status_page()
+            elif self.path == "/static/qrcode.min.js":
+                self._serve_static_file("qrcode.min.js", "application/javascript")
             elif self.path == "/api/status":
                 if not self._require_auth():
                     return
@@ -897,6 +901,18 @@ def _make_status_handler(
             body = html.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_static_file(self, filename, content_type):
+            try:
+                body = (_STATIC_DIR / filename).read_bytes()
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

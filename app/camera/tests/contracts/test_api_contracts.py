@@ -182,6 +182,16 @@ def _make_control_handler(config):
     )
 
 
+def _html_get(path, scheme="http"):
+    """GET an HTML page on localhost:TEST_PORT."""
+    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}")
+    kwargs = {"timeout": 5}
+    if scheme == "https":
+        kwargs["context"] = TLS_CONTEXT
+    with urlopen(req, **kwargs) as resp:
+        return resp.read().decode("utf-8"), resp.status
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -263,6 +273,7 @@ SETUP_STATUS_FIELDS = {
     "camera_id",
     "hostname",
     "ip_address",
+    "server_address",
 }
 NETWORK_FIELDS = {"ssid", "signal", "security"}
 CONNECT_SUCCESS_FIELDS = {"status", "message", "hostname"}
@@ -343,6 +354,22 @@ class TestSetupStatusContract:
         try:
             data, status = _json_get("/api/status")
             assert data["ip_address"] == ""
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.get_hostname", return_value="cam-test")
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_setup_page_renders_reachability_block(
+        self, mock_hotspot, mock_scan, mock_host, setup_config
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            html, status = _html_get("/setup")
+            assert status == 200
+            assert "Reach this camera" in html
+            assert "/static/qrcode.min.js" in html
         finally:
             server.stop()
 
@@ -480,6 +507,33 @@ class TestStatusServerApiStatusContract:
         try:
             data, status = _json_get("/api/status", scheme="https")
             _assert_fields(data, STATUS_API_FIELDS)
+        finally:
+            server.stop()
+
+    @patch(
+        "camera_streamer.status_server.wifi.get_ip_address",
+        return_value="192.168.1.50",
+    )
+    @patch(
+        "camera_streamer.status_server.wifi.get_current_ssid",
+        return_value="HomeNet",
+    )
+    @patch(
+        "camera_streamer.status_server.wifi.get_hostname",
+        return_value="cam-test",
+    )
+    def test_status_page_renders_reachability_block(
+        self, mock_host, mock_ssid, mock_ip, noauth_config
+    ):
+        server = CameraStatusServer(
+            noauth_config, stream_manager=None, wifi_interface="wlan0"
+        )
+        server.start()
+        try:
+            html, status = _html_get("/status", scheme="https")
+            assert status == 200
+            assert "Reach this camera" in html
+            assert "/static/qrcode.min.js" in html
         finally:
             server.stop()
 

@@ -1,6 +1,7 @@
 # REQ: SWR-012; RISK: RISK-001; TEST: TC-005
 """Tests for CameraLifecycle state machine."""
 
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,7 @@ def _make_config(**overrides):
         server_https_url="https://192.168.1.100",
         camera_id="cam-test",
         data_dir="/tmp/test",
+        config_dir="/tmp/test/config",
         is_configured=True,
     )
     defaults.update(overrides)
@@ -402,7 +404,9 @@ class TestRunning:
         lc._do_running()
 
         MockResolver.assert_called_once_with(
-            "rpi-divinu.local", capture_manager=lc._capture
+            "rpi-divinu.local",
+            capture_manager=lc._capture,
+            cache_path=os.path.join("/tmp/test/config", "server_resolved_ip"),
         )
         MockResolver.return_value.start.assert_called_once()
 

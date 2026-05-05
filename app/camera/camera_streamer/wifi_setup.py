@@ -38,6 +38,7 @@ HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
 
 # Template directory (adjacent to this module)
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
+_STATIC_DIR = Path(__file__).parent / "static"
 _template_cache = {}
 
 
@@ -312,6 +313,8 @@ def _make_handler(config, setup_server):
         def do_GET(self):
             if self.path == "/" or self.path == "/setup":
                 self._serve_setup_page()
+            elif self.path == "/static/qrcode.min.js":
+                self._serve_static_file("qrcode.min.js", "application/javascript")
             elif self.path == "/api/networks":
                 networks = setup_server.get_cached_networks()
                 self._json_response({"networks": networks})
@@ -344,6 +347,7 @@ def _make_handler(config, setup_server):
                         "camera_id": config.camera_id,
                         "hostname": hostname,
                         "ip_address": ip_address,
+                        "server_address": config.server_ip,
                     }
                 )
             else:
@@ -428,6 +432,18 @@ def _make_handler(config, setup_server):
             body = html.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_static_file(self, filename, content_type):
+            try:
+                body = (_STATIC_DIR / filename).read_bytes()
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

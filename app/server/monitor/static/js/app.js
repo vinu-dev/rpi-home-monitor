@@ -175,6 +175,110 @@
         return div.innerHTML;
     }
 
+    function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', 'readonly');
+            area.style.position = 'absolute';
+            area.style.left = '-9999px';
+            document.body.appendChild(area);
+            area.select();
+            try {
+                if (!document.execCommand('copy')) {
+                    throw new Error('copy failed');
+                }
+                resolve();
+            } catch (err) {
+                reject(err);
+            } finally {
+                document.body.removeChild(area);
+            }
+        });
+    }
+
+    var networkFallback = {
+        mount: function(rootId, helpHref) {
+            var root = document.getElementById(rootId);
+            if (!root) return;
+
+            api.get('/api/v1/system/network').then(function(data) {
+                if (!data || !data.server_url) {
+                    root.hidden = true;
+                    return;
+                }
+                root.hidden = false;
+
+                var urlEl = root.querySelector('[data-role="server-url"]');
+                var copyBtn = root.querySelector('[data-role="copy-url"]');
+                var qrEl = root.querySelector('[data-role="server-qr"]');
+                var qrNote = root.querySelector('[data-role="qr-note"]');
+                var metaEl = root.querySelector('[data-role="server-meta"]');
+                var helpEl = root.querySelector('[data-role="help-link"]');
+                var url = data.server_url;
+
+                if (urlEl) {
+                    urlEl.href = url;
+                    urlEl.textContent = url;
+                }
+
+                if (copyBtn) {
+                    copyBtn.onclick = function() {
+                        copyText(url).then(function() {
+                            var original = copyBtn.textContent;
+                            copyBtn.textContent = 'Copied!';
+                            copyBtn.disabled = true;
+                            setTimeout(function() {
+                                copyBtn.textContent = original;
+                                copyBtn.disabled = false;
+                            }, 1500);
+                        }).catch(function() {});
+                    };
+                }
+
+                if (metaEl) {
+                    metaEl.textContent = data.source === 'wifi_iface'
+                        ? 'Detected from the active LAN interface for this request.'
+                        : 'Detected from the address you used to reach this page.';
+                }
+
+                if (helpEl && helpHref) {
+                    helpEl.href = helpHref;
+                }
+
+                if (qrEl) {
+                    qrEl.innerHTML = '';
+                    qrEl.hidden = true;
+                    if (qrNote) {
+                        qrNote.hidden = true;
+                    }
+                    if (typeof window.qrcode !== 'function') {
+                        if (qrNote) {
+                            qrNote.hidden = false;
+                        }
+                        return;
+                    }
+                    try {
+                        var qr = window.qrcode(0, 'M');
+                        qr.addData(url);
+                        qr.make();
+                        qrEl.innerHTML = qr.createSvgTag(4, 0);
+                        qrEl.hidden = false;
+                    } catch (err) {
+                        if (qrNote) {
+                            qrNote.hidden = false;
+                        }
+                    }
+                }
+            }).catch(function() {
+                root.hidden = true;
+            });
+        },
+    };
+
     /* ============================================================
        Navigation Highlighting
        ============================================================ */
@@ -201,7 +305,7 @@
         var path = window.location.pathname;
 
         // Skip auth check on login and setup pages
-        if (path === '/login' || path === '/setup') {
+        if (path === '/login' || path === '/setup' || path.indexOf('/help/') === 0) {
             highlightNav();
             return;
         }
@@ -265,6 +369,8 @@
         formatDuration: formatDuration,
         formatTemp: formatTemp,
         escapeHtml: escapeHtml,
+        copyText: copyText,
+        networkFallback: networkFallback,
     };
 
 })();

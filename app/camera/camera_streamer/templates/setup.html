@@ -155,6 +155,45 @@ input:focus { border-color: #e94560; }
         Connect your phone back to your home WiFi,<br>then open the address above or scan the QR code below.
       </p>
     </div>
+    <div id="result-reachability" class="card" style="display:none">
+      <h3>Reach this camera</h3>
+      <p style="color:#8090b0;font-size:0.85em;line-height:1.5">
+        If <span style="font-family:monospace">.local</span> does not work on your WiFi,
+        use the IP link below.
+      </p>
+      <div id="result-host-block" style="display:none;margin-top:16px">
+        <p style="color:#8090b0;font-size:0.78em;text-transform:uppercase;letter-spacing:0.08em">By hostname</p>
+        <a id="result-host-link" href="" style="color:#4ade80;font-weight:600;font-size:1.02em;word-break:break-word"></a>
+        <p style="color:#8090b0;font-size:0.82em;margin-top:6px">
+          Works on most home networks. Some routers block
+          <span style="font-family:monospace">.local</span> discovery.
+        </p>
+      </div>
+      <div id="result-ip-block" style="display:none;margin-top:16px">
+        <p style="color:#8090b0;font-size:0.78em;text-transform:uppercase;letter-spacing:0.08em">By IP</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <a id="result-ip-link" href="" style="color:#4ade80;font-weight:600;font-size:1.02em;word-break:break-word"></a>
+          <button id="btn-copy-result-ip" class="btn btn-secondary" type="button" style="width:auto;padding:10px 14px;margin-top:0">
+            Copy
+          </button>
+        </div>
+        <p style="color:#8090b0;font-size:0.82em;margin-top:6px">
+          Always works on this network. Bookmark this link for future visits.
+        </p>
+        <div id="result-ip-qr" style="display:none;margin-top:14px;background:#fff;border-radius:12px;padding:10px;width:fit-content"></div>
+        <p id="result-ip-qr-note" style="display:none;color:#fde68a;font-size:0.82em;margin-top:8px">
+          QR not rendered; copy the URL manually.
+        </p>
+      </div>
+      <p id="result-ip-empty" style="display:none;color:#fde68a;font-size:0.82em;margin-top:16px">
+        IP fallback not available yet - refresh this page in a few seconds.
+      </p>
+      <p id="result-help-row" style="display:none;margin-top:14px">
+        <a id="result-help-link" href="" style="color:#8090b0;font-size:0.82em">
+          Help: what to do when .local does not work
+        </a>
+      </p>
+    </div>
     <div id="result-next-steps" style="display:none">
       <div class="card" style="margin-top:16px">
         <h3 style="margin-bottom:8px">Next Steps</h3>
@@ -170,6 +209,9 @@ input:focus { border-color: #e94560; }
   </div>
 </div>
 
+<script src="/static/qrcode.min.js"
+        integrity="sha256-uyNl5JAvT4SFLPQCXm9qYDJaaCrq+kP7Y7f8jwmNHvI="
+        crossorigin="anonymous"></script>
 <script>
 (function loadQrLibrary() {
   try {
@@ -186,6 +228,8 @@ var CAMERA_HOSTNAME = '{{HOSTNAME}}';
 var QR_PLACEHOLDER_TEXT = 'Resolving IP...';
 
 function $(id) { return document.getElementById(id); }
+function show(id) { if ($(id)) { $(id).style.display = 'block'; } }
+function hide(id) { if ($(id)) { $(id).style.display = 'none'; } }
 
 function showView(name) {
   ['view-form','view-connecting','view-result'].forEach(function(v) {
@@ -337,6 +381,119 @@ function showConnecting(hostname) {
   showView('view-connecting');
 }
 
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise(function(resolve, reject) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'absolute';
+    area.style.left = '-9999px';
+    document.body.appendChild(area);
+    area.select();
+    try {
+      if (!document.execCommand('copy')) {
+        throw new Error('copy failed');
+      }
+      resolve();
+    } catch (err) {
+      reject(err);
+    } finally {
+      document.body.removeChild(area);
+    }
+  });
+}
+
+function flashCopied(buttonId) {
+  var btn = $(buttonId);
+  if (!btn) { return; }
+  var original = btn.textContent;
+  btn.textContent = 'Copied!';
+  btn.disabled = true;
+  setTimeout(function() {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, 1500);
+}
+
+function setLink(linkId, url) {
+  var el = $(linkId);
+  if (!el) { return; }
+  el.href = url || '';
+  el.textContent = url || '';
+}
+
+function buildServerHelpUrl(serverAddress) {
+  if (!serverAddress) { return ''; }
+  var base = serverAddress.indexOf('://') === -1 ? ('https://' + serverAddress) : serverAddress;
+  return base.replace(/\/+$/, '') + '/help/network-fallback';
+}
+
+function renderQr(containerId, noteId, url) {
+  var container = $(containerId);
+  var note = $(noteId);
+  if (!container) { return; }
+  container.innerHTML = '';
+  hide(containerId);
+  hide(noteId);
+  if (!url) { return; }
+  if (typeof window.qrcode !== 'function') {
+    show(noteId);
+    return;
+  }
+  try {
+    var qr = window.qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    container.innerHTML = qr.createSvgTag(4, 0);
+    show(containerId);
+  } catch (err) {
+    if (note) {
+      show(noteId);
+    }
+  }
+}
+
+function renderReachability(data) {
+  var hostnameUrl = data.hostname ? ('https://' + data.hostname + '.local') : '';
+  var ipUrl = data.ip_address ? ('https://' + data.ip_address + ':443/') : '';
+  var helpUrl = buildServerHelpUrl(data.server_address || '');
+
+  show('result-reachability');
+  if (hostnameUrl) {
+    setLink('result-host-link', hostnameUrl);
+    show('result-host-block');
+  } else {
+    hide('result-host-block');
+  }
+
+  if (ipUrl) {
+    setLink('result-ip-link', ipUrl);
+    show('result-ip-block');
+    hide('result-ip-empty');
+    renderQr('result-ip-qr', 'result-ip-qr-note', ipUrl);
+    $('btn-copy-result-ip').onclick = function() {
+      copyText(ipUrl).then(function() {
+        flashCopied('btn-copy-result-ip');
+      }).catch(function() {});
+    };
+  } else {
+    hide('result-ip-block');
+    hide('result-ip-qr');
+    hide('result-ip-qr-note');
+    show('result-ip-empty');
+  }
+
+  if (helpUrl) {
+    $('result-help-link').href = helpUrl;
+    show('result-help-row');
+  } else {
+    hide('result-help-row');
+  }
+}
+
 function loadNetworks() {
   var wrap = $('net-list-wrap');
   var list = $('net-list');
@@ -380,7 +537,7 @@ function doConnect() {
 
   if (!ssid) { alert('Enter WiFi network name'); return; }
   if (!pass) { alert('Enter WiFi password'); return; }
-  if (!server) { alert('Enter server IP address'); return; }
+  if (!server) { alert('Enter server address'); return; }
   if (!adminUser || adminUser.length < 3) {
     alert('Set a username (at least 3 characters)');
     return;
@@ -433,12 +590,14 @@ fetch('/api/status')
       showView('view-result');
       $('result-msg').className = 'msg msg-ok';
       $('result-msg').textContent = 'Setup complete! Camera is on your home WiFi.';
+      renderReachability(d);
       $('result-next-steps').style.display = 'block';
       $('btn-retry').style.display = 'none';
     } else if (d.status === 'failed') {
       showView('view-result');
       $('result-msg').textContent = 'WiFi connection failed: ' + d.error + '. Try again.';
       $('result-address-card').style.display = 'none';
+      hide('result-reachability');
       $('result-next-steps').style.display = 'none';
       $('btn-retry').style.display = 'block';
     } else if (d.status === 'connected') {
@@ -446,6 +605,7 @@ fetch('/api/status')
       pollAddressStatus(3);
     } else {
       // Load cached networks from pre-hotspot scan.
+      hide('result-reachability');
       fetch('/api/networks')
         .then(function(r) { return r.json(); })
         .then(function(nd) {

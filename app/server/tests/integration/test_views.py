@@ -70,6 +70,17 @@ class TestLoginPage:
         response = client.get("/login")
         assert response.status_code == 200
         assert b"Sign In" in response.data or b"login" in response.data.lower()
+        body = response.get_data(as_text=True)
+        assert "login-server-address" in body
+        assert "qrcode.min.js" in body
+
+    def test_help_page_renders_when_setup_done(self, app, client):
+        stamp = os.path.join(app.config["DATA_DIR"], ".setup-done")
+        with open(stamp, "w") as f:
+            f.write("done")
+        response = client.get("/help/network-fallback")
+        assert response.status_code == 200
+        assert "What to do when .local does not work" in response.get_data(as_text=True)
 
 
 class TestProtectedPages:
@@ -113,6 +124,9 @@ class TestProtectedPages:
             sess["role"] = "admin"
         response = client.get("/dashboard")
         assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "dashboard-server-address" in body
+        assert "qrcode.min.js" in body
 
     def test_live_renders_when_authenticated(self, client):
         with client.session_transaction() as sess:

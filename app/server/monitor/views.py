@@ -69,6 +69,17 @@ def login():
     return render_template("login.html")
 
 
+@views_bp.route("/help/network-fallback")
+def network_fallback_help():
+    """Operator help for recovering when .local resolution fails."""
+    if not _setup_complete():
+        return redirect(url_for("views.setup"))
+    return render_template(
+        "network_fallback_help.html",
+        hide_nav=not _is_authenticated(),
+    )
+
+
 @views_bp.route("/dashboard")
 def dashboard():
     """Main dashboard — system health and camera overview."""

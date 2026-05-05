@@ -25,6 +25,7 @@ traceability records live in their dedicated folders.
 | Manage OTA keys | [`ota-key-management.md`](ota-key-management.md) |
 | Manage account security and 2FA | [`account-security.md`](account-security.md) |
 | Recover admin access | [`admin-recovery.md`](admin-recovery.md) |
+| Recover when `.local` fails | [`network-fallback.md`](network-fallback.md) |
 | Plan an AI-delivered feature | [`ai-feature-template.md`](ai-feature-template.md) |
 | Understand connectivity constraints | [`connectivity-and-privacy-constraints.md`](connectivity-and-privacy-constraints.md) |
 

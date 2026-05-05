@@ -3,6 +3,7 @@
 System health and info API.
 
 Endpoints:
+  GET  /system/network                 - LAN fallback URL for this server
   GET  /system/health                  - CPU temp, CPU%, RAM%, disk usage, warnings
   GET  /system/time/health             - derived server/camera time integrity (admin only)
   POST /system/time/resync             - restart timesyncd on server or queue camera resync
@@ -28,9 +29,11 @@ from io import BytesIO
 from flask import Blueprint, current_app, jsonify, request, send_file, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.services.audit import SYSTEM_NETWORK_FALLBACK_VIEWED
 from monitor.services.config_backup_service import ConfigBackupError
 from monitor.services.diagnostics_bundle import DiagnosticsBundleError
 from monitor.services.health import get_health_summary, get_uptime
+from monitor.services.network_info import get_network_payload
 
 system_bp = Blueprint("system", __name__)
 
@@ -188,6 +191,27 @@ def time_now():
             else 0,
         }
     )
+
+
+@system_bp.route("/network", methods=["GET"])
+def network():
+    """Return the LAN fallback URL for the interface serving this request."""
+    payload = get_network_payload(request.host_url, request.remote_addr)
+
+    if session.get("user_id"):
+        audit = getattr(current_app, "audit", None)
+        if audit:
+            try:
+                audit.log_event(
+                    SYSTEM_NETWORK_FALLBACK_VIEWED,
+                    user=session.get("username", ""),
+                    ip=request.remote_addr or "",
+                    detail=f"source={payload.get('source', '')}",
+                )
+            except Exception:
+                current_app.logger.debug("Network fallback audit log failed")
+
+    return jsonify(payload), 200
 
 
 @system_bp.route("/health", methods=["GET"])

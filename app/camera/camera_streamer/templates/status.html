@@ -498,6 +498,33 @@ details[open] summary::after { transform: rotate(45deg); }
     </div>
   </div>
 
+  <div id="reach-card" class="card" hidden style="margin-top:var(--gap-3);padding:var(--gap-4)">
+    <h2 style="margin-top:0">Reach this camera</h2>
+    <p class="muted" style="font-size:.88rem;line-height:1.6">
+      Use the IP link below if <span class="inline-code">.local</span> stops working on your WiFi.
+    </p>
+    <div id="reach-host-row" style="margin-top:16px">
+      <div class="text-small text-muted" style="text-transform:uppercase;letter-spacing:.08em">By hostname</div>
+      <a id="reach-host-url" class="mono" href="" style="display:inline-block;margin-top:6px;color:var(--text)"></a>
+      <div class="hint">Works on most home networks. Some routers block .local discovery.</div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="text-small text-muted" style="text-transform:uppercase;letter-spacing:.08em">By IP</div>
+      <div id="reach-ip-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px" hidden>
+        <a id="reach-ip-url" class="mono" href="" style="color:var(--text)"></a>
+        <button id="btn-copy-reach-url" class="btn btn--outline btn--sm" type="button">Copy</button>
+      </div>
+      <div id="reach-ip-note" class="hint" hidden>
+        IP fallback not available yet - refresh this page in a few seconds.
+      </div>
+      <div id="reach-qr" hidden style="margin-top:14px;background:#fff;border-radius:12px;padding:10px;width:fit-content"></div>
+      <div id="reach-qr-note" class="hint" hidden>QR not rendered; copy the URL manually.</div>
+    </div>
+    <div id="reach-help-row" style="margin-top:14px" hidden>
+      <a id="reach-help-link" class="text-small text-muted" href="">Help: what to do when .local does not work</a>
+    </div>
+  </div>
+
   <!-- Pairing call-to-action (only when not paired) -->
   <div id="pair-cta" class="card" hidden style="margin-top:var(--gap-3);padding:var(--gap-4)">
     <h2 style="margin-top:0">Pair with a home server</h2>
@@ -697,6 +724,9 @@ details[open] summary::after { transform: rotate(45deg); }
 
 </main>
 
+<script src="/static/qrcode.min.js"
+        integrity="sha256-uyNl5JAvT4SFLPQCXm9qYDJaaCrq+kP7Y7f8jwmNHvI="
+        crossorigin="anonymous"></script>
 <script>
 (function(){
 "use strict";
@@ -705,6 +735,69 @@ function $(id) { return document.getElementById(id); }
 function esc(s) { var d = document.createElement("div"); d.textContent = String(s == null ? "" : s); return d.innerHTML; }
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
+function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject) {
+        var area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "readonly");
+        area.style.position = "absolute";
+        area.style.left = "-9999px";
+        document.body.appendChild(area);
+        area.select();
+        try {
+            if (!document.execCommand("copy")) {
+                throw new Error("copy failed");
+            }
+            resolve();
+        } catch (err) {
+            reject(err);
+        } finally {
+            document.body.removeChild(area);
+        }
+    });
+}
+function flashCopyButton(id) {
+    var btn = $(id);
+    if (!btn) return;
+    var original = btn.textContent;
+    btn.textContent = "Copied!";
+    btn.disabled = true;
+    setTimeout(function() {
+        btn.textContent = original;
+        btn.disabled = false;
+    }, 1500);
+}
+function buildServerHelpUrl(serverAddress) {
+    if (!serverAddress) return "";
+    var base = serverAddress.indexOf("://") === -1
+        ? ("https://" + serverAddress)
+        : serverAddress;
+    return base.replace(/\/+$/, "") + "/help/network-fallback";
+}
+function renderQr(containerId, noteId, url) {
+    var container = $(containerId);
+    if (!container) return;
+    container.innerHTML = "";
+    hide(containerId);
+    hide(noteId);
+    if (!url) return;
+    if (typeof window.qrcode !== "function") {
+        show(noteId);
+        return;
+    }
+    try {
+        var qr = window.qrcode(0, "M");
+        qr.addData(url);
+        qr.make();
+        container.innerHTML = qr.createSvgTag(4, 0);
+        show(containerId);
+    } catch (err) {
+        show(noteId);
+    }
+}
 
 // ---- Tab switcher ----
 // Proper tabs: one section visible at a time. Clicking a pill hides
@@ -750,6 +843,46 @@ function statusSentence(d) {
     return ["ok", "Connected to home server. Stream starts when a viewer requests it."];
 }
 
+function updateReachability(d) {
+    var hostUrl = _hostname ? ("https://" + _hostname + ".local") : "";
+    var ipUrl = d.ip_address ? ("https://" + d.ip_address + ":443/") : "";
+    var helpUrl = buildServerHelpUrl(d.server_address || "");
+
+    show("reach-card");
+    if (hostUrl) {
+        $("reach-host-url").href = hostUrl;
+        $("reach-host-url").textContent = hostUrl;
+        show("reach-host-row");
+    } else {
+        hide("reach-host-row");
+    }
+
+    if (ipUrl) {
+        $("reach-ip-url").href = ipUrl;
+        $("reach-ip-url").textContent = ipUrl;
+        show("reach-ip-row");
+        hide("reach-ip-note");
+        $("btn-copy-reach-url").onclick = function() {
+            copyText(ipUrl).then(function() {
+                flashCopyButton("btn-copy-reach-url");
+            }).catch(function() {});
+        };
+        renderQr("reach-qr", "reach-qr-note", ipUrl);
+    } else {
+        hide("reach-ip-row");
+        hide("reach-qr");
+        hide("reach-qr-note");
+        show("reach-ip-note");
+    }
+
+    if (helpUrl) {
+        $("reach-help-link").href = helpUrl;
+        show("reach-help-row");
+    } else {
+        hide("reach-help-row");
+    }
+}
+
 // ---- Status (/api/status) ----
 var _streamConfig = null;
 var _hostname = "";
@@ -782,6 +915,7 @@ function loadStatus() {
         $("h-uptime").textContent = friendlyUptime(d.uptime);
         _currentFirmware = d.firmware_version || "";
         $("h-firmware").textContent = _currentFirmware || "--";
+        updateReachability(d);
 
         // Hardware fault banner — show when CaptureManager.check()
         // failed. Server reports the same signal on the dashboard;
