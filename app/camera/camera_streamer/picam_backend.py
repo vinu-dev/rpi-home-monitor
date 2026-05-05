@@ -1,4 +1,4 @@
-# REQ: SWR-012, SWR-053; RISK: RISK-001, RISK-007; TEST: TC-005, TC-012
+# REQ: SWR-012, SWR-014, SWR-053; RISK: RISK-001, RISK-005, RISK-007; TEST: TC-005, TC-012, TC-019
 """
 Picamera2-based capture backend (ADR-0021 target).
 
@@ -109,6 +109,7 @@ LORES_FORMAT = "YUV420"
 LORES_WIDTH = 320
 LORES_HEIGHT = 240
 LORES_FPS = 5
+MIN_RETAIN_BYTES = 32 * 1024
 
 
 class PicameraH264Backend:
@@ -139,6 +140,14 @@ class PicameraH264Backend:
         self._lores_thread: threading.Thread | None = None
         self._running = False
         self._lock = threading.Lock()
+        self._pre_roll_output = None
+        self._pre_roll_buffer_started_monotonic: float | None = None
+        self._pre_roll_file = None
+        self._pre_roll_part_path: str | None = None
+        self._pre_roll_final_path: str | None = None
+        self._pre_roll_actual_seconds = 0.0
+        self._pre_roll_recording_started_monotonic: float | None = None
+        self._pre_roll_event_started_at = None
 
     # --- Public lifecycle (mirrors StreamManager's) ---------------------
 
@@ -167,6 +176,10 @@ class PicameraH264Backend:
     def stop(self) -> None:
         """Tear everything down cleanly."""
         self._running = False
+        try:
+            self.stop_pre_rolled_recording("aborted")
+        except Exception:  # pragma: no cover - defensive cleanup
+            log.debug("pre-roll teardown failed", exc_info=True)
         # Encoder + picam first so frames stop flowing before we close ffmpeg's stdin.
         try:
             if self._picam2 is not None:
@@ -209,6 +222,116 @@ class PicameraH264Backend:
         if self._ffmpeg is None or self._ffmpeg.poll() is not None:
             return False
         return self._picam2 is not None
+
+    def start_pre_rolled_recording(self, path: str, started_at) -> float:
+        """Flush the motion pre-roll ring into ``path`` and keep writing live.
+
+        Returns the buffered duration that was available when the motion event
+        fired. When pre-roll is disabled, this becomes a no-op returning 0.
+        """
+        with self._lock:
+            if self._pre_roll_output is None:
+                return 0.0
+            if self._pre_roll_file is not None:
+                log.warning(
+                    "start_pre_rolled_recording called while recording %s is active",
+                    self._pre_roll_final_path,
+                )
+                return self._pre_roll_actual_seconds
+
+            final_path = os.fspath(path)
+            part_path = f"{final_path}.part"
+            parent = os.path.dirname(final_path) or "."
+            os.makedirs(parent, exist_ok=True)
+
+            now = time.monotonic()
+            actual_pre_roll = self._available_pre_roll_seconds(now)
+            output_file = open(part_path, "wb")
+            try:
+                self._pre_roll_output.fileoutput = output_file
+                self._pre_roll_output.start()
+            except Exception:
+                self._pre_roll_output.fileoutput = None
+                output_file.close()
+                try:
+                    os.remove(part_path)
+                except OSError:
+                    pass
+                raise
+
+            self._pre_roll_file = output_file
+            self._pre_roll_part_path = part_path
+            self._pre_roll_final_path = final_path
+            self._pre_roll_actual_seconds = actual_pre_roll
+            self._pre_roll_recording_started_monotonic = now
+            self._pre_roll_event_started_at = started_at
+            log.info(
+                "Started pre-roll recording %s (buffered %.2fs)",
+                final_path,
+                actual_pre_roll,
+            )
+            return actual_pre_roll
+
+    def stop_pre_rolled_recording(self, reason: str):
+        """Close an active pre-roll recording and optionally finalize it."""
+        with self._lock:
+            if (
+                self._pre_roll_file is None
+                or self._pre_roll_part_path is None
+                or self._pre_roll_final_path is None
+            ):
+                return None
+
+            output_file = self._pre_roll_file
+            part_path = self._pre_roll_part_path
+            final_path = self._pre_roll_final_path
+            pre_roll_seconds = self._pre_roll_actual_seconds
+            started_monotonic = self._pre_roll_recording_started_monotonic
+
+            try:
+                if self._pre_roll_output is not None:
+                    self._pre_roll_output.stop()
+                    self._pre_roll_output.fileoutput = None
+            finally:
+                output_file.close()
+
+            total_seconds = pre_roll_seconds
+            if started_monotonic is not None:
+                total_seconds += max(0.0, time.monotonic() - started_monotonic)
+
+            try:
+                size_bytes = os.path.getsize(part_path)
+            except OSError:
+                size_bytes = 0
+
+            result = None
+            try:
+                if reason == "aborted" and size_bytes < MIN_RETAIN_BYTES:
+                    try:
+                        os.remove(part_path)
+                    except FileNotFoundError:
+                        pass
+                    log.info(
+                        "Discarded small aborted pre-roll recording %s (%d bytes)",
+                        part_path,
+                        size_bytes,
+                    )
+                else:
+                    os.replace(part_path, final_path)
+                    result = {
+                        "path": final_path,
+                        "pre_roll_seconds": pre_roll_seconds,
+                        "total_seconds": total_seconds,
+                    }
+                    log.info(
+                        "Stopped pre-roll recording %s (%s, %.2fs total)",
+                        final_path,
+                        reason,
+                        total_seconds,
+                    )
+                return result
+            finally:
+                self._reset_pre_roll_recording_state()
 
     # --- Internals ------------------------------------------------------
 
@@ -317,6 +440,7 @@ class PicameraH264Backend:
         output = FileOutput(self._ffmpeg.stdin)
         self._encoder = encoder
         self._picam2.start_recording(encoder, output)
+        self._attach_pre_roll_output_if_enabled()
         log.info(
             "Picamera2 H264 recording started → ffmpeg stdin (PID %d)",
             self._ffmpeg.pid if self._ffmpeg else -1,
@@ -405,6 +529,62 @@ class PicameraH264Backend:
             target=self._lores_loop, name="picam-lores", daemon=True
         )
         self._lores_thread.start()
+
+    def _attach_pre_roll_output_if_enabled(self) -> None:
+        if not self._motion_pre_roll_enabled():
+            self._pre_roll_output = None
+            self._pre_roll_buffer_started_monotonic = None
+            return
+
+        from picamera2.outputs import CircularOutput
+
+        buffer_frames = max(
+            1,
+            round(self._motion_pre_roll_seconds() * max(1.0, float(self._config.fps))),
+        )
+        ring = CircularOutput(buffersize=buffer_frames)
+        current_output = getattr(self._encoder, "output", None)
+        if isinstance(current_output, list):
+            outputs = list(current_output)
+        elif current_output is None:
+            outputs = []
+        else:
+            outputs = [current_output]
+        outputs.append(ring)
+        self._encoder.output = outputs
+        self._pre_roll_output = ring
+        self._pre_roll_buffer_started_monotonic = time.monotonic()
+        log.info(
+            "Attached motion pre-roll buffer (%d frames, target %.2fs)",
+            buffer_frames,
+            self._motion_pre_roll_seconds(),
+        )
+
+    def _motion_pre_roll_enabled(self) -> bool:
+        return bool(
+            self._motion_enabled
+            and getattr(self._config, "motion_pre_roll_enabled", False)
+        )
+
+    def _motion_pre_roll_seconds(self) -> float:
+        return float(max(0, getattr(self._config, "motion_pre_roll_seconds", 0)))
+
+    def _available_pre_roll_seconds(self, now: float | None = None) -> float:
+        if self._pre_roll_buffer_started_monotonic is None:
+            return 0.0
+        target = self._motion_pre_roll_seconds()
+        if target <= 0:
+            return 0.0
+        now = time.monotonic() if now is None else now
+        return min(target, max(0.0, now - self._pre_roll_buffer_started_monotonic))
+
+    def _reset_pre_roll_recording_state(self) -> None:
+        self._pre_roll_file = None
+        self._pre_roll_part_path = None
+        self._pre_roll_final_path = None
+        self._pre_roll_actual_seconds = 0.0
+        self._pre_roll_recording_started_monotonic = None
+        self._pre_roll_event_started_at = None
 
     def _lores_loop(self) -> None:
         """Capture lores Y-plane frames and hand them to the callback.
