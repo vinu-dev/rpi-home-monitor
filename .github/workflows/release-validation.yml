@@ -1,4 +1,4 @@
-# REQ: SWR-048, SWR-055; RISK: RISK-009, RISK-019; SEC: SC-009, SC-018; TEST: TC-045
+# REQ: SWR-048, SWR-055, SWR-071; RISK: RISK-009, RISK-019, RISK-027; SEC: SC-009, SC-018, SC-026; TEST: TC-045, TC-056
 name: Release Validation
 
 on:
@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: |
-          python -m pytest tests/yocto -k "parse"
+          python -m pytest tests/yocto -k "parse or flask_version_floor"
           echo "Signed production artifact build belongs on the release runner."
 
   server-ota-gate:

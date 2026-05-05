@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REQ: SWR-048; RISK: RISK-022; SEC: SC-018; TEST: TC-045, TC-047
+# REQ: SWR-048, SWR-071; RISK: RISK-019, RISK-022, RISK-027; SEC: SC-018, SC-026; TEST: TC-045, TC-047, TC-056
 # =============================================================================
 # smoke-test.sh - Layer 5 hardware verification for RPi Home Monitor
 #
@@ -171,6 +171,27 @@ else
         fail "Login failed (check password)"
         CSRF=""
     fi
+
+    LOGOUT_STATUS=$(server_curl -X POST -o /dev/null -w "%{http_code}" \
+        "${API_BASE}/auth/logout" 2>/dev/null) || true
+    if [ "$LOGOUT_STATUS" = "200" ]; then
+        pass "POST /auth/logout succeeds before re-login"
+    else
+        fail "POST /auth/logout failed before re-login (HTTP ${LOGOUT_STATUS:-000})"
+    fi
+
+    LOGIN_RESP=$(curl "${CURL_OPTS[@]}" -c "$COOKIE_JAR" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"admin\",\"password\":\"${PASSWORD}\"}" \
+        "${API_BASE}/auth/login" 2>/dev/null) || true
+
+    if echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
+        pass "Re-login successful after logout"
+        CSRF=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+    else
+        fail "Re-login failed after logout"
+        CSRF=""
+    fi
 fi
 
 # /auth/me
@@ -190,6 +211,7 @@ if [ -n "${CSRF:-}" ]; then
 else
     skip "Audit export check skipped: no CSRF token available from /auth/me"
 fi
+skip "Manual Flask-upgrade check: perform a state-changing CSRF-protected POST after OTA and confirm monitor.log shows no Flask import error"
 skip "Manual audit export cross-check: downloaded CSV opens cleanly and row count matches /data/logs/audit.log minus the header"
 
 # ---------------------------------------------------------------------------

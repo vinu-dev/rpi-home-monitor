@@ -46,6 +46,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-020 | Tampering/Denial | Public API contract drift breaks deployed camera, browser, or automation clients. | Server/camera API schemas and routes. | Loss of monitoring, pairing, or update functions. | SC-021 | SYS-027, SWR-045 | TC-042 | Draft |
 | THREAT-021 | Information disclosure/Spoofing/Denial | Share token theft, brute force, or replay reaches token-scoped media. | Public share URLs, recipient browsers, unauthenticated public routes. | Unauthorized clip/live viewing or noisy abuse against public viewers. | SC-022, SC-024 | SYS-032, SWR-058, SWR-059, SWR-060 | TC-050, TC-051, TC-052 | Draft |
 | THREAT-022 | Elevation/Information disclosure | Public share routes bypass intended scope or expose dashboard state beyond the shared resource. | Public share viewer templates, token validation, media asset routing. | Recipients pivot into unrelated media, metadata, or privileged surfaces. | SC-023, SC-024 | SYS-032, SWR-059, SWR-061 | TC-051, TC-052, TC-053 | Draft |
+| THREAT-023 | Supply chain/Information disclosure | Dependency resolution or release evidence allows a known-vulnerable Flask build to enter the server install path even though application code is unchanged. | `requirements.txt`, editable package installs, SBOM generation, Yocto image manifests, and release-validation workflows. | Session-cache poisoning exposure or untrustworthy vulnerability posture. | SC-026, SC-018, SC-007 | SYS-023, SYS-035, SWR-071 | TC-043, TC-056 | Draft |
 
 ## Audit Events
 
