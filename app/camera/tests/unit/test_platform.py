@@ -193,14 +193,77 @@ class TestProbing:
     def test_probe_vcgencmd_path(self, mock_which):
         assert _probe_vcgencmd_path() == "/usr/bin/vcgencmd"
 
-    @patch("glob.glob", return_value=["/sys/devices/platform/soc/test/throttled"])
+    @patch("os.path.isdir", return_value=True)
+    @patch(
+        "os.walk",
+        return_value=[
+            ("/sys/devices/platform/soc/firmware", [], ["throttled"]),
+        ],
+    )
     @patch("os.path.isfile", return_value=True)
-    def test_probe_throttle_path_found(self, mock_isfile, mock_glob):
-        assert _probe_throttle_path() == "/sys/devices/platform/soc/test/throttled"
+    def test_probe_throttle_path_found(self, mock_isfile, mock_walk, mock_isdir):
+        # os.path.join uses the host separator (backslash on Windows,
+        # forward slash on Linux) — test against the joined form so
+        # both CI and local Windows runs agree.
+        expected = os.path.join("/sys/devices/platform/soc/firmware", "throttled")
+        assert _probe_throttle_path() == expected
 
-    @patch("glob.glob", return_value=[])
-    def test_probe_throttle_path_none(self, mock_glob):
+    @patch("os.path.isdir", return_value=True)
+    @patch("os.walk", return_value=[])
+    def test_probe_throttle_path_none(self, mock_walk, mock_isdir):
         assert _probe_throttle_path() is None
+
+    @patch("os.path.isdir", return_value=False)
+    def test_probe_throttle_path_no_soc_root(self, mock_isdir):
+        """Non-Pi platforms (no /sys/devices/platform/soc) → return None
+        without ever invoking the walk."""
+        assert _probe_throttle_path() is None
+
+    def test_probe_throttle_path_does_not_follow_symlinks(self):
+        """Symlink loops in /sys/devices/platform/soc must not hang the
+        probe. The bug that prompted this guard: Pi Zero 2W's
+        bcm2835 serial driver has a `<dev>/driver/<dev>/...`
+        self-referential chain in sysfs; the prior `glob.glob(pattern,
+        recursive=True)` followed it forever (Python 3.12 docs: ** does
+        follow symlinks) and pinned the camera-streamer at boot for
+        minutes before systemd's watchdog killed it.
+        """
+        # The fix is structural — os.walk is called with
+        # followlinks=False. Verify the call shape directly so
+        # future refactors can't silently re-enable it.
+        with (
+            patch("os.path.isdir", return_value=True),
+            patch("os.walk", return_value=[]) as mock_walk,
+        ):
+            _probe_throttle_path()
+        assert mock_walk.call_count == 1
+        # os.walk(top, topdown=True, onerror=None, followlinks=False)
+        # — followlinks may be passed positionally or as a kwarg.
+        kwargs = mock_walk.call_args.kwargs
+        if "followlinks" in kwargs:
+            assert kwargs["followlinks"] is False
+        else:
+            args = mock_walk.call_args.args
+            # If passed positionally, the 4th arg is followlinks.
+            assert len(args) < 4 or args[3] is False, (
+                f"os.walk called with followlinks=True: args={args}"
+            )
+
+    def test_probe_throttle_path_caps_walked_directories(self):
+        """Even on a non-loop sysfs forest, the probe must not walk
+        unbounded — defence against future SoCs with thousands of
+        nodes adding seconds to boot."""
+
+        def fake_walk(*_args, **_kwargs):
+            # Simulate a giant sysfs that keeps yielding empty dirs.
+            for i in range(10_000):
+                yield (f"/sys/devices/platform/soc/dir{i}", [], [])
+
+        with (
+            patch("os.path.isdir", return_value=True),
+            patch("os.walk", side_effect=fake_walk),
+        ):
+            assert _probe_throttle_path() is None
 
     @patch(
         "os.path.isdir",
