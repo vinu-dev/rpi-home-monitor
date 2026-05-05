@@ -1,0 +1,34 @@
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
+# Yocto recipe for PyOTP — Python One Time Password Library.
+#
+# Vendored in meta-home-monitor because pyotp is not provided by
+# meta-openembedded's meta-python layer. The server image gained a
+# runtime dependency on pyotp in 1.5.0 with the TOTP-2FA work (#238)
+# but the Yocto recipe was not added at that time, which broke the
+# server-prod image build (`Nothing RPROVIDES 'python3-pyotp'`).
+#
+# Version pin matches `app/server/setup.py`:
+#     pyotp>=2.9
+SUMMARY = "Python One Time Password Library"
+DESCRIPTION = "PyOTP is a Python library for generating and verifying one-time passwords. It can be used to implement two-factor (2FA) or multi-factor (MFA) authentication methods in web applications and in other systems that require users to log in."
+HOMEPAGE = "https://github.com/pyauth/pyotp"
+SECTION = "devel/python"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=f4889ab24aecac0a410d83c0323f9daf"
+
+SRC_URI[sha256sum] = "346b6642e0dbdde3b4ff5a930b664ca82abfa116356ed48cc42c7d6590d36f63"
+
+inherit pypi setuptools3
+
+# Note: hashlib/hmac are part of python3-core in scarthgap's Python split,
+# not separately-named packages, so they don't appear here. Bitbake's
+# RDEPENDS resolution surfaced 'Nothing RPROVIDES python3-hashlib'
+# during the first build attempt — don't add them back without first
+# checking the active distro's RECIPE_PROVIDES from manifests/.
+RDEPENDS:${PN} += " \
+    python3-json \
+    python3-logging \
+    python3-math \
+"
+
+BBCLASSEXTEND = "native nativesdk"

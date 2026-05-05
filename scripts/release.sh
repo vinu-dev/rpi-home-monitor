@@ -261,11 +261,20 @@ cmd_verify() {
         echo "==> verifying $f"
         local tmp
         tmp="$(mktemp -d)"
+        # `-binary` MUST mirror the signing call in build-swu.sh
+        # (openssl cms -sign ... -binary -noattr). Without it
+        # openssl applies SMIME content-canonicalization (CRLF
+        # normalization, etc.) on the detached content before
+        # computing the digest, and the result mismatches the
+        # signed digest produced by the binary-mode signer. Symptom
+        # is a deeply unhelpful "CMS Verification failure /
+        # CMS_SignerInfo_verify_content" — looks like a key
+        # mismatch but is actually a content-encoding mismatch.
         ( cd "$tmp" && cpio -i --quiet < "$f" \
             && openssl cms -verify \
                 -in sw-description.sig -inform DER \
                 -content sw-description \
-                -CAfile "$cert" -purpose any -out /dev/null \
+                -CAfile "$cert" -purpose any -binary -out /dev/null \
             && echo "    OK: signature verifies against $cert" ) \
         || { rm -rf "$tmp"; die "signature verification failed for $f"; }
         rm -rf "$tmp"
