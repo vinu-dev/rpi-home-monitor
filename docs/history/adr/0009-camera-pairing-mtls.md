@@ -208,8 +208,10 @@ After pairing, all camera-server channels use mTLS:
 - Server presents `server.crt` when pushing updates
 - Same CA trust chain
 
-**Health/status polling:**
-- Server polls camera health endpoint over HTTPS with mTLS
+**Server-to-camera control:**
+- Server calls the camera control API over HTTPS on port 8443 with mTLS
+- The human-admin listener remains on port 443 and does not require a client cert
+- Camera nftables permits port 8443 only from the paired server IP while leaving port 443 for human-admin access
 - Same certs, same trust chain
 
 ---

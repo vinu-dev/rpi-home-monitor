@@ -1,9 +1,12 @@
 # REQ: SWR-039, SWR-065, SWR-066; RISK: RISK-007, RISK-015; SEC: SC-002, SC-012; TEST: TC-037, TC-054
 """Unit tests for CameraControlClient (ADR-0015)."""
 
+import urllib.error
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from monitor.services.camera_control_client import CameraControlClient
+from monitor.services.camera_control_client import CONTROL_PORT, CameraControlClient
 
 
 @pytest.fixture
@@ -18,6 +21,12 @@ class TestCameraControlClientUnit:
 
     def test_init_stores_certs_dir(self, client, data_dir):
         assert client._certs_dir == str(data_dir / "certs")
+        assert client._control_port == CONTROL_PORT
+
+    def test_init_allows_custom_control_port(self, data_dir):
+        certs_dir = data_dir / "certs"
+        custom = CameraControlClient(str(certs_dir), control_port=9443)
+        assert custom._control_port == 9443
 
     def test_ssl_context_no_certs(self, client):
         """SSL context works even without cert files."""
@@ -62,6 +71,46 @@ class TestCameraControlClientUnit:
         result, err = client.get_stream_state("192.168.99.99")
         assert result is None
         assert err
+
+    @patch("monitor.services.camera_control_client.urllib.request.urlopen")
+    def test_request_uses_default_control_port(self, mock_urlopen, client):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b"{}"
+        mock_urlopen.return_value = response
+
+        result, err = client.get_config("10.0.0.1")
+
+        assert err == ""
+        assert result == {}
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "https://10.0.0.1:8443/api/v1/control/config"
+
+    @patch("monitor.services.camera_control_client.urllib.request.urlopen")
+    def test_request_uses_custom_control_port(self, mock_urlopen, data_dir):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b"{}"
+        mock_urlopen.return_value = response
+        client = CameraControlClient(str(data_dir / "certs"), control_port=9443)
+
+        result, err = client.get_config("10.0.0.1")
+
+        assert err == ""
+        assert result == {}
+        request = mock_urlopen.call_args.args[0]
+        assert request.full_url == "https://10.0.0.1:9443/api/v1/control/config"
+
+    @patch("monitor.services.camera_control_client.urllib.request.urlopen")
+    def test_connection_refused_returns_firmware_mismatch_error(
+        self, mock_urlopen, client
+    ):
+        mock_urlopen.side_effect = urllib.error.URLError(
+            ConnectionRefusedError(111, "Connection refused")
+        )
+
+        result, err = client.get_config("10.0.0.1")
+
+        assert result is None
+        assert err == "camera control port unreachable (firmware mismatch?)"
 
 
 class TestStreamControlEndpoints:

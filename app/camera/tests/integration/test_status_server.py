@@ -2,6 +2,7 @@
 """Tests for camera_streamer.status_server — session management + system helpers."""
 
 import os
+import ssl
 import time
 from pathlib import Path
 from subprocess import CalledProcessError, TimeoutExpired
@@ -10,7 +11,9 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 from camera_streamer.status_server import (
+    CONTROL_API_PREFIX,
     SESSION_TIMEOUT,
+    STATUS_ROUTE_MATRIX,
     TLS_CERT_NAME,
     TLS_KEY_NAME,
     CameraStatusServer,
@@ -243,7 +246,19 @@ class TestTlsHelpers:
 
         assert wrapped is mock_server
         ctx.load_cert_chain.assert_called_once_with("cert.pem", "key.pem")
+        assert ctx.verify_mode == ssl.CERT_NONE
+        ctx.load_verify_locations.assert_not_called()
         ctx.wrap_socket.assert_called_once_with(original_socket, server_side=True)
+
+    def test_status_routes_exclude_control_prefix(self):
+        for routes in STATUS_ROUTE_MATRIX.values():
+            assert all(not path.startswith(CONTROL_API_PREFIX) for path in routes)
+
+    def test_status_server_source_does_not_instantiate_control_handler(self):
+        source = (
+            Path(__file__).resolve().parents[2] / "camera_streamer" / "status_server.py"
+        ).read_text()
+        assert "ControlHandler(" not in source
 
 
 # ---- System info helpers ----

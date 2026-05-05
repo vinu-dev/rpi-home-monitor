@@ -56,17 +56,24 @@ Since we use `libcamera-vid` (CLI, not picamera2 library), all parameter changes
 
 ## Decision
 
-### 1. Protocol: HTTP REST on the existing camera HTTPS server
+### 1. Protocol: HTTP REST on dedicated camera control listener
 
-Add new API endpoints to the camera's existing status server (`status_server.py`, port 443). The server (RPi 4B) pushes configuration by making HTTPS requests to the camera. No new protocols, no broker, no additional ports.
+Keep HTTP REST, but split the camera HTTPS surface into two listeners:
+
+- `:443` human-admin status UI (`status_server.py`)
+- `:8443` server-only control API (`control_server.py`)
+
+The server (RPi 4B) pushes configuration to `https://<camera-ip>:8443/api/v1/control/*`.
+No new protocols or brokers are introduced; the only runtime change is a
+second stdlib HTTPS listener inside the existing camera process.
 
 **Why this is the right choice:**
 
 - Camera already runs an HTTPS server with session auth and self-signed TLS
 - Both devices are on the same LAN with sub-millisecond latency
 - The ESPHome pattern (hub connects to device's server) maps directly to our architecture
-- Adding REST endpoints to `status_server.py` costs zero new infrastructure
-- mTLS can be layered on for the control channel (server presents its cert, camera verifies against CA)
+- A second stdlib listener is cheap on the Zero 2W and removes auth-policy coupling
+- The control listener can require mTLS at the TLS layer (`CERT_REQUIRED`) without affecting browser UX on `:443`
 
 ### 2. Authentication: mTLS with server certificate verification
 
@@ -74,22 +81,23 @@ The control channel uses **mutual TLS** — the same trust infrastructure establ
 
 - **Server → Camera requests:** Server presents its `server.crt` (signed by server CA). Camera verifies against `ca.crt` received during pairing.
 - **No session cookies needed:** Certificate identity replaces username/password for machine-to-machine calls.
-- **Human admin access** (via camera status page) continues using password + session cookies on the same server.
-
-This means the camera's HTTPS server accepts two authentication methods:
-1. **Session cookie** — for human admin via browser (existing)
-2. **mTLS client certificate** — for server control channel (new)
+- **Human admin access** (via camera status page) continues using password + session cookies on `:443`.
 
 Request routing:
 
 ```
-Camera HTTPS (port 443)
-  ├── /login, /, /status, /api/status, /api/wifi, /api/password
-  │     → session cookie auth (human admin, existing)
-  ├── /pair
-  │     → PIN auth (pairing ceremony, existing)
-  └── /api/v1/control/*
-        → mTLS auth (server only, new)
+Camera HTTPS surfaces
+  :443
+    ├── /login, /, /status, /api/status, /api/wifi, /api/password
+    │     → session cookie auth (human admin)
+    ├── /pair
+    │     → PIN auth (pairing ceremony)
+    └── /api/v1/control/*
+          → 404 (not routed on the human listener)
+
+  :8443
+    └── /api/v1/control/*
+          → mTLS auth (server only)
 ```
 
 ### 3. Camera-side API endpoints
@@ -192,7 +200,7 @@ Camera configuration has a single source of truth: **the camera itself**. The se
 ```
 Admin changes resolution on dashboard
   → Server saves desired state to cameras.json
-  → Server pushes PUT /api/v1/control/config to camera
+  → Server pushes PUT /api/v1/control/config to camera on :8443
   → Camera validates, applies, persists to camera.conf
   → Camera responds with applied config
   → Server updates cameras.json with confirmed state
@@ -232,24 +240,23 @@ class ControlHandler:
         self._rate_limit_seconds = 5
 ```
 
-Integration into `status_server.py`:
+Integration into `control_server.py`:
 
 ```python
-# In StatusHandler.do_GET / do_PUT:
-if self.path.startswith("/api/v1/control/"):
-    if not self._require_mtls():  # verify client cert
-        return
-    # Route to ControlHandler
+# In ControlRequestHandler.do_GET / do_PUT:
+if not self._require_mtls():
+    return
+# Route to ControlHandler
 ```
 
-mTLS verification in the camera's HTTPS server:
+mTLS verification in the dedicated control listener:
 
 ```python
 def _require_mtls(self):
     """Verify the request comes from a client with a cert signed by our CA."""
     # ssl.SSLSocket.getpeercert() returns cert info if client presented one
-    # Camera's SSL context needs: ctx.verify_mode = ssl.CERT_OPTIONAL
-    # (CERT_OPTIONAL so browser clients without certs still work on other endpoints)
+    # Control listener TLS context uses ctx.verify_mode = ssl.CERT_REQUIRED
+    # so no-cert clients fail the handshake before HTTP.
     peer_cert = self.request.getpeercert()
     if not peer_cert:
         self._json_response({"error": "Client certificate required"}, 401)
@@ -260,11 +267,15 @@ def _require_mtls(self):
 
 ### 9. Network and firewall considerations
 
-The camera's nftables firewall (ADR-0009) already allows inbound HTTPS (port 443) from the server IP. No firewall changes needed.
+The camera's nftables firewall now exposes:
+
+- `tcp dport 443 accept` for the human-admin HTTPS surface
+- `tcp dport 8443 ip saddr $SERVER_IP accept` for the server-only control API
 
 ```
-# Existing camera nftables rule:
-tcp dport 443 ip saddr $SERVER_IP accept  # status page + control API
+# Camera nftables rules:
+tcp dport 443 accept
+tcp dport 8443 ip saddr $SERVER_IP accept
 ```
 
 ### 10. Parameter validation rules
@@ -330,7 +341,7 @@ Strongly typed APIs with code generation. But: adds protobuf dependency, `grpcio
 
 ### Positive
 
-- **Zero new infrastructure** — reuses existing HTTPS server, mTLS certs, port 443
+- **Zero new infrastructure** — reuses stdlib HTTPS listeners and existing mTLS certs
 - **Familiar pattern** — REST API consistent with existing camera and server endpoints
 - **Strong auth** — mTLS means only the paired server can control the camera
 - **Auditable** — every change logged on both sides
@@ -341,7 +352,7 @@ Strongly typed APIs with code generation. But: adds protobuf dependency, `grpcio
 
 - **~2-5s stream gap on parameter changes** — unavoidable with libcamera-vid CLI (mitigated: users expect brief interruption when changing resolution)
 - **Camera must be reachable** — server needs network path to camera IP (already true for health checks; blocked if camera is offline → config_sync="pending")
-- **Two auth methods on one server** — session cookies (humans) + mTLS (server). Adds routing complexity in `status_server.py` (mitigated: clear URL prefix separation `/api/v1/control/*`)
+- **Two listeners instead of one** — slightly more sockets/threads, but with cleaner trust boundaries and simpler routing
 - **Server stores cached copy** — config can drift if camera is modified directly via its status page (mitigated: server refreshes from camera on health check cycle)
 
 ## Implementation Plan
@@ -349,8 +360,8 @@ Strongly typed APIs with code generation. But: adds protobuf dependency, `grpcio
 ### Phase 1 (this PR)
 
 1. Add `control.py` module to camera with parameter validation and stream restart logic
-2. Add mTLS verification to camera's HTTPS server (CERT_OPTIONAL mode)
-3. Add `/api/v1/control/config`, `/api/v1/control/capabilities`, `/api/v1/control/status` endpoints
+2. Add dedicated `control_server.py` listener with mTLS-required TLS (`CERT_REQUIRED`)
+3. Add `/api/v1/control/config`, `/api/v1/control/capabilities`, `/api/v1/control/status` endpoints on `:8443`
 4. Add `CameraControlClient` to server
 5. Wire `CameraService.update()` to push config to camera after saving
 6. Add `config_sync` field to Camera model ("synced", "pending", "error")
@@ -369,7 +380,8 @@ Strongly typed APIs with code generation. But: adds protobuf dependency, `grpcio
 | File | Change |
 |------|--------|
 | `app/camera/camera_streamer/control.py` | **New** — ControlHandler, validation, capabilities |
-| `app/camera/camera_streamer/status_server.py` | Add mTLS support, route `/api/v1/control/*` |
+| `app/camera/camera_streamer/control_server.py` | **New** — dedicated mTLS control listener on `:8443` |
+| `app/camera/camera_streamer/status_server.py` | Human-admin listener only; control paths return 404 |
 | `app/camera/camera_streamer/stream.py` | Add `restart()` method |
 | `app/camera/camera_streamer/config.py` | Add bitrate, h264_profile, rotation, flip params to DEFAULTS |
 | `app/server/monitor/services/camera_control_client.py` | **New** — HTTP client with mTLS |

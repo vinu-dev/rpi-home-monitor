@@ -124,7 +124,8 @@ flag prevents a ping-pong notification back to the server.
 ### Server → Camera: On-demand Status Query
 
 `CameraControlClient.get_status(camera_ip)` calls
-`GET /api/v1/control/status` on the camera's status server (mTLS auth).
+`GET /api/v1/control/status` on the camera's dedicated control listener
+(`https://<camera-ip>:8443`, mTLS auth).
 
 Returns:
 ```json

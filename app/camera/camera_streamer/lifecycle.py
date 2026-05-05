@@ -29,7 +29,12 @@ import urllib.request
 
 from camera_streamer import led
 from camera_streamer.capture import CaptureManager
-from camera_streamer.control import DEFAULT_STREAM_STATE_PATH, VALID_STREAM_STATES
+from camera_streamer.control import (
+    DEFAULT_STREAM_STATE_PATH,
+    VALID_STREAM_STATES,
+    ControlHandler,
+)
+from camera_streamer.control_server import CameraControlServer
 from camera_streamer.discovery import DiscoveryService
 from camera_streamer.faults import (
     FAULT_NETWORK_MDNS_RESOLUTION_FAILED,
@@ -261,11 +266,13 @@ class CameraLifecycle:
         self._discovery = None
         self._stream = None
         self._status_server = None
+        self._control_server = None
         self._health = None
         self._heartbeat = None
         self._setup_server = None
         self._ota_agent = None
         self._pairing = PairingManager(config)
+        self._control_handler = None
         # Background server-name resolver (#199). Replaces the previous
         # one-shot ``gethostbyname`` warning. Started in ``_do_running``
         # once the CaptureManager exists (the resolver injects faults
@@ -320,6 +327,8 @@ class CameraLifecycle:
             self._ota_agent.stop()
         if self._stream:
             self._stream.stop()
+        if self._control_server:
+            self._control_server.stop()
         if self._status_server:
             self._status_server.stop()
         if self._discovery:
@@ -511,20 +520,34 @@ class CameraLifecycle:
                 desired,
             )
 
+        self._control_handler = ControlHandler(
+            self._config,
+            self._stream,
+            stream_state_path=self._stream_state_path,
+        )
+
         # Status HTTPS server (port 443)
         self._status_server = CameraStatusServer(
             self._config,
             self._stream,
+            control_handler=self._control_handler,
             wifi_interface=self._platform.wifi_interface,
             thermal_path=self._platform.thermal_path,
             pairing_manager=self._pairing,
-            stream_state_path=self._stream_state_path,
             # Capture manager flows into /api/status so the camera's
             # own status page can show a "no camera module detected"
             # banner. Set by _do_validating (the state before us).
             capture_manager=self._capture,
         )
         self._status_server.start()
+
+        # Dedicated control HTTPS listener (port 8443, mTLS required)
+        self._control_server = CameraControlServer(
+            self._config,
+            control_handler=self._control_handler,
+            stream_manager=self._stream,
+        )
+        self._control_server.start()
 
         # OTA update agent (port 8080)
         self._ota_agent = OTAAgent(self._config)
@@ -544,7 +567,7 @@ class CameraLifecycle:
             thermal_path=self._platform.thermal_path,
             vcgencmd_path=vcgencmd_path,
             throttle_path=throttle_path,
-            control_handler=self._status_server.control_handler,
+            control_handler=self._control_handler,
             # Surface hardware faults ("no camera module detected")
             # to the server so the dashboard can show the user.
             capture_manager=self._capture,

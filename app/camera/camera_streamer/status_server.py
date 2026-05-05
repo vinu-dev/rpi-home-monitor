@@ -20,7 +20,7 @@ import threading
 import time
 
 from camera_streamer import ota_installer, wifi
-from camera_streamer.control import ControlHandler, parse_control_request
+from camera_streamer.control import parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
 from camera_streamer.server_notifier import notify_config_change
 
@@ -34,6 +34,46 @@ LISTEN_PORT = 443
 SESSION_TIMEOUT = 7200  # 2 hours
 TLS_CERT_NAME = "status.crt"
 TLS_KEY_NAME = "status.key"
+CONTROL_API_PREFIX = "/api/v1/control/"
+STATUS_ROUTE_MATRIX = {
+    "HEAD": frozenset(
+        {
+            "/login",
+            "/logout",
+            "/pair",
+            "/",
+            "/status",
+            "/api/status",
+            "/api/networks",
+        }
+    ),
+    "GET": frozenset(
+        {
+            "/login",
+            "/logout",
+            "/pair",
+            "/",
+            "/status",
+            "/api/status",
+            "/api/networks",
+            "/api/ota/status",
+        }
+    ),
+    "PUT": frozenset({"/api/stream-config"}),
+    "POST": frozenset(
+        {
+            "/api/ota/upload",
+            "/api/ota/reboot",
+            "/login",
+            "/pair",
+            "/api/pair",
+            "/api/wifi",
+            "/api/factory-reset",
+            "/api/unpair",
+            "/api/password",
+        }
+    ),
+}
 
 # ---- Session store (in-memory) ----
 _sessions = {}
@@ -177,46 +217,13 @@ def _ensure_tls_material(config):
 
 
 def _wrap_https_server(server, config):
-    """Wrap the status server socket with TLS.
-
-    Uses ``CERT_OPTIONAL`` so browsers (Chrome/Edge) that don't have a
-    client cert can still reach the human-facing login + status pages,
-    while machine-facing ``/api/v1/control/*`` requests that DO present
-    a client cert have it validated against the paired CA. The control
-    handler itself (``_require_mtls``) then enforces the presence + CA
-    signature — no cert, no call. See ADR-0022 + issue #112.
-
-    Prior behaviour was CERT_NONE with ``_require_mtls`` falling back to
-    a source-IP check against ``config.server_ip``. That let anyone on
-    the same LAN who could spoof / inherit the server IP call machine
-    endpoints. Now the peer must hold a CA-signed client cert.
-    """
+    """Wrap the human-admin status server socket with browser-friendly TLS."""
     # REQ: SWR-013; RISK: RISK-002; SEC: SC-001; TEST: TC-004
     cert_path, key_path = _ensure_tls_material(config)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
     ctx.check_hostname = False
-
-    ca_path = os.path.join(config.certs_dir, "ca.crt")
-    if os.path.isfile(ca_path):
-        ctx.load_verify_locations(ca_path)
-        # CERT_OPTIONAL: ask for a client cert. If the peer sends one,
-        # the TLS layer validates it against ca.crt before the HTTP
-        # handler runs. If the peer sends nothing, the connection still
-        # completes (browsers need this) and the HTTP handler decides
-        # whether to allow the call based on the path.
-        ctx.verify_mode = ssl.CERT_OPTIONAL
-        log.info("TLS client-cert validation enabled (CA: %s)", ca_path)
-    else:
-        # Pre-pairing bring-up: no CA yet. The status server runs over
-        # plain TLS; control endpoints stay locked because no peer can
-        # present a CA-signed cert.
-        ctx.verify_mode = ssl.CERT_NONE
-        log.warning(
-            "CA not present at %s — control-endpoint mTLS cannot be enforced "
-            "until the camera is paired",
-            ca_path,
-        )
+    ctx.verify_mode = ssl.CERT_NONE
 
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
     return server
@@ -323,6 +330,7 @@ class CameraStatusServer:
         self,
         config,
         stream_manager=None,
+        control_handler=None,
         wifi_interface="wlan0",
         thermal_path=None,
         pairing_manager=None,
@@ -338,20 +346,14 @@ class CameraStatusServer:
         # ``hardware_ok`` + ``hardware_error`` so the camera's own
         # status page can show a "no camera module detected" banner.
         self._capture = capture_manager
-        # Let ControlHandler pick the default path when caller didn't override
-        # so tests and production share the same default (ADR-0017).
-        if stream_state_path is None:
-            self._control = ControlHandler(config, stream_manager)
-        else:
-            self._control = ControlHandler(
-                config, stream_manager, stream_state_path=stream_state_path
-            )
+        _ = stream_state_path  # Retained for source-level compatibility.
+        self._control = control_handler
         self._server = None
         self._thread = None
 
     @property
     def control_handler(self):
-        """Return the internal ControlHandler (for lifecycle wiring)."""
+        """Return the injected local stream-config service, if available."""
         return self._control
 
     def start(self):
@@ -498,31 +500,10 @@ def _make_status_handler(
         def log_message(self, format, *args):
             log.debug("Status HTTPS: " + format % args)
 
-        def _has_mtls_client_cert(self):
-            """True iff the peer presented a client cert validated by OpenSSL.
-
-            The TLS layer (``CERT_OPTIONAL`` + ``load_verify_locations``)
-            already validated any cert the peer sent against the paired
-            CA before the HTTP handler runs — so ``getpeercert()``
-            returning a non-empty dict is proof of valid CA signature.
-            No peer cert → dict is empty → False. Issue #112 / #119.
-            Source-IP fallback was removed: a LAN attacker who could
-            spoof ``config.server_ip`` could previously bypass auth.
-            """
-            try:
-                peer_cert = self.request.getpeercert()
-            except (AttributeError, ValueError):
-                return False
-            return bool(peer_cert)
-
-        def _require_mtls(self):
-            """Require mTLS client certificate for control API endpoints."""
-            if self._has_mtls_client_cert():
-                return True
-            self._json_response({"error": "Client certificate required"}, 401)
-            return False
-
         def do_HEAD(self):
+            if self.path.startswith(CONTROL_API_PREFIX):
+                self.send_error(404)
+                return
             if self.path == "/login":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
@@ -560,7 +541,7 @@ def _make_status_handler(
             return _check_session(token)
 
         def _require_auth(self):
-            """Require session auth OR mTLS for non-control API paths."""
+            """Require a valid browser session for protected human/admin paths."""
             if self._is_authenticated():
                 return True
             if self.path.startswith("/api/"):
@@ -572,26 +553,8 @@ def _make_status_handler(
             return False
 
         def do_GET(self):
-            # Control API — mTLS auth
-            if self.path == "/api/v1/control/config":
-                if not self._require_mtls():
-                    return
-                self._json_response(control_handler.get_config())
-                return
-            if self.path == "/api/v1/control/capabilities":
-                if not self._require_mtls():
-                    return
-                self._json_response(control_handler.get_capabilities())
-                return
-            if self.path == "/api/v1/control/status":
-                if not self._require_mtls():
-                    return
-                self._json_response(control_handler.get_status())
-                return
-            if self.path == "/api/v1/control/stream/state":
-                if not self._require_mtls():
-                    return
-                self._json_response(control_handler.get_stream_state())
+            if self.path.startswith(CONTROL_API_PREFIX):
+                self.send_error(404)
                 return
 
             if self.path == "/login":
@@ -632,20 +595,17 @@ def _make_status_handler(
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len) if content_len > 0 else b""
 
-            if self.path == "/api/v1/control/config":
-                if not self._require_mtls():
-                    return
-                params, request_id, err = parse_control_request(body)
-                if err:
-                    self._json_response({"error": err}, 400)
-                    return
-                result, error, status = control_handler.set_config(params, request_id)
-                if error:
-                    self._json_response({"error": error}, status)
-                else:
-                    self._json_response(result, status)
-            elif self.path == "/api/stream-config":
+            if self.path.startswith(CONTROL_API_PREFIX):
+                self.send_error(404)
+                return
+
+            if self.path == "/api/stream-config":
                 if not self._require_auth():
+                    return
+                if control_handler is None:
+                    self._json_response(
+                        {"error": "Local stream control unavailable"}, 503
+                    )
                     return
                 params, _, err = parse_control_request(body)
                 if err:
@@ -693,35 +653,8 @@ def _make_status_handler(
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len) if content_len > 0 else b""
 
-            # Control API — restart stream
-            if self.path == "/api/v1/control/restart-stream":
-                if not self._require_mtls():
-                    return
-                if stream_manager:
-                    ok = stream_manager.restart()
-                    self._json_response({"restarted": ok, "status": "ok"})
-                else:
-                    self._json_response({"error": "Stream manager not available"}, 503)
-                return
-
-            # Control API — on-demand stream start/stop (ADR-0017)
-            if self.path == "/api/v1/control/stream/start":
-                if not self._require_mtls():
-                    return
-                result, error, status = control_handler.set_stream_state("running")
-                if error:
-                    self._json_response({"error": error}, status)
-                else:
-                    self._json_response(result, status)
-                return
-            if self.path == "/api/v1/control/stream/stop":
-                if not self._require_mtls():
-                    return
-                result, error, status = control_handler.set_stream_state("stopped")
-                if error:
-                    self._json_response({"error": error}, status)
-                else:
-                    self._json_response(result, status)
+            if self.path.startswith(CONTROL_API_PREFIX):
+                self.send_error(404)
                 return
 
             if self.path == "/login":

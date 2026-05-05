@@ -2,8 +2,10 @@
 Camera control API handler — processes configuration commands from the server.
 
 The server pushes stream parameter changes via HTTPS to this handler.
-Authentication is via mTLS (server presents its certificate signed by
-the same CA used during pairing). See ADR-0015.
+Issue #113 split the machine-control listener onto its own mTLS-only
+HTTPS port, but this class remains the single business-logic owner for
+control operations. Authentication is via mTLS (server presents its
+certificate signed by the same CA used during pairing). See ADR-0015.
 
 Controllable parameters (all require stream pipeline restart):
   width, height, fps, bitrate, h264_profile, keyframe_interval,
