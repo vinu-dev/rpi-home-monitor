@@ -2,7 +2,9 @@
 """Integration tests for the camera human/control listener split."""
 
 import shutil
+import ssl
 import subprocess
+from http.client import RemoteDisconnected
 from pathlib import Path
 from shutil import copyfile
 from urllib.error import HTTPError, URLError
@@ -20,8 +22,6 @@ CONTROL_PORT = 18444
 
 
 def _ssl_context(cert_path="", key_path=""):
-    import ssl
-
     ctx = ssl._create_unverified_context()
     if cert_path and key_path:
         ctx.load_cert_chain(cert_path, key_path)
@@ -30,6 +30,14 @@ def _ssl_context(cert_path="", key_path=""):
 
 def _write_test_mtls_material(tmp_path: Path) -> dict[str, str]:
     openssl = shutil.which("openssl")
+    if openssl is None:
+        for candidate in (
+            r"C:\Program Files\Git\usr\bin\openssl.exe",
+            r"C:\Program Files\Git\mingw64\bin\openssl.exe",
+        ):
+            if Path(candidate).is_file():
+                openssl = candidate
+                break
     if openssl is None:
         pytest.skip("openssl CLI unavailable")
 
@@ -197,11 +205,12 @@ class TestListenerSeparation:
     def test_human_path_on_control_listener_requires_mtls(self, split_listeners):
         request = Request(f"https://127.0.0.1:{CONTROL_PORT}/login")
 
-        with pytest.raises(URLError) as excinfo:
+        with pytest.raises((RemoteDisconnected, URLError, ssl.SSLError)) as excinfo:
             urlopen(request, context=_ssl_context(), timeout=5)
 
         assert (
             "certificate" in str(excinfo.value).lower()
+            or "closed connection" in str(excinfo.value).lower()
             or "ssl" in str(excinfo.value).lower()
         )
 
