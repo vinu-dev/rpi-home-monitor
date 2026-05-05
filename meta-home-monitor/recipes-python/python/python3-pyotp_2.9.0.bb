@@ -20,9 +20,12 @@ SRC_URI[sha256sum] = "f3b21d5994ba2acde054a443bd5e2d384175449c7d2b6d1a0614dbca3a
 
 inherit pypi setuptools3
 
+# Note: hashlib/hmac are part of python3-core in scarthgap's Python split,
+# not separately-named packages, so they don't appear here. Bitbake's
+# RDEPENDS resolution surfaced 'Nothing RPROVIDES python3-hashlib'
+# during the first build attempt — don't add them back without first
+# checking the active distro's RECIPE_PROVIDES from manifests/.
 RDEPENDS:${PN} += " \
-    python3-hashlib \
-    python3-hmac \
     python3-json \
     python3-logging \
     python3-math \
