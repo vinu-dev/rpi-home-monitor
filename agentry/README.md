@@ -104,14 +104,13 @@ new autonomous issue discovery or release automation.
 instead of pinning a dated Claude model unless a rollback is intentional.
 
 The start scripts currently pin Agentry to
-`fd627abae6e1f763ed7c40c373a7740f475d3771`, which includes the reviewer
-comment workflow, the stream-json watchdog fix for active Claude Code tool
-activity during check-ins, branch-reset hardening, Tester PR body-file
-creation, safe wrapper subcommands, and merge-train waiting for shared
-conflict-zone PRs. Wrapper subcommands such as `status`, `doctor`, `configure`,
-and `gui` reuse an existing venv instead of force-reinstalling only because the
-local install-ref marker is missing or stale, so health checks are safe while
-Agentry is live.
+`v0.1.0`, which includes the reviewer comment workflow, the stream-json watchdog
+fix for active Claude Code tool activity during check-ins, branch-reset
+hardening, Tester PR body-file creation, safe wrapper subcommands, and
+merge-train waiting for shared conflict-zone PRs. Wrapper subcommands such as
+`status`, `doctor`, `configure`, and `gui` reuse an existing venv instead of
+force-reinstalling only because the local install-ref marker is missing or
+stale, so health checks are safe while Agentry is live.
 
 ## Start
 
