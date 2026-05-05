@@ -454,7 +454,7 @@ agents:
     cli: npx                          # Claude Code review; agentry resolves npx.cmd on Windows
     args: ["--yes", "@anthropic-ai/claude-code", "-p", "--model", "opus", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--dangerously-skip-permissions"]
     trigger:
-      pr_labels: ["ready-for-review"]
+      pr_labels: ["ready-for-review", "merge-train-waiting"]
     interval_min: 5
     total_min: 20
     stall_min: 20        # = total_min
@@ -467,12 +467,13 @@ agents:
 
       ## Workflow (universal)
 
-      INPUT: GitHub PRs labeled `ready-for-review` (oldest first).
+      INPUT: GitHub PRs labeled `ready-for-review` or `merge-train-waiting`
+      (oldest first).
 
       STEPS:
       1. Read agentry/state/sessions/reviewer/latest.md if it exists.
       2. Pick the oldest:
-           gh pr list --label ready-for-review --state open --json number,title,headRefName --jq 'sort_by(.number)[0]'
+           gh pr list --state open --limit 100 --json number,title,headRefName,labels --jq '[.[] | select((.labels | map(.name) | index("ready-for-review")) or (.labels | map(.name) | index("merge-train-waiting")))] | sort_by(.number)[0]'
          Exit 0 if none.
       3. Read PR + linked issue + spec + per-issue distilled logs:
            gh pr view <n> --json body,title,files,headRefName
@@ -482,38 +483,64 @@ agents:
            cat agentry/logs/issues/<id>-<slug>/architect.log
            cat agentry/logs/issues/<id>-<slug>/implementer.log
            cat agentry/logs/issues/<id>-<slug>/tester.log
-      4. Verify the PR is rebased on origin/main:
+      4. Verify the PR is rebased on origin/main, and repair simple stale
+         branches before review:
            git fetch origin
-           commits_behind=$(git rev-list --count "origin/feature/<id>-${slug}..origin/main")
-         If commits_behind > 0 → label `needs-rebase`, remove ready-for-review,
-         comment "rebase required". Exit 0.
-      5. Check CI status:
+           commits_behind=$(git rev-list --count "origin/${headRefName}..origin/main")
+         If commits_behind > 0:
+           git switch <headRefName>
+           git rebase origin/main
+           git push --force-with-lease origin <headRefName>
+         If the rebase conflicts, abort the rebase, add `merge-conflict`,
+         remove `ready-for-review` and `needs-rebase`, comment with the
+         conflicted files, and exit 0. If the rebase succeeds, remove
+         `needs-rebase`, keep the current review queue label, append a concise
+         reviewer log entry, and exit 0 so CI can rerun on the updated head.
+      5. Run the merge train gate for shared conflict zones before approving:
+           current_files=$(gh pr view <n> --json files --jq '.files[].path')
+         Read `merge_sensitive_paths` from `agentry/config.yml`. A path is
+         merge-sensitive when it matches that list. This repo includes controlled
+         traceability/risk/security docs, smoke-test scripts, release artifacts,
+         update/build recipes, workflow files, and credential material patterns.
+         If this PR touches merge-sensitive paths, inspect older open PRs
+         labeled `ready-for-review`, `agent-approved`, or
+         `merge-train-waiting`:
+           gh pr list --state open --limit 100 --json number,title,labels,headRefName
+           gh pr view <older-number> --json files --jq '.files[].path'
+         If any older PR also touches merge-sensitive paths, do not approve this
+         PR yet. Create `merge-train-waiting`, add it, remove
+         `ready-for-review` and stale `agent-approved`, keep the linked issue's
+         `pr-open` label, leave one concise PR comment naming the older blocker,
+         and exit 0. If no older blocker remains, add `ready-for-review`,
+         remove `merge-train-waiting`, and continue.
+      6. Check CI status:
            gh pr checks <n> --json name,state,bucket
          If checks are pending, queued, or in progress, append a concise
          reviewer log entry, leave labels unchanged, and exit 0. Do not call
          scheduling or wakeup tools such as `ScheduleWakeup`, `Cron*`,
          `PushNotification`, or `RemoteTrigger`; Agentry will retry on the
          next orchestrator interval.
-      6. Run review checklist per docs/ai/roles/reviewer.md:
+      7. Run review checklist per docs/ai/roles/reviewer.md:
          - spec adherence (acceptance criteria, non-goals respected)
          - engineering / design standards
          - validation evidence (CI green, coverage, validators ran)
          - sensitive-path scrutiny
          - traceability
          - repo policy compliance
-      7. APPROVE:
+      8. APPROVE:
            gh label create agent-approved --color 0e8a16 --force
+           gh label create merge-train-waiting --color fbca04 --force
            gh pr comment <n> --body "Agentry review outcome: APPROVED\n\n<concise summary>"
-           gh pr edit <n> --add-label agent-approved --remove-label ready-for-review --remove-label blocked
+           gh pr edit <n> --add-label agent-approved --remove-label ready-for-review --remove-label merge-train-waiting --remove-label blocked
          The verified comment plus `agent-approved` is the canonical Agentry
          approval signal. Do not call `gh pr review --approve` by default:
          GitHub rejects self-review when the pipeline and PR author share an
          account, which creates noisy false failures. Projects that need formal
          GitHub reviews can add that locally after confirming the reviewer actor
          is allowed to review the PR. Still add `agent-approved`, remove
-         `ready-for-review` and `blocked`, verify with `gh pr view`, and leave
-         the linked issue's `pr-open` label in place until the PR or issue
-         closes.
+         `ready-for-review`, `merge-train-waiting`, and `blocked`, verify with
+         `gh pr view`, and leave the linked issue's `pr-open` label in place
+         until the PR or issue closes.
          (Do NOT click merge — code-owner human merges.)
          BLOCK (any item failed):
            gh label create agent-approved --color 0e8a16 --force
@@ -523,13 +550,15 @@ agents:
            gh issue comment <id> --body "<short review-fix summary and PR link>"
          Verify the PR no longer has `ready-for-review` or `agent-approved`
          and the issue has `changes-requested` plus `pr-open`.
-      8. Append distilled cycle entry to
+      9. Append distilled cycle entry to
          agentry/logs/issues/<id>-<slug>/reviewer.log
-      9. Overwrite session summary. Exit 0.
+      10. Overwrite session summary. Exit 0.
 
       CONSTRAINTS:
       - Never click merge — code-owner is required by branch protection.
       - Don't approve if commits_behind > 0 — require rebase first.
+      - Don't approve a merge-sensitive PR while an older merge-sensitive PR is
+        still open in the review/approval lane. Use `merge-train-waiting`.
       - At most one PR approved per run.
       - Drive-by improvements outside scope → comment as future work, don't
         block.
@@ -646,3 +675,34 @@ sensitive_paths:
   - "AGENTS.md"
   - "CLAUDE.md"
   - ".github/copilot-instructions.md"
+
+# PRs touching these shared/high-conflict paths move through review approval one
+# at a time. Reviewer lets the oldest matching PR proceed, parks newer matching
+# PRs with `merge-train-waiting`, and rebases them after the older PR merges.
+merge_sensitive_paths:
+  - "docs/traceability/**"
+  - "docs/risk/**"
+  - "docs/cybersecurity/**"
+  - "docs/requirements/**"
+  - "docs/intended-use/**"
+  - "docs/verification-validation/**"
+  - "docs/quality-records/**"
+  - "docs/history/specs/**"
+  - "scripts/smoke-test.sh"
+  - "meta-home-monitor/recipes-support/swupdate/**"
+  - "config/**/local.conf"
+  - "**/*.wks"
+  - "meta-home-monitor/recipes-kernel/**"
+  - "VERSION"
+  - "meta-home-monitor/recipes-core/sw-versions/**"
+  - ".github/workflows/**"
+  - "app/server/monitor/services/audit.py"
+  - "app/server/monitor/services/auth.py"
+  - "app/server/monitor/services/csrf.py"
+  - "scripts/release.sh"
+  - "scripts/build-swu.sh"
+  - "scripts/sign-image.sh"
+  - "**/*.crt"
+  - "**/*.key"
+  - "**/*.pem"
+  - "keys/**"

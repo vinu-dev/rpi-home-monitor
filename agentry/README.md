@@ -92,6 +92,11 @@ Reviewer approval is recorded with a PR comment beginning
 does not use formal `gh pr review` by default because GitHub rejects
 same-author self-review.
 
+Reviewer also serializes shared conflict-zone PRs. Paths listed in
+`merge_sensitive_paths` in `agentry/config.yml` are reviewed as a merge train:
+the oldest matching PR can proceed, while newer matching PRs receive
+`merge-train-waiting` until they can rebase after the older PR merges.
+
 Researcher and Release are disabled by default. Enable them only when you want
 new autonomous issue discovery or release automation.
 
@@ -99,13 +104,14 @@ new autonomous issue discovery or release automation.
 instead of pinning a dated Claude model unless a rollback is intentional.
 
 The start scripts currently pin Agentry to
-`79714f02dd0de8b94817ae4b676791cb5bd3b0d5`, which includes the reviewer
+`fd627abae6e1f763ed7c40c373a7740f475d3771`, which includes the reviewer
 comment workflow, the stream-json watchdog fix for active Claude Code tool
-activity during check-ins, branch-reset hardening, and Tester PR body-file
-creation, plus safe wrapper subcommands. Wrapper subcommands such as `status`,
-`doctor`, `configure`, and `gui` reuse an existing venv instead of
-force-reinstalling only because the local install-ref marker is missing or
-stale, so health checks are safe while Agentry is live.
+activity during check-ins, branch-reset hardening, Tester PR body-file
+creation, safe wrapper subcommands, and merge-train waiting for shared
+conflict-zone PRs. Wrapper subcommands such as `status`, `doctor`, `configure`,
+and `gui` reuse an existing venv instead of force-reinstalling only because the
+local install-ref marker is missing or stale, so health checks are safe while
+Agentry is live.
 
 ## Start
 
