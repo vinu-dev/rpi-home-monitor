@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REQ: SWR-047, SWR-034; RISK: RISK-019; SEC: SC-017, SC-018; TEST: TC-032, TC-043, TC-045
+# REQ: SWR-034, SWR-047, SWR-071; RISK: RISK-019, RISK-027; SEC: SC-017, SC-018, SC-026; TEST: TC-032, TC-043, TC-045, TC-056
 # generate-sbom.sh — Generate Software Bill of Materials (SBOM)
 #
 # Produces CycloneDX JSON SBOMs for:
@@ -52,7 +52,7 @@ cat > "$SBOM_DIR/server-app.cdx.json" << EOF
     {
       "type": "framework",
       "name": "flask",
-      "version": ">=3.0",
+      "version": ">=3.1.3",
       "purl": "pkg:pypi/flask",
       "scope": "required"
     },
