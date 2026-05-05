@@ -145,6 +145,7 @@ echo ""
 echo "[2/7] Setup status"
 check_status "GET /setup/status" "${API_BASE}/setup/status" 200
 check_json_field "setup_complete field" "${API_BASE}/setup/status" "setup_complete"
+skip "Manual first-boot QR fallback: complete camera setup from HomeCam-Setup, confirm the result page shows the .local URL plus a QR for https://<camera-ip>:443, then scan it after reconnecting the phone to home WiFi"
 
 # ---------------------------------------------------------------------------
 # 3. Authentication

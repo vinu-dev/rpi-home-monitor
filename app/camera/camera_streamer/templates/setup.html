@@ -113,8 +113,12 @@ input:focus { border-color: #e94560; }
       <h3 style="text-align:center;margin-bottom:8px">Camera Address</h3>
       <div style="background:#1a1a2e;border-radius:8px;padding:16px;text-align:center;margin:12px 0;font-family:monospace;font-size:1.15em;color:#4ade80" id="cam-address-display">
       </div>
+      <div id="cam-address-qr" data-target-url="" data-rendered-for=""
+           style="margin:12px auto;text-align:center;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8090b0;font-size:0.85em">
+        Resolving IP...
+      </div>
       <p style="color:#fff;text-align:center;font-size:0.9em;margin-top:12px">
-        Connect your phone back to your home WiFi,<br>then open the address above.
+        Connect your phone back to your home WiFi,<br>then open the address above or scan the QR code below.
       </p>
       <p style="text-align:center;font-size:0.85em;color:#8090b0;margin-top:4px">
         Login: <strong id="cam-login-user">admin</strong> / your password
@@ -139,6 +143,18 @@ input:focus { border-color: #e94560; }
   <!-- RESULT VIEW (shown if user reconnects to hotspot after success/failure) -->
   <div id="view-result">
     <div id="result-msg" class="msg msg-err"></div>
+    <div class="card" id="result-address-card" style="display:none">
+      <h3 style="text-align:center;margin-bottom:8px">Camera Address</h3>
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;text-align:center;margin:12px 0;font-family:monospace;font-size:1.05em;color:#4ade80" id="result-address-display">
+      </div>
+      <div id="result-address-qr" data-target-url="" data-rendered-for=""
+           style="margin:12px auto;text-align:center;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8090b0;font-size:0.85em">
+        Resolving IP...
+      </div>
+      <p style="color:#fff;text-align:center;font-size:0.9em;margin-top:12px">
+        Connect your phone back to your home WiFi,<br>then open the address above or scan the QR code below.
+      </p>
+    </div>
     <div id="result-next-steps" style="display:none">
       <div class="card" style="margin-top:16px">
         <h3 style="margin-bottom:8px">Next Steps</h3>
@@ -155,7 +171,19 @@ input:focus { border-color: #e94560; }
 </div>
 
 <script>
+(function loadQrLibrary() {
+  try {
+    var qrLibrarySource = {{QRCODE_LIB}};
+    if (qrLibrarySource) {
+      Function(qrLibrarySource)();
+    }
+  } catch (err) {
+    console.warn('QR library failed to load', err);
+  }
+})();
+
 var CAMERA_HOSTNAME = '{{HOSTNAME}}';
+var QR_PLACEHOLDER_TEXT = 'Resolving IP...';
 
 function $(id) { return document.getElementById(id); }
 
@@ -165,16 +193,147 @@ function showView(name) {
   });
 }
 
-function showForm() { showView('view-form'); }
+function showForm() {
+  showView('view-form');
+}
 
-function showConnecting(hostname) {
-  var h = hostname || CAMERA_HOSTNAME;
-  var url = h ? 'https://' + h + '.local' : '';
-  $('cam-address-display').textContent = url || 'Resolving...';
+function buildLocalUrl(hostname) {
+  return hostname ? 'https://' + hostname + '.local' : '';
+}
+
+function buildIpFallbackUrl(ip) {
+  return ip ? 'https://' + ip + ':443' : '';
+}
+
+function getQrSlots() {
+  return ['cam-address-qr', 'result-address-qr']
+    .map(function(id) { return $(id); })
+    .filter(function(slot) { return !!slot; });
+}
+
+function setQrPlaceholder(slot) {
+  slot.textContent = QR_PLACEHOLDER_TEXT;
+  slot.setAttribute('data-target-url', '');
+  slot.setAttribute('data-rendered-for', '');
+}
+
+function updateLoginUser() {
   if ($('cam-login-user')) {
     var user = $('in-admin-user') ? $('in-admin-user').value.trim() : 'admin';
     $('cam-login-user').textContent = user || 'admin';
   }
+}
+
+function updateConnectingAddress(hostname) {
+  var url = buildLocalUrl(hostname || CAMERA_HOSTNAME);
+  $('cam-address-display').textContent = url || 'Resolving...';
+}
+
+function updateResultAddress(hostname) {
+  var card = $('result-address-card');
+  var display = $('result-address-display');
+  if (!card || !display) {
+    return;
+  }
+
+  card.style.display = 'block';
+  var url = buildLocalUrl(hostname);
+  display.innerHTML = url
+    ? '<a href="' + url + '" style="color:#4ade80;font-weight:600;font-size:1.05em;word-break:break-all">' + esc(url) + '</a>'
+    : 'Resolving...';
+}
+
+function createQrSvg(targetUrl) {
+  var qr = window.qrcodegen.QrCode.encodeText(
+    targetUrl,
+    window.qrcodegen.QrCode.Ecc.MEDIUM
+  );
+  var border = 2;
+  var size = qr.size + (border * 2);
+  var parts = [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + size + ' ' + size + '"',
+    ' width="180" height="180" preserveAspectRatio="xMidYMid meet"',
+    ' role="img" aria-label="Camera direct IP QR code">',
+    '<rect width="100%" height="100%" fill="#ffffff"></rect>',
+    '<path d="'
+  ];
+
+  for (var y = 0; y < qr.size; y += 1) {
+    for (var x = 0; x < qr.size; x += 1) {
+      if (qr.getModule(x, y)) {
+        parts.push('M', String(x + border), ',', String(y + border), 'h1v1h-1z');
+      }
+    }
+  }
+
+  parts.push('" fill="#111111"></path></svg>');
+  return parts.join('');
+}
+
+function renderQrIfPossible(ip) {
+  var slots = getQrSlots();
+  if (!slots.length) {
+    return;
+  }
+
+  var targetUrl = buildIpFallbackUrl(ip);
+  if (!targetUrl) {
+    slots.forEach(setQrPlaceholder);
+    return;
+  }
+
+  if (!(window.qrcodegen && window.qrcodegen.QrCode && window.qrcodegen.QrCode.Ecc)) {
+    return;
+  }
+
+  slots.forEach(function(slot) {
+    if (slot.getAttribute('data-rendered-for') === targetUrl) {
+      return;
+    }
+
+    try {
+      var svg = createQrSvg(targetUrl);
+      var caption = '<div style="margin-top:12px;font-family:monospace;font-size:0.85em;color:#4ade80;word-break:break-all">'
+        + esc(targetUrl) + '</div>';
+      // Trusted QR SVG from the vendored local library; input is a server-derived IP URL.
+      slot.innerHTML = '<div style="display:flex;justify-content:center">' + svg + '</div>' + caption;
+      slot.setAttribute('data-target-url', targetUrl);
+      slot.setAttribute('data-rendered-for', targetUrl);
+    } catch (err) {
+      setQrPlaceholder(slot);
+      console.warn('Failed to render direct IP QR', err);
+    }
+  });
+}
+
+function updateAddressFallback(data) {
+  var hostname = (data && data.hostname) || CAMERA_HOSTNAME;
+  updateConnectingAddress(hostname);
+  updateResultAddress(hostname);
+  renderQrIfPossible(data && data.ip_address ? data.ip_address : '');
+}
+
+function pollAddressStatus(remainingAttempts) {
+  if (remainingAttempts <= 0) {
+    return;
+  }
+
+  window.setTimeout(function() {
+    fetch('/api/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        updateAddressFallback(d);
+        if (!d.ip_address) {
+          pollAddressStatus(remainingAttempts - 1);
+        }
+      })
+      .catch(function() {});
+  }, 1500);
+}
+
+function showConnecting(hostname) {
+  updateConnectingAddress(hostname);
+  updateLoginUser();
   showView('view-connecting');
 }
 
@@ -188,7 +347,7 @@ function loadNetworks() {
     .then(function(r) { return r.json(); })
     .then(function(d) { renderNetworks(d.networks || []); })
     .catch(function() {
-      list.innerHTML = '<div class="msg msg-err">Scan failed — you may need to reconnect to HomeCam-Setup and try again.</div>';
+      list.innerHTML = '<div class="msg msg-err">Scan failed - you may need to reconnect to HomeCam-Setup and try again.</div>';
     });
 }
 
@@ -200,8 +359,8 @@ function renderNetworks(nets) {
   }
   var html = '';
   nets.forEach(function(n) {
-    html += '<div class="net" onclick="pickNet(\''+esc(n.ssid)+'\')"><span class="net-ssid">'
-      +esc(n.ssid)+'</span><span class="net-signal">'+n.signal+'%</span></div>';
+    html += '<div class="net" onclick="pickNet(\'' + esc(n.ssid) + '\')"><span class="net-ssid">'
+      + esc(n.ssid) + '</span><span class="net-signal">' + n.signal + '%</span></div>';
   });
   list.innerHTML = html;
 }
@@ -249,11 +408,13 @@ function doConnect() {
       $('btn-save').disabled = false;
     } else {
       showConnecting(d.hostname || '');
+      pollAddressStatus(3);
     }
   })
   .catch(function() {
-    // Network error — hotspot dropped during request, setup likely succeeded
+    // Network error - hotspot dropped during request, setup likely succeeded.
     showConnecting('');
+    pollAddressStatus(3);
   });
 }
 
@@ -263,26 +424,28 @@ function esc(s) {
   return d.innerHTML.replace(/'/g, "\\'");
 }
 
-// On page load: check if we're returning after a failed attempt
+// On page load: check if we're returning after a failed attempt.
 fetch('/api/status')
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    updateAddressFallback(d);
     if (d.setup_complete) {
       showView('view-result');
       $('result-msg').className = 'msg msg-ok';
-      var url = d.hostname ? 'https://' + d.hostname + '.local' : '';
-      $('result-msg').innerHTML = 'Setup complete! Camera is on your home WiFi.'
-        + (url ? '<br><br>Camera settings page:<br><a href="' + url
-        + '" style="color:#4ade80;font-weight:600;font-size:1.1em">' + esc(url) + '</a>' : '');
+      $('result-msg').textContent = 'Setup complete! Camera is on your home WiFi.';
       $('result-next-steps').style.display = 'block';
       $('btn-retry').style.display = 'none';
     } else if (d.status === 'failed') {
       showView('view-result');
       $('result-msg').textContent = 'WiFi connection failed: ' + d.error + '. Try again.';
+      $('result-address-card').style.display = 'none';
       $('result-next-steps').style.display = 'none';
       $('btn-retry').style.display = 'block';
+    } else if (d.status === 'connected') {
+      showConnecting(d.hostname || '');
+      pollAddressStatus(3);
     } else {
-      // Load cached networks from pre-hotspot scan
+      // Load cached networks from pre-hotspot scan.
       fetch('/api/networks')
         .then(function(r) { return r.json(); })
         .then(function(nd) {

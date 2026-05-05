@@ -41,18 +41,24 @@ _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _template_cache = {}
 
 
-def _load_template(name):
-    """Load an HTML template from the templates/ directory."""
+def _load_template(name, *, missing_fallback=None):
+    """Load a text asset from the templates/ directory."""
     if name in _template_cache:
         return _template_cache[name]
     path = _TEMPLATE_DIR / name
     try:
-        html = path.read_text(encoding="utf-8")
+        asset = path.read_text(encoding="utf-8")
     except OSError:
         log.error("Template not found: %s", path)
-        html = f"<h1>Template Error</h1><p>Missing: {name}</p>"
-    _template_cache[name] = html
-    return html
+        if missing_fallback is None:
+            asset = f"<h1>Template Error</h1><p>Missing: {name}</p>"
+        else:
+            asset = missing_fallback
+    _template_cache[name] = asset
+    return asset
+
+
+_QRCODE_LIB = json.dumps(_load_template("vendor/qrcode.min.js", missing_fallback=""))
 
 
 def is_setup_complete(data_dir):
@@ -131,8 +137,12 @@ class WifiSetupServer:
     def stop(self):
         """Stop HTTP server. Hotspot is managed by systemd."""
         if self._server:
-            self._server.shutdown()
+            if self._thread and self._thread.is_alive():
+                self._server.shutdown()
+                self._thread.join(timeout=5)
+            self._server.server_close()
             self._server = None
+            self._thread = None
         led.off()
         log.info("Setup server stopped")
 
@@ -317,6 +327,15 @@ def _make_handler(config, setup_server):
                     status = "failed"
                     error = str(result)
                 hostname = wifi.get_hostname()
+                try:
+                    ip_address = wifi.get_ip_address(setup_server._wifi_interface)
+                except Exception:
+                    log.warning(
+                        "Unable to resolve setup-server IP address for %s",
+                        setup_server._wifi_interface,
+                        exc_info=True,
+                    )
+                    ip_address = ""
                 self._json_response(
                     {
                         "status": status,
@@ -324,6 +343,7 @@ def _make_handler(config, setup_server):
                         "setup_complete": is_setup_complete(config.data_dir),
                         "camera_id": config.camera_id,
                         "hostname": hostname,
+                        "ip_address": ip_address,
                     }
                 )
             else:
@@ -403,6 +423,7 @@ def _make_handler(config, setup_server):
                 _load_template("setup.html")
                 .replace("{{CAMERA_ID}}", config.camera_id)
                 .replace("{{HOSTNAME}}", setup_server._expected_hostname or "")
+                .replace("{{QRCODE_LIB}}", _QRCODE_LIB)
             )
             body = html.encode()
             self.send_response(200)
