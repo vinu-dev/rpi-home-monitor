@@ -57,6 +57,23 @@ transitions) lives in agentry's bundled prompt — see `agentry/config.yml`.
 If diff is non-trivial in a sensitive path AND the PR doesn't carry
 `needs-security-review`, label `blocked-security` and request review.
 
+### Merge-train conflict zones
+
+Reviewer must use `merge_sensitive_paths` in `agentry/config.yml` before
+approval. If a PR touches those shared paths and an older open PR in the
+review/approval lane touches them too, do not approve it yet. Add
+`merge-train-waiting`, remove `ready-for-review` and stale `agent-approved`,
+comment with the older blocker, and let the next reviewer cycle rebase it after
+the older PR merges.
+
+This repo treats these as merge-sensitive because they frequently receive
+traceability, risk, security, release, or generated-matrix edits from otherwise
+unrelated issues: `docs/traceability/**`, `docs/risk/**`,
+`docs/cybersecurity/**`, `docs/requirements/**`, `docs/intended-use/**`,
+`docs/verification-validation/**`, `docs/quality-records/**`,
+`docs/history/specs/**`, `scripts/smoke-test.sh`, update/build recipes,
+workflow files, `VERSION`, credential material, and audit/auth/CSRF services.
+
 ### Traceability (`docs/ai/medical-traceability.md`)
 - [ ] Required ID families used (REQ-, ARCH-, RISK-, SEC-, TEST-)
 - [ ] Traceability matrix updated where required
