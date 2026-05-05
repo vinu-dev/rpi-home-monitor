@@ -255,7 +255,9 @@ class TestTlsHelpers:
             assert all(not path.startswith(CONTROL_API_PREFIX) for path in routes)
 
     def test_status_server_source_does_not_instantiate_control_handler(self):
-        source = Path("app/camera/camera_streamer/status_server.py").read_text()
+        source = (
+            Path(__file__).resolve().parents[2] / "camera_streamer" / "status_server.py"
+        ).read_text()
         assert "ControlHandler(" not in source
 
 
