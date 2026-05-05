@@ -49,6 +49,11 @@ DEFAULTS = {
     # ``motion_sensitivity`` param so operators can tune per-camera from
     # the server's Settings UI without editing camera.conf by hand.
     "MOTION_SENSITIVITY": "5",
+    # Motion-mode pre-roll (#160). Phase 1 ships the bounded ring-buffer
+    # plumbing behind a default-off kill switch until hardware soak proves
+    # the Picamera2 CircularOutput path stable on the supported cameras.
+    "MOTION_PREROLL_ENABLED": "false",
+    "MOTION_PREROLL_SECONDS": "3",
     # Image-quality controls (#182). JSON-encoded dict mapping libcamera
     # control names to user-set values, e.g.
     #   {"Sharpness": 1.5, "Contrast": 1.2, "NoiseReductionMode": "Fast"}
@@ -135,6 +140,22 @@ class ConfigManager:
         except (TypeError, ValueError):
             v = 5
         return max(1, min(10, v))
+
+    @property
+    def motion_pre_roll_enabled(self) -> bool:
+        """True if motion-mode recordings should flush a bounded pre-roll."""
+        return (
+            str(self._values.get("MOTION_PREROLL_ENABLED", "false")).lower() == "true"
+        )
+
+    @property
+    def motion_pre_roll_seconds(self) -> int:
+        """Configured motion pre-roll duration in seconds."""
+        try:
+            v = int(self._values.get("MOTION_PREROLL_SECONDS", 3))
+        except (TypeError, ValueError):
+            v = 3
+        return max(0, v)
 
     @property
     def image_quality(self) -> dict:

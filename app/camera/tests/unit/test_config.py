@@ -19,6 +19,8 @@ class TestConfigManager:
         assert mgr.width == 1920
         assert mgr.height == 1080
         assert mgr.fps == 25
+        assert mgr.motion_pre_roll_enabled is False
+        assert mgr.motion_pre_roll_seconds == 3
 
     def test_load_from_file(self, camera_config):
         """Config should load values from camera.conf."""
@@ -92,6 +94,23 @@ class TestConfigManager:
         mgr.load()
         assert mgr.server_ip == "1.2.3.4"
         assert mgr.stream_name == "mystream"
+
+    def test_motion_pre_roll_config_parses_and_clamps(self, data_dir):
+        """Pre-roll config should parse booleans and keep seconds non-negative."""
+        conf = data_dir / "config" / "camera.conf"
+        conf.write_text("MOTION_PREROLL_ENABLED=true\nMOTION_PREROLL_SECONDS=-7\n")
+        mgr = ConfigManager(data_dir=str(data_dir))
+        mgr.load()
+        assert mgr.motion_pre_roll_enabled is True
+        assert mgr.motion_pre_roll_seconds == 0
+
+    def test_motion_pre_roll_seconds_invalid_falls_back_to_default(self, data_dir):
+        """Malformed motion pre-roll seconds should not crash config loading."""
+        conf = data_dir / "config" / "camera.conf"
+        conf.write_text("MOTION_PREROLL_SECONDS=not-a-number\n")
+        mgr = ConfigManager(data_dir=str(data_dir))
+        mgr.load()
+        assert mgr.motion_pre_roll_seconds == 3
 
     def test_ensure_config_copies_default(self, data_dir, tmp_path):
         """Should copy default config if no config exists."""
