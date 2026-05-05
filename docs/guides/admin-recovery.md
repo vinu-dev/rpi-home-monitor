@@ -34,6 +34,28 @@ This is deliberately painful. Forgetting the admin password on a security device
 
 ---
 
+## Case 3 â€” Suspected SD-card compromise or device theft
+
+**Treat every `plaintext-on-data` secret as exposed until you rotate it.**
+
+Follow this order:
+
+1. Unpair every camera from **Dashboard â†’ Cameras** so the existing per-camera certificate and pairing secret stop being trusted.
+2. In the Tailscale admin console, revoke the old pre-auth key, then open **Settings â†’ Network â†’ Tailscale** and clear or replace the stored auth key.
+3. Reflash the server SD card and boot through first-run setup again. This forces a fresh Flask session-signing key and fresh on-disk trust material.
+4. Re-run the setup wizard and re-pair each camera. That mints fresh per-camera certificates and fresh `pairing_secret` values.
+5. In **Settings â†’ Users**, reset every user password. The stolen card only contained bcrypt hashes, not plaintext passwords, but offline brute-force is still possible over time.
+6. Have each user re-enroll TOTP if it was enabled, because `users.json:totp_secret` was stored in cleartext on the stolen card.
+7. Rotate the WiFi PSK at the router or access point. NetworkManager stored it in `/etc/NetworkManager/system-connections/<ssid>.nmconnection`, which is outside the app but still readable from the card.
+
+Expected audit trail after recovery:
+
+- `SECRET_KEY_ROTATED` on the freshly reflashed server boot.
+- `TAILSCALE_AUTH_KEY_ROTATED` when the stored Tailscale key is cleared or replaced.
+- `CAMERA_PAIRING_SECRET_ROTATED` as each camera re-pairs.
+
+---
+
 ## Explicitly not supported
 
 - **No `/opt/monitor/scripts/reset-admin-password.py`.** A previous iteration shipped a sudo-only CLI script; it was removed because its existence leaked an attack surface to anyone who read the login page or the repo. A single documented command that resets the admin password is the definition of a backdoor, even when gated behind `sudo`.

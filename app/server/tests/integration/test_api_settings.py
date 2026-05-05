@@ -1,4 +1,4 @@
-# REQ: SWR-024; RISK: RISK-012; SEC: SC-012; TEST: TC-023
+# REQ: SWR-024, SWR-101-A; RISK: RISK-012, RISK-101-3; SEC: SC-012, SC-101; TEST: TC-023, TC-101-AC-3
 """Tests for the settings API."""
 
 from unittest.mock import MagicMock, patch
@@ -170,6 +170,24 @@ class TestSettingsAuditLog:
         events = app.audit.get_events(limit=10, event_type="SETTINGS_UPDATED")
         assert len(events) >= 1
         assert "hostname" in events[0]["detail"]
+
+    def test_tailscale_auth_key_rotation_logs_redacted_audit_event(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        client.put(
+            "/api/v1/settings",
+            json={"tailscale_auth_key": "tskey-auth-k123"},
+        )
+
+        events = app.audit.get_events(
+            limit=10,
+            event_type="TAILSCALE_AUTH_KEY_ROTATED",
+        )
+
+        assert len(events) >= 1
+        assert events[0]["detail"] == "tailscale auth key updated via settings"
+        assert "tskey-auth-k123" not in events[0]["detail"]
 
 
 class TestTimeEndpoints:

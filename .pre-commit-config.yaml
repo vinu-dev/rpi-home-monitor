@@ -33,6 +33,11 @@ repos:
         entry: python scripts/ai/validate_repo_ai_setup.py
         language: system
         pass_filenames: false
+      - id: check-persisted-secrets
+        name: check-persisted-secrets
+        entry: python tools/secrets/check_persisted_secrets.py
+        language: system
+        pass_filenames: false
       - id: check-doc-map
         name: check-doc-map
         entry: python tools/docs/check_doc_map.py

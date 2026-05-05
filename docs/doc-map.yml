@@ -90,6 +90,21 @@
   source_of_truth: false
   notes: Practical operator and developer guides. Start with docs/guides/README.md.
 
+- path: docs/operations/
+  title: Operations Runbooks
+  type: runbook
+  status: active
+  audience: [human, ai]
+  source_of_truth: false
+  notes: Operator-facing runbooks for deployed systems and incident response.
+
+- path: docs/operations/secrets-inventory.md
+  title: Secrets Inventory
+  type: runbook
+  status: active
+  audience: [human, ai]
+  source_of_truth: false
+
 - path: docs/exec-plans/
   title: Active Execution Plans
   type: active-plan

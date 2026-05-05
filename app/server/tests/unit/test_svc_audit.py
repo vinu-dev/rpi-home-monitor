@@ -1,9 +1,10 @@
-# REQ: SWR-009; RISK: RISK-020; SEC: SC-008; TEST: TC-017
+# REQ: SWR-009, SWR-101-A; RISK: RISK-020, RISK-101-3; SEC: SC-008, SC-101; TEST: TC-017, TC-101-AC-4
 """Tests for the audit logging service."""
 
 import json
 from unittest.mock import patch
 
+import monitor.services.audit as audit_module
 from monitor.services.audit import AuditLogger
 
 
@@ -75,6 +76,12 @@ class TestLogEvent:
         with patch("builtins.open", side_effect=OSError("disk full")):
             # Should not raise, just log the error
             logger.log_event("TEST_EVENT")
+
+    def test_rotation_events_are_listed_in_module_catalogue(self):
+        doc = audit_module.__doc__ or ""
+        assert "SECRET_KEY_ROTATED" in doc
+        assert "TAILSCALE_AUTH_KEY_ROTATED" in doc
+        assert "CAMERA_PAIRING_SECRET_ROTATED" in doc
 
 
 class TestGetEvents:

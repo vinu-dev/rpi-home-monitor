@@ -1,5 +1,7 @@
 # LUKS post-pair migration — exec plan (target 1.4.1)
 
+Issue #101 risk-disposition close-out lives in `docs/history/specs/101-secrets-encryption-at-rest.md`. This exec plan remains the implementation track for LUKS.
+
 This is the deferred follow-up from CHANGELOG 1.3.1 §"Known follow-up"
 and the gap captured in issue #101. ADR-0010 is the design reference;
 this doc is the operational rollout plan, including the safety

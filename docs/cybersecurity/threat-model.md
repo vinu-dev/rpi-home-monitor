@@ -28,7 +28,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-002 | Spoofing/Tampering | Rogue device impersonates a camera or machine client. | Pairing, heartbeat, control, stream. | Fake status/video or unauthorized commands. | SC-002 (including pinned camera control cert verification) | SYS-005, SWR-003, SWR-004 | TC-008, TC-012 | Draft |
 | THREAT-003 | Tampering/Elevation | Malicious or corrupted update bundle is installed. | OTA upload, staging, install. | Persistent compromise or bricked device. | SC-003 | SYS-009, SWR-010 | TC-009, TC-013 | Draft |
 | THREAT-004 | Information disclosure | LAN attacker or compromised device scans open ports, observes traffic, or tries to stand in for the camera control endpoint. | HTTPS/RTSPS/mDNS/firewall/control channel. | Video/config exposure or forged control acceptance. | SC-004, SC-002 | SYS-001, SYS-004, SWR-020 | TC-006, TC-010, TC-016 | Draft |
-| THREAT-005 | Information disclosure | Device theft exposes recordings, WiFi, certs, and settings. | SD card, USB storage, `/data`. | Privacy and credential loss. | SC-005, SC-006 | SYS-008, HWR-004, HWR-006 | TC-015, TC-018 | Draft |
+| THREAT-005 | Information disclosure | Device theft exposes recordings, WiFi, certs, and settings. | SD card, USB storage, `/data`. | Privacy and credential loss. | SC-005, SC-006, SC-101 | SYS-008, SYS-101, HWR-004, HWR-006 | TC-015, TC-018, TC-101-AC-1, TC-101-AC-5, TC-101-AC-10 | Draft |
 | THREAT-006 | Repudiation | Security or admin action is not logged. | Auth, user management, OTA, pairing. | Incident investigation gaps. | SC-008 | SYS-010, SWR-009 | TC-017 | Draft |
 | THREAT-007 | Supply chain | Dependency, workflow, or Yocto input has a known vulnerability or malicious change. | Python deps, Yocto recipes, GitHub Actions. | Compromise through build or runtime dependency. | SC-007, SC-009 | SYS-012, SWR-019 | TC-020 | Draft |
 | THREAT-008 | Elevation | Recovery shortcut or debug access bypasses primary auth. | Pre-auth UI, SSH, CLI scripts, reset tools. | Persistent unauthorized admin access. | SC-006 | SYS-008, SWR-018 | TC-011, TC-015 | Draft |
@@ -47,6 +47,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-021 | Information disclosure/Spoofing/Denial | Share token theft, brute force, or replay reaches token-scoped media. | Public share URLs, recipient browsers, unauthenticated public routes. | Unauthorized clip/live viewing or noisy abuse against public viewers. | SC-022, SC-024 | SYS-032, SWR-058, SWR-059, SWR-060 | TC-050, TC-051, TC-052 | Draft |
 | THREAT-022 | Elevation/Information disclosure | Public share routes bypass intended scope or expose dashboard state beyond the shared resource. | Public share viewer templates, token validation, media asset routing. | Recipients pivot into unrelated media, metadata, or privileged surfaces. | SC-023, SC-024 | SYS-032, SWR-059, SWR-061 | TC-051, TC-052, TC-053 | Draft |
 | THREAT-023 | Supply chain/Information disclosure | Dependency resolution or release evidence allows a known-vulnerable Flask build to enter the server install path even though application code is unchanged. | `requirements.txt`, editable package installs, SBOM generation, Yocto image manifests, and release-validation workflows. | Session-cache poisoning exposure or untrustworthy vulnerability posture. | SC-026, SC-018, SC-007 | SYS-023, SYS-035, SWR-071 | TC-043, TC-056 | Draft |
+| THREAT-101 | Information disclosure/Process drift | The secrets inventory drifts from real persisted config fields, so operators or reviewers rely on an incomplete or stale secrets-at-rest picture. | `docs/operations/secrets-inventory.md`, persisted JSON schemas, diagnostics-backed smoke validation. | Operators under-rotate secrets or contributors land undocumented secret storage. | SC-005, SC-101 | SYS-101, SWR-101-B, SWR-101-C | TC-101-AC-2, TC-101-AC-10, TC-101-AC-12, TC-101-AC-14 | Draft |
 
 ## Audit Events
 
@@ -54,6 +55,9 @@ Method: STRIDE-style review of local-first system boundaries.
 - `TIME_RESYNC_REQUESTED`: Admin requested an NTP/time-sync restart on the server or queued a camera resync. Supports THREAT-011 and THREAT-019 investigation needs.
 - `DIAGNOSTICS_EXPORTED`: Admin downloaded a diagnostics bundle. Supports THREAT-019 investigation needs for evidence handoff and export accountability.
 - `DIAGNOSTICS_EXPORT_FAILED`: Diagnostics export failed before delivery. Supports THREAT-019 investigation needs for missing evidence or degraded export behavior.
+- `SECRET_KEY_ROTATED`: The server generated a fresh Flask session-signing key during startup or post-compromise recovery. Supports THREAT-005 and THREAT-016 investigation needs.
+- `TAILSCALE_AUTH_KEY_ROTATED`: An admin cleared or replaced the stored Tailscale auth key. Supports THREAT-005 investigation needs.
+- `CAMERA_PAIRING_SECRET_ROTATED`: A camera pairing flow minted a fresh pairing secret during re-pair. Supports THREAT-005 and THREAT-016 investigation needs.
 
 ## Assumptions
 

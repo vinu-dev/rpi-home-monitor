@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REQ: SWR-048, SWR-071; RISK: RISK-019, RISK-022, RISK-027; SEC: SC-018, SC-026; TEST: TC-045, TC-047, TC-056
+# REQ: SWR-048, SWR-071, SWR-101-C; RISK: RISK-019, RISK-022, RISK-027, RISK-101-1; SEC: SC-018, SC-026, SC-101; TEST: TC-045, TC-047, TC-056, TC-101-AC-10
 # =============================================================================
 # smoke-test.sh - Layer 5 hardware verification for RPi Home Monitor
 #
@@ -41,6 +41,8 @@ CURL_OPTS=(-sk --connect-timeout 5 --max-time 10)
 COOKIE_JAR="/tmp/smoke-test-cookies.txt"
 SERVER_COOKIE_HEADER="${SMOKE_SERVER_COOKIE:-}"
 AUDIT_EXPORT_TMP="/tmp/smoke-test-audit-export.csv"
+DIAGNOSTICS_EXPORT_TMP="/tmp/smoke-test-diagnostics.tar.gz"
+DIAGNOSTICS_EXTRACT_DIR="/tmp/smoke-test-diagnostics-$$"
 CAM_COOKIE_JAR="/tmp/smoke-test-cam-cookies.txt"
 
 RED='\033[0;31m'
@@ -111,7 +113,7 @@ server_curl() {
 # Cleanup
 # ---------------------------------------------------------------------------
 
-trap 'rm -f "$COOKIE_JAR" "$AUDIT_EXPORT_TMP" "$CAM_COOKIE_JAR"' EXIT
+trap 'rm -f "$COOKIE_JAR" "$AUDIT_EXPORT_TMP" "$DIAGNOSTICS_EXPORT_TMP" "$CAM_COOKIE_JAR"; rm -rf "$DIAGNOSTICS_EXTRACT_DIR"' EXIT
 
 # ===========================================================================
 echo ""
@@ -269,6 +271,44 @@ check_status "GET /storage/status" "${API_BASE}/storage/status" 200
 check_json_field "storage has total_gb" "${API_BASE}/storage/status" "total_gb"
 
 check_status "GET /users" "${API_BASE}/users" 200
+
+if [ -n "${CSRF:-}" ]; then
+    DIAG_STATUS=$(server_curl -X POST -H "X-CSRF-Token: ${CSRF}" -o "$DIAGNOSTICS_EXPORT_TMP" -w "%{http_code}" \
+        "${API_BASE}/system/diagnostics/export" 2>/dev/null) || true
+    if [ "$DIAG_STATUS" = "200" ]; then
+        rm -rf "$DIAGNOSTICS_EXTRACT_DIR"
+        mkdir -p "$DIAGNOSTICS_EXTRACT_DIR"
+        if python3 - "$DIAGNOSTICS_EXPORT_TMP" "$DIAGNOSTICS_EXTRACT_DIR" <<'PY' >/dev/null 2>&1
+import sys
+import tarfile
+from pathlib import Path
+
+archive_path = Path(sys.argv[1])
+extract_dir = Path(sys.argv[2])
+with tarfile.open(archive_path, "r:gz") as archive:
+    archive.extractall(extract_dir)
+PY
+        then
+            DIAG_CONFIG_DIR=$(find "$DIAGNOSTICS_EXTRACT_DIR" -type d -path '*/config' | head -n 1)
+            if [ -n "$DIAG_CONFIG_DIR" ]; then
+                DIAG_CHECK_OUTPUT=$(python3 tools/secrets/check_persisted_secrets.py --runtime-config-dir "$DIAG_CONFIG_DIR" 2>&1) || true
+                if echo "$DIAG_CHECK_OUTPUT" | grep -q "Persisted-secret inventory check passed."; then
+                    pass "Diagnostics export config matches docs/operations/secrets-inventory.md"
+                else
+                    fail "Diagnostics export config drifts from docs/operations/secrets-inventory.md"
+                fi
+            else
+                fail "Diagnostics export missing config snapshot"
+            fi
+        else
+            fail "Diagnostics export could not be unpacked for secrets inventory check"
+        fi
+    else
+        fail "POST /system/diagnostics/export failed for secrets inventory check (HTTP ${DIAG_STATUS:-000})"
+    fi
+else
+    skip "Secrets inventory smoke skipped: no CSRF token available from /auth/me"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. OTA status
