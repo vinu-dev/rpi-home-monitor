@@ -264,6 +264,29 @@ class TestAlertCenterUI:
         assert "testOffsiteBackupConnection()" in body
         assert "/api/v1/settings/offsite-backup" in body
 
+    # REQ: SWR-099; RISK: RISK-099; SEC: SC-099; TEST: TC-099
+    def test_settings_password_reset_modal_preserves_self_guard_and_clears_state(
+        self, client
+    ):
+        """Pin the admin-reset UI wiring without a browser runner.
+
+        The self-row guard and the reset-temp-password clearing happen in the
+        rendered Alpine source, so a template regression is still detectable
+        through the HTML response body.
+        """
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert 'x-show="currentUser && currentUser.id !== u.id"' in body
+        assert "openResetPassword(u)" in body
+        assert "closeResetPassword()" in body
+        assert body.count("this.resetTempPassword = '';") == 2
+        assert "Reset &amp; force change" in body
+
     def test_base_html_polls_notifications_pending(self, client):
         """The polling-and-fire-Notification logic must be wired
         in base.html so the bell-badge poller's neighbour fires

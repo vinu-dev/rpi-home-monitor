@@ -72,6 +72,7 @@ Token design (to be revisited):
   - Separate audit events `PASSWORD_RESET_TOKEN_ISSUED` / `_USED`.
 
 Deferred because slice 1 solves the immediate pain: "user forgot + admin available." Slice 2 is for multi-user households where the admin is not always present; we can ship after some real usage data.
+The close-out rationale stays pinned in `docs/history/specs/99-admin-password-reset.md` under Non-Goals so any future reset-code work starts from a fresh security-reviewed spec instead of backsliding into a larger pre-auth surface by accident.
 
 ## Slice 3 — secrets at rest (#101)
 

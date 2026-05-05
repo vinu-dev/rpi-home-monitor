@@ -1,4 +1,4 @@
-{# REQ: SWR-001, SWR-002, SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057; RISK: RISK-002, RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021; SEC: SC-001, SC-011, SC-012, SC-013, SC-003, SC-020, SC-021; TEST: TC-004, TC-011, TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049 #}
+{# REQ: SWR-001, SWR-002, SWR-023, SWR-024, SWR-027, SWR-010, SWR-056, SWR-057, SWR-099; RISK: RISK-002, RISK-011, RISK-012, RISK-013, RISK-004, RISK-017, RISK-020, RISK-021, RISK-099; SEC: SC-001, SC-011, SC-012, SC-013, SC-003, SC-020, SC-021, SC-099; TEST: TC-004, TC-011, TC-022, TC-023, TC-024, TC-009, TC-042, TC-048, TC-049, TC-099 #}
 {% extends "base.html" %}
 
 {% block title %}Settings - Home Monitor{% endblock %}
@@ -813,7 +813,7 @@
                                          must_change_password on the target so
                                          the user has to rotate on next login
                                          without the admin ever knowing the
-                                         final password (issue #99 slice 1). -->
+                                         final password. -->
                                     <button x-show="currentUser && currentUser.id !== u.id"
                                             class="btn btn--secondary btn--small"
                                             @click="openResetPassword(u)"
@@ -843,7 +843,7 @@
 
     <!-- Reset Password modal (admin resets another user's password).
          Shown only when resetTarget is set. Same dark-theme dialog
-         pattern as the Stream Settings modal. Issue #99 slice 1. -->
+         pattern as the Stream Settings modal. -->
     <div x-show="resetTarget" x-cloak
          style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:50;"
          @click.self="closeResetPassword()">
@@ -3276,9 +3276,9 @@ function settingsPage() {
             } catch(e) { window.HM.toast(e.message || 'Failed to delete user', 'error'); }
         },
 
-        // Admin-reset flow (issue #99 slice 1). Admin picks a temporary
-        // password; backend rotates the hash AND sets must_change_password=true
-        // so the user is forced to rotate on first login.
+        // Admin-reset flow. Admin picks a temporary password; backend
+        // rotates the hash AND sets must_change_password=true so the user
+        // is forced to rotate on first login.
         openResetPassword(user) {
             this.resetTarget = user;
             this.resetTempPassword = '';
