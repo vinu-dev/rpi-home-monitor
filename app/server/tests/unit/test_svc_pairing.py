@@ -2,17 +2,29 @@
 """Tests for the pairing service."""
 
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from monitor.services.camera_trust import status_cert_fingerprint_from_pem
 from monitor.services.pairing_service import (
     PIN_DIGITS,
     PIN_EXPIRY_SECONDS,
     PIN_MAX_ATTEMPTS,
     PairingService,
 )
+
+
+def _valid_status_cert() -> str:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "tests"
+        / "fixtures"
+        / "tls"
+        / "camera-valid.crt"
+    ).read_text(encoding="utf-8")
 
 
 def _make_camera(**overrides):
@@ -32,6 +44,8 @@ def _make_camera(**overrides):
         "rtsp_url": "",
         "cert_serial": "",
         "pairing_secret": "",
+        "status_cert_fingerprint": "",
+        "config_sync": "unknown",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -199,6 +213,7 @@ class TestExchangeCerts:
     def test_successful_exchange_updates_camera(self, svc, store, certs_dir):
         cam = _make_camera(status="pending")
         store.get_camera.return_value = cam
+        status_cert = _valid_status_cert()
         svc._pending_pairings["cam-001"] = {
             "pin": "123456",
             "expires_at": time.time() + PIN_EXPIRY_SECONDS,
@@ -209,11 +224,33 @@ class TestExchangeCerts:
                 "serial": "ABC123",
             },
         }
-        svc.exchange_certs("123456", "cam-001")
+        svc.exchange_certs("123456", "cam-001", status_cert=status_cert)
         assert cam.status == "online"
         assert cam.cert_serial == "ABC123"
         assert cam.pairing_secret != ""
+        assert cam.status_cert_fingerprint == status_cert_fingerprint_from_pem(
+            status_cert
+        )
+        assert (certs_dir / "status" / "cam-001.crt").exists()
         store.save_camera.assert_called_once_with(cam)
+
+    def test_repair_clears_trust_lost_to_pending(self, svc, store):
+        cam = _make_camera(status="offline", config_sync="trust_lost")
+        store.get_camera.return_value = cam
+        svc._pending_pairings["cam-001"] = {
+            "pin": "123456",
+            "expires_at": time.time() + PIN_EXPIRY_SECONDS,
+            "attempts": 0,
+            "cert_data": {
+                "cert": "CERT",
+                "key": "KEY",
+                "serial": "ABC123",
+            },
+        }
+
+        svc.exchange_certs("123456", "cam-001", status_cert=_valid_status_cert())
+
+        assert cam.config_sync == "pending"
 
     def test_successful_exchange_removes_pending(self, svc, store, certs_dir):
         self._setup_pending(svc, store, pin="123456")
@@ -272,13 +309,24 @@ class TestUnpair:
         assert svc.is_cert_revoked("ABC123")
 
     def test_resets_camera_state(self, svc, store, certs_dir):
-        cam = _make_camera(status="online", cert_serial="ABC123", pairing_secret="aabb")
+        cam = _make_camera(
+            status="online",
+            cert_serial="ABC123",
+            pairing_secret="aabb",
+            status_cert_fingerprint="deadbeef",
+            config_sync="trust_lost",
+        )
         store.get_camera.return_value = cam
+        (certs_dir / "status").mkdir(exist_ok=True)
+        (certs_dir / "status" / "cam-001.crt").write_text("CERT")
 
         svc.unpair("cam-001")
         assert cam.status == "pending"
         assert cam.cert_serial == ""
         assert cam.pairing_secret == ""
+        assert cam.status_cert_fingerprint == ""
+        assert cam.config_sync == "unknown"
+        assert not (certs_dir / "status" / "cam-001.crt").exists()
         store.save_camera.assert_called_once_with(cam)
 
     def test_cancels_pending_pairing(self, svc, store, certs_dir):

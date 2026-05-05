@@ -252,9 +252,13 @@
                     <span class="text-small" :class="{
                         'text-success': cam.config_sync === 'synced',
                         'text-warning': cam.config_sync === 'pending',
-                        'text-danger': cam.config_sync === 'error',
+                        'text-danger': cam.config_sync === 'error' || cam.config_sync === 'trust_lost',
                         'text-muted': cam.config_sync === 'unknown'
-                    }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : ''"></span>
+                    }" x-show="cam.status !== 'pending'" x-text="cam.config_sync === 'synced' ? '\u2713 synced' : cam.config_sync === 'pending' ? '\u231B pending' : cam.config_sync === 'trust_lost' ? '! re-pair required' : ''"></span>
+                </div>
+                <div class="text-small text-danger"
+                     x-show="cam.config_sync === 'trust_lost'">
+                    Camera identity changed since pairing. Re-pair this camera to restore control.
                 </div>
                 <!-- Hardware fault badges (ADR-0023).
                      Camera stays ONLINE even when faulted — these

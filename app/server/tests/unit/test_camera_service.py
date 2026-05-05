@@ -1345,6 +1345,19 @@ class TestAcceptHeartbeat:
         assert code == 200
         assert "pending_config" not in response
 
+    def test_trust_lost_state_stays_sticky_on_heartbeat(self):
+        cam = _make_camera(config_sync="trust_lost", fps=30)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        payload = self._basic_payload()
+        payload["stream_config"]["fps"] = 15
+
+        svc.accept_heartbeat("cam-001", payload)
+
+        assert cam.config_sync == "trust_lost"
+        assert cam.fps == 30
+
     def test_one_shot_pending_flags_are_returned_once(self):
         cam = _make_camera(config_sync="synced", pending_config={"time_resync": True})
         store = MagicMock()
@@ -1595,6 +1608,19 @@ class TestPendingReconciliationFromHeartbeat:
 
         assert code == 200
         assert cam.config_sync == "pending"
+
+    def test_config_notify_does_not_clear_trust_lost(self):
+        cam = _make_camera(config_sync="trust_lost", fps=15)
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+
+        err, code = svc.accept_camera_config("cam-001", {"fps": 20})
+
+        assert code == 200
+        assert err == ""
+        assert cam.fps == 20
+        assert cam.config_sync == "trust_lost"
 
 
 # --- Sensor capabilities (#173) ---

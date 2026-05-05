@@ -2,11 +2,22 @@
 """Tests for the pairing API endpoints."""
 
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from monitor.models import Camera
+
+
+def _valid_status_cert() -> str:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "tests"
+        / "fixtures"
+        / "tls"
+        / "camera-valid.crt"
+    ).read_text(encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -176,7 +187,11 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             resp = camera_client.post(
                 "/api/v1/pair/exchange",
-                json={"pin": pin, "camera_id": "cam-001"},
+                json={
+                    "pin": pin,
+                    "camera_id": "cam-001",
+                    "status_cert": _valid_status_cert(),
+                },
             )
             assert resp.status_code == 200
             data = resp.get_json()
@@ -185,6 +200,7 @@ class TestExchangeCerts:
             assert "ca_cert" in data
             assert "pairing_secret" in data
             assert "rtsps_url" in data
+            assert app.store.get_camera("cam-001").status_cert_fingerprint
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_exchange_starts_streaming_for_continuous_camera(
@@ -209,7 +225,11 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             camera_client.post(
                 "/api/v1/pair/exchange",
-                json={"pin": pin, "camera_id": "cam-001"},
+                json={
+                    "pin": pin,
+                    "camera_id": "cam-001",
+                    "status_cert": _valid_status_cert(),
+                },
             )
 
         app.streaming.start_camera.assert_called_once_with("cam-001")
@@ -237,7 +257,11 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             camera_client.post(
                 "/api/v1/pair/exchange",
-                json={"pin": pin, "camera_id": "cam-001"},
+                json={
+                    "pin": pin,
+                    "camera_id": "cam-001",
+                    "status_cert": _valid_status_cert(),
+                },
             )
 
         app.streaming.start_camera.assert_not_called()

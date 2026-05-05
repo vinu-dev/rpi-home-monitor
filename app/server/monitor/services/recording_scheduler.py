@@ -203,7 +203,7 @@ class RecordingScheduler:
             # Ask the camera to stream if we haven't already.
             stream_ready = camera.desired_stream_state == "running"
             if not stream_ready and camera.ip and self._control is not None:
-                _, err = self._control.start_stream(camera.ip)
+                _, err = self._control.start_stream(camera.ip, camera_id=cam_id)
                 if err:
                     log.warning("Scheduler: start_stream(%s) failed: %s", cam_id, err)
                 else:

@@ -205,6 +205,11 @@ Admin changes resolution on dashboard
   → Camera responds with applied config
   → Server updates cameras.json with confirmed state
   → If push fails: server marks config_sync="pending", retries on next health check
+
+If the control connection reaches a peer whose `status.crt` no longer
+matches the cert fingerprint captured at pairing, the server marks
+`config_sync="trust_lost"` and requires an explicit re-pair before it
+accepts that peer as the camera again.
 ```
 
 **Conflict resolution:** Camera always wins. If the camera rejects a parameter (e.g., unsupported resolution for its sensor), the server accepts the rejection and updates its stored value to match what the camera reports.
@@ -219,6 +224,13 @@ Admin changes resolution on dashboard
 | **Audit logging** | Camera logs every config change to `/data/logs/control.log` (timestamp, parameter, old → new, requester cert CN). Server logs to `/data/logs/audit.log`. |
 | **Replay protection** | Include monotonic `request_id` (incrementing integer) in each request. Camera rejects requests with `request_id` <= last seen. Reset on reboot is acceptable (mTLS prevents replay across sessions). |
 | **No escalation** | Control endpoints cannot change WiFi, passwords, or trigger factory reset. Those remain admin-password-protected only. |
+
+Directional trust note: the camera still authenticates the server through
+the pairing CA (`server.crt` signed by `ca.crt`), while the server
+authenticates the camera by pinning the camera's self-signed `status.crt`
+fingerprint captured during pairing. Both directions are mutually
+authenticated, but the trust anchors differ because the camera's status
+listener deliberately uses a self-signed leaf certificate.
 
 ### 8. Camera-side implementation sketch
 

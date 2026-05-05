@@ -77,6 +77,10 @@ class Camera:
     firmware_version: str = ""
     cert_serial: str = ""
     pairing_secret: str = ""  # hex-encoded, for camera LUKS key derivation (ADR-0010)
+    # Pinned SHA-256 fingerprint (hex) of the camera's self-signed
+    # control-plane HTTPS certificate (`status.crt`). Empty means the
+    # camera has not yet been pinned on this server.
+    status_cert_fingerprint: str = ""
     # Stream parameters (ADR-0015: server-camera control channel)
     width: int = 1920
     height: int = 1080
@@ -93,7 +97,7 @@ class Camera:
     # tune this per camera from Camera Settings; the server pushes changes
     # over the existing control channel (ADR-0015).
     motion_sensitivity: int = 5
-    config_sync: str = "unknown"  # synced | pending | error | unknown
+    config_sync: str = "unknown"  # synced | pending | error | trust_lost | unknown
     # One-shot server→camera flags piggy-back on the existing heartbeat
     # response channel so operators can queue a camera-side action even
     # while the camera is temporarily unreachable.

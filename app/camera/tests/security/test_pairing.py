@@ -3,11 +3,24 @@
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
 from camera_streamer.pairing import PairingManager
+
+
+def _write_status_cert(data_dir):
+    cert = (
+        Path(__file__).resolve().parents[4]
+        / "tests"
+        / "fixtures"
+        / "tls"
+        / "camera-valid.crt"
+    ).read_text(encoding="utf-8")
+    (data_dir / "certs" / "status.crt").write_text(cert, encoding="utf-8")
+    return cert
 
 
 @pytest.fixture
@@ -93,6 +106,9 @@ class TestExchange:
     @patch("camera_streamer.pairing.urllib.request.urlopen")
     def test_exchange_sends_correct_payload(self, mock_urlopen, pairing_mgr):
         """Exchange sends PIN and camera_id to server."""
+        expected_status_cert = _write_status_cert(
+            Path(pairing_mgr._certs_dir).resolve().parent
+        )
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(
             {
@@ -114,6 +130,7 @@ class TestExchange:
         body = json.loads(req.data)
         assert body["pin"] == "654321"
         assert body["camera_id"] == "cam-test001"
+        assert body["status_cert"] == expected_status_cert
 
     @patch("camera_streamer.pairing.urllib.request.urlopen")
     def test_exchange_http_error(self, mock_urlopen, pairing_mgr):

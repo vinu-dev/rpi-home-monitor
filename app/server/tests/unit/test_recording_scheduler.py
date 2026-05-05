@@ -169,7 +169,7 @@ class TestReconcileSideEffects:
         sched = RecordingScheduler(store, streaming, control)
         sched.tick()
 
-        control.start_stream.assert_called_once_with("192.0.2.5")
+        control.start_stream.assert_called_once_with("192.0.2.5", camera_id="cam-x")
         streaming.start_recorder.assert_called_once()
         reloaded = store.get_camera("cam-x")
         assert reloaded.desired_stream_state == "running"

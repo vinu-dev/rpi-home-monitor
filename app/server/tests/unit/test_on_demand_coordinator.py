@@ -34,7 +34,10 @@ class TestOnDemandStart:
         body = resp.get_json()
         assert body["ok"] is True
         assert body.get("started") is True
-        app.camera_control_client.start_stream.assert_called_once_with("192.0.2.50")
+        app.camera_control_client.start_stream.assert_called_once_with(
+            "192.0.2.50",
+            camera_id="cam-x",
+        )
         cam = app.store.get_camera("cam-x")
         assert cam.desired_stream_state == "running"
 
@@ -75,7 +78,10 @@ class TestOnDemandStop:
         body = resp.get_json()
         assert body["ok"] is True
         assert body.get("stopped") is True
-        app.camera_control_client.stop_stream.assert_called_once_with("192.0.2.50")
+        app.camera_control_client.stop_stream.assert_called_once_with(
+            "192.0.2.50",
+            camera_id="cam-x",
+        )
         cam = app.store.get_camera("cam-x")
         assert cam.desired_stream_state == "stopped"
 
@@ -145,5 +151,5 @@ class TestCoordinatorDirect:
         acted, reason = coord.stop("cam-x")
         assert acted is True
         assert reason == "ok"
-        control.stop_stream.assert_called_once_with("10.0.0.5")
+        control.stop_stream.assert_called_once_with("10.0.0.5", camera_id="cam-x")
         assert store.get_camera("cam-x").desired_stream_state == "stopped"

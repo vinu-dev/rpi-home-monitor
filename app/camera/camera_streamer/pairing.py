@@ -88,7 +88,15 @@ class PairingManager:
         tls_ctx = self._build_tls_context(server_url)
 
         url = f"{server_url}/api/v1/pair/exchange"
-        payload = json.dumps({"pin": pin, "camera_id": camera_id}).encode("utf-8")
+        payload_dict = {"pin": pin, "camera_id": camera_id}
+        status_cert_path = os.path.join(self._certs_dir, "status.crt")
+        try:
+            if os.path.isfile(status_cert_path):
+                with open(status_cert_path, encoding="utf-8") as handle:
+                    payload_dict["status_cert"] = handle.read()
+        except OSError as exc:
+            log.warning("Failed to read status cert for pairing pin capture: %s", exc)
+        payload = json.dumps(payload_dict).encode("utf-8")
 
         try:
             req = urllib.request.Request(
