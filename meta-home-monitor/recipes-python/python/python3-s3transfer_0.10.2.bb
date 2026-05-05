@@ -1,4 +1,4 @@
-# REQ: SWR-046, SWR-072; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # Yocto recipe for s3transfer — boto3's high-level S3 transfer manager.
 #
 # Vendored alongside python3-boto3 / python3-botocore — boto3

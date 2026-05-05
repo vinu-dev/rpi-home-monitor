@@ -1,4 +1,4 @@
-# REQ: SWR-046, SWR-072; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # Yocto recipe for botocore — low-level interface to AWS services.
 #
 # Vendored in meta-home-monitor because meta-openembedded's

@@ -1,4 +1,4 @@
-# REQ: SWR-046, SWR-072; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # Yocto recipe for boto3 — Amazon AWS SDK for Python.
 #
 # Vendored in meta-home-monitor because meta-openembedded's

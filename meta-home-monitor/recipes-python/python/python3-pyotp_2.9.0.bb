@@ -1,4 +1,4 @@
-# REQ: SWR-046, SWR-072; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043, TC-045
 # Yocto recipe for PyOTP — Python One Time Password Library.
 #
 # Vendored in meta-home-monitor because pyotp is not provided by
