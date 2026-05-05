@@ -256,7 +256,14 @@ def noauth_config(tmp_path):
 # WiFi Setup Server contracts
 # ===========================================================================
 
-SETUP_STATUS_FIELDS = {"status", "error", "setup_complete", "camera_id", "hostname"}
+SETUP_STATUS_FIELDS = {
+    "status",
+    "error",
+    "setup_complete",
+    "camera_id",
+    "hostname",
+    "ip_address",
+}
 NETWORK_FIELDS = {"ssid", "signal", "security"}
 CONNECT_SUCCESS_FIELDS = {"status", "message", "hostname"}
 
@@ -287,15 +294,24 @@ class TestSetupNetworksContract:
 class TestSetupStatusContract:
     """GET /api/status on setup server."""
 
+    @patch("camera_streamer.wifi.get_ip_address", return_value="192.168.1.42")
     @patch("camera_streamer.wifi.get_hostname", return_value="cam-test")
     @patch("camera_streamer.wifi.scan_networks", return_value=[])
     @patch("camera_streamer.wifi.start_hotspot", return_value=True)
-    def test_response_fields(self, mock_hotspot, mock_scan, mock_host, setup_config):
+    def test_response_fields(
+        self,
+        mock_hotspot,
+        mock_scan,
+        mock_host,
+        mock_ip,
+        setup_config,
+    ):
         server = WifiSetupServer(setup_config)
         server.start()
         try:
             data, status = _json_get("/api/status")
             _assert_fields(data, SETUP_STATUS_FIELDS)
+            assert data["ip_address"] == "192.168.1.42"
         finally:
             server.stop()
 
@@ -307,6 +323,26 @@ class TestSetupStatusContract:
         server.start()
         try:
             assert _head("/") == 200
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.get_ip_address", side_effect=RuntimeError("boom"))
+    @patch("camera_streamer.wifi.get_hostname", return_value="cam-test")
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_ip_address_falls_back_to_empty_string(
+        self,
+        mock_hotspot,
+        mock_scan,
+        mock_host,
+        mock_ip,
+        setup_config,
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            data, status = _json_get("/api/status")
+            assert data["ip_address"] == ""
         finally:
             server.stop()
 

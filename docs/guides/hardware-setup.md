@@ -308,7 +308,7 @@ On first boot, the camera starts a WiFi hotspot for provisioning:
 5. Set **camera login credentials** — username (default: `admin`) and password (min 4 characters). These protect the camera's status page.
 6. Click **Save & Connect**
 7. The camera LED changes: fast blink (connecting) → solid (connected)
-8. On success, the wizard shows the camera's `.local` URL (e.g., `https://rpi-divinu-cam-d8ee.local`)
+8. On success, the wizard shows the camera's `.local` URL (e.g., `https://rpi-divinu-cam-d8ee.local`) and a QR fallback that opens `https://<camera-ip>:443` after you reconnect your phone to home WiFi
 
 ### 5.3 Verify Camera Hardware
 

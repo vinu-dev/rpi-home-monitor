@@ -121,6 +121,23 @@ class TestWifiSetupServer:
         nets.clear()  # Modifying copy shouldn't affect original
         assert len(server.get_cached_networks()) == 1
 
+    def test_stop_closes_server_socket(self, unconfigured_config):
+        """stop() should join the thread and close the listening socket."""
+        server = WifiSetupServer(unconfigured_config)
+        mock_server = MagicMock()
+        mock_thread = MagicMock()
+        mock_thread.is_alive.return_value = True
+        server._server = mock_server
+        server._thread = mock_thread
+
+        server.stop()
+
+        mock_server.shutdown.assert_called_once()
+        mock_thread.join.assert_called_once_with(timeout=5)
+        mock_server.server_close.assert_called_once()
+        assert server._server is None
+        assert server._thread is None
+
 
 class TestScanWifi:
     """Test WiFi scanning via wifi module."""
