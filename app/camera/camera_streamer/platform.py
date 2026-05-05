@@ -196,15 +196,40 @@ def _probe_vcgencmd_path() -> str | None:
 
 
 def _probe_throttle_path() -> str | None:
-    """Find a Raspberry Pi throttle-state sysfs file if present."""
-    patterns = (
-        "/sys/devices/platform/soc/**/throttled",
-        "/sys/devices/platform/soc/**/get_throttled",
-    )
-    for pattern in patterns:
-        for path in sorted(glob.glob(pattern, recursive=True)):
-            if os.path.isfile(path):
-                return path
+    """Find a Raspberry Pi throttle-state sysfs file if present.
+
+    `os.walk(followlinks=False)` is mandatory: `/sys/devices/platform/soc/`
+    on some SoCs (Pi Zero 2W with bcm2835 serial driver, see hardware
+    test 2026-05-05) contains symlink loops via the
+    `<dev>/driver/<dev>/driver/...` chain. The previous implementation
+    used `glob.glob(pattern, recursive=True)`, which DOES follow
+    symlinks for the `**` token (per the Python 3.12 docs) and
+    therefore spun forever in a CPU-bound loop, hanging the lifecycle
+    boot at "Config loaded" before any thread could start.
+
+    A bounded directory walk that refuses to descend into symlinks
+    cannot loop, and on this SoC family the real throttle-state files
+    live at depth ≤ 4 from the soc/ root, well within the practical
+    walk budget. We additionally cap the directory count so a future
+    SoC with thousands of subnodes can't degrade boot latency.
+    """
+    targets = ("throttled", "get_throttled")
+    soc_root = "/sys/devices/platform/soc"
+    if not os.path.isdir(soc_root):
+        return None
+    # Cap walked directories — defence in depth in case some future
+    # kernel adds a non-loop sysfs forest large enough to slow boot.
+    max_dirs = 2000
+    for walked, (dirpath, _dirnames, filenames) in enumerate(
+        os.walk(soc_root, followlinks=False), start=1
+    ):
+        if walked > max_dirs:
+            break
+        for name in targets:
+            if name in filenames:
+                candidate = os.path.join(dirpath, name)
+                if os.path.isfile(candidate):
+                    return candidate
     return None
 
 
