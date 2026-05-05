@@ -323,11 +323,15 @@ Each bullet is testable; verification mechanism noted in brackets.
   in the threat-model table that says "mTLS camera pairing with
   client certs" gains a sibling row covering the control channel.
   **[doc-link checker + manual review of the diff]**
-- AC-12: Static check: `grep -rn "CERT_NONE" app/server/` returns
-  **zero** matches in non-test code. (Tests may still construct
-  CERT_NONE contexts intentionally as part of negative cases —
-  scoping the assertion to non-test paths is part of the test.)
-  **[CI lint: simple grep step in the test file or pre-commit]**
+- AC-12: Static check: non-test `ssl.CERT_NONE` use is explicitly
+  allowlisted and scoped. The only #119 server-control exception is the
+  audit-logged one-shot TOFU bootstrap in
+  `CameraControlClient._bootstrap_request`, used when a legacy camera has
+  no stored status-certificate pin yet. The existing OTA client exception
+  remains a documented pre-existing follow-up and must not expand as part
+  of this work. All steady-state control-channel requests use
+  `CERT_REQUIRED` with the paired camera's pinned status certificate.
+  **[unit: AST-based allowlist in `test_camera_control_client.py`]**
 - AC-13: Validation matrix rows that apply (server Python, security
   path, traceability check) all pass on the resulting branch:
   `pytest app/server/tests/ -v`, `ruff check .`,
@@ -520,38 +524,28 @@ ADR-0022 ("No Backdoors") audit:
 
 ## Traceability
 
-Placeholder IDs the Implementer fills in (per
-`docs/ai/medical-traceability.md`). Each touched code/test file
-must carry at least one `REQ:` annotation per the standing rule.
+The implementer mapped this issue onto existing traceability IDs rather
+than creating a new `119` ID family. Each touched code/test file must
+carry at least one `REQ:` annotation per the standing rule.
 
-Annotation block to add at the top of each newly modified
-security-critical file (or extend existing block):
+Annotation block used at the top of newly modified security-critical
+files (or to extend existing blocks):
 
 ```
-# REQ: SWR-119; ARCH: SWA-119; RISK: RISK-119-1, RISK-119-3;
-# SEC: SC-119-1, SC-119-2, SC-119-3; TEST: TC-119-1..TC-119-13
+# REQ: SWR-039, SWR-065, SWR-066; RISK: RISK-007, RISK-015;
+# SEC: SC-002, SC-012; TEST: TC-037, TC-054
 ```
 
-ID space proposed for this spec (Implementer pins exact numbers
-during traceability matrix update):
+Mapped IDs:
 
-- **REQ:** `SWR-119` — "Server verifies camera control-channel
-  peer cert via pinned-leaf fingerprint captured at pairing."
-- **ARCH:** `SWA-119` — "Outbound control client uses
-  CERT_REQUIRED with per-camera pinned trust anchor; pinning
-  artifact captured during pairing exchange."
-- **RISK:** `RISK-119-1`, `RISK-119-2`, `RISK-119-3` (mapped to
-  HAZ-119-1, HAZ-119-2, HAZ-119-3 above; HAZ-119-4 / HAZ-119-5
-  reuse RC-119-4 / accepted-residual labels rather than new
-  RISK rows since they are rollout-mechanic risks).
-- **SEC:** `SC-119-1`, `SC-119-2`, `SC-119-3`.
-- **TEST:** `TC-119-1` through `TC-119-13` mapping 1:1 to
-  AC-1 .. AC-13 above.
+- **REQ:** `SWR-039`, `SWR-065`, `SWR-066`
+- **RISK:** `RISK-007`, `RISK-015`
+- **SEC:** `SC-002`, `SC-012`
+- **TEST:** `TC-037`, `TC-054`
 
-Each new ID must be added to the traceability matrix
-(`tools/traceability/`) with links back to user need
-**UN-camera-trust** (existing) or, if missing, a new user need
-**UN-119-camera-control-trust** with a one-line description.
+No new traceability matrix IDs are introduced by this branch. The
+acceptance criteria above are verified through tests and documentation
+rows tied back to the existing camera-trust/control-channel records.
 
 ## Deployment Impact
 

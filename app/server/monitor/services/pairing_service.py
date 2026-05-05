@@ -21,6 +21,12 @@ import subprocess
 import time
 from pathlib import Path
 
+from monitor.services.camera_trust import (
+    persist_pinned_status_cert,
+    remove_pinned_status_cert,
+    status_cert_fingerprint_from_pem,
+)
+
 log = logging.getLogger("monitor.pairing_service")
 
 PIN_EXPIRY_SECONDS = 300  # 5 minutes
@@ -100,7 +106,7 @@ class PairingService:
 
         return pin, "", 200
 
-    def exchange_certs(self, pin, camera_id, ip=""):
+    def exchange_certs(self, pin, camera_id, ip="", status_cert=""):
         """Validate PIN and return certs + pairing_secret.
 
         Returns (result_dict, error, status_code).
@@ -156,6 +162,19 @@ class PairingService:
         camera.pairing_secret = pairing_secret
         if ip:
             camera.ip = ip
+        remove_pinned_status_cert(self._certs_dir, camera_id)
+        pinned_fingerprint = ""
+        if status_cert:
+            try:
+                persist_pinned_status_cert(self._certs_dir, camera_id, status_cert)
+                pinned_fingerprint = status_cert_fingerprint_from_pem(status_cert)
+            except ValueError as exc:
+                log.warning(
+                    "Ignoring invalid camera status cert for %s: %s", camera_id, exc
+                )
+        camera.status_cert_fingerprint = pinned_fingerprint
+        if camera.config_sync == "trust_lost":
+            camera.config_sync = "pending"
         # Set RTSP URL so streaming/recording works immediately after pairing
         if not camera.rtsp_url:
             camera.rtsp_url = f"rtsp://127.0.0.1:8554/{camera.id}"
@@ -216,7 +235,10 @@ class PairingService:
         camera.status = "pending"
         camera.cert_serial = ""
         camera.pairing_secret = ""
+        camera.status_cert_fingerprint = ""
+        camera.config_sync = "unknown"
         self._store.save_camera(camera)
+        remove_pinned_status_cert(self._certs_dir, camera_id)
 
         # Cancel any pending pairing
         self._pending_pairings.pop(camera_id, None)

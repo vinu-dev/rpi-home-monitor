@@ -236,7 +236,7 @@ The server dashboard shows clickable `.local` links for each camera's status pag
 |--------|--------------|--------|------------|
 | WiFi eavesdropping | Sniff HTTP/RTSP traffic on same network | View live video, steal credentials | TLS on all connections (HTTPS + RTSPS) |
 | Unauthorized dashboard access | Guess/brute-force login | Full system control | Auth + rate limiting + session management |
-| Camera impersonation | rogue device sends fake mDNS + RTSP | Inject fake video feed | mTLS camera pairing with client certs |
+| Camera impersonation | rogue device sends fake mDNS + RTSP or answers the control IP with a different TLS cert | Inject fake video feed or accept forged control commands | mTLS camera pairing with client certs plus pinned camera status-cert verification on the server control path |
 | SD card theft (server) | Physical access to RPi 4B | All recordings, WiFi creds, user passwords | LUKS encryption on /data partition |
 | SD card theft (camera) | Physical access to Zero 2W | WiFi password, server address | LUKS encryption on /data partition |
 | Default credentials | SSH as root with no password | Full device control | No debug-tweaks in production, key-only SSH |
@@ -307,8 +307,10 @@ CAMERA PAIRING (PIN-based, see ADR-0009):
   4. Admin enters PIN on camera status page (/pair)
   5. Camera POSTs PIN to server (POST /api/v1/pair/exchange, rate-limited: 3 attempts/5 min)
   6. Server returns: client.crt, client.key, ca.crt, RTSPS URL, pairing_secret
+     and records the camera's presented `status.crt` fingerprint for the
+     control channel
   7. Camera stores certs in /data/certs/, pairing_secret for LUKS key derivation (ADR-0010)
-  8. All future connections use mTLS (RTSPS, OTA push, health polling)
+  8. All future machine-control connections use mTLS or pinned-cert trust (RTSPS, OTA push, server-to-camera control, health polling)
   9. Single pairing ceremony → mTLS identity + OTA trust + LUKS key material
 
 CAMERA REMOVAL:
@@ -705,6 +707,12 @@ the camera's existing status server (port 443). Authentication uses mTLS —
 the server presents its certificate (signed by the server CA), and the
 camera verifies it against the `ca.crt` received during pairing.
 
+On the return path, the server now verifies the camera's self-signed
+`status.crt` against the cert fingerprint captured during pairing. Legacy
+camera rows that predate the stored fingerprint use a one-shot TOFU pin on
+the first successful control call, after which the server treats cert drift
+as a loud trust-loss event instead of accepting a new peer silently.
+
 ```
 Server                              Camera
 ┌──────────────┐                   ┌──────────────────┐
@@ -738,6 +746,10 @@ Supported resolutions are auto-detected from the OV5647 sensor hardware.
 **Config sync model:** Camera is source of truth. Server stores a cached
 copy. If push fails, server marks `config_sync=pending` and retries on
 next health check cycle.
+
+If the camera presents a different control-plane cert than the one pinned
+at pairing, server marks `config_sync=trust_lost`, shows a re-pair hint on
+the dashboard, and refuses to update the trust binding silently.
 
 **Bidirectional sync:** Camera GUI can also edit stream settings. When
 changed locally, the camera notifies the server via HMAC-signed POST to

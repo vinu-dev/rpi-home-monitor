@@ -715,10 +715,11 @@ All endpoints require authentication. Prefix: `/api/v1/`
 - PIN displayed on dashboard; admin enters PIN on camera's status page (`/pair`)
 - Camera POSTs PIN to server (`POST /api/v1/pair/exchange`) — rate-limited to 3 attempts per 5-min window
 - Server returns: `client.crt`, `client.key`, `ca.crt`, RTSPS URL, `pairing_secret` (for LUKS key derivation, ADR-0010)
+- During the same pairing exchange, the server captures the camera's presented `status.crt` fingerprint and stores it with the camera record for later control-channel verification
 - Camera stores certs at `/data/certs/`, transitions lifecycle to CONNECTING with mTLS
 - Only after pairing: camera can stream (RTSPS), receives firewall allowance, OTA push authentication
 - Camera removal revokes cert (moved to `cameras/revoked/`), removes from firewall `@camera_ips` set
-- Single pairing ceremony establishes: mTLS identity + OTA trust + LUKS key material
+- Single pairing ceremony establishes: mTLS identity + OTA trust + LUKS key material + pinned server-to-camera control trust
 
 ---
 

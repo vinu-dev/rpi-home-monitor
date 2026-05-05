@@ -166,7 +166,10 @@ def exchange_certs():
         return jsonify({"error": "pin and camera_id are required"}), 400
 
     result, error, status = current_app.pairing_service.exchange_certs(
-        pin, camera_id, ip=request.remote_addr or ""
+        pin,
+        camera_id,
+        ip=request.remote_addr or "",
+        status_cert=data.get("status_cert", ""),
     )
     if error:
         return jsonify({"error": _safe_pairing_error(error)}), status

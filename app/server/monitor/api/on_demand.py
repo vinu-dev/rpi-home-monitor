@@ -60,7 +60,7 @@ def on_demand_start(camera_id: str):
     if control is None:
         return jsonify({"error": "Control client unavailable"}), 503
 
-    _, err = control.start_stream(camera.ip)
+    _, err = control.start_stream(camera.ip, camera_id=camera.id)
     if err:
         log.warning("on-demand start %s failed: %s", camera_id, err)
         return jsonify({"error": err}), 502
@@ -95,7 +95,7 @@ def on_demand_stop(camera_id: str):
         current_app.store.save_camera(camera)
         return jsonify({"ok": True, "stopped": True}), 200
 
-    _, err = control.stop_stream(camera.ip)
+    _, err = control.stop_stream(camera.ip, camera_id=camera.id)
     if err:
         log.warning("on-demand stop %s failed: %s", camera_id, err)
         return jsonify({"error": err}), 502
@@ -141,7 +141,7 @@ class OnDemandCoordinator:
             self._store.save_camera(camera)
             return True, "no_ip"
 
-        _, err = self._control.stop_stream(camera.ip)
+        _, err = self._control.stop_stream(camera.ip, camera_id=camera.id)
         if err:
             return False, err
         camera.desired_stream_state = "stopped"

@@ -313,9 +313,25 @@ def _init_services(app):
         clip_stamp_queue=app.clip_stamp_queue,
     )
 
+    def _camera_status_fingerprint(camera_id: str) -> str:
+        camera = app.store.get_camera(camera_id)
+        if camera is None:
+            return ""
+        return getattr(camera, "status_cert_fingerprint", "") or ""
+
+    def _record_camera_status_fingerprint(camera_id: str, fingerprint: str) -> None:
+        camera = app.store.get_camera(camera_id)
+        if camera is None:
+            raise ValueError(f"Unknown camera {camera_id}")
+        camera.status_cert_fingerprint = fingerprint
+        app.store.save_camera(camera)
+
     # Camera control client — pushes config to cameras via mTLS (ADR-0015)
     app.camera_control_client = CameraControlClient(
         certs_dir=app.config["CERTS_DIR"],
+        pin_provider=_camera_status_fingerprint,
+        pin_recorder=_record_camera_status_fingerprint,
+        audit=app.audit,
     )
 
     # Camera service — orchestrates store + streaming + audit

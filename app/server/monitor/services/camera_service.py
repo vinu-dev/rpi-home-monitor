@@ -16,6 +16,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from monitor.services.camera_control_client import CERT_MISMATCH_ERROR
 from monitor.services.encoder_presets import (
     PRESET_PARAM_FIELDS,
     encoder_preset_params_match,
@@ -607,10 +608,17 @@ class CameraService:
         stream_changes = {k: v for k, v in data_to_apply.items() if k in STREAM_PARAMS}
         wire_changes = _translate_stream_params_for_wire(stream_changes)
         if wire_changes and camera.ip and self._control:
-            result, err = self._control.set_config(camera.ip, wire_changes)
+            result, err = self._control.set_config(
+                camera.ip,
+                wire_changes,
+                camera_id=camera.id,
+            )
             if err:
                 log.warning("Failed to push config to camera %s: %s", camera_id, err)
-                camera.config_sync = "pending"
+                if err == CERT_MISMATCH_ERROR:
+                    camera.config_sync = "trust_lost"
+                else:
+                    camera.config_sync = "pending"
             else:
                 camera.config_sync = "synced"
         elif stream_changes and not camera.ip:
@@ -820,6 +828,7 @@ class CameraService:
         # and tell the camera via pending_config instead of overwriting with its
         # potentially-stale values.
         had_pending = camera.config_sync == "pending"
+        trust_lost = camera.config_sync == "trust_lost"
 
         if "stream_config" in data and isinstance(data["stream_config"], dict):
             sc = data["stream_config"]
@@ -835,7 +844,7 @@ class CameraService:
                 if _heartbeat_stream_config_matches(camera, sc):
                     camera.config_sync = "synced"
                     had_pending = False
-            else:
+            elif not trust_lost:
                 for key in sc:
                     if key in STREAM_PARAMS:
                         setattr(camera, key, sc[key])
@@ -890,7 +899,8 @@ class CameraService:
         for key, value in stream_config.items():
             setattr(camera, key, value)
 
-        camera.config_sync = "synced"
+        if camera.config_sync != "trust_lost":
+            camera.config_sync = "synced"
         self._store.save_camera(camera)
 
         self._log_audit(

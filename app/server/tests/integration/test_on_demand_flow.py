@@ -19,12 +19,12 @@ class FakeControlClient:
     def __init__(self):
         self.calls: list = []
 
-    def start_stream(self, ip):
-        self.calls.append(("start", ip))
+    def start_stream(self, ip, camera_id=""):
+        self.calls.append(("start", ip, camera_id))
         return {"state": "running"}, ""
 
-    def stop_stream(self, ip):
-        self.calls.append(("stop", ip))
+    def stop_stream(self, ip, camera_id=""):
+        self.calls.append(("stop", ip, camera_id))
         return {"state": "stopped"}, ""
 
 
@@ -56,13 +56,13 @@ class TestOnDemandFlow:
         # Viewer arrives → MediaMTX calls start.
         r = client.post("/internal/on-demand/cam-a/start")
         assert r.status_code == 200
-        assert fake.calls == [("start", "10.0.0.7")]
+        assert fake.calls == [("start", "10.0.0.7", "cam-a")]
         assert app.store.get_camera("cam-a").desired_stream_state == "running"
 
         # Viewer leaves → MediaMTX calls stop.
         r = client.post("/internal/on-demand/cam-a/stop")
         assert r.status_code == 200
-        assert ("stop", "10.0.0.7") in fake.calls
+        assert ("stop", "10.0.0.7", "cam-a") in fake.calls
         assert app.store.get_camera("cam-a").desired_stream_state == "stopped"
 
     def test_stop_respects_scheduler_need(self, staged):
