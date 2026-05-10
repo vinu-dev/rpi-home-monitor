@@ -1,6 +1,8 @@
 # REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-065, SWR-066; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-021; SEC: SC-002, SC-021; TEST: TC-008, TC-012, TC-030, TC-042, TC-054
 """Tests for the cameras API."""
 
+from unittest.mock import patch
+
 from monitor.models import Camera
 
 
@@ -502,6 +504,28 @@ class TestCameraHeartbeatEndpoint:
         updated = app.store.get_camera("cam-001")
         assert updated.status == "online"
         assert updated.cpu_temp == 52.5
+
+    def test_heartbeat_advertises_preferred_stream_endpoint(self, app, client):
+        _make_camera_with_secret(app)
+        body = b'{"streaming": true}'
+        headers = _hmac_headers("cam-001", body)
+        with patch(
+            "monitor.api.cameras.preferred_lan_ip_for_remote",
+            return_value="192.168.1.244",
+        ):
+            resp = client.post(
+                "/api/v1/cameras/heartbeat",
+                data=body,
+                content_type="application/json",
+                headers=headers,
+                environ_overrides={"REMOTE_ADDR": "192.168.1.115"},
+            )
+
+        assert resp.status_code == 200
+        endpoint = resp.get_json()["server_endpoint"]
+        assert endpoint["stream_host"] == "192.168.1.244"
+        assert endpoint["rtsps_port"] == 8322
+        assert endpoint["source"] == "route_iface"
 
     def test_returns_pending_config_when_sync_pending(self, app, client):
         cam = _make_camera_with_secret(app)

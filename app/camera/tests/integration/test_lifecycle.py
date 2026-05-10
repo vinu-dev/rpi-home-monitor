@@ -409,6 +409,9 @@ class TestRunning:
             cache_path=os.path.join("/tmp/test/config", "server_resolved_ip"),
         )
         MockResolver.return_value.start.assert_called_once()
+        assert (
+            MockStream.call_args.kwargs["server_resolver"] is MockResolver.return_value
+        )
 
     @patch("camera_streamer.lifecycle._ServerResolver")
     @patch("camera_streamer.lifecycle.led")

@@ -265,10 +265,10 @@ Each bullet is testable; verification mechanism in brackets.
   **[unit: parse the rendered QR or assert via the QR-library API]**
 - AC-5: A new `GET /api/v1/system/network` endpoint on the server
   returns `{server_url: "https://<ip>:<port>/", ip: "<ip>", port: <int>,
-  source: "request_host" | "wifi_iface"}`. Auth: NONE (visible on the
+  source: "request_host" | "route_iface"}`. Auth: NONE (visible on the
   login page footer). The endpoint never returns a routable public IP;
   if the request comes from a non-RFC1918 source it falls back to a
-  `wifi_iface` lookup or an empty payload.
+  `route_iface` lookup or an empty payload.
   **[contract test]**
 - AC-6: The server login page renders a "Server address" footer block
   with the URL + QR + Copy treatment when `/api/v1/system/network`

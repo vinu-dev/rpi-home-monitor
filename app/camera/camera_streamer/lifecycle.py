@@ -17,6 +17,7 @@ Design patterns:
 - Fail-Silent (hardware check failure doesn't block startup)
 """
 
+import ipaddress
 import json
 import logging
 import os
@@ -98,11 +99,9 @@ class _ServerResolver:
         called from ``CameraLifecycle.shutdown`` so a fast-shutdown
         path doesn't leak a sleeping retry.
 
-    The resolver does NOT plumb the resolved IP back to anyone — the
-    glibc/nss-mdns resolver caches it internally, and the existing
-    callers (heartbeat, control channel) re-resolve on use. The
-    benefit of running this in the background is purely the early
-    fault surfacing + cache priming.
+    The resolver owns server-name resolution for camera subsystems; the
+    callers now read ``resolved_ip`` so heartbeat and streaming share the
+    same known-good LAN endpoint when `.local` resolution is flaky.
     """
 
     # Retry tuning. The defaults are calibrated for a typical Yocto
@@ -130,6 +129,38 @@ class _ServerResolver:
     def resolved_ip(self) -> str | None:
         """The most recent successful resolution, or None if never resolved."""
         return self._resolved_ip
+
+    def update_preferred_ip(self, ip: str, source: str = "server_endpoint") -> bool:
+        """Accept a server-advertised preferred LAN endpoint.
+
+        Dual-homed servers can expose both Ethernet and WiFi addresses. The
+        server is the only side that knows which local interface its route
+        table would use to reach this camera, so heartbeat responses may
+        override the mDNS/cache result with that preferred stream address.
+        """
+        try:
+            parsed = ipaddress.ip_address(str(ip).strip())
+        except ValueError:
+            return False
+        if parsed.version != 4 or not parsed.is_private:
+            return False
+
+        new_ip = str(parsed)
+        if new_ip != self._resolved_ip:
+            log.info(
+                "ServerResolver: preferred server endpoint from %s: %s -> %s",
+                source,
+                self._resolved_ip or "(none)",
+                new_ip,
+            )
+        self._resolved_ip = new_ip
+        self._persist_cache(new_ip)
+        if self._capture is not None:
+            try:
+                self._capture.clear_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
+            except AttributeError:
+                pass
+        return True
 
     def start(self) -> None:
         """Launch the resolver thread. No-op if already running or address empty."""
@@ -204,6 +235,16 @@ class _ServerResolver:
         if self._stop.is_set():
             return
 
+        if self._resolved_ip:
+            log.warning(
+                "Server address '%s' did not resolve within %.0fs, but cached "
+                "IP %s is available; continuing to use the cached LAN endpoint",
+                self._address,
+                self.DEADLINE_S,
+                self._resolved_ip,
+            )
+            return
+
         # Deadline reached without a successful resolution. Emit the
         # structured fault so the dashboard surfaces a precise badge
         # ("Server name didn't resolve") rather than the camera silently
@@ -271,6 +312,11 @@ class _ServerResolver:
 
         self._resolved_ip = ip
         log.info("ServerResolver: primed cached IP for %s -> %s", self._address, ip)
+        if self._capture is not None:
+            try:
+                self._capture.clear_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
+            except AttributeError:
+                pass
 
     def _persist_cache(self, ip: str) -> None:
         """Best-effort atomic rewrite of the last known-good server IP."""
@@ -601,6 +647,7 @@ class CameraLifecycle:
             self._config,
             camera_device=self._platform.camera_device,
             pairing_manager=self._pairing,
+            server_resolver=self._server_resolver,
         )
         desired = _read_desired_stream_state(self._stream_state_path)
         if self._config.is_configured and desired == "running":

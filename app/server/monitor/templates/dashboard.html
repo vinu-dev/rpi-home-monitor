@@ -72,11 +72,6 @@
         <a data-role="help-link" href="" class="text-small text-muted">Help</a>
     </div>
     <div data-role="server-meta" class="text-small text-muted" style="margin-top:10px;"></div>
-    <div data-role="server-qr" hidden
-         style="margin-top:14px;background:#fff;border-radius:12px;padding:10px;width:fit-content;"></div>
-    <div data-role="qr-note" class="text-small text-muted" hidden style="margin-top:8px;">
-        QR not rendered; copy the URL manually.
-    </div>
 </div>
 
 <!--
@@ -629,9 +624,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='qrcode.min.js') }}"
-        integrity="sha256-uyNl5JAvT4SFLPQCXm9qYDJaaCrq+kP7Y7f8jwmNHvI="
-        crossorigin="anonymous"></script>
 <script>
 window.HM.networkFallback.mount('dashboard-server-address', '/help/network-fallback');
 
@@ -1172,6 +1164,19 @@ function dashboardPage() {
             for (var i = 0; i < options.length; i++) {
                 seen[options[i].value] = true;
             }
+            var currentValue = cam ? (cam.width + 'x' + cam.height) : '';
+            if (cam && currentValue && !seen[currentValue]) {
+                var currentMaxFps = Math.max(1, Math.round(Number(cam.fps) || 30));
+                options.push({
+                    value: currentValue,
+                    label: currentValue + ' (current, max ' + currentMaxFps + ' fps)',
+                    width: Number(cam.width),
+                    height: Number(cam.height),
+                    max_fps: currentMaxFps,
+                    current: true,
+                });
+                seen[currentValue] = true;
+            }
             var presets = this._encoderPresetsForCamera(cam);
             for (var j = 0; j < presets.length; j++) {
                 var params = presets[j].params || {};
@@ -1344,34 +1349,18 @@ function dashboardPage() {
             var resKey = cam.width + 'x' + cam.height;
             var options = this._resolutionOptionsFor(cam);
             var encoderPresetOptions = this._encoderPresetsForCamera(cam);
-            // If the camera's saved resolution isn't in the current
-            // sensor's mode list (e.g. the user swapped sensors and
-            // the saved 3280x2464 is now invalid), pick the closest
-            // smaller mode and warn the operator.
+            // If the camera's saved resolution is missing from the current
+            // sensor catalogue, keep the real current value selected.
             var savedInModes = options.some(function(o) { return o.value === resKey; });
             var mismatch = !savedInModes && options.length > 0;
-            var clampTarget = options.length ? options[options.length - 1] : null;
-            // When the saved value is too big, clamp DOWN to the largest
-            // mode the new sensor supports. When it's too small (rare —
-            // sensor downgrade), use the smallest. Pick the largest
-            // available mode that does not exceed the saved width so the
-            // user stays close to what they had.
-            if (mismatch && options.length) {
-                var keep = null;
-                for (var i = 0; i < options.length; i++) {
-                    if (options[i].width <= cam.width && options[i].height <= cam.height) {
-                        keep = options[i];
-                    }
-                }
-                clampTarget = keep || options[options.length - 1];
-            }
-            var pickedRes = mismatch ? clampTarget.value : resKey;
+            // The operator can then choose a supported mode explicitly.
+            var pickedRes = resKey;
             this.editForm = {
                 // Issue #156 — name + location editable in the same modal.
                 name: cam.name || '',
                 location: cam.location || '',
                 resolution: pickedRes,
-                fps: mismatch ? Math.min(cam.fps, clampTarget.max_fps) : cam.fps,
+                fps: cam.fps,
                 bitrateMbps: (cam.bitrate / 1000000),
                 h264_profile: cam.h264_profile || 'high',
                 keyframe_interval: cam.keyframe_interval || 30,
@@ -1416,9 +1405,9 @@ function dashboardPage() {
                 resolutionMismatch: mismatch,
                 resolutionMismatchHint: mismatch
                     ? ('Saved was ' + resKey + ' (' + cam.fps + ' fps); '
-                       + 'switched to ' + clampTarget.value
-                       + ' which is the closest mode this sensor supports. '
-                       + 'Adjust below and click Save to apply.')
+                       + 'it is not in the current sensor catalogue, so it is '
+                       + 'shown as the current value. Choose a listed mode and '
+                       + 'click Save to change it.')
                     : '',
                 // #182 image-quality state. Build catalogue rows from the
                 // camera's reported image_controls; pre-fill values from

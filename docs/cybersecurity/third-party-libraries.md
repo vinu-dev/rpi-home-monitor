@@ -10,4 +10,4 @@ source_of_truth: true
 
 | Library | Version | License | Usage | Integrity |
 |---|---|---|---|---|
-| `qrcode-generator` | `1.4.4` | MIT | Vendored client-side QR rendering for camera setup/status pages and server login/dashboard fallback URLs. | SHA-256 `bb2365e4902f4f84852cf4025e6f6a60325a682aeafa43fb63b7fc8f098d1ef2` verified by `tools/check_static_hashes.py` |
+| `qrcode-generator` | `1.4.4` | MIT | Vendored client-side QR rendering for camera setup/status pages and the server login fallback URL. | SHA-256 `bb2365e4902f4f84852cf4025e6f6a60325a682aeafa43fb63b7fc8f098d1ef2` verified by `tools/check_static_hashes.py` |

@@ -7,6 +7,7 @@ import io
 import sys
 import types
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -80,6 +81,19 @@ def _backend(config, motion_enabled=True):
 
 
 class TestStartEncoder:
+    def test_stream_url_uses_resolved_server_ip(self, camera_config, data_dir):
+        certs = data_dir / "certs"
+        (certs / "client.crt").write_text("CERT")
+        (certs / "client.key").write_text("KEY")
+        (certs / "ca.crt").write_text("CA")
+        camera_config.update(SERVER_IP="rpi-divinu.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+
+        backend = PicameraH264Backend(camera_config, server_resolver=resolver)
+
+        assert backend._stream_url() == "rtsps://192.168.1.244:8322/cam-test001"
+
     def test_attaches_circular_output_when_motion_pre_roll_enabled(
         self, fake_picamera2, camera_config, monkeypatch
     ):

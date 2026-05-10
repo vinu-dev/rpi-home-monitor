@@ -174,6 +174,22 @@ class TestMTLSStreaming:
         assert mgr._use_mtls is True
         assert mgr._stream_url.startswith("rtsps://")
 
+    def test_stream_url_uses_resolved_server_ip_when_available(
+        self, camera_config, data_dir
+    ):
+        """Use the shared resolver endpoint for streaming, not raw .local."""
+        certs = data_dir / "certs"
+        (certs / "client.crt").write_text("CERT")
+        (certs / "client.key").write_text("KEY")
+        (certs / "ca.crt").write_text("CA")
+        camera_config.update(SERVER_IP="rpi-divinu.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+
+        mgr = StreamManager(camera_config, server_resolver=resolver)
+
+        assert mgr._stream_url == "rtsps://192.168.1.244:8322/cam-test001"
+
 
 class TestStreamBackoff:
     """Test reconnection backoff logic."""

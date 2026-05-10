@@ -1792,6 +1792,21 @@ class TestPerCameraValidation:
         assert code == 400
         assert "not supported by sensor" in err
 
+    def test_current_resolution_not_in_catalogue_can_be_saved_unchanged(self):
+        svc, _ = self._service_with_camera(
+            sensor_model="imx219",
+            sensor_modes=[
+                {"width": 640, "height": 480, "max_fps": 58.0},
+                {"width": 1640, "height": 1232, "max_fps": 41.0},
+            ],
+            width=1920,
+            height=1080,
+            fps=47,
+        )
+        err, code = svc.update("cam-001", {"width": 1920, "height": 1080, "fps": 47})
+
+        assert code == 200, err
+
     def test_imx219_camera_accepts_47fps_at_1080p(self):
         svc, _ = self._service_with_camera(
             sensor_model="imx219",

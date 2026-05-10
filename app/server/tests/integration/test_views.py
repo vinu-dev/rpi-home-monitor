@@ -126,7 +126,8 @@ class TestProtectedPages:
         assert response.status_code == 200
         body = response.get_data(as_text=True)
         assert "dashboard-server-address" in body
-        assert "qrcode.min.js" in body
+        assert 'data-role="server-qr"' not in body
+        assert "qrcode.min.js" not in body
 
     def test_live_renders_when_authenticated(self, client):
         with client.session_transaction() as sess:
@@ -575,3 +576,5 @@ class TestDashboardSensorAwareSettings:
         # Sensor-aware helper is the new source of truth.
         assert "_resolutionOptionsFor" in body
         assert "_legacyResolutionOptions" in body
+        assert "current, max " in body
+        assert "var pickedRes = resKey" in body

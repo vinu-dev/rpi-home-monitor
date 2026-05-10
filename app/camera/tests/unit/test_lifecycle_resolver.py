@@ -37,6 +37,33 @@ class TestResolverHappyPath:
             FAULT_NETWORK_MDNS_RESOLUTION_FAILED
         )
 
+    def test_server_endpoint_update_replaces_cached_ip(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        capture = MagicMock()
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=capture,
+            cache_path=str(cache_path),
+        )
+        resolver._resolved_ip = "192.168.1.245"
+
+        assert resolver.update_preferred_ip("192.168.1.244") is True
+
+        assert resolver.resolved_ip == "192.168.1.244"
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cached["ip"] == "192.168.1.244"
+        capture.clear_fault.assert_called_once_with(
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED
+        )
+
+    def test_server_endpoint_update_rejects_public_ip(self):
+        resolver = _ServerResolver("homemonitor.local", capture_manager=MagicMock())
+        resolver._resolved_ip = "192.168.1.245"
+
+        assert resolver.update_preferred_ip("8.8.8.8") is False
+
+        assert resolver.resolved_ip == "192.168.1.245"
+
     def test_success_persists_cache_atomically(self, tmp_path):
         cache_path = tmp_path / "server_resolved_ip"
         resolver = _ServerResolver(
@@ -94,6 +121,25 @@ class TestResolverHappyPath:
 
 
 class TestResolverDeadlineFault:
+    def test_permanent_failure_keeps_cached_ip_without_fault(self):
+        capture = MagicMock()
+        resolver = _ServerResolver("homemonitor.local", capture_manager=capture)
+        resolver._resolved_ip = "192.168.1.42"
+        resolver.DEADLINE_S = 0.05
+        resolver.INITIAL_BACKOFF_S = 0.01
+
+        with (
+            patch(
+                "camera_streamer.lifecycle.socket.gethostbyname",
+                side_effect=socket.gaierror(-2, "Name or service not known"),
+            ),
+            patch.object(resolver._stop, "wait", return_value=False),
+        ):
+            resolver._run()
+
+        assert resolver.resolved_ip == "192.168.1.42"
+        capture.add_fault.assert_not_called()
+
     def test_permanent_failure_emits_fault_after_deadline(self):
         capture = MagicMock()
         resolver = _ServerResolver("missing-server.local", capture_manager=capture)
@@ -241,6 +287,9 @@ class TestResolverCachePriming:
             resolver.start()
 
         assert resolver.resolved_ip == "192.168.1.42"
+        resolver._capture.clear_fault.assert_called_once_with(
+            FAULT_NETWORK_MDNS_RESOLUTION_FAILED
+        )
 
     def test_start_ignores_mismatched_hostname_cache(self, tmp_path):
         cache_path = tmp_path / "server_resolved_ip"

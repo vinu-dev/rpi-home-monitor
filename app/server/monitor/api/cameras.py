@@ -25,6 +25,7 @@ from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
 from monitor.services.encoder_presets import list_encoder_presets
+from monitor.services.network_info import preferred_lan_ip_for_remote
 
 # ── HMAC auth for camera M2M requests ────────────────────────────────────────
 # 30-second window is tight enough to prevent meaningful replay while still
@@ -307,6 +308,13 @@ def camera_heartbeat():
     )
     if error:
         return jsonify({"error": error}), status
+    stream_host = preferred_lan_ip_for_remote(request.remote_addr)
+    if stream_host:
+        response["server_endpoint"] = {
+            "stream_host": stream_host,
+            "rtsps_port": 8322,
+            "source": "route_iface",
+        }
     return jsonify(response), 200
 
 
