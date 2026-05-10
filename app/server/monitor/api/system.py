@@ -362,8 +362,13 @@ def tailscale_status():
 
     # Merge persisted config (never expose the auth key value)
     settings = current_app.store.get_settings()
+    effective_enabled = (
+        bool(settings.tailscale_enabled)
+        or bool(status.get("daemon_enabled"))
+        or status.get("state") == "connected"
+    )
     status["config"] = {
-        "enabled": settings.tailscale_enabled,
+        "enabled": effective_enabled,
         "auto_connect": settings.tailscale_auto_connect,
         "accept_routes": settings.tailscale_accept_routes,
         "ssh": settings.tailscale_ssh,

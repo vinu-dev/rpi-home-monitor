@@ -198,6 +198,22 @@ class TestTailscaleEndpoints:
         assert "enabled" in data["config"]
         assert "has_auth_key" in data["config"]
 
+    def test_get_status_reflects_running_daemon_as_enabled(self, app, logged_in_client):
+        settings = app.store.get_settings()
+        settings.tailscale_enabled = False
+        app.store.save_settings(settings)
+        app.tailscale_service = MagicMock()
+        app.tailscale_service.get_status.return_value = {
+            "state": "connected",
+            "daemon_enabled": True,
+        }
+
+        client = logged_in_client()
+        resp = client.get("/api/v1/system/tailscale")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["config"]["enabled"] is True
+
     def test_connect_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")
         assert client.post("/api/v1/system/tailscale/connect").status_code == 403

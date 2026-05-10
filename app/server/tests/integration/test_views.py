@@ -125,7 +125,9 @@ class TestProtectedPages:
         response = client.get("/dashboard")
         assert response.status_code == 200
         body = response.get_data(as_text=True)
-        assert "dashboard-server-address" in body
+        assert "dashboard-server-address" not in body
+        assert "Server address" not in body
+        assert "networkFallback.mount" not in body
         assert 'data-role="server-qr"' not in body
         assert "qrcode.min.js" not in body
 
@@ -136,6 +138,19 @@ class TestProtectedPages:
             sess["role"] = "admin"
         response = client.get("/live")
         assert response.status_code == 200
+
+    def test_settings_uses_native_form_for_diagnostics_export(self, client):
+        with client.session_transaction() as sess:
+            sess["user_id"] = "user-001"
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+        response = client.get("/settings")
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "form.action = '/api/v1/system/diagnostics/export'" in body
+        assert "form.submit()" in body
+        assert "fetch('/api/v1/system/diagnostics/export'" not in body
+        assert "hm-diagnostics.tar.gz" not in body
 
     def test_recordings_renders_when_authenticated(self, client):
         with client.session_transaction() as sess:
@@ -563,6 +578,8 @@ class TestDashboardSensorAwareSettings:
         # New dynamic dropdown markup is present.
         assert 'x-for="opt in editForm.resolutionOptions"' in body
         assert ':value="opt.value"' in body
+        assert 'x-effect="$el.value = editForm.resolution"' in body
+        assert ':selected="opt.value === editForm.resolution"' in body
         # Sensor label row is present (hidden when empty).
         assert "editForm.sensorLabel" in body
         # Mismatch banner is present.
