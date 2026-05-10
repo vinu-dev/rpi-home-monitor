@@ -378,6 +378,7 @@ class HeartbeatSender:
                 log.debug("Heartbeat accepted by server (HTTP %d)", resp.status)
                 # Server accepted us — reset the unpair-detection counter
                 self._consecutive_unknown_camera = 0
+                self._apply_server_endpoint(result)
                 return result
         except urllib.error.HTTPError as e:
             # 401 + "Unknown camera" means the server no longer has this camera
@@ -406,6 +407,58 @@ class HeartbeatSender:
             # might just be offline or the network might be flaky.
             log.debug("Heartbeat failed (server %s): %s", server_ip, e)
         return None
+
+    def _apply_server_endpoint(self, result: dict) -> None:
+        """Use the server-advertised preferred stream endpoint, when present."""
+        if self._server_resolver is None or not isinstance(result, dict):
+            return
+        endpoint = result.get("server_endpoint")
+        if not isinstance(endpoint, dict):
+            return
+        stream_host = endpoint.get("stream_host")
+        if not stream_host:
+            return
+        updater = getattr(self._server_resolver, "update_preferred_ip", None)
+        if updater is None:
+            return
+        try:
+            previous = getattr(self._server_resolver, "resolved_ip", None)
+            updater(str(stream_host), source=str(endpoint.get("source") or "server"))
+            current = getattr(self._server_resolver, "resolved_ip", None)
+            if current and current != previous:
+                self._restart_stream_for_endpoint_change(previous, current)
+        except Exception as exc:
+            log.debug("Ignoring invalid server endpoint %r: %s", endpoint, exc)
+
+    def _restart_stream_for_endpoint_change(
+        self, previous_ip: str | None, current_ip: str
+    ) -> None:
+        """Restart an active stream so FFmpeg reconnects to the preferred IP."""
+        if self._stream is None:
+            return
+        try:
+            if not self._stream.is_streaming:
+                return
+        except Exception:
+            return
+
+        def _restart() -> None:
+            try:
+                log.info(
+                    "Restarting stream for server endpoint change: %s -> %s",
+                    previous_ip or "(none)",
+                    current_ip,
+                )
+                self._stream.stop()
+                self._stream.start()
+            except Exception as exc:
+                log.warning("Failed to restart stream after endpoint change: %s", exc)
+
+        threading.Thread(
+            target=_restart,
+            daemon=True,
+            name="stream-endpoint-restart",
+        ).start()
 
     def _handle_server_unpair(self) -> None:
         """Wipe local pairing state and exit so systemd restarts us into PAIRING.

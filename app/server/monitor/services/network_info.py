@@ -36,7 +36,7 @@ def _port_for_host_url(host_url: str) -> int:
     return 443 if parsed.scheme == "https" else 80
 
 
-def _interface_ip_for_remote(remote_addr: str | None) -> str:
+def preferred_lan_ip_for_remote(remote_addr: str | None) -> str:
     """Return the local IPv4 chosen to reach the requester, if private."""
     target = _private_ipv4(remote_addr)
     if not target:
@@ -64,13 +64,13 @@ def get_network_payload(host_url: str, remote_addr: str | None) -> dict[str, obj
             "source": "request_host",
         }
 
-    iface_ip = _interface_ip_for_remote(remote_addr)
+    iface_ip = preferred_lan_ip_for_remote(remote_addr)
     if iface_ip:
         return {
             "server_url": f"https://{iface_ip}:{port}/",
             "ip": iface_ip,
             "port": port,
-            "source": "wifi_iface",
+            "source": "route_iface",
         }
 
     return {"server_url": "", "ip": "", "port": port, "source": ""}

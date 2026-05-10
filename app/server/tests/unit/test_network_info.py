@@ -3,7 +3,10 @@
 
 from unittest.mock import patch
 
-from monitor.services.network_info import get_network_payload
+from monitor.services.network_info import (
+    get_network_payload,
+    preferred_lan_ip_for_remote,
+)
 
 
 class TestNetworkInfo:
@@ -38,8 +41,27 @@ class TestNetworkInfo:
             "server_url": "https://192.168.1.77:443/",
             "ip": "192.168.1.77",
             "port": 443,
-            "source": "wifi_iface",
+            "source": "route_iface",
         }
+
+    def test_preferred_lan_ip_uses_route_to_private_remote(self):
+        fake_socket = type(
+            "FakeSocket",
+            (),
+            {
+                "__enter__": lambda self: self,
+                "__exit__": lambda self, *_args: None,
+                "connect": lambda self, _addr: None,
+                "getsockname": lambda self: ("192.168.1.244", 12345),
+            },
+        )
+
+        with patch(
+            "monitor.services.network_info.socket.socket", return_value=fake_socket()
+        ):
+            ip = preferred_lan_ip_for_remote("192.168.1.115")
+
+        assert ip == "192.168.1.244"
 
     def test_hides_payload_when_no_private_address_is_available(self):
         payload = get_network_payload("https://example.com/", "203.0.113.10")

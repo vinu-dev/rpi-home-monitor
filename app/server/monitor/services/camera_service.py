@@ -1051,13 +1051,18 @@ class CameraService:
         # the camera advertised. Skipped silently for pre-#173 cameras.
         current_w = camera.width if camera is not None else None
         current_h = camera.height if camera is not None else None
+        current_fps = camera.fps if camera is not None else None
         w = data.get("width", current_w)
         h = data.get("height", current_h)
+        requested_current_pair = (
+            camera is not None and w == current_w and h == current_h
+        )
 
         if (
             sensor_mode_fps
             and ("width" in data or "height" in data)
             and (w, h) not in sensor_mode_fps
+            and not requested_current_pair
         ):
             pretty = ", ".join(f"{pw}x{ph}" for pw, ph in sorted(sensor_mode_fps))
             return f"resolution {w}x{h} not supported by sensor (valid: {pretty})"
@@ -1065,6 +1070,8 @@ class CameraService:
         if sensor_mode_fps and ("fps" in data or "width" in data or "height" in data):
             fps = data.get("fps", camera.fps if camera is not None else None)
             fps_max = sensor_mode_fps.get((w, h))
+            if requested_current_pair and fps == current_fps:
+                fps_max = None
             if fps_max is not None and fps > fps_max:
                 return f"fps must be 1-{fps_max} for {w}x{h}"
 

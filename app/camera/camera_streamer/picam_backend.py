@@ -130,10 +130,12 @@ class PicameraH264Backend:
         config,
         frame_cb: Callable | None = None,
         motion_enabled: bool = False,
+        server_resolver=None,
     ):
         self._config = config
         self._frame_cb = frame_cb if motion_enabled else None
         self._motion_enabled = motion_enabled
+        self._server_resolver = server_resolver
         self._picam2 = None
         self._encoder = None
         self._ffmpeg = None
@@ -629,6 +631,16 @@ class PicameraH264Backend:
         return getattr(self._config, "has_client_cert", False)
 
     def _stream_url(self) -> str:
+        resolved_ip = (
+            getattr(self._server_resolver, "resolved_ip", None)
+            if self._server_resolver is not None
+            else None
+        )
+        if resolved_ip:
+            path = self._config.camera_id or self._config.stream_name
+            scheme = "rtsps" if self._use_mtls() else "rtsp"
+            port = 8322 if self._use_mtls() else self._config.server_port
+            return f"{scheme}://{resolved_ip}:{port}/{path}"
         if self._use_mtls():
             return self._config.rtsps_url
         return self._config.rtsp_url

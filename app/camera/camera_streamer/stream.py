@@ -60,10 +60,17 @@ class StreamManager:
         camera_device: Camera device path (from Platform). Defaults to /dev/video0.
     """
 
-    def __init__(self, config, camera_device="/dev/video0", pairing_manager=None):
+    def __init__(
+        self,
+        config,
+        camera_device="/dev/video0",
+        pairing_manager=None,
+        server_resolver=None,
+    ):
         self._config = config
         self._camera_device = camera_device
         self._pairing_manager = pairing_manager
+        self._server_resolver = server_resolver
         self._process = None
         self._libcamera_proc = None
         self._running = False
@@ -303,6 +310,16 @@ class StreamManager:
     @property
     def _stream_url(self):
         """Return RTSPS URL if mTLS is available, otherwise plain RTSP."""
+        resolved_ip = (
+            getattr(self._server_resolver, "resolved_ip", None)
+            if self._server_resolver is not None
+            else None
+        )
+        if resolved_ip:
+            path = self._config.camera_id or self._config.stream_name
+            scheme = "rtsps" if self._use_mtls else "rtsp"
+            port = 8322 if self._use_mtls else self._config.server_port
+            return f"{scheme}://{resolved_ip}:{port}/{path}"
         if self._use_mtls:
             return self._config.rtsps_url
         return self._config.rtsp_url
@@ -510,6 +527,7 @@ class StreamManager:
             config=self._config,
             frame_cb=frame_cb,
             motion_enabled=motion_enabled,
+            server_resolver=self._server_resolver,
         )
         if not backend.start():
             log.error("Picamera backend failed to start")

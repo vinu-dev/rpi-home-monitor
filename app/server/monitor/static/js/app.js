@@ -240,7 +240,7 @@
                 }
 
                 if (metaEl) {
-                    metaEl.textContent = data.source === 'wifi_iface'
+                    metaEl.textContent = data.source === 'route_iface'
                         ? 'Detected from the active LAN interface for this request.'
                         : 'Detected from the address you used to reach this page.';
                 }

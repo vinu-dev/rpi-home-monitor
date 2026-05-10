@@ -394,6 +394,83 @@ class TestHeartbeatSender:
         assert result == {"ok": True}
         assert captured_url["url"].startswith("https://192.168.1.42/")
 
+    def test_send_once_updates_resolver_from_server_endpoint(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.245"
+        sender = HeartbeatSender(cfg, _make_pairing(), server_resolver=resolver)
+
+        class FakeResp:
+            status = 200
+
+            def read(self):
+                return (
+                    b'{"ok":true,"server_endpoint":{"stream_host":"192.168.1.244",'
+                    b'"source":"route_iface","rtsps_port":8322}}'
+                )
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        with (
+            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen",
+                return_value=FakeResp(),
+            ),
+        ):
+            result = sender.send_once()
+
+        assert result["server_endpoint"]["stream_host"] == "192.168.1.244"
+        resolver.update_preferred_ip.assert_called_once_with(
+            "192.168.1.244", source="route_iface"
+        )
+
+    def test_server_endpoint_change_restarts_active_stream(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.245"
+
+        def update_ip(ip, source="server_endpoint"):
+            resolver.resolved_ip = ip
+            return True
+
+        resolver.update_preferred_ip.side_effect = update_ip
+        stream = MagicMock()
+        stream.is_streaming = True
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            stream_manager=stream,
+            server_resolver=resolver,
+        )
+        started = []
+
+        class FakeThread:
+            def __init__(self, target=None, **_kwargs):
+                self._target = target
+
+            def start(self):
+                started.append(True)
+                self._target()
+
+        with patch("camera_streamer.heartbeat.threading.Thread", FakeThread):
+            sender._apply_server_endpoint(
+                {
+                    "server_endpoint": {
+                        "stream_host": "192.168.1.244",
+                        "source": "route_iface",
+                    }
+                }
+            )
+
+        assert started == [True]
+        stream.stop.assert_called_once()
+        stream.start.assert_called_once()
+
     def test_apply_pending_config_calls_control_handler(self):
         cfg = _make_config()
         stream = MagicMock()
