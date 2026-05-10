@@ -1,7 +1,7 @@
 # Release 1.5.1 Plan
 
 Date: 2026-05-10
-Status: Prepared; tag/build/publish blocked by release smoke-test mode
+Status: Prepared for operator-overridden release
 Target version: 1.5.1
 
 ## Goal
@@ -57,6 +57,8 @@ Build these on a Linux build host after the release branch merges and
 
 ## Release Gate
 
-Do not tag, build, or publish while `docs/ai/roles/release.md` still has
-smoke-test mode enabled. Remove that gate through review before promoting this
-plan to a shipped release.
+`docs/ai/roles/release.md` still has smoke-test mode enabled for normal
+automated release-role runs. For `v1.5.1` only, the operator explicitly
+overrode that gate on 2026-05-10 and requested a force merge plus release.
+Leave the smoke-test gate in place for future automated release runs unless it
+is removed through review.
