@@ -8,6 +8,7 @@
     <title>{% block title %}Home Monitor{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/control-panel.css', v='20260510-settings-alerts1') }}">
     <script defer src="{{ url_for('static', filename='js/alpine.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
     {% block head %}{% endblock %}

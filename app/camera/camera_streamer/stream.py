@@ -204,6 +204,7 @@ class StreamManager:
                 motion_config=motion_config_from_sensitivity(
                     self._config.motion_sensitivity
                 ),
+                server_resolver=self._server_resolver,
             )
             # MotionRunner now owns the read fd; clear our ref so we don't
             # double-close it on pipeline teardown.
@@ -519,6 +520,7 @@ class StreamManager:
                     motion_config=motion_config_from_sensitivity(
                         self._config.motion_sensitivity
                     ),
+                    server_resolver=self._server_resolver,
                 )
                 self._motion_runner.start()
                 frame_cb = self._motion_runner.process_frame

@@ -28,6 +28,7 @@ from camera_streamer.status_server import (
     _get_session_cookie,
     _get_uptime,
     _html_escape,
+    _server_probe_host,
     _session_lock,
     _sessions,
     _status_server_names,
@@ -378,11 +379,16 @@ class TestCameraStatusServer:
         assert server._thermal_path is None
 
     def test_init_custom_params(self, config):
+        resolver = MagicMock()
         server = CameraStatusServer(
-            config, wifi_interface="wlan1", thermal_path="/sys/custom/temp"
+            config,
+            wifi_interface="wlan1",
+            thermal_path="/sys/custom/temp",
+            server_resolver=resolver,
         )
         assert server._wifi_interface == "wlan1"
         assert server._thermal_path == "/sys/custom/temp"
+        assert server._server_resolver is resolver
 
     def test_connect_wifi_delegates_to_wifi_module(self, config):
         server = CameraStatusServer(config, wifi_interface="wlan1")
@@ -399,6 +405,21 @@ class TestCameraStatusServer:
             ok, err = server.connect_wifi("BadNet", "bad")
             assert ok is False
             assert "Connection refused" in err
+
+
+class TestServerProbeHost:
+    """Status reachability should match the runtime server resolver."""
+
+    def test_prefers_resolved_ip(self):
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+        assert _server_probe_host("rpi-divinu.local", resolver) == "192.168.1.244"
+
+    def test_strips_https_url(self):
+        assert _server_probe_host("https://rpi-divinu.local/") == "rpi-divinu.local"
+
+    def test_strips_host_port(self):
+        assert _server_probe_host("192.168.1.244:443") == "192.168.1.244"
 
 
 # ---- Pair page template ----

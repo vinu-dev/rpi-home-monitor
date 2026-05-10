@@ -4,7 +4,17 @@
 {% block title %}Live View - Home Monitor{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Live View</h1>
+<section class="page-hero page-hero--compact">
+    <div>
+        <div class="page-hero__eyebrow">Live monitor</div>
+        <h1 class="page-hero__title">Live View</h1>
+        <p class="page-hero__text">Open a local stream, check camera state, and capture snapshots from the same control surface.</p>
+    </div>
+    <div class="page-hero__meta">
+        <span>Low latency</span>
+        <span>Local LAN</span>
+    </div>
+</section>
 
 <!-- Camera Selector -->
 <div class="form-group">
@@ -273,6 +283,73 @@
         });
     }
 
+    function snapshotFilename(cameraId) {
+        var cam = findCamera(cameraId);
+        var base = (cam && cam.name ? cam.name : cameraId)
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'camera';
+        var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return base + '-snapshot-' + stamp + '.jpg';
+    }
+
+    function readSnapshotError(response) {
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType.indexOf('application/json') !== -1) {
+            return response.json()
+                .then(function(data) {
+                    return (data && (data.error || data.message)) || 'Snapshot not available';
+                })
+                .catch(function() { return 'Snapshot not available'; });
+        }
+        return response.text()
+            .then(function(text) { return text || 'Snapshot not available'; })
+            .catch(function() { return 'Snapshot not available'; });
+    }
+
+    function takeSnapshot() {
+        var cameraId = selectEl.value;
+        if (!cameraId || btnSnapshot.disabled) return;
+
+        var originalText = btnSnapshot.textContent;
+        btnSnapshot.disabled = true;
+        btnSnapshot.textContent = 'Saving...';
+
+        fetch('/api/v1/live/' + encodeURIComponent(cameraId) + '/snapshot', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'image/*,application/json' },
+        }).then(function(response) {
+            if (!response.ok) {
+                return readSnapshotError(response).then(function(message) {
+                    throw new Error(message);
+                });
+            }
+            var contentType = response.headers.get('content-type') || '';
+            if (contentType.indexOf('application/json') !== -1) {
+                return readSnapshotError(response).then(function(message) {
+                    throw new Error(message);
+                });
+            }
+            return response.blob();
+        }).then(function(blob) {
+            if (!blob || !blob.size) throw new Error('Snapshot not available');
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement('a');
+            link.href = url;
+            link.download = snapshotFilename(cameraId);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+            window.HM.toast('Snapshot saved', 'success');
+        }).catch(function(err) {
+            window.HM.toast(err.message || 'Snapshot not available', 'error');
+        }).finally(function() {
+            btnSnapshot.textContent = originalText;
+            btnSnapshot.disabled = !currentTransport;
+        });
+    }
+
     // ---- Stream lifecycle ----
 
     function destroyStream() {
@@ -487,12 +564,7 @@
         }
     });
 
-    btnSnapshot.addEventListener('click', function() {
-        var cameraId = selectEl.value;
-        if (cameraId) {
-            window.open('/api/v1/live/' + encodeURIComponent(cameraId) + '/snapshot', '_blank');
-        }
-    });
+    btnSnapshot.addEventListener('click', takeSnapshot);
 
     // --- Mute / unmute ---
     // Stream starts muted (autoplay policy); unmute only on user gesture.

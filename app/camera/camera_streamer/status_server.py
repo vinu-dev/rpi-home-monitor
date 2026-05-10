@@ -19,6 +19,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from camera_streamer import ota_installer, wifi
 from camera_streamer.control import parse_control_request
@@ -314,6 +315,28 @@ def _load_template(name):
         return f"<h1>Template Error</h1><p>Missing: {name}</p>"
 
 
+def _server_probe_host(configured_server, server_resolver=None):
+    """Return the host the status page should probe for server reachability."""
+    resolved = (
+        getattr(server_resolver, "resolved_ip", None)
+        if server_resolver is not None
+        else None
+    )
+    candidate = (resolved or configured_server or "").strip()
+    if not candidate:
+        return ""
+
+    if "://" in candidate:
+        return urlparse(candidate).hostname or ""
+
+    candidate = candidate.split("/", 1)[0]
+    if candidate.startswith("[") and "]" in candidate:
+        return candidate[1 : candidate.index("]")]
+    if candidate.count(":") == 1:
+        return candidate.rsplit(":", 1)[0]
+    return candidate
+
+
 class CameraStatusServer:
     """HTTPS server showing camera status after setup.
 
@@ -338,12 +361,14 @@ class CameraStatusServer:
         pairing_manager=None,
         stream_state_path=None,
         capture_manager=None,
+        server_resolver=None,
     ):
         self._config = config
         self._stream = stream_manager
         self._wifi_interface = wifi_interface
         self._thermal_path = thermal_path
         self._pairing = pairing_manager
+        self._server_resolver = server_resolver
         # Optional CaptureManager — when provided, /api/status reports
         # ``hardware_ok`` + ``hardware_error`` so the camera's own
         # status page can show a "no camera module detected" banner.
@@ -369,6 +394,7 @@ class CameraStatusServer:
             self._pairing,
             self._control,
             self._capture,
+            self._server_resolver,
         )
         server = None
         try:
@@ -495,6 +521,7 @@ def _make_status_handler(
     pairing_manager,
     control_handler=None,
     capture_manager=None,
+    server_resolver=None,
 ):
     """Create HTTP handler for the camera status page."""
 
@@ -784,13 +811,12 @@ def _make_status_handler(
 
             server_connected = False
             server_addr = config.server_ip or "unknown"
-            if config.server_ip:
-                import socket
-
+            probe_host = _server_probe_host(config.server_ip, server_resolver)
+            if probe_host:
                 try:
-                    socket.gethostbyname(config.server_ip)
-                    server_connected = True
-                except socket.gaierror:
+                    with socket.create_connection((probe_host, 443), timeout=1.0):
+                        server_connected = True
+                except OSError:
                     pass
 
             streaming = False

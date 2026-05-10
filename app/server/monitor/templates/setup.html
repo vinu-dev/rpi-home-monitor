@@ -374,6 +374,139 @@
             background: #2a3a5e;
             border-radius: 2px;
         }
+
+        /* Premium local-control setup skin. This page is standalone
+           during captive-portal setup, so it cannot rely on app CSS. */
+        :root {
+            --setup-bg: #f4f7fb;
+            --setup-surface: rgba(255, 255, 255, 0.92);
+            --setup-border: rgba(15, 23, 42, 0.1);
+            --setup-text: #111827;
+            --setup-muted: #64748b;
+            --setup-accent: #2563eb;
+            --setup-accent-strong: #1d4ed8;
+            --setup-success: #15803d;
+            --setup-warning: #b45309;
+            --setup-danger: #dc2626;
+            --setup-shadow: 0 22px 55px rgba(15, 23, 42, 0.12);
+        }
+
+        body {
+            background:
+                radial-gradient(circle at 18% -8%, rgba(37, 99, 235, 0.16), transparent 32rem),
+                radial-gradient(circle at 92% 4%, rgba(20, 184, 166, 0.12), transparent 26rem),
+                linear-gradient(180deg, #f8fafc, var(--setup-bg));
+            color: var(--setup-text);
+        }
+
+        .container {
+            max-width: 460px;
+        }
+
+        h1,
+        h2 {
+            color: var(--setup-text);
+        }
+
+        p,
+        .input-hint,
+        .review-label,
+        .manual-ssid {
+            color: var(--setup-muted);
+        }
+
+        .card {
+            background: var(--setup-surface);
+            border: 1px solid var(--setup-border);
+            border-radius: 24px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+        }
+
+        .logo-icon {
+            background: linear-gradient(180deg, #dbeafe, #eff6ff);
+            color: var(--setup-accent);
+            border-radius: 24px;
+            box-shadow: var(--setup-shadow);
+        }
+
+        .logo-text {
+            color: var(--setup-text);
+        }
+
+        .progress-dot {
+            background: rgba(15, 23, 42, 0.12);
+        }
+
+        .progress-dot.done,
+        .progress-dot.current {
+            background: var(--setup-accent);
+        }
+
+        .btn {
+            border-radius: 999px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
+
+        .btn-primary {
+            background: linear-gradient(180deg, #3b82f6, var(--setup-accent));
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(180deg, #2563eb, var(--setup-accent-strong));
+        }
+
+        .btn-secondary {
+            background: #fff;
+            border: 1px solid var(--setup-border);
+            color: var(--setup-text);
+        }
+
+        .input-group label {
+            color: var(--setup-muted);
+            font-weight: 650;
+        }
+
+        .input-group input,
+        .network-item {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 16px;
+            color: var(--setup-text);
+        }
+
+        .input-group input:focus {
+            border-color: rgba(37, 99, 235, 0.65);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.13);
+        }
+
+        .network-item:hover,
+        .network-item.selected {
+            background: #fff;
+            border-color: rgba(37, 99, 235, 0.34);
+        }
+
+        .network-ssid {
+            color: var(--setup-text);
+        }
+
+        .review-item,
+        .ip-display {
+            background: #f8fafc;
+            border: 1px solid var(--setup-border);
+            border-radius: 18px;
+        }
+
+        .review-value,
+        #done-cam-address,
+        #done-ip-raw {
+            color: var(--setup-success) !important;
+        }
+
+        .toast {
+            background: rgba(17, 24, 39, 0.92);
+            border-radius: 999px;
+            box-shadow: var(--setup-shadow);
+        }
     </style>
 </head>
 <body>

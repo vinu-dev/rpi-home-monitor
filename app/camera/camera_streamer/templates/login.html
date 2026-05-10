@@ -1,4 +1,4 @@
-{# REQ: SWR-013; RISK: RISK-002; SEC: SC-001; TEST: TC-004 #}
+<!-- REQ: SWR-013; RISK: RISK-002; SEC: SC-001; TEST: TC-004 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -109,6 +109,192 @@ body {
     font-size: 0.8rem;
     text-align: center;
     margin-top: 16px;
+}
+
+/* Camera login matches the server control-panel visual language. */
+:root {
+    --color-bg: #f4f7fb;
+    --color-surface: rgba(255,255,255,.92);
+    --color-surface-alt: rgba(255,255,255,.9);
+    --color-border: rgba(15,23,42,.12);
+    --color-text: #111827;
+    --color-text-muted: #64748b;
+    --color-accent: #2563eb;
+    --color-accent-hover: #1d4ed8;
+    --color-danger: #dc2626;
+    --radius-sm: 14px;
+    --radius-md: 18px;
+    --radius-lg: 24px;
+}
+body {
+    background:
+        linear-gradient(116deg, rgba(37,99,235,.16) 0%, rgba(37,99,235,0) 38%),
+        linear-gradient(302deg, rgba(20,184,166,.12) 0%, rgba(20,184,166,0) 42%),
+        linear-gradient(180deg, #f8fafc, var(--color-bg));
+}
+.login-card {
+    box-shadow: 0 22px 55px rgba(15,23,42,.12);
+}
+.login-card__title {
+    color: var(--color-text);
+}
+.login-card__logo svg {
+    stroke: var(--color-accent);
+}
+.form-group label {
+    font-weight: 650;
+}
+.form-input {
+    box-shadow: inset 0 1px 0 rgba(15,23,42,.03);
+}
+.form-input:focus {
+    box-shadow: 0 0 0 4px rgba(37,99,235,.13);
+}
+.btn {
+    border-radius: 999px;
+    background: linear-gradient(180deg, #3b82f6, var(--color-accent));
+    box-shadow: 0 1px 2px rgba(15,23,42,.08);
+}
+.btn:hover {
+    background: linear-gradient(180deg, #2563eb, var(--color-accent-hover));
+}
+.error {
+    background: #fee2e2;
+    border-color: rgba(220,38,38,.24);
+    color: #991b1b;
+}
+
+/* Aurora login pass: shared premium camera/server visual language. */
+:root {
+    --color-bg: #edf4fb;
+    --color-surface: rgba(255,255,255,.86);
+    --color-surface-alt: rgba(247,250,254,.78);
+    --color-border: rgba(20,35,61,.13);
+    --color-text: #111827;
+    --color-text-muted: #60708a;
+    --color-accent: #0a84ff;
+    --color-accent-hover: #006ee0;
+    --color-danger: #df2f3f;
+}
+
+html {
+    background: #edf4fb;
+}
+
+body {
+    color: var(--color-text);
+    background:
+        linear-gradient(116deg, rgba(10,132,255,.15) 0%, rgba(10,132,255,0) 38%),
+        linear-gradient(302deg, rgba(0,199,190,.16) 0%, rgba(0,199,190,0) 42%),
+        linear-gradient(180deg, #fbfdff 0%, #edf4fb 56%, #e8f1fa 100%);
+}
+
+.login-card {
+    width: min(92vw, 420px);
+    background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(247,250,254,.76));
+    border: 1px solid var(--color-border);
+    border-radius: 32px;
+    padding: 34px;
+    box-shadow: 0 32px 90px rgba(28,50,87,.18), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+
+.login-card__logo {
+    gap: 12px;
+}
+
+.login-card__logo svg {
+    width: 36px;
+    height: 36px;
+    padding: 8px;
+    border-radius: 14px;
+    stroke: #fff;
+    background: linear-gradient(135deg, #0a84ff 0%, #00c7be 52%, #7d5cff 100%);
+    box-shadow: 0 16px 34px rgba(10,132,255,.24), 0 1px 0 rgba(255,255,255,.55) inset;
+}
+
+.login-card__title {
+    color: #07111f;
+    font-weight: 820;
+}
+
+.login-card__subtitle,
+.hint,
+.form-group label {
+    color: var(--color-text-muted);
+}
+
+.form-input {
+    min-height: 50px;
+    background: rgba(255,255,255,.88);
+    border: 1px solid rgba(20,35,61,.14);
+    border-radius: 17px;
+    color: var(--color-text);
+    box-shadow: 0 1px 0 rgba(255,255,255,.88) inset;
+}
+
+.form-input:focus {
+    border-color: rgba(10,132,255,.62);
+    box-shadow: 0 0 0 4px rgba(10,132,255,.14);
+}
+
+.btn {
+    min-height: 50px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #0a84ff 0%, #00c7be 52%, #7d5cff 100%);
+    font-weight: 780;
+    box-shadow: 0 1px 0 rgba(255,255,255,.65) inset, 0 16px 34px rgba(10,132,255,.2);
+}
+
+.btn:hover {
+    background: linear-gradient(135deg, #0077ea 0%, #00b7af 52%, #6f4ff0 100%);
+}
+
+.error {
+    background: #fff0f2;
+    border-color: rgba(223,47,63,.24);
+    color: #a81729;
+    border-radius: 18px;
+}
+
+@media (max-width: 520px) {
+    body {
+        padding: 18px;
+    }
+
+    .login-card {
+        padding: 26px;
+        border-radius: 28px;
+    }
+}
+
+/* Camera login parity pass: same premium surface treatment as setup and
+   status, while preserving the simple POST login flow. */
+.login-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.login-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    background: linear-gradient(90deg, #0a84ff, #00c7be, #7d5cff);
+}
+
+.form-group {
+    padding: 12px;
+    border: 1px solid rgba(20,35,61,.07);
+    border-radius: 20px;
+    background: rgba(255,255,255,.42);
+}
+
+.form-group + .form-group {
+    margin-top: 12px;
+}
+
+.form-group label {
+    font-weight: 720;
 }
 </style>
 </head>

@@ -4,9 +4,19 @@
 {% block title %}Alerts - Home Monitor{% endblock %}
 
 {% block content %}
-<div x-data="alertsPage()" x-init="init()">
+<div x-data="alertsPage()" x-init="init()" class="alerts-page">
 
-<h1 class="page-title">Alerts</h1>
+<section class="page-hero page-hero--compact">
+    <div>
+        <div class="page-hero__eyebrow">Review queue</div>
+        <h1 class="page-hero__title">Alerts</h1>
+        <p class="page-hero__text">Triage warnings, faults, and motion notices with the same local-first controls.</p>
+    </div>
+    <div class="page-hero__meta">
+        <span>Unread</span>
+        <span>Severity sort</span>
+    </div>
+</section>
 
 <!-- Filter chips. Source + severity are independent. unread_only is
      a third orthogonal axis. The "Mark all read" button respects the
@@ -121,7 +131,8 @@
                     :disabled="markingId === alert.id"
                     :title="'Mark this alert as read'"
                     aria-label="Mark as read">
-                <span x-show="markingId !== alert.id">Mark read</span>
+                <span class="alert-action-label--desktop" x-show="markingId !== alert.id">Mark read</span>
+                <span class="alert-action-label--mobile" x-show="markingId !== alert.id">Read</span>
                 <span x-show="markingId === alert.id">…</span>
             </button>
         </div>

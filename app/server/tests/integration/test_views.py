@@ -71,8 +71,8 @@ class TestLoginPage:
         assert response.status_code == 200
         assert b"Sign In" in response.data or b"login" in response.data.lower()
         body = response.get_data(as_text=True)
-        assert "login-server-address" in body
-        assert "qrcode.min.js" in body
+        assert "login-server-address" not in body
+        assert "qrcode.min.js" not in body
 
     def test_help_page_renders_when_setup_done(self, app, client):
         stamp = os.path.join(app.config["DATA_DIR"], ".setup-done")

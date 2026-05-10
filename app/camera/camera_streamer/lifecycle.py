@@ -680,6 +680,7 @@ class CameraLifecycle:
             # own status page can show a "no camera module detected"
             # banner. Set by _do_validating (the state before us).
             capture_manager=self._capture,
+            server_resolver=self._server_resolver,
         )
         self._status_server.start()
 
