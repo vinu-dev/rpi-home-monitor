@@ -1,6 +1,8 @@
 # REQ: SWR-058, SWR-059, SWR-060, SWR-061; RISK: RISK-023, RISK-024, RISK-025; SEC: SC-022, SC-023, SC-024; TEST: TC-050, TC-051, TC-052, TC-053
 """Share-link API and public viewer routes."""
 
+import re
+
 from flask import (
     Blueprint,
     current_app,
@@ -11,10 +13,12 @@ from flask import (
     session,
 )
 
+from monitor.api.webrtc import proxy_whep_request, whep_preflight_response
 from monitor.auth import admin_required, csrf_protect
 
 share_api_bp = Blueprint("share_api", __name__)
 share_public_bp = Blueprint("share_public", __name__)
+_WHEP_SESSION_PATH_RE = re.compile(r"^[A-Za-z0-9._~/-]{1,256}$")
 
 
 def _svc():
@@ -55,6 +59,14 @@ def _record_public_failure(token: str, error: str, reason: str) -> None:
     if error == _svc().public_resource_failure_message():
         return
     _svc().record_failed_public_attempt(_remote_ip(), token, reason)
+
+
+def _valid_whep_session_path(session_path: str) -> bool:
+    if not session_path:
+        return True
+    if not _WHEP_SESSION_PATH_RE.match(session_path):
+        return False
+    return all(part and part not in {".", ".."} for part in session_path.split("/"))
 
 
 @share_api_bp.route("/links", methods=["POST"])
@@ -166,12 +178,51 @@ def shared_camera_page(token: str):
             "shared_camera_viewer.html",
             device_name=result["device_name"],
             resource_name=result["resource_name"],
-            hls_url=result["hls_url"],
+            whep_url=result["whep_url"],
             share_link=result["share_link"],
             hide_nav=True,
             public_page=True,
         ),
         status,
+    )
+
+
+@share_public_bp.route("/share/camera/<token>/whep", methods=["OPTIONS"])
+@share_public_bp.route(
+    "/share/camera/<token>/whep/<path:session_path>", methods=["OPTIONS"]
+)
+def shared_camera_whep_preflight(token: str, session_path: str = ""):
+    return whep_preflight_response()
+
+
+@share_public_bp.route("/share/camera/<token>/whep", methods=["POST"])
+@share_public_bp.route(
+    "/share/camera/<token>/whep/<path:session_path>", methods=["PATCH", "DELETE"]
+)
+def shared_camera_whep_proxy(token: str, session_path: str = ""):
+    rate_limit_response = _enforce_public_rate_limit()
+    if rate_limit_response is not None:
+        return rate_limit_response
+
+    if not _valid_whep_session_path(session_path):
+        _svc().record_failed_public_attempt(_remote_ip(), token, "camera-whep-path")
+        return _public_error(_svc().public_link_failure_message(), 404)
+
+    result, error, status = _svc().get_shared_camera_whep_target(
+        token, _remote_ip(), _remote_ua()
+    )
+    if error:
+        _record_public_failure(token, error, "camera-whep")
+        return _public_error(error, status)
+
+    target_base_path = result["whep_path"]
+    target_path = target_base_path
+    if session_path:
+        target_path += "/" + session_path
+    return proxy_whep_request(
+        target_path,
+        public_base_path=f"/share/camera/{token}/whep",
+        target_base_path=target_base_path,
     )
 
 

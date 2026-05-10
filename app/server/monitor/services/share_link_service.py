@@ -313,8 +313,30 @@ class ShareLinkService:
                 "share_link": link,
                 "resource_name": result["resource_name"],
                 "camera_id": result["camera_id"],
-                "hls_url": f"/share/camera/{link.token}/stream.m3u8",
+                "whep_url": f"/share/camera/{link.token}/whep",
                 "device_name": self._device_name(),
+            },
+            None,
+            200,
+        )
+
+    def get_shared_camera_whep_target(
+        self, token: str, visitor_ip: str, visitor_ua: str
+    ):
+        """Authorise a public camera share and return its MediaMTX WHEP path."""
+        link, error, status = self._authorise_link(
+            token, expected_type="camera", visitor_ip=visitor_ip, visitor_ua=visitor_ua
+        )
+        if error:
+            return None, error, status
+
+        result, error, status = self._resolve_camera_resource(link.resource_id)
+        if error:
+            return None, error, status
+        return (
+            {
+                "camera_id": result["camera_id"],
+                "whep_path": f"{result['camera_id']}/whep",
             },
             None,
             200,
@@ -334,7 +356,9 @@ class ShareLinkService:
         if error:
             return None, error, status
 
-        result, error, status = self._resolve_camera_resource(link.resource_id)
+        result, error, status = self._resolve_camera_resource(
+            link.resource_id, require_playlist=True
+        )
         if error:
             return None, error, status
 
@@ -470,7 +494,9 @@ class ShareLinkService:
             status,
         )
 
-    def _resolve_camera_resource(self, camera_id: str):
+    def _resolve_camera_resource(
+        self, camera_id: str, *, require_playlist: bool = False
+    ):
         if not _CAMERA_ID_RE.match(camera_id or ""):
             return None, "Invalid resource id", 400
         camera = self._store.get_camera(camera_id)
@@ -479,7 +505,7 @@ class ShareLinkService:
         if getattr(camera, "status", "") != "online":
             return None, self.public_resource_failure_message(), 404
         playlist = self._live_dir / camera_id / "stream.m3u8"
-        if not playlist.is_file():
+        if require_playlist and not playlist.is_file():
             return None, self.public_resource_failure_message(), 404
         return (
             {

@@ -89,10 +89,6 @@ def _seed_share_clip(
 
 def _seed_share_live(app, camera_id="cam-live"):
     _add_camera(app, camera_id)
-    live_dir = Path(app.config["LIVE_DIR"]) / camera_id
-    live_dir.mkdir(parents=True, exist_ok=True)
-    (live_dir / "stream.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
-    (live_dir / "seg000.ts").write_bytes(b"segment")
 
 
 def _assert_fields(data, required_fields, msg=""):
@@ -1613,7 +1609,7 @@ class TestPublicShareContract:
         resp = client.get("/share/clip/sharelink_missing")
         assert resp.status_code == 404
 
-    def test_valid_camera_playlist_returns_m3u8(self, app, client):
+    def test_valid_camera_whep_proxy_returns_sdp(self, app, client):
         _seed_share_live(app)
         created, error, _status = app.share_link_service.create_share_link(
             resource_type="camera",
@@ -1623,9 +1619,25 @@ class TestPublicShareContract:
             ttl="24h",
         )
         assert error is None
-        resp = client.get("/share/camera/" + created["token"] + "/stream.m3u8")
-        assert resp.status_code == 200
-        assert resp.mimetype == "application/vnd.apple.mpegurl"
+        upstream = MagicMock()
+        upstream.read.return_value = b"SDP answer"
+        upstream.status = 201
+        upstream.headers = {
+            "Content-Type": "application/sdp",
+            "ETag": None,
+            "Location": None,
+            "Link": None,
+        }
+        upstream.__enter__ = MagicMock(return_value=upstream)
+        upstream.__exit__ = MagicMock(return_value=False)
+        with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=upstream):
+            resp = client.post(
+                "/share/camera/" + created["token"] + "/whep",
+                data=b"SDP offer",
+                content_type="application/sdp",
+            )
+        assert resp.status_code == 201
+        assert resp.mimetype == "application/sdp"
 
 
 # ===========================================================================
