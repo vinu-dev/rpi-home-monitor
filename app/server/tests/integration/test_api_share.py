@@ -2,6 +2,7 @@
 """Integration tests for share-link APIs and public routes."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,10 +39,24 @@ def _seed_live(app, camera_id="cam-002"):
             recording_mode="continuous",
         )
     )
-    live_dir = Path(app.config["LIVE_DIR"]) / camera_id
-    live_dir.mkdir(parents=True, exist_ok=True)
-    (live_dir / "stream.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
-    (live_dir / "seg000.ts").write_bytes(b"segment")
+
+
+def _mock_whep_upstream(status=201, body=b"SDP answer", headers=None):
+    response_headers = {
+        "Content-Type": "application/sdp",
+        "ETag": None,
+        "Location": None,
+        "Link": None,
+    }
+    if headers:
+        response_headers.update(headers)
+    resp = MagicMock()
+    resp.read.return_value = body
+    resp.status = status
+    resp.headers = response_headers
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
 
 
 @pytest.fixture(autouse=True)
@@ -127,7 +142,7 @@ class TestPublicShareRoutes:
         assert asset.status_code == 200
         assert asset.mimetype == "video/mp4"
 
-    def test_public_camera_page_and_hls_segment_render_without_auth(self, app, client):
+    def test_public_camera_page_and_whep_proxy_render_without_auth(self, app, client):
         _seed_live(app)
         created, error, _status = app.share_link_service.create_share_link(
             resource_type="camera",
@@ -142,15 +157,74 @@ class TestPublicShareRoutes:
         assert page.status_code == 200
         body = page.get_data(as_text=True)
         assert "Shared live camera" in body
-        assert "/share/camera/" + created["token"] + "/stream.m3u8" in body
+        assert "/share/camera/" + created["token"] + "/whep" in body
+
+        upstream = _mock_whep_upstream(
+            headers={"Location": "http://127.0.0.1:8889/cam-002/whep/session/abc"}
+        )
+        with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=upstream):
+            whep = client.post(
+                "/share/camera/" + created["token"] + "/whep",
+                data=b"SDP offer",
+                content_type="application/sdp",
+            )
+        assert whep.status_code == 201
+        assert whep.mimetype == "application/sdp"
+        assert whep.headers["Location"] == (
+            "/share/camera/" + created["token"] + "/whep/session/abc"
+        )
+
+    def test_public_camera_whep_invalid_token_does_not_proxy(self, app, client):
+        _seed_live(app)
+
+        with patch("monitor.api.webrtc.urllib.request.urlopen") as urlopen:
+            response = client.post(
+                "/share/camera/sharelink_missing/whep",
+                data=b"SDP offer",
+                content_type="application/sdp",
+            )
+
+        assert response.status_code == 404
+        urlopen.assert_not_called()
+
+    def test_public_camera_whep_rejects_path_escape_before_proxy(self, app, client):
+        _seed_live(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="camera",
+            resource_id="cam-002",
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+
+        with patch("monitor.api.webrtc.urllib.request.urlopen") as urlopen:
+            response = client.patch(
+                "/share/camera/" + created["token"] + "/whep/%2E%2E/other/session",
+                data=b"ICE fragment",
+                content_type="application/trickle-ice-sdpfrag",
+            )
+
+        assert response.status_code == 404
+        urlopen.assert_not_called()
+
+    def test_public_camera_hls_file_remains_available_when_present(self, app, client):
+        _seed_live(app)
+        live_dir = Path(app.config["LIVE_DIR"]) / "cam-002"
+        live_dir.mkdir(parents=True, exist_ok=True)
+        (live_dir / "stream.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="camera",
+            resource_id="cam-002",
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
 
         playlist = client.get("/share/camera/" + created["token"] + "/stream.m3u8")
         assert playlist.status_code == 200
         assert playlist.mimetype == "application/vnd.apple.mpegurl"
-
-        segment = client.get("/share/camera/" + created["token"] + "/seg000.ts")
-        assert segment.status_code == 200
-        assert segment.mimetype == "video/mp2t"
 
     def test_invalid_public_token_uses_generic_404(self, app, client):
         response = client.get("/share/clip/sharelink_missing")

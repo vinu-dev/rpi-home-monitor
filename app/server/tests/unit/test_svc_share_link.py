@@ -34,6 +34,10 @@ def _seed_live(app, camera_id="cam-001"):
         recording_mode="continuous",
     )
     app.store.save_camera(cam)
+
+
+def _seed_live_hls(app, camera_id="cam-001"):
+    _seed_live(app, camera_id)
     live_dir = Path(app.config["LIVE_DIR"]) / camera_id
     live_dir.mkdir(parents=True, exist_ok=True)
     (live_dir / "stream.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
@@ -136,7 +140,7 @@ class TestShareLinkService:
         assert error == app.share_link_service.public_link_failure_message()
 
     def test_shared_camera_file_resolves_hls_segment(self, app):
-        _seed_live(app, "cam-live")
+        _seed_live_hls(app, "cam-live")
         created, error, _status = app.share_link_service.create_share_link(
             resource_type="camera",
             resource_id="cam-live",
@@ -156,3 +160,43 @@ class TestShareLinkService:
         assert status == 200
         assert result["mimetype"] == "video/mp2t"
         assert result["path"].name == "seg000.ts"
+
+    def test_shared_camera_page_uses_whep_without_hls_playlist(self, app):
+        _seed_live(app, "cam-live")
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="camera",
+            resource_id="cam-live",
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+
+        result, error, status = app.share_link_service.get_shared_camera_page(
+            created["token"],
+            visitor_ip="192.168.1.45",
+            visitor_ua="Mozilla/5.0 Chrome/136.0",
+        )
+        assert error is None
+        assert status == 200
+        assert result["whep_url"] == "/share/camera/" + created["token"] + "/whep"
+
+    def test_shared_camera_whep_target_authorises_camera(self, app):
+        _seed_live(app, "cam-live")
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="camera",
+            resource_id="cam-live",
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+
+        result, error, status = app.share_link_service.get_shared_camera_whep_target(
+            created["token"],
+            visitor_ip="192.168.1.45",
+            visitor_ua="Mozilla/5.0 Chrome/136.0",
+        )
+        assert error is None
+        assert status == 200
+        assert result["whep_path"] == "cam-live/whep"
