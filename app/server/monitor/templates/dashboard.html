@@ -63,17 +63,6 @@
     </a>
 </div>
 
-<div id="dashboard-server-address" class="card mb-16" hidden style="padding:16px;">
-    <div class="section-header" style="margin-bottom:10px;">Server address</div>
-    <a data-role="server-url" href="" class="form-input"
-       style="display:block;text-decoration:none;font-family:var(--font-mono, monospace);word-break:break-word;"></a>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;">
-        <button data-role="copy-url" type="button" class="btn btn--secondary btn--small">Copy</button>
-        <a data-role="help-link" href="" class="text-small text-muted">Help</a>
-    </div>
-    <div data-role="server-meta" class="text-small text-muted" style="margin-top:10px;"></div>
-</div>
-
 <!--
   Tier 3 (slice 2) — Recent events feed
   Reverse-chronological clip list across every camera. Clicking a row
@@ -453,9 +442,14 @@
                 </div>
                 <div class="form-group">
                     <label>Resolution</label>
-                    <select class="form-input" x-model="editForm.resolution" @change="onResolutionChange()">
+                    <select class="form-input"
+                            x-model="editForm.resolution"
+                            x-effect="$el.value = editForm.resolution"
+                            @change="onResolutionChange()">
                         <template x-for="opt in editForm.resolutionOptions" :key="opt.value">
-                            <option :value="opt.value" x-text="opt.label"></option>
+                            <option :value="opt.value"
+                                    :selected="opt.value === editForm.resolution"
+                                    x-text="opt.label"></option>
                         </template>
                     </select>
                 </div>
@@ -625,8 +619,6 @@
 
 {% block scripts %}
 <script>
-window.HM.networkFallback.mount('dashboard-server-address', '/help/network-fallback');
-
 function dashboardPage() {
     return {
         // --- ADR-0018 Tier-1 + Tier-2 + Tier-3 state ---
