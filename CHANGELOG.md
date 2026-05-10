@@ -6,6 +6,36 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.5.1] — 2026-05-10
+
+Patch release for the live lab/server fixes that landed after 1.5.0. This
+release keeps the 1.5.x feature set, but hardens the camera/server network path,
+cleans up dashboard surfaces, fixes camera settings state, and restores shared
+live camera links.
+
+### Fixed
+- **Camera server endpoint selection is route-aware.** Cameras now prefer the
+  server address that matches the route they are actually using, validate cached
+  `.local` results before trusting them, and report clearer endpoint diagnostics
+  in heartbeats. This avoids a stale WiFi/LAN address causing the camera to keep
+  calling the wrong server IP when Ethernet and WiFi are both present.
+- **Dashboard QR/server-address panel removed after setup.** The logged-in
+  dashboard no longer shows the setup-era server address/QR card. The setup
+  wizard still keeps the IP fallback path where it belongs.
+- **Camera Settings opens on the saved camera configuration.** Resolution and
+  encoder controls now reflect the current persisted camera state instead of
+  falling back to the first/default dropdown option.
+- **Diagnostics export works from the settings UI.** The export action now uses
+  the endpoint shape expected by the server, so the browser receives the
+  diagnostics bundle instead of a failed export message.
+- **Tailscale enablement reflects the running service.** Settings no longer
+  asks the user to enable Tailscale when the daemon is already active and the
+  device has a Tailscale address.
+- **Shared live camera links render without account access.** Public live-share
+  links now validate only the scoped share token, expose only the one intended
+  camera stream, and keep normal dashboard/API surfaces behind authentication.
+
+
 ## [1.5.0] — 2026-05-05
 
 Large feature + reliability release. Closes the .local-hostname reliability arc opened in #90 (four sub-fixes shipped end-to-end), fixes a heartbeat-loop dead state that left dashboard cards stuck on ⌛ pending forever, lands fifteen new commercial-grade features (TOTP, share links, offsite backup, encoder presets, diagnostics, etc.), and surfaces a previously-invisible class of Pi hardware faults (under-voltage / throttling / NTP drift) on the dashboard. Hardware-tested on the live Pi Zero 2W camera + Pi 4B server; SSH-deployed and verified end-to-end before tag.
