@@ -795,6 +795,7 @@ class TestWebhooksTestContract:
 
     def test_success_fields(self, app, logged_in_client):
         client = logged_in_client()
+        app.webhook_delivery_service._resolver = lambda host, port: ["93.184.216.34"]
         app.webhook_delivery_service._http_client = lambda url, body, headers, timeout: (
             HttpResult(
                 202,

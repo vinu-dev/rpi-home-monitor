@@ -5,24 +5,39 @@ from __future__ import annotations
 
 import hmac
 import json
+import socket
 from hashlib import sha256
 
+import pytest
+
 from monitor.models import Camera, MotionEvent
+from monitor.services import webhook_delivery_service as webhook_module
 from monitor.services.audit import AuditLogger
 from monitor.services.motion_event_store import MotionEventStore
-from monitor.services.webhook_delivery_service import HttpResult, WebhookDeliveryService
+from monitor.services.webhook_delivery_service import (
+    HttpResult,
+    ValidatedWebhookTarget,
+    WebhookDeliveryService,
+    _default_http_post,
+)
 from monitor.store import Store
 
 
-def _make_service(data_dir, http_client, *, sleep_fn=None):
+def _make_service(data_dir, http_client=None, *, sleep_fn=None, resolver=None):
     store = Store(str(data_dir / "config"))
     audit = AuditLogger(str(data_dir / "logs"))
     motion = MotionEventStore(str(data_dir / "config" / "motion_events.json"))
+    if resolver is None:
+
+        def resolver(host, port):
+            return ["93.184.216.34"]
+
     service = WebhookDeliveryService(
         store=store,
         audit=audit,
         motion_event_store=motion,
         http_client=http_client,
+        resolver=resolver,
         sleep_fn=sleep_fn,
     )
     return service, store, audit, motion
@@ -123,6 +138,148 @@ class TestWebhookConfiguration:
         assert headers["X-Webhook-Signature"] == f"sha256={expected}"
         audit_events = audit.get_events(limit=10, event_type="WEBHOOK_DELIVERY_SUCCESS")
         assert len(audit_events) == 1
+
+    def test_default_delivery_pins_validated_public_address(
+        self, data_dir, monkeypatch
+    ):
+        captured = []
+
+        def _resolver(host, port):
+            assert (host, port) == ("hooks.example.com", 443)
+            return ["93.184.216.34"]
+
+        def _http(target, body, headers, timeout):
+            captured.append(target)
+            return HttpResult(204, {}, "", target.url)
+
+        monkeypatch.setattr(webhook_module, "_default_http_post", _http)
+        service, _, _, _ = _make_service(data_dir, resolver=_resolver)
+        try:
+            destination, error, status = service.create_destination(
+                {
+                    "url": "https://hooks.example.com/inbound",
+                    "auth_type": "none",
+                    "event_classes": ["motion"],
+                    "enabled": True,
+                }
+            )
+            assert not error
+            assert status == 201
+
+            result, error, status = service.send_test(destination["id"])
+        finally:
+            service.close()
+
+        assert not error
+        assert status == 200
+        assert result["delivered"] is True
+        assert captured == [
+            ValidatedWebhookTarget(
+                url="https://hooks.example.com/inbound",
+                hostname="hooks.example.com",
+                connect_host="93.184.216.34",
+                port=443,
+                request_target="/inbound",
+                host_header="hooks.example.com",
+            )
+        ]
+
+    def test_redirect_to_private_resolved_host_is_blocked(self, data_dir):
+        calls = []
+
+        def _resolver(host, port):
+            if host == "hooks.example.com":
+                return ["93.184.216.34"]
+            if host == "internal.example.com":
+                return ["127.0.0.1"]
+            raise socket.gaierror(host)
+
+        def _http(url, body, headers, timeout):
+            calls.append(url)
+            return HttpResult(
+                302,
+                {"Location": "https://internal.example.com/hook"},
+                "",
+                url,
+            )
+
+        service, _, _, _ = _make_service(data_dir, _http, resolver=_resolver)
+        try:
+            destination, error, status = service.create_destination(
+                {
+                    "url": "https://hooks.example.com/inbound",
+                    "auth_type": "none",
+                    "event_classes": ["motion"],
+                    "enabled": True,
+                }
+            )
+            assert not error
+            assert status == 201
+
+            result, error, status = service.send_test(destination["id"])
+        finally:
+            service.close()
+
+        assert calls == ["https://hooks.example.com/inbound"]
+        assert not error
+        assert status == 502
+        assert result["delivered"] is False
+        assert "private" in result["error"].lower()
+
+    def test_unresolved_hostname_fails_before_delivery(self, data_dir):
+        calls = []
+
+        def _resolver(host, port):
+            raise socket.gaierror(host)
+
+        def _http(url, body, headers, timeout):
+            calls.append(url)
+            return HttpResult(204, {}, "", url)
+
+        service, _, _, _ = _make_service(data_dir, _http, resolver=_resolver)
+        try:
+            destination, error, status = service.create_destination(
+                {
+                    "url": "https://hooks.example.com/inbound",
+                    "auth_type": "none",
+                    "event_classes": ["motion"],
+                    "enabled": True,
+                }
+            )
+            assert not error
+            assert status == 201
+
+            result, error, status = service.send_test(destination["id"])
+        finally:
+            service.close()
+
+        assert calls == []
+        assert not error
+        assert status == 502
+        assert result["delivered"] is False
+        assert "could not be resolved" in result["error"]
+
+    def test_default_http_post_connects_to_pinned_address(self, monkeypatch):
+        target = ValidatedWebhookTarget(
+            url="https://hooks.example.com/inbound",
+            hostname="hooks.example.com",
+            connect_host="93.184.216.34",
+            port=443,
+            request_target="/inbound",
+            host_header="hooks.example.com",
+        )
+        seen = []
+
+        def _create_connection(address, timeout, source_address=None):
+            seen.append((address, timeout, source_address))
+            raise OSError("stop before network")
+
+        monkeypatch.setattr(socket, "create_connection", _create_connection)
+
+        with pytest.raises(RuntimeError, match="stop before network"):
+            _default_http_post(target, b"{}", {}, 10)
+
+        assert seen == [(("93.184.216.34", 443), 10, None)]
 
 
 class TestWebhookDelivery:

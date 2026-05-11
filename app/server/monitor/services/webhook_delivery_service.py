@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hmac
+import http.client
 import ipaddress
 import json
 import logging
@@ -13,9 +14,7 @@ import socket
 import ssl
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -73,11 +72,6 @@ class WebhookConfigError(ValueError):
     """Raised when a destination cannot be used safely."""
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 @dataclass(frozen=True)
 class DeliveryTask:
     destination_id: str
@@ -91,6 +85,16 @@ class HttpResult:
     headers: dict[str, str]
     body_text: str
     final_url: str
+
+
+@dataclass(frozen=True)
+class ValidatedWebhookTarget:
+    url: str
+    hostname: str
+    connect_host: str
+    port: int
+    request_target: str
+    host_header: str
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,7 @@ class WebhookDeliveryService:
         worker_count: int = 4,
         http_client: Callable[[str, bytes, dict[str, str], int], HttpResult]
         | None = None,
+        resolver: Callable[[str, int], list[str]] | None = None,
         sleep_fn: Callable[[float], None] | None = None,
         autostart: bool = True,
     ):
@@ -142,7 +147,8 @@ class WebhookDeliveryService:
         self._audit = audit
         self._motion = motion_event_store
         self._worker_count = max(1, int(worker_count))
-        self._http_client = http_client or _default_http_post
+        self._http_client = http_client
+        self._resolver = resolver or _default_resolver
         self._sleep = sleep_fn or time.sleep
         self._queue: queue.Queue[DeliveryTask | object] = queue.Queue()
         self._settings_lock = threading.Lock()
@@ -638,13 +644,8 @@ class WebhookDeliveryService:
     ) -> HttpResult:
         current_url = url
         for redirect_count in range(MAX_REDIRECTS + 1):
-            self._ensure_public_target(current_url)
-            response = self._http_client(
-                current_url,
-                body,
-                headers,
-                REQUEST_TIMEOUT_SECONDS,
-            )
+            target = self._ensure_public_target(current_url)
+            response = self._send_to_target(target, body, headers)
             if (
                 response.status_code not in {301, 302, 303, 307, 308}
                 or redirect_count == MAX_REDIRECTS
@@ -657,6 +658,21 @@ class WebhookDeliveryService:
                 return response
             current_url = urllib.parse.urljoin(current_url, location)
         return response
+
+    def _send_to_target(
+        self,
+        target: ValidatedWebhookTarget,
+        body: bytes,
+        headers: dict[str, str],
+    ) -> HttpResult:
+        if self._http_client is not None:
+            return self._http_client(
+                target.url,
+                body,
+                headers,
+                REQUEST_TIMEOUT_SECONDS,
+            )
+        return _default_http_post(target, body, headers, REQUEST_TIMEOUT_SECONDS)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -857,7 +873,7 @@ class WebhookDeliveryService:
             headers["X-Webhook-Signature"] = f"sha256={digest}"
         return headers
 
-    def _ensure_public_target(self, url: str) -> None:
+    def _ensure_public_target(self, url: str) -> ValidatedWebhookTarget:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme.lower() != "https":
             raise WebhookConfigError(_HTTPS_ONLY_ERROR)
@@ -873,20 +889,37 @@ class WebhookDeliveryService:
             addresses.append(ip_literal)
         else:
             try:
-                infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+                resolved = self._resolver(host, port)
             except socket.gaierror:
-                return
-            for info in infos:
-                candidate = info[4][0]
+                raise RuntimeError("Webhook host could not be resolved") from None
+            for candidate in resolved:
                 try:
                     addresses.append(ipaddress.ip_address(candidate))
                 except ValueError:
                     continue
 
         if not addresses:
-            return
+            raise RuntimeError("Webhook host could not be resolved")
         if any(_is_private_address(address) for address in addresses):
             raise WebhookConfigError(_PRIVATE_TARGET_ERROR)
+        return ValidatedWebhookTarget(
+            url=urllib.parse.urlunsplit(
+                (
+                    parsed.scheme.lower(),
+                    parsed.netloc,
+                    parsed.path or "/",
+                    parsed.query,
+                    "",
+                )
+            ),
+            hostname=host,
+            connect_host=str(addresses[0]),
+            port=port,
+            request_target=urllib.parse.urlunsplit(
+                ("", "", parsed.path or "/", parsed.query, "")
+            ),
+            host_header=_host_header(host, parsed.port),
+        )
 
     def _mark_delivery_result(
         self, destination_id: str, *, success: bool, at: str
@@ -969,36 +1002,75 @@ class WebhookDeliveryService:
         )
 
 
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that dials a validated IP while verifying the hostname."""
+
+    def __init__(
+        self,
+        target: ValidatedWebhookTarget,
+        *,
+        timeout: int,
+        context: ssl.SSLContext,
+    ):
+        super().__init__(
+            target.hostname,
+            target.port,
+            timeout=timeout,
+            context=context,
+        )
+        self._target = target
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection(
+            (self._target.connect_host, self._target.port),
+            self.timeout,
+            self.source_address,
+        )
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(
+            self.sock,
+            server_hostname=self._target.hostname,
+        )
+
+
 def _default_http_post(
-    url: str,
+    target: ValidatedWebhookTarget,
     body: bytes,
     headers: dict[str, str],
     timeout: int,
 ) -> HttpResult:
-    opener = urllib.request.build_opener(
-        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-        _NoRedirectHandler(),
+    request_headers = dict(headers)
+    request_headers["Host"] = target.host_header
+    connection = _PinnedHTTPSConnection(
+        target,
+        timeout=timeout,
+        context=ssl.create_default_context(),
     )
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with opener.open(request, timeout=timeout) as response:
-            body_text = response.read().decode("utf-8", "replace")
-            return HttpResult(
-                status_code=response.getcode(),
-                headers=dict(response.headers.items()),
-                body_text=body_text,
-                final_url=response.geturl(),
-            )
-    except urllib.error.HTTPError as exc:
-        body_text = exc.read().decode("utf-8", "replace")
-        return HttpResult(
-            status_code=exc.code,
-            headers=dict(exc.headers.items()),
-            body_text=body_text,
-            final_url=exc.geturl(),
+        connection.request(
+            "POST",
+            target.request_target,
+            body=body,
+            headers=request_headers,
         )
-    except urllib.error.URLError as exc:
-        raise RuntimeError(str(exc.reason)) from exc
+        response = connection.getresponse()
+        body_text = response.read().decode("utf-8", "replace")
+        return HttpResult(
+            status_code=response.status,
+            headers=dict(response.getheaders()),
+            body_text=body_text,
+            final_url=target.url,
+        )
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise RuntimeError(str(exc)) from exc
+    finally:
+        connection.close()
+
+
+def _default_resolver(host: str, port: int) -> list[str]:
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [info[4][0] for info in infos]
 
 
 def _snapshot_url_for_event(event) -> str | None:
@@ -1032,6 +1104,14 @@ def _is_private_address(address: ipaddress._BaseAddress) -> bool:
         or address.is_reserved
         or address.is_unspecified
     )
+
+
+def _host_header(host: str, explicit_port: int | None) -> str:
+    needs_brackets = ":" in host and not host.startswith("[")
+    display_host = f"[{host}]" if needs_brackets else host
+    if explicit_port is None:
+        return display_host
+    return f"{display_host}:{explicit_port}"
 
 
 def _now_z() -> str:
