@@ -3685,3 +3685,46 @@ textarea {
         justify-content: center;
     }
 }
+
+/* Card styling must never trap long dialogs. The camera settings dialog uses
+   both `.card` and `.modal-card`, so keep this late enough to beat the shared
+   card overflow rules and let the modal body scroll on touch devices. */
+.modal-overlay {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding:
+        max(16px, env(safe-area-inset-top))
+        16px
+        max(16px, env(safe-area-inset-bottom));
+}
+
+.modal-card,
+.card.modal-card {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.modal-card__header {
+    flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+    .modal-overlay {
+        align-items: center;
+        padding:
+            max(12px, env(safe-area-inset-top))
+            12px
+            max(12px, env(safe-area-inset-bottom));
+    }
+
+    .modal-card,
+    .card.modal-card {
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    }
+}

@@ -21,6 +21,27 @@ async function expectNoHorizontalOverflow(page) {
   expect(overflow).toBeLessThanOrEqual(4);
 }
 
+async function expectDialogScrollsWithinViewport(page, selector: string) {
+  const dialog = page.locator(selector);
+  await expect(dialog).toBeVisible();
+  const metrics = await dialog.evaluate((el) => {
+    const style = window.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return {
+      clientHeight: el.clientHeight,
+      scrollHeight: el.scrollHeight,
+      overflowY: style.overflowY,
+      top: rect.top,
+      bottom: rect.bottom,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  expect(["auto", "scroll"]).toContain(metrics.overflowY);
+  expect(metrics.bottom).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  expect(metrics.top).toBeGreaterThanOrEqual(-1);
+  return dialog;
+}
+
 test("server setup and dashboard flows are reachable", async ({ page, baseURL }) => {
   await login(page, baseURL);
 
@@ -111,4 +132,47 @@ test("redesigned server GUI covers pages, settings tabs, and widths", async ({
     await sectionPicker.selectOption({ label: tabName });
     await expectNoHorizontalOverflow(page);
   }
+
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.goto(`${baseURL}/dashboard`);
+  const cameraCard = page.locator(".camera-card", { hasText: "Front Door" });
+  await expect(cameraCard).toBeVisible();
+  await cameraCard.getByRole("button", { name: "Settings" }).click();
+
+  const settingsDialog = await expectDialogScrollsWithinViewport(
+    page,
+    ".modal-card",
+  );
+  const settingsMetrics = await settingsDialog.evaluate((el) => ({
+    clientHeight: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+  }));
+  expect(settingsMetrics.scrollHeight).toBeGreaterThan(
+    settingsMetrics.clientHeight + 20,
+  );
+  await settingsDialog.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  const saveButton = page.getByRole("button", { name: "Save & Apply" });
+  const saveBounds = await saveButton.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return {
+      bottom: rect.bottom,
+      top: rect.top,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  expect(saveBounds.top).toBeGreaterThanOrEqual(-1);
+  expect(saveBounds.bottom).toBeLessThanOrEqual(saveBounds.viewportHeight + 1);
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal-card")).toBeHidden();
+
+  await page.goto(`${baseURL}/live`);
+  const shareButton = page.getByRole("button", { name: "Share live view" });
+  await expect(shareButton).toBeVisible();
+  await shareButton.click();
+  await expectDialogScrollsWithinViewport(page, ".share-modal__dialog");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#share-modal")).toBeHidden();
 });
