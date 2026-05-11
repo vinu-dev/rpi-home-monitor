@@ -39,6 +39,7 @@ from collections.abc import Callable
 import numpy as np
 
 from camera_streamer.motion import MotionConfig, MotionDetector
+from camera_streamer.server_tls import paired_server_context
 
 log = logging.getLogger("camera-streamer.motion_runner")
 
@@ -115,14 +116,7 @@ def _build_signature(
 
 
 def _ssl_context(certs_dir: str) -> ssl.SSLContext:
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    cert = os.path.join(certs_dir, "client.crt")
-    key = os.path.join(certs_dir, "client.key")
-    if os.path.isfile(cert) and os.path.isfile(key):
-        ctx.load_cert_chain(cert, key)
-    return ctx
+    return paired_server_context(certs_dir)
 
 
 class MotionEventPoster:

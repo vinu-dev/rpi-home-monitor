@@ -20,7 +20,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from camera_streamer import ota_installer, wifi
 from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
@@ -56,6 +56,7 @@ STATUS_ROUTE_MATRIX = {
             "/status",
             "/api/status",
             "/api/networks",
+            "/api/pair/fingerprint",
         }
     ),
     "GET": frozenset(
@@ -68,6 +69,7 @@ STATUS_ROUTE_MATRIX = {
             "/api/status",
             "/api/networks",
             "/api/ota/status",
+            "/api/pair/fingerprint",
         }
     ),
     "PUT": frozenset({"/api/stream-config"}),
@@ -538,6 +540,7 @@ button.danger:hover{background:#a53125}
 <label>Server URL<input type="text" name="server_url" placeholder="https://your-server.local" required></label>
 </div>
 <label>PIN<input type="text" name="pin" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit PIN from server" required autofocus></label>
+<label>Server CA fingerprint<input type="text" name="ca_fingerprint" placeholder="Fingerprint shown with the PIN" required></label>
 <button type="submit">Pair</button>
 </form>
 </div>
@@ -599,33 +602,34 @@ def _make_status_handler(
             log.debug("Status HTTPS: " + format % args)
 
         def do_HEAD(self):
-            if self.path.startswith(CONTROL_API_PREFIX):
+            request_path = urlparse(self.path).path
+            if request_path.startswith(CONTROL_API_PREFIX):
                 self.send_error(404)
                 return
-            if self.path == "/login":
+            if request_path == "/login":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-            elif self.path == "/logout":
+            elif request_path == "/logout":
                 self.send_response(302)
                 self.send_header("Set-Cookie", _clear_session_cookie())
                 self.send_header("Location", "/login")
                 self.end_headers()
-            elif self.path == "/pair":
+            elif request_path == "/pair":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-            elif self.path == "/" or self.path == "/status":
+            elif request_path == "/" or request_path == "/status":
                 if not self._require_auth():
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-            elif self.path == "/api/status":
+            elif request_path == "/api/status":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-            elif self.path == "/api/networks":
+            elif request_path == "/api/networks":
                 if not self._require_auth():
                     return
                 self.send_response(200)
@@ -673,7 +677,8 @@ def _make_status_handler(
             return False
 
         def do_GET(self):
-            if self.path.startswith(CONTROL_API_PREFIX):
+            request_path = urlparse(self.path).path
+            if request_path.startswith(CONTROL_API_PREFIX):
                 self.send_error(404)
                 return
 
@@ -693,16 +698,18 @@ def _make_status_handler(
                 if not self._require_auth():
                     return
                 self._serve_status_page()
-            elif self.path == "/static/qrcode.min.js":
+            elif request_path == "/static/qrcode.min.js":
                 self._serve_static_file("qrcode.min.js", "application/javascript")
-            elif self.path == "/api/status":
+            elif request_path == "/api/status":
                 self._json_response(self._get_status())
-            elif self.path == "/api/networks":
+            elif request_path == "/api/networks":
                 if not self._require_auth():
                     return
                 nets = wifi.scan_networks(wifi_interface)
                 self._json_response({"networks": nets})
-            elif self.path == "/api/ota/status":
+            elif request_path == "/api/pair/fingerprint":
+                self._handle_pair_fingerprint()
+            elif request_path == "/api/ota/status":
                 if not self._require_auth():
                     return
                 self._json_response(ota_installer.read_status())
@@ -1110,6 +1117,37 @@ def _make_status_handler(
             self.end_headers()
             self.wfile.write(body)
 
+        def _handle_pair_fingerprint(self):
+            if not pairing_manager:
+                self._json_response({"error": "Pairing not available"}, 500)
+                return
+
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            server_url = params.get("server_url", [""])[0].strip()
+            if not server_url:
+                server_url = config.server_https_url
+            if not server_url:
+                self._json_response({"error": "server_url required"}, 400)
+                return
+            if "://" not in server_url:
+                server_url = "https://" + server_url
+            try:
+                fingerprint = pairing_manager.get_server_ca_fingerprint(server_url)
+            except Exception as exc:
+                log.warning("Could not fetch server CA fingerprint: %s", exc)
+                self._json_response(
+                    {"error": "Could not fetch server CA fingerprint"},
+                    400,
+                )
+                return
+            self._json_response(
+                {
+                    "server_url": server_url,
+                    "fingerprint": fingerprint,
+                }
+            )
+
         def _handle_pair(self, body):
             if not pairing_manager:
                 self._json_response({"error": "Pairing not available"}, 500)
@@ -1118,21 +1156,22 @@ def _make_status_handler(
             content_type = self.headers.get("Content-Type", "")
             pin = ""
             server_url = ""
+            ca_fingerprint = ""
 
             if "application/json" in content_type:
                 try:
                     data = json.loads(body)
                     pin = data.get("pin", "").strip()
                     server_url = data.get("server_url", "").strip()
+                    ca_fingerprint = data.get("ca_fingerprint", "").strip()
                 except json.JSONDecodeError:
                     self._json_response({"error": "Invalid JSON"}, 400)
                     return
             else:
-                from urllib.parse import parse_qs
-
                 params = parse_qs(body.decode("utf-8", errors="replace"))
                 pin = params.get("pin", [""])[0].strip()
                 server_url = params.get("server_url", [""])[0].strip()
+                ca_fingerprint = params.get("ca_fingerprint", [""])[0].strip()
 
             if not server_url:
                 server_url = config.server_https_url
@@ -1151,7 +1190,11 @@ def _make_status_handler(
             if pairing_manager.is_paired:
                 pairing_manager.reset_local_state()
 
-            ok, err = pairing_manager.exchange(pin, server_url)
+            ok, err = pairing_manager.exchange(
+                pin,
+                server_url,
+                expected_ca_fingerprint=ca_fingerprint,
+            )
             if "application/json" in content_type:
                 if ok:
                     self._json_response({"message": "Pairing successful — restarting"})

@@ -10,8 +10,10 @@ Design patterns:
 - Fail-Silent (cert check failure doesn't crash server)
 """
 
+import hashlib
 import logging
 import os
+import ssl
 import subprocess
 import threading
 import time
@@ -24,6 +26,25 @@ CHECK_INTERVAL = 7 * 24 * 3600
 
 # Warn when cert expires within this many days
 EXPIRY_WARNING_DAYS = 30
+
+
+def format_fingerprint(hex_digest: str) -> str:
+    digest = "".join(str(hex_digest or "").replace(":", "").split()).lower()
+    return ":".join(digest[i : i + 2] for i in range(0, len(digest), 2)).upper()
+
+
+def ca_fingerprint_from_pem(ca_pem: str) -> str:
+    pem = str(ca_pem or "").strip()
+    try:
+        material = ssl.PEM_cert_to_DER_cert(pem)
+    except (ssl.SSLError, ValueError):
+        material = pem.encode("utf-8")
+    return format_fingerprint(hashlib.sha256(material).hexdigest())
+
+
+def ca_fingerprint_from_file(ca_path: str) -> str:
+    with open(ca_path, encoding="utf-8") as handle:
+        return ca_fingerprint_from_pem(handle.read())
 
 
 # REQ: SWR-034; RISK: RISK-019; SEC: SC-017; TEST: TC-032

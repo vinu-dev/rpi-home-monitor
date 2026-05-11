@@ -1665,18 +1665,39 @@ function friendlyUptime(s) {
 }
 
 // ---- Pairing ----
+function confirmServerFingerprint(url) {
+    return fetch("/api/pair/fingerprint?server_url=" + encodeURIComponent(url))
+        .then(function(r){ return r.json().then(function(d){ return {status:r.status, data:d}; }); })
+        .then(function(res){
+            if (res.status >= 400 || res.data.error) {
+                throw new Error(res.data.error || "Could not fetch server fingerprint.");
+            }
+            var fp = res.data.fingerprint || "";
+            var ok = confirm(
+                "Verify this server fingerprint matches the Home Monitor pairing screen:\n\n" +
+                fp +
+                "\n\nContinue pairing?"
+            );
+            if (!ok) throw new Error("Pairing cancelled before certificate exchange.");
+            return fp;
+        });
+}
+
 function doPair() {
     var pin = $("pair-pin").value.trim();
     var addr = $("pair-server").value.trim();
     if (pin.length !== 6) return setMsg("pair-result", "err", "Enter the 6-digit PIN.");
     if (!addr) return setMsg("pair-result", "err", "Enter the server address.");
     var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
-    setBusy("btn-pair", true, "Pairing…");
+    setBusy("btn-pair", true, "Checking server…");
     setMsg("pair-result", "", "");
-    fetch("/api/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin, server_url: url })
+    confirmServerFingerprint(url).then(function(fingerprint){
+        setBusy("btn-pair", true, "Pairing…");
+        return fetch("/api/pair", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: pin, server_url: url, ca_fingerprint: fingerprint })
+        });
     }).then(function(r){ return r.json(); }).then(function(d){
         setBusy("btn-pair", false, "Pair camera");
         if (d.error) setMsg("pair-result", "err", d.error);
@@ -1684,9 +1705,9 @@ function doPair() {
             setMsg("pair-result", "ok", d.message || "Paired — restarting.");
             setTimeout(loadStatus, 1500);
         }
-    }).catch(function(){
+    }).catch(function(e){
         setBusy("btn-pair", false, "Pair camera");
-        setMsg("pair-result", "err", "Request failed.");
+        setMsg("pair-result", "err", e.message || "Request failed.");
     });
 }
 
@@ -1701,12 +1722,15 @@ function doRepair() {
     if (!addr) return setMsg("unpair-result", "err", "Enter the server address.");
     if (!confirm("Move this camera to server " + addr + "?\nThe current pairing will be replaced.")) return;
     var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
-    setBusy("btn-repair", true, "Re-pairing…");
+    setBusy("btn-repair", true, "Checking server…");
     setMsg("unpair-result", "", "");
-    fetch("/api/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin, server_url: url })
+    confirmServerFingerprint(url).then(function(fingerprint){
+        setBusy("btn-repair", true, "Re-pairing…");
+        return fetch("/api/pair", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: pin, server_url: url, ca_fingerprint: fingerprint })
+        });
     }).then(function(r){ return r.json(); }).then(function(d){
         setBusy("btn-repair", false, "Re-pair");
         if (d.error) setMsg("unpair-result", "err", d.error);
@@ -1714,9 +1738,9 @@ function doRepair() {
             setMsg("unpair-result", "warn", "Re-pair accepted — camera restarting. Page will reload.");
             setTimeout(function(){ window.location.reload(); }, 6000);
         }
-    }).catch(function(){
+    }).catch(function(e){
         setBusy("btn-repair", false, "Re-pair");
-        setMsg("unpair-result", "err", "Request failed.");
+        setMsg("unpair-result", "err", e.message || "Request failed.");
     });
 }
 

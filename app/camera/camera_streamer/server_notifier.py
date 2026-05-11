@@ -13,11 +13,11 @@ import hashlib
 import hmac
 import json
 import logging
-import os
-import ssl
 import time
 import urllib.error
 import urllib.request
+
+from camera_streamer.server_tls import paired_server_context
 
 log = logging.getLogger("camera-streamer.server-notifier")
 
@@ -37,16 +37,7 @@ def _build_signature(secret_hex, camera_id, timestamp, body_bytes):
 
 def _ssl_context(certs_dir):
     """Build SSL context with camera's client cert for TLS."""
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE  # server uses self-signed cert
-
-    cert = os.path.join(certs_dir, "client.crt")
-    key = os.path.join(certs_dir, "client.key")
-    if os.path.isfile(cert) and os.path.isfile(key):
-        ctx.load_cert_chain(cert, key)
-
-    return ctx
+    return paired_server_context(certs_dir)
 
 
 def notify_config_change(config, pairing_manager):

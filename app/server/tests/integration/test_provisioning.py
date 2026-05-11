@@ -46,6 +46,19 @@ class TestGetCaCert:
         response = client.get("/api/v1/setup/ca-cert")
         assert response.status_code == 200
         assert b"BEGIN CERTIFICATE" in response.data
+        assert response.headers["X-CA-SHA256-Fingerprint"]
+
+    def test_returns_ca_fingerprint_when_exists(self, app, client):
+        """Returns display fingerprint for operator confirmation."""
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-fingerprint")
+        assert response.status_code == 200
+        assert response.get_json()["fingerprint"]
+
+    def test_ca_fingerprint_returns_404_when_no_ca_cert(self, client):
+        response = client.get("/api/v1/setup/ca-fingerprint")
+        assert response.status_code == 404
+        assert "error" in response.get_json()
 
     def test_returns_404_when_no_ca_cert(self, client):
         """Returns 404 when ca.crt has not been generated yet."""

@@ -78,15 +78,14 @@ class TestInitiatePairing:
         assert "pin" in data
         assert len(data["pin"]) == 6
         assert data["expires_in"] == 300
+        assert data["ca_fingerprint"]
 
     def test_returns_404_for_unknown_camera(self, logged_in_client):
         client = logged_in_client()
         resp = client.post("/api/v1/cameras/nonexistent/pair")
         assert resp.status_code == 404
 
-    def test_pairing_blocked_when_encrypted_data_required(
-        self, app, logged_in_client
-    ):
+    def test_pairing_blocked_when_encrypted_data_required(self, app, logged_in_client):
         app.data_protection_service = MagicMock()
         app.data_protection_service.check_secret_write_allowed.return_value = (
             False,
