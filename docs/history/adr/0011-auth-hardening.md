@@ -24,10 +24,15 @@ Follow NIST SP 800-63B (2024):
 
 ### Rate Limiting
 
-Add `flask-limiter` with in-memory backend (no Redis needed for 1-5 users):
+Use a local `/data/config/login_rate_limits.json` throttle store:
 - 5 login attempts per minute per IP on `/api/v1/auth/login`
+- 10 attempts per active window hard-blocks the source IP
 - Exponential account lockout: 1 min after 5 failures, 5 min after 10, 30 min after 15
 - All failures logged to `/data/logs/auth.log` with timestamp, source IP, username
+
+The throttle store is persisted and guarded by a sidecar file lock so normal
+service restarts, deploys, and future multi-worker runtimes do not grant a
+fresh attack budget.
 
 ### Session Management
 
@@ -43,9 +48,14 @@ write a server-side inventory row to `/data/config/sessions.json` so the
 Settings → Security UI can enumerate and revoke active devices without
 forcing a whole-user logout or deleting the account record.
 
-### TOTP (Future)
+### TOTP And Recovery Codes
 
-Add `totp_secret` field to user model now. Implement TOTP UI in a later phase using `pyotp`. Not critical for LAN-only but valuable when exposed via Tailscale Funnel.
+TOTP enrollment uses `pyotp` and stores only the shared TOTP secret and bcrypt
+hashes of recovery codes. Recovery codes are single-use and shown only at
+creation/regeneration time. New recovery codes use five groups of four
+characters from a 32-character alphabet (100 bits of entropy per code). Legacy
+four-group recovery codes remain accepted until consumed or regenerated so
+existing enrolled users are not locked out by the entropy increase.
 
 ## Consequences
 

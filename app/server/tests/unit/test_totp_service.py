@@ -4,13 +4,17 @@
 # TEST: TC-004, TC-011, TC-022
 """Pure-logic tests for monitor.services.totp_service.TotpService."""
 
+import re
 import time
 
+import bcrypt
 import pyotp
 import pytest
 
 from monitor.services.totp_service import (
     CHALLENGE_TTL_SECONDS,
+    RECOVERY_CODE_GROUP_LEN,
+    RECOVERY_CODE_GROUPS,
     TOTP_STEP_SECONDS,
     TotpService,
 )
@@ -106,10 +110,20 @@ class TestRecoveryCodes:
         assert len(hashes) == 10
         assert len(set(plaintexts)) == 10
         # Every hash should bcrypt-verify against its plaintext.
-        import bcrypt
-
         for pt, h in zip(plaintexts, hashes, strict=True):
             assert bcrypt.checkpw(pt.encode("utf-8"), h.encode("utf-8"))
+
+    def test_generated_recovery_codes_use_100_bit_format(self, svc):
+        plaintexts, _hashes = svc.generate_recovery_codes(count=5)
+        pattern = re.compile(
+            rf"^[A-Z2-9]{{{RECOVERY_CODE_GROUP_LEN}}}"
+            rf"(?:-[A-Z2-9]{{{RECOVERY_CODE_GROUP_LEN}}})"
+            rf"{{{RECOVERY_CODE_GROUPS - 1}}}$"
+        )
+
+        for code in plaintexts:
+            assert pattern.fullmatch(code)
+            assert len(code.replace("-", "")) == 20
 
     def test_consume_correct_code_removes_hash(self, svc):
         plaintexts, hashes = svc.generate_recovery_codes(count=3)
@@ -134,6 +148,15 @@ class TestRecoveryCodes:
         condensed = plaintexts[0].replace("-", "")
         ok, _ = svc.consume_recovery_code(condensed, hashes)
         assert ok is True
+
+    def test_consume_accepts_legacy_four_group_unhyphenated_form(self, svc):
+        legacy = "ABCD-EFGH-JKLM-NPQR"
+        hashes = [bcrypt.hashpw(legacy.encode("utf-8"), bcrypt.gensalt(12)).decode()]
+
+        ok, remaining = svc.consume_recovery_code(legacy.replace("-", ""), hashes)
+
+        assert ok is True
+        assert remaining == []
 
 
 class TestChallengeToken:

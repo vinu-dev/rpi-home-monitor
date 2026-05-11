@@ -28,7 +28,9 @@ single-use recovery code.
 ## Recovery Codes
 
 Recovery codes are shown only when they are created or regenerated. The device
-stores only hashes of those codes.
+generates 10 single-use codes. New codes use five groups of four characters
+from a 32-character alphabet, giving a documented 100-bit entropy target per
+code. The device stores only bcrypt hashes of those codes.
 
 To rotate them, open **Settings > Account**, enter the current password plus a
 TOTP or recovery code, then regenerate. Old recovery codes stop working as soon
