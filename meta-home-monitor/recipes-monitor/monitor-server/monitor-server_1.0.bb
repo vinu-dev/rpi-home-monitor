@@ -20,12 +20,14 @@ SRC_URI = " \
     file://monitor/ \
     file://release_version/release_version.py \
     file://config/monitor.service \
+    file://config/monitor-avahi-pin.service \
     file://config/monitor-hotspot.service \
     file://config/monitor-hotspot.sh \
     file://config/nginx-monitor.conf \
     file://config/nftables-server.conf \
     file://config/captive-portal-dnsmasq.conf \
     file://config/avahi-homemonitor.service \
+    file://config/avahi-daemon-home-monitor.conf \
     file://config/logrotate-monitor.conf \
     file://setup.py \
     file://requirements.txt \
@@ -49,7 +51,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -85,6 +87,7 @@ do_install() {
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/monitor.service ${D}${systemd_system_unitdir}/monitor.service
+    install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.service ${D}${systemd_system_unitdir}/monitor-avahi-pin.service
     install -m 0644 ${WORKDIR}/config/monitor-hotspot.service ${D}${systemd_system_unitdir}/monitor-hotspot.service
 
     # Nginx config
@@ -106,12 +109,16 @@ do_install() {
     # Avahi mDNS service advertisement (cameras find server at homemonitor.local)
     install -d ${D}${sysconfdir}/avahi/services
     install -m 0644 ${WORKDIR}/config/avahi-homemonitor.service ${D}${sysconfdir}/avahi/services/homemonitor.service
+    install -d ${D}${systemd_system_unitdir}/avahi-daemon.service.d
+    install -m 0644 ${WORKDIR}/config/avahi-daemon-home-monitor.conf ${D}${systemd_system_unitdir}/avahi-daemon.service.d/10-home-monitor.conf
 }
 
 FILES:${PN} = " \
     /opt/monitor \
     ${systemd_system_unitdir}/monitor.service \
+    ${systemd_system_unitdir}/monitor-avahi-pin.service \
     ${systemd_system_unitdir}/monitor-hotspot.service \
+    ${systemd_system_unitdir}/avahi-daemon.service.d/10-home-monitor.conf \
     ${sysconfdir}/nginx/sites-enabled/monitor.conf \
     ${sysconfdir}/nftables.d/monitor.conf \
     ${sysconfdir}/logrotate.d/monitor \

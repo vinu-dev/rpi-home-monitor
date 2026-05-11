@@ -291,9 +291,7 @@ class TestPosterSignatureHeaders:
         resolver = MagicMock()
         resolver.resolved_ip = "192.168.1.244"
 
-        poster = MotionEventPoster(
-            _cfg(), _pairing(), server_resolver=resolver
-        )
+        poster = MotionEventPoster(_cfg(), _pairing(), server_resolver=resolver)
         ok = poster.post(
             phase="start",
             event_id="mot-test-002",
@@ -303,9 +301,7 @@ class TestPosterSignatureHeaders:
             started_at_epoch=1776620000.0,
         )
         assert ok
-        assert captured["url"] == (
-            "https://192.168.1.244/api/v1/cameras/motion-event"
-        )
+        assert captured["url"] == ("https://192.168.1.244/api/v1/cameras/motion-event")
 
 
 class TestWarmupGate:

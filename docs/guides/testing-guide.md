@@ -161,6 +161,26 @@ Playwright lives under `tests/e2e/playwright/` and is split into:
 - `smoke/` for critical PR gating
 - `regression/` for broader nightly coverage
 
+GUI redesign coverage lives in both browser and rendered-template tests:
+
+- `tests/e2e/playwright/smoke/server-auth-and-dashboard.spec.ts` covers login,
+  the redesigned dashboard, every primary server page, every Settings tab, and
+  phone/tablet/laptop horizontal-overflow checks.
+- `tests/e2e/playwright/regression/server-pages-and-camera-status.spec.ts`
+  covers live view, recordings, and camera status navigation.
+- `app/server/tests/integration/test_views.py` pins server template controls,
+  share modals, settings sections, responsive CSS hooks, and row/table
+  separation.
+- `app/camera/tests/contracts/test_api_contracts.py` pins the camera control
+  panel tabs and all post-login camera controls.
+
+mDNS identity coverage is part of the server unit lane:
+
+- `app/server/tests/unit/test_avahi_pin.py` verifies the server Avahi config is
+  generated under `/data/config`, pins `rpi-divinu.local`, chooses one LAN
+  interface instead of publishing over both Ethernet and WiFi, and ensures Yocto
+  installs the systemd unit and Avahi drop-in.
+
 Current project model:
 
 - `setup`: prepares seeded auth/bootstrap state

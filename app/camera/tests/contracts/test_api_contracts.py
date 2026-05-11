@@ -522,7 +522,7 @@ class TestStatusServerApiStatusContract:
         "camera_streamer.status_server.wifi.get_hostname",
         return_value="cam-test",
     )
-    def test_status_page_renders_reachability_block(
+    def test_status_page_renders_local_control_panel(
         self, mock_host, mock_ssid, mock_ip, noauth_config
     ):
         server = CameraStatusServer(
@@ -532,8 +532,38 @@ class TestStatusServerApiStatusContract:
         try:
             html, status = _html_get("/status", scheme="https")
             assert status == 200
-            assert "Reach this camera" in html
-            assert "/static/qrcode.min.js" in html
+            assert 'aria-label="Page sections"' in html
+            for nav_target in [
+                'href="#status"',
+                'href="#settings"',
+                'href="#updates"',
+                'href="#danger"',
+            ]:
+                assert nav_target in html
+            for anchor in [
+                'id="hardware-alert"',
+                'id="hero-line"',
+                'id="h-server"',
+                'id="pair-cta"',
+                'id="btn-pair"',
+                'id="btn-scan"',
+                'id="wifi-ssid"',
+                'id="btn-wifi"',
+                'id="btn-pw"',
+                'id="btn-stream-edit"',
+                'id="se-res"',
+                'id="btn-stream-save"',
+                'id="unpair-details"',
+                'id="btn-repair"',
+                'id="btn-unpair"',
+                'id="ota-file"',
+                'id="btn-ota-upload"',
+                'id="reset-confirm"',
+                'id="btn-reset"',
+            ]:
+                assert anchor in html
+            assert "Reach this camera" not in html
+            assert "/static/qrcode.min.js" not in html
         finally:
             server.stop()
 
