@@ -89,11 +89,19 @@ class OTAService:
 
     # REQ: SWR-010; RISK: RISK-004; SEC: SC-003; TEST: TC-009
 
-    def __init__(self, store, audit=None, data_dir="/data", public_key_path=None):
+    def __init__(
+        self,
+        store,
+        audit=None,
+        data_dir="/data",
+        public_key_path=None,
+        enforce_marker_path=None,
+    ):
         self._store = store
         self._audit = audit
         self._data_dir = data_dir
         self._public_key_path = public_key_path or "/etc/swupdate-public.crt"
+        self._enforce_marker_path = enforce_marker_path or "/etc/swupdate-enforce"
         self._status = {}
         self._status_lock = threading.Lock()
 
@@ -139,6 +147,51 @@ class OTAService:
         """
         state = self.get_status(device_id).get("state", "idle")
         return state in ("uploading", "verifying", "installing", "rebooting")
+
+    def get_verification_posture(self):
+        """Return operator-visible OTA signature verification posture."""
+        public_key_present = os.path.isfile(self._public_key_path)
+        enforcement_marker_present = os.path.isfile(self._enforce_marker_path)
+        swupdate_available = shutil.which("swupdate") is not None
+        verification_active = public_key_present and swupdate_available
+        install_blocked = enforcement_marker_present and not verification_active
+        allows_unsigned_fallback = (not enforcement_marker_present) and (
+            not verification_active
+        )
+
+        if install_blocked:
+            mode = "blocked"
+            warning = (
+                "OTA signature enforcement is enabled, but SWUpdate verification "
+                "is unavailable. Installs are blocked until the verifier and "
+                "public certificate are restored."
+            )
+        elif verification_active and enforcement_marker_present:
+            mode = "enforced"
+            warning = ""
+        elif verification_active:
+            mode = "verified"
+            warning = (
+                "OTA bundles are signature-checked, but this image is missing "
+                "the production enforcement marker."
+            )
+        else:
+            mode = "dev-fallback"
+            warning = (
+                "OTA signature verification is unavailable on this device. "
+                "This is a development fallback; unsigned bundles may be accepted."
+            )
+
+        return {
+            "mode": mode,
+            "verification_active": verification_active,
+            "verification_enforced": enforcement_marker_present,
+            "public_key_present": public_key_present,
+            "swupdate_available": swupdate_available,
+            "install_blocked": install_blocked,
+            "allows_unsigned_fallback": allows_unsigned_fallback,
+            "warning": warning,
+        }
 
     def _find_staged_bundle(self):
         """Return the filename of the newest staged .swu, or '' if none."""
@@ -293,7 +346,7 @@ class OTAService:
             return False, "Bundle file not found"
 
         if not os.path.isfile(self._public_key_path):
-            if os.path.isfile("/etc/swupdate-enforce"):
+            if os.path.isfile(self._enforce_marker_path):
                 log.error(
                     "Signing enforced but cert missing at %s — refusing install",
                     self._public_key_path,
@@ -332,6 +385,12 @@ class OTAService:
                 return False, error
 
         except FileNotFoundError:
+            if os.path.isfile(self._enforce_marker_path):
+                log.error("Signing enforced but swupdate is not installed")
+                return False, (
+                    "Signature enforcement is on but swupdate is not installed. "
+                    "Repair the OTA verifier before installing updates."
+                )
             log.warning("swupdate not found — skipping verification")
             return True, ""  # swupdate not installed (dev/test)
         except subprocess.TimeoutExpired:

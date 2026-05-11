@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 
@@ -46,6 +47,9 @@ TRIGGER_PATH = os.path.join(SPOOL_DIR, "trigger")
 REBOOT_TRIGGER_PATH = os.path.join(SPOOL_DIR, "reboot-trigger")
 STATUS_PATH = os.path.join(SPOOL_DIR, "status.json")
 BUNDLE_NAME = "update.swu"
+SWUPDATE_ENFORCE_MARKER = "/etc/swupdate-enforce"
+PUBKEY_SYSTEM = "/etc/swupdate-public.crt"
+PUBKEY_DATA = "/data/certs/swupdate-public.crt"
 
 # States reported in status.json. Kept as module constants so tests
 # and UI render logic can import them without magic strings.
@@ -76,6 +80,59 @@ TRIGGER_START_TIMEOUT = 30  # seconds
 def bundle_path():
     """Canonical absolute path of the staged bundle."""
     return os.path.join(STAGING_DIR, BUNDLE_NAME)
+
+
+def verification_posture():
+    """Return operator-visible OTA signature verification posture."""
+    public_key_path = ""
+    if os.path.isfile(PUBKEY_SYSTEM):
+        public_key_path = PUBKEY_SYSTEM
+    elif os.path.isfile(PUBKEY_DATA):
+        public_key_path = PUBKEY_DATA
+
+    public_key_present = bool(public_key_path)
+    enforcement_marker_present = os.path.isfile(SWUPDATE_ENFORCE_MARKER)
+    swupdate_available = shutil.which("swupdate") is not None
+    verification_active = public_key_present and swupdate_available
+    install_blocked = enforcement_marker_present and not verification_active
+    allows_unsigned_fallback = (not enforcement_marker_present) and (
+        not verification_active
+    )
+
+    if install_blocked:
+        mode = "blocked"
+        warning = (
+            "OTA signature enforcement is enabled, but SWUpdate verification "
+            "is unavailable. Installs are blocked until the verifier and "
+            "public certificate are restored."
+        )
+    elif verification_active and enforcement_marker_present:
+        mode = "enforced"
+        warning = ""
+    elif verification_active:
+        mode = "verified"
+        warning = (
+            "OTA bundles are signature-checked, but this image is missing "
+            "the production enforcement marker."
+        )
+    else:
+        mode = "dev-fallback"
+        warning = (
+            "OTA signature verification is unavailable on this camera. "
+            "This is a development fallback; unsigned bundles may be accepted."
+        )
+
+    return {
+        "mode": mode,
+        "verification_active": verification_active,
+        "verification_enforced": enforcement_marker_present,
+        "public_key_present": public_key_present,
+        "public_key_path": public_key_path,
+        "swupdate_available": swupdate_available,
+        "install_blocked": install_blocked,
+        "allows_unsigned_fallback": allows_unsigned_fallback,
+        "warning": warning,
+    }
 
 
 # --- .swu metadata extraction ----------------------------------------------
@@ -157,6 +214,7 @@ def read_status():
         data.setdefault("progress", 0)
         data.setdefault("error", "")
         data["protocol_version"] = OTA_PROTOCOL_VERSION
+        data["verification"] = verification_posture()
         return data
     except (OSError, ValueError, json.JSONDecodeError):
         return {
@@ -164,6 +222,7 @@ def read_status():
             "progress": 0,
             "error": "",
             "protocol_version": OTA_PROTOCOL_VERSION,
+            "verification": verification_posture(),
         }
 
 

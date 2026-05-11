@@ -69,11 +69,14 @@ def get_status():
     # docs/architecture/versioning.md §C).
     from monitor.release_version import release_version
 
+    server_status = {
+        "current_version": release_version(),
+        **ota.get_status("server"),
+    }
+    server_status["verification"] = ota.get_verification_posture()
+
     result = {
-        "server": {
-            "current_version": release_version(),
-            **ota.get_status("server"),
-        },
+        "server": server_status,
         "cameras": [],
     }
 
@@ -156,6 +159,7 @@ def upload_server_image():
             "filename": file.filename,
             "staged_path": staged_path,
             "target_version": staged_status.get("target_version", ""),
+            "verification": ota.get_verification_posture(),
         }
     ), 200
 

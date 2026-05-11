@@ -32,6 +32,7 @@ class TestReadWriteStatus:
         assert status["state"] == "idle"
         assert status["progress"] == 0
         assert status["error"] == ""
+        assert "verification" in status
 
     def test_roundtrip(self, spool):
         ota_installer.write_status("installing", progress=55, error="")
@@ -44,6 +45,36 @@ class TestReadWriteStatus:
             f.write("{not valid json")
         status = ota_installer.read_status()
         assert status["state"] == "idle"
+
+
+class TestVerificationPosture:
+    def test_warns_when_camera_uses_dev_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ota_installer, "PUBKEY_SYSTEM", str(tmp_path / "missing"))
+        monkeypatch.setattr(ota_installer, "PUBKEY_DATA", str(tmp_path / "missing2"))
+        monkeypatch.setattr(
+            ota_installer, "SWUPDATE_ENFORCE_MARKER", str(tmp_path / "enforce")
+        )
+        monkeypatch.setattr(ota_installer.shutil, "which", lambda _: None)
+
+        posture = ota_installer.verification_posture()
+
+        assert posture["mode"] == "dev-fallback"
+        assert posture["allows_unsigned_fallback"] is True
+        assert posture["install_blocked"] is False
+
+    def test_enforcement_blocks_when_verifier_missing(self, tmp_path, monkeypatch):
+        marker = tmp_path / "enforce"
+        marker.write_text("1")
+        monkeypatch.setattr(ota_installer, "PUBKEY_SYSTEM", str(tmp_path / "missing"))
+        monkeypatch.setattr(ota_installer, "PUBKEY_DATA", str(tmp_path / "missing2"))
+        monkeypatch.setattr(ota_installer, "SWUPDATE_ENFORCE_MARKER", str(marker))
+        monkeypatch.setattr(ota_installer.shutil, "which", lambda _: None)
+
+        posture = ota_installer.verification_posture()
+
+        assert posture["mode"] == "blocked"
+        assert posture["install_blocked"] is True
+        assert posture["allows_unsigned_fallback"] is False
 
 
 class TestIsBusy:

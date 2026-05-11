@@ -110,6 +110,12 @@ esac
 ln -sfn "$STANDBY" /dev/monitor_standby
 log "Standby symlink: /dev/monitor_standby -> $STANDBY (boot_slot=$BOOT_SLOT)"
 
+if ! command -v swupdate >/dev/null 2>&1; then
+    write_status "error" 0 "swupdate is not installed"
+    log "FAIL: swupdate binary not found"
+    exit 1
+fi
+
 # Pick verification cert. Prefer /etc shipped key; fall back to /data
 # for dev builds. Absence ⇒ dev/unsigned, allowed by design (ADR-0014)
 # UNLESS the image was built with SWUPDATE_SIGNING=1 (bbappend drops

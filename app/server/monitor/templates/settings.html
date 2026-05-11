@@ -2165,6 +2165,18 @@
                     <span class="text-muted" x-show="ota.server.error" x-text="'— ' + ota.server.error"></span>
                 </span>
             </div>
+            <div class="info-row">
+                <span class="info-row__label">Signature verification</span>
+                <span class="info-row__value">
+                    <span class="badge"
+                          :class="ota.server.verification && ota.server.verification.install_blocked ? 'badge--offline' : (ota.server.verification && ota.server.verification.allows_unsigned_fallback ? 'badge--warn' : 'badge--ok')"
+                          x-text="otaVerificationLabel(ota.server.verification)"></span>
+                </span>
+            </div>
+            <template x-if="ota.server.verification && ota.server.verification.warning">
+                <div class="warning-item" style="margin-top:var(--space-3);"
+                     x-text="ota.server.verification.warning"></div>
+            </template>
             <div style="margin-top:var(--space-3);">
                 <label class="btn btn--secondary" :class="{ 'btn--disabled': ota.server.busy }" style="display:inline-block;">
                     <input type="file" accept=".swu" style="display:none;"
@@ -2176,7 +2188,7 @@
                       x-show="ota.server.staged_filename"
                       x-text="ota.server.staged_filename"></span>
                 <button class="btn btn--primary" style="margin-left:var(--space-2);"
-                        :disabled="!ota.server.staged_filename || ota.server.busy"
+                        :disabled="!ota.server.staged_filename || ota.server.busy || (ota.server.verification && ota.server.verification.install_blocked)"
                         @click="installServerBundle()">Install &amp; Reboot</button>
             </div>
             <div x-show="ota.server.busy" style="margin-top:var(--space-3);">
@@ -2224,6 +2236,10 @@
                         <span class="text-muted" x-show="cam.error" x-text="'— ' + cam.error"></span>
                     </span>
                 </div>
+                <template x-if="cam.verification && cam.verification.warning">
+                    <div class="warning-item" style="margin-top:var(--space-3);"
+                         x-text="cam.verification.warning"></div>
+                </template>
                 <div style="margin-top:var(--space-3);">
                     <label class="btn btn--secondary" :class="{ 'btn--disabled': cameraBusy(cam) }" style="display:inline-block;">
                         <input type="file" accept=".swu" style="display:none;"
@@ -2429,7 +2445,7 @@ function settingsPage() {
         deletingAllRecordings: false,
 
         // OTA state (ADR-0020 dual-transport updates)
-        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
+        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false, verification: null }, cameras: [] },
         _otaPollTimer: null,
 
         // Security-tab state is limited to active-session inventory.
@@ -3894,6 +3910,15 @@ function settingsPage() {
             );
         },
 
+        otaVerificationLabel(v) {
+            if (!v) return 'unknown';
+            if (v.install_blocked) return 'blocked';
+            if (v.verification_enforced && v.verification_active) return 'enforced';
+            if (v.verification_active) return 'verified';
+            if (v.allows_unsigned_fallback) return 'dev fallback';
+            return v.mode || 'unknown';
+        },
+
         async loadOtaStatus() {
             try {
                 var data = await window.HM.api.get('/api/v1/ota/status');
@@ -4068,9 +4093,17 @@ function settingsPage() {
                     function(pct) { self.ota.server.progress = pct; }
                 );
                 this.ota.server.staged_filename = data.filename || file.name;
+                if (data.verification) {
+                    this.ota.server.verification = data.verification;
+                }
                 this.ota.server.state = 'staged';
                 this.ota.server.busy = false;
-                window.HM.toast('Bundle uploaded and verified', 'success');
+                window.HM.toast(
+                    this.ota.server.verification && this.ota.server.verification.warning
+                        ? 'Bundle staged with verification warning'
+                        : 'Bundle uploaded and verified',
+                    this.ota.server.verification && this.ota.server.verification.warning ? 'info' : 'success'
+                );
             } catch(e) {
                 this.ota.server.state = 'error';
                 this.ota.server.error = e.message || 'Upload failed';
@@ -4082,7 +4115,16 @@ function settingsPage() {
         },
 
         async installServerBundle() {
-            if (!confirm('Install this update? The server will reboot into the new partition.')) return;
+            var posture = this.ota.server.verification || {};
+            if (posture.install_blocked) {
+                window.HM.toast(posture.warning || 'OTA verification is blocked', 'error');
+                return;
+            }
+            var prompt = 'Install this update? The server will reboot into the new partition.';
+            if (posture.warning) {
+                prompt = posture.warning + '\n\n' + prompt;
+            }
+            if (!confirm(prompt)) return;
             this.ota.server.busy = true;
             this.ota.server.state = 'installing';
             this.ota.server.progress = 0;

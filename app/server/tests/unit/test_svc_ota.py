@@ -154,6 +154,36 @@ class TestVerifyBundle:
         assert valid is True
         assert err == ""
 
+    def test_verification_posture_warns_on_dev_fallback(self, monkeypatch, svc):
+        monkeypatch.setattr("monitor.services.ota_service.shutil.which", lambda _: None)
+
+        posture = svc.get_verification_posture()
+
+        assert posture["mode"] == "dev-fallback"
+        assert posture["allows_unsigned_fallback"] is True
+        assert posture["install_blocked"] is False
+        assert "development fallback" in posture["warning"]
+
+    def test_enforced_missing_public_key_fails_closed(self, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        marker = os.path.join(data_dir, "swupdate-enforce")
+        with open(marker, "w") as f:
+            f.write("1")
+        svc = OTAService(
+            store=MagicMock(),
+            audit=MagicMock(),
+            data_dir=data_dir,
+            public_key_path=os.path.join(data_dir, "certs", "swupdate-public.crt"),
+            enforce_marker_path=marker,
+        )
+
+        valid, err = svc.verify_bundle(bundle)
+
+        assert valid is False
+        assert "verification certificate is missing" in err
+
     @patch("monitor.services.ota_service.subprocess.run")
     def test_verify_success(self, mock_run, svc, data_dir):
         """Should return True when swupdate verification passes."""
@@ -198,6 +228,31 @@ class TestVerifyBundle:
         mock_run.side_effect = FileNotFoundError
         valid, err = svc.verify_bundle(bundle)
         assert valid is True  # dev mode fallback
+
+    @patch("monitor.services.ota_service.subprocess.run")
+    def test_enforced_swupdate_not_found_fails_closed(self, mock_run, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
+        marker = os.path.join(data_dir, "swupdate-enforce")
+        with open(marker, "w") as f:
+            f.write("1")
+        svc = OTAService(
+            store=MagicMock(),
+            audit=MagicMock(),
+            data_dir=data_dir,
+            public_key_path=key,
+            enforce_marker_path=marker,
+        )
+
+        mock_run.side_effect = FileNotFoundError
+        valid, err = svc.verify_bundle(bundle)
+
+        assert valid is False
+        assert "swupdate is not installed" in err
 
 
 class TestInstallBundle:
