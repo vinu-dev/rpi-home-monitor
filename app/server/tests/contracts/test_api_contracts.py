@@ -1093,6 +1093,12 @@ class TestBackupExportContract:
         assert resp.status_code == 200
         assert "attachment" in resp.headers.get("Content-Disposition", "")
         assert resp.data
+        body = json.loads(resp.data)
+        _assert_fields(body, {"format", "encryption", "ciphertext_b64"})
+        assert body["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "payload" not in body
+        assert b"hash-owner" not in resp.data
+        assert b"totp-owner" not in resp.data
 
     def test_requires_admin(self, app, logged_in_client):
         client = logged_in_client("viewer")

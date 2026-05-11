@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from unittest.mock import MagicMock
 
@@ -102,9 +103,16 @@ class TestConfigBackupExport:
         service = backup_env["service"]
 
         filename, bundle_bytes, preview = service.export_bundle(passphrase=PASSPHRASE)
-        bundle = json.loads(bundle_bytes)
+        envelope = json.loads(bundle_bytes)
+        bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
 
         assert filename.endswith(".hmb")
+        assert envelope["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "ciphertext_b64" in envelope
+        assert "payload" not in envelope
+        assert b"hash-admin" not in bundle_bytes
+        assert b"totp-admin" not in bundle_bytes
+        assert b"root-cert" not in bundle_bytes
         assert bundle["manifest"]["scope"]["camera_trust"] is True
         assert preview["counts"]["users"] == 2
         assert preview["counts"]["cameras"] == 1
@@ -211,14 +219,28 @@ class TestConfigBackupImport:
         service = backup_env["service"]
 
         _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
-        bundle = json.loads(bundle_bytes)
-        bundle["payload"]["users"][0]["username"] = "mallory"
-        tampered_bytes = json.dumps(bundle).encode("utf-8")
+        envelope = json.loads(bundle_bytes)
+        ciphertext = bytearray(base64.b64decode(envelope["ciphertext_b64"]))
+        ciphertext[-1] ^= 0x01
+        envelope["ciphertext_b64"] = base64.b64encode(ciphertext).decode("ascii")
+        tampered_bytes = json.dumps(envelope).encode("utf-8")
 
         with pytest.raises(ConfigBackupError) as excinfo:
             service.preview_bundle(tampered_bytes, passphrase=PASSPHRASE)
 
-        assert excinfo.value.reason == "signature_mismatch"
+        assert excinfo.value.reason == "decrypt_failed"
+
+    def test_rejects_legacy_unencrypted_bundle(self, backup_env):
+        service = backup_env["service"]
+
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+        signed_bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
+        plaintext_bytes = json.dumps(signed_bundle).encode("utf-8")
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(plaintext_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == "unencrypted_bundle"
 
     def test_rejects_restore_scope_not_present_in_bundle(self, backup_env):
         service = backup_env["service"]

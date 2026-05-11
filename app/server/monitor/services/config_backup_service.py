@@ -2,8 +2,8 @@
 """
 Configuration backup/export service.
 
-This service serialises the server's mutable configuration into a signed
-bundle, previews the bundle before restore, and restores selected
+This service serialises the server's mutable configuration into an encrypted,
+signed bundle, previews the bundle before restore, and restores selected
 configuration components with rollback-on-error semantics.
 """
 
@@ -22,16 +22,22 @@ from dataclasses import asdict, fields
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from monitor.models import Camera, Settings, User
 from monitor.services.backup_paths import build_backup_paths
 
 log = logging.getLogger("monitor.services.config_backup")
 
 BUNDLE_FORMAT = "home-monitor-config-backup.v1"
+ENCRYPTED_BUNDLE_FORMAT = "home-monitor-config-backup.encrypted.v1"
 BUNDLE_SCHEMA_VERSION = 1
 PBKDF2_ITERATIONS = 200_000
 MIN_PASSPHRASE_LENGTH = 12
 DEFAULT_SNAPSHOT_HISTORY = 3
+AESGCM_NONCE_BYTES = 12
+BACKUP_AAD = b"home-monitor-config-backup"
 
 
 class ConfigBackupError(ValueError):
@@ -96,7 +102,7 @@ class ConfigBackupService:
         created_at = manifest["created_at"].replace(":", "").replace("-", "")
         filename = f"home-monitor-config-{created_at}.hmb"
         preview = self._build_preview(manifest, payload)
-        return filename, self._canonical_json(bundle), preview
+        return filename, self._encrypt_bundle(bundle, passphrase=passphrase), preview
 
     def preview_bundle(self, bundle_bytes: bytes, *, passphrase: str) -> dict:
         """Validate and summarise a bundle before restore."""
@@ -353,13 +359,119 @@ class ConfigBackupService:
         body = self._canonical_json({"manifest": manifest, "payload": payload})
         return hmac.new(key, body, hashlib.sha256).hexdigest()
 
+    def _encrypt_bundle(self, bundle: dict, *, passphrase: str) -> bytes:
+        self._validate_passphrase(passphrase)
+        salt = os.urandom(16)
+        nonce = os.urandom(AESGCM_NONCE_BYTES)
+        key = self._derive_raw_key(passphrase=passphrase, salt=salt)
+        ciphertext = AESGCM(key).encrypt(
+            nonce,
+            self._canonical_json(bundle),
+            BACKUP_AAD,
+        )
+        envelope = {
+            "format": ENCRYPTED_BUNDLE_FORMAT,
+            "encryption": {
+                "algorithm": "AES-256-GCM",
+                "kdf": "PBKDF2-HMAC-SHA256",
+                "iterations": PBKDF2_ITERATIONS,
+                "salt_b64": base64.b64encode(salt).decode("ascii"),
+                "nonce_b64": base64.b64encode(nonce).decode("ascii"),
+            },
+            "ciphertext_b64": base64.b64encode(ciphertext).decode("ascii"),
+        }
+        return self._canonical_json(envelope)
+
     def _load_bundle(self, bundle_bytes: bytes, *, passphrase: str) -> dict:
         self._validate_passphrase(passphrase)
         try:
-            bundle = json.loads(bundle_bytes.decode("utf-8"))
+            envelope = json.loads(bundle_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ConfigBackupError(
                 "Bundle is not valid JSON",
+                reason="corrupt_bundle",
+            ) from exc
+
+        if not isinstance(envelope, dict):
+            raise ConfigBackupError(
+                "Bundle payload is malformed", reason="corrupt_bundle"
+            )
+
+        if envelope.get("format") == ENCRYPTED_BUNDLE_FORMAT:
+            bundle = self._decrypt_bundle(envelope, passphrase=passphrase)
+            return self._verify_signed_bundle(bundle, passphrase=passphrase)
+
+        if all(key in envelope for key in ("manifest", "payload", "signature")):
+            raise ConfigBackupError(
+                "Backup bundle is not encrypted",
+                reason="unencrypted_bundle",
+            )
+
+        raise ConfigBackupError("Bundle payload is malformed", reason="corrupt_bundle")
+
+    def _decrypt_bundle(self, envelope: dict, *, passphrase: str) -> dict:
+        encryption = envelope.get("encryption")
+        if not isinstance(encryption, dict):
+            raise ConfigBackupError(
+                "Bundle encryption header is malformed",
+                reason="corrupt_bundle",
+            )
+        if encryption.get("algorithm") != "AES-256-GCM":
+            raise ConfigBackupError(
+                "Bundle encryption algorithm is not supported",
+                reason="format_mismatch",
+            )
+        if encryption.get("kdf") != "PBKDF2-HMAC-SHA256":
+            raise ConfigBackupError(
+                "Bundle key derivation is not supported",
+                reason="format_mismatch",
+            )
+        try:
+            iterations = int(encryption.get("iterations", 0))
+        except (TypeError, ValueError) as exc:
+            raise ConfigBackupError(
+                "Bundle encryption header is malformed",
+                reason="corrupt_bundle",
+            ) from exc
+        if iterations != PBKDF2_ITERATIONS:
+            raise ConfigBackupError(
+                "Bundle key derivation parameters are not supported",
+                reason="format_mismatch",
+            )
+
+        try:
+            salt = base64.b64decode(encryption.get("salt_b64", ""), validate=True)
+            nonce = base64.b64decode(encryption.get("nonce_b64", ""), validate=True)
+            ciphertext = base64.b64decode(
+                envelope.get("ciphertext_b64", ""),
+                validate=True,
+            )
+        except (binascii.Error, TypeError, ValueError) as exc:
+            raise ConfigBackupError(
+                "Bundle encryption payload is malformed",
+                reason="corrupt_bundle",
+            ) from exc
+
+        if len(nonce) != AESGCM_NONCE_BYTES:
+            raise ConfigBackupError(
+                "Bundle encryption nonce is malformed",
+                reason="corrupt_bundle",
+            )
+
+        key = self._derive_raw_key(passphrase=passphrase, salt=salt)
+        try:
+            plaintext = AESGCM(key).decrypt(nonce, ciphertext, BACKUP_AAD)
+        except InvalidTag as exc:
+            raise ConfigBackupError(
+                "Backup passphrase is incorrect or bundle contents were modified",
+                reason="decrypt_failed",
+            ) from exc
+
+        try:
+            bundle = json.loads(plaintext.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ConfigBackupError(
+                "Bundle decrypted to malformed content",
                 reason="corrupt_bundle",
             ) from exc
 
@@ -367,7 +479,9 @@ class ConfigBackupService:
             raise ConfigBackupError(
                 "Bundle payload is malformed", reason="corrupt_bundle"
             )
+        return bundle
 
+    def _verify_signed_bundle(self, bundle: dict, *, passphrase: str) -> dict:
         manifest = bundle.get("manifest")
         payload = bundle.get("payload")
         signature = bundle.get("signature", "")
@@ -875,11 +989,14 @@ class ConfigBackupService:
     def _derive_key(self, *, passphrase: str, salt_b64: str) -> bytes:
         self._validate_passphrase(passphrase)
         try:
-            salt = base64.b64decode(salt_b64)
+            salt = base64.b64decode(salt_b64, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ConfigBackupError(
                 "Bundle salt is invalid", reason="corrupt_bundle"
             ) from exc
+        return self._derive_raw_key(passphrase=passphrase, salt=salt)
+
+    def _derive_raw_key(self, *, passphrase: str, salt: bytes) -> bytes:
         return hashlib.pbkdf2_hmac(
             "sha256",
             passphrase.encode("utf-8"),

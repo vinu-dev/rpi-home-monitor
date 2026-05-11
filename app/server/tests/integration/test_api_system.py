@@ -498,7 +498,12 @@ class TestConfigBackup:
         assert response.mimetype == "application/vnd.home-monitor.backup+json"
         assert "attachment" in response.headers["Content-Disposition"]
         bundle = json.loads(response.data)
-        assert bundle["manifest"]["schema_version"] == 1
+        assert bundle["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "ciphertext_b64" in bundle
+        assert "payload" not in bundle
+        assert b"hash-owner" not in response.data
+        assert b"totp-owner" not in response.data
+        assert b"root-cert" not in response.data
 
     def test_backup_preview_returns_summary(self, app, logged_in_client):
         self._seed_backup_state(app)
@@ -583,7 +588,7 @@ class TestConfigBackup:
         )
 
         assert response.status_code == 400
-        assert response.get_json()["reason"] == "signature_mismatch"
+        assert response.get_json()["reason"] == "decrypt_failed"
 
     def test_backup_snapshots_lists_metadata(self, app, logged_in_client):
         self._seed_backup_state(app)

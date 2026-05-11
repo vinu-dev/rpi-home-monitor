@@ -12,6 +12,7 @@ RDEPENDS:${PN} = " \
     python3-jinja2 \
     python3-requests \
     python3-bcrypt \
+    python3-cryptography \
     python3-pyotp \
     python3-boto3 \
     python3-pip \

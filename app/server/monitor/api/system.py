@@ -16,7 +16,7 @@ Endpoints:
   POST /system/tailscale/disable       - Disable tailscaled daemon
   POST /system/tailscale/apply-config  - Apply saved Tailscale settings
   POST /system/factory-reset           - Wipe all data and return to first-boot state
-  POST /system/backup/export           - Download a signed configuration bundle
+  POST /system/backup/export           - Download an encrypted, signed configuration bundle
   POST /system/backup/preview          - Validate + preview a backup bundle
   POST /system/backup/import           - Restore a backup bundle
   POST /system/diagnostics/export      - Download a diagnostics tarball
@@ -239,7 +239,9 @@ def data_protection():
     """Return the live /data encryption-at-rest posture."""
     service = getattr(current_app, "data_protection_service", None)
     if service is None:
-        return jsonify({"state": "unknown", "warning": "Data protection unavailable"}), 200
+        return jsonify(
+            {"state": "unknown", "warning": "Data protection unavailable"}
+        ), 200
     return jsonify(service.status()), 200
 
 
@@ -502,7 +504,7 @@ def factory_reset():
 @admin_required
 @csrf_protect
 def backup_export():
-    """Export a signed configuration backup bundle. Admin only."""
+    """Export an encrypted, signed configuration backup bundle. Admin only."""
     body = request.get_json(silent=True) or {}
     user = session.get("username", "")
     ip = request.remote_addr or ""

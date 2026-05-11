@@ -307,7 +307,7 @@ Required automation model:
 ### Release Validation
 
 - clean rebuild from source
-- signed bundle validation
+- encrypted backup and signed bundle validation
 - server OTA install gate
 - camera OTA install gate
 - rollback gate
