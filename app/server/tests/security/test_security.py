@@ -486,8 +486,9 @@ class TestRateLimitBypass:
 class TestAuthCheckEndpoint:
     """Test /auth/check used by nginx auth_request for video content.
 
-    This endpoint gates all video serving: /live/, /clips/, /webrtc/,
-    /snapshots/. A failure here means unauthenticated video access.
+    This endpoint gates file-backed video serving: /live/, /clips/, and
+    /snapshots/. WebRTC is gated by Flask's /webrtc proxy route directly.
+    A failure here means unauthenticated video access for media files.
     """
 
     def test_returns_200_when_authenticated(self, app, client):

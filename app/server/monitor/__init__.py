@@ -805,6 +805,7 @@ def _register_blueprints(app):
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
+    app.register_blueprint(webrtc_bp, url_prefix="/webrtc", name="webrtc_browser")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
     app.register_blueprint(alerts_bp, url_prefix="/api/v1/alerts")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1/notifications")

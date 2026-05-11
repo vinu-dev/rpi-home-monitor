@@ -36,6 +36,18 @@ class TestAuthEnforcement:
         resp = client.delete("/api/v1/webrtc/stream/whep")
         assert resp.status_code == 401
 
+    def test_browser_path_post_requires_auth(self, client):
+        resp = client.post("/webrtc/stream/whep")
+        assert resp.status_code == 401
+
+    def test_browser_path_patch_requires_auth(self, client):
+        resp = client.patch("/webrtc/stream/whep/session/abc")
+        assert resp.status_code == 401
+
+    def test_browser_path_delete_requires_auth(self, client):
+        resp = client.delete("/webrtc/stream/whep/session/abc")
+        assert resp.status_code == 401
+
     def test_authenticated_post_reaches_proxy(self, logged_in_client):
         client = logged_in_client()
         mock_resp = MagicMock()
@@ -53,6 +65,28 @@ class TestAuthEnforcement:
         with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=mock_resp):
             resp = client.post(
                 "/api/v1/webrtc/cam-001/whep",
+                data=b"SDP offer",
+                content_type="application/sdp",
+            )
+        assert resp.status_code == 201
+
+    def test_authenticated_browser_path_reaches_proxy(self, logged_in_client):
+        client = logged_in_client()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"SDP answer"
+        mock_resp.status = 201
+        mock_resp.headers = {
+            "Content-Type": "application/sdp",
+            "ETag": None,
+            "Location": None,
+            "Link": None,
+        }
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("monitor.api.webrtc.urllib.request.urlopen", return_value=mock_resp):
+            resp = client.post(
+                "/webrtc/cam-001/whep",
                 data=b"SDP offer",
                 content_type="application/sdp",
             )
