@@ -282,6 +282,35 @@ class TestRateLimiting:
         )
         assert response.status_code == 429
 
+    def test_blocks_after_restart_with_persisted_attempts(self, app, client):
+        from monitor.services.login_rate_limiter import LoginRateLimiter
+
+        _create_test_user(app)
+        for _ in range(10):
+            client.post(
+                "/api/v1/auth/login",
+                json={
+                    "username": "admin",
+                    "password": "wrong",
+                },
+            )
+
+        app.login_rate_limiter = LoginRateLimiter(
+            app.config["CONFIG_DIR"] + "/login_rate_limits.json",
+            window_seconds=60,
+            warn_after=5,
+            block_after=10,
+        )
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "admin",
+                "password": "correct-password",
+            },
+        )
+        assert response.status_code == 429
+
     def test_check_rate_limit_two_tier(self):
         """_check_rate_limit returns (allowed, warn) tuple."""
         ip = "10.0.0.99"

@@ -32,7 +32,7 @@ from flask import (
 
 auth_bp = Blueprint("auth", __name__)
 
-# In-memory rate limiter: {ip: [timestamp, ...]}
+# Fallback in-memory limiter for primitive tests outside an app context.
 _login_attempts: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 5  # attempts per window
@@ -82,6 +82,10 @@ def _check_rate_limit(ip: str) -> tuple[bool, bool]:
     Returns:
         (allowed, warn) — allowed=False means block; warn=True means soft limit hit.
     """
+    limiter = _get_login_rate_limiter()
+    if limiter is not None:
+        return limiter.check(ip)
+
     now = time.time()
     attempts = _login_attempts.get(ip, [])
     # Remove expired attempts
@@ -98,10 +102,22 @@ def _check_rate_limit(ip: str) -> tuple[bool, bool]:
 
 def _record_attempt(ip: str):
     """Record a login attempt for rate limiting."""
+    limiter = _get_login_rate_limiter()
+    if limiter is not None:
+        limiter.record(ip)
+        return
+
     now = time.time()
     if ip not in _login_attempts:
         _login_attempts[ip] = []
     _login_attempts[ip].append(now)
+
+
+def _get_login_rate_limiter():
+    try:
+        return getattr(current_app, "login_rate_limiter", None)
+    except RuntimeError:
+        return None
 
 
 def _get_lockout_duration(failed_count: int) -> int:

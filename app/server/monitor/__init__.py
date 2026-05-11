@@ -30,6 +30,7 @@ from monitor.services.config_backup_service import ConfigBackupService
 from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
+from monitor.services.login_rate_limiter import LoginRateLimiter
 from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.motion_clip_correlator import MotionClipCorrelator
 from monitor.services.motion_event_store import MotionEventStore
@@ -247,6 +248,12 @@ def _init_infrastructure(app):
         audit_logger=app.audit,
         motion_event_store=app.motion_event_store,
         read_state_path=alert_state_path,
+    )
+    app.login_rate_limiter = LoginRateLimiter(
+        os.path.join(app.config["CONFIG_DIR"], "login_rate_limits.json"),
+        window_seconds=60,
+        warn_after=5,
+        block_after=10,
     )
 
     # Notification policy + snapshot extractor (ADR-0027, #128) —

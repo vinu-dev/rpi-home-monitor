@@ -56,6 +56,14 @@ own sessions only. Revocation removes the server-side session inventory row and
 records an audit event; the affected browser must sign in again on its next
 request.
 
+## Login Throttling
+
+The server applies per-IP sign-in throttling before password verification. The
+active throttle window is persisted under `/data/config/login_rate_limits.json`
+so a normal service restart, deploy, or future multi-worker runtime does not
+grant a fresh attack budget. The file self-prunes to the active window and can
+be removed only as an explicit maintenance action.
+
 ## Remote Access Policy
 
 Admins can require 2FA for remote-origin sign-ins from **Settings > System** by
