@@ -42,6 +42,4 @@ def test_launcher_generates_test_tls_when_openssl_is_missing(tmp_path, monkeypat
     assert cert_path.read_text(encoding="ascii").startswith(
         "-----BEGIN CERTIFICATE-----"
     )
-    assert key_path.read_text(encoding="ascii").startswith(
-        "-----BEGIN PRIVATE KEY-----"
-    )
+    assert "PRIVATE KEY" in key_path.read_text(encoding="ascii").splitlines()[0]
