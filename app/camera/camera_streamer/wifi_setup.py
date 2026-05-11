@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 from camera_streamer import led, wifi
+from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
 
 log = logging.getLogger("camera-streamer.wifi-setup")
 
@@ -384,9 +385,13 @@ def _make_handler(config, setup_server):
                             {"error": "Username required (min 3 characters)"}, 400
                         )
                         return
-                    if not admin_password or len(admin_password) < 4:
+                    if not admin_password or len(admin_password) < MIN_ADMIN_PASSWORD_LENGTH:
                         self._json_response(
-                            {"error": "Password required (min 4 characters)"}, 400
+                            {
+                                "error": "Password required "
+                                f"(min {MIN_ADMIN_PASSWORD_LENGTH} characters)"
+                            },
+                            400,
                         )
                         return
 

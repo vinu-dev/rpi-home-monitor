@@ -400,7 +400,7 @@ p {
       <label>Username</label>
       <input type="text" id="in-admin-user" value="admin" placeholder="admin">
       <label>Password</label>
-      <input type="password" id="in-admin-pw" placeholder="Password (min 4 characters)">
+      <input type="password" id="in-admin-pw" placeholder="Password (min 12 characters)">
       <div class="hint">You'll use these credentials to access the camera's status page and change settings later.</div>
     </div>
 
@@ -858,8 +858,8 @@ function doConnect() {
     alert('Set a username (at least 3 characters)');
     return;
   }
-  if (!adminPw || adminPw.length < 4) {
-    alert('Set a password (at least 4 characters)');
+  if (!adminPw || adminPw.length < 12) {
+    alert('Set a password (at least 12 characters)');
     return;
   }
 

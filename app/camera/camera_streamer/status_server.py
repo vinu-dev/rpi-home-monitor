@@ -11,6 +11,7 @@ Requires the admin password set during provisioning.
 import http.server
 import json
 import logging
+import math
 import os
 import secrets
 import socket
@@ -22,6 +23,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from camera_streamer import ota_installer, wifi
+from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
 from camera_streamer.control import parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
 from camera_streamer.server_notifier import notify_config_change
@@ -37,6 +39,13 @@ SESSION_TIMEOUT = 7200  # 2 hours
 TLS_CERT_NAME = "status.crt"
 TLS_KEY_NAME = "status.key"
 CONTROL_API_PREFIX = "/api/v1/control/"
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_FAILURE_WINDOW_SECONDS = 300
+LOGIN_LOCKOUT_SECONDS = 900
+AUTH_NOT_CONFIGURED_MESSAGE = (
+    "Camera admin password is not configured. Re-run first-boot setup from the "
+    "camera setup network before using admin controls."
+)
 STATUS_ROUTE_MATRIX = {
     "HEAD": frozenset(
         {
@@ -81,6 +90,8 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # ---- Session store (in-memory) ----
 _sessions = {}
 _session_lock = threading.Lock()
+_login_attempts = {}
+_login_attempt_lock = threading.Lock()
 
 
 def _create_session():
@@ -111,6 +122,64 @@ def _destroy_session(token):
     if token:
         with _session_lock:
             _sessions.pop(token, None)
+
+
+def _login_rate_keys(client_ip, username):
+    """Return the rate-limit buckets touched by one login attempt."""
+    normalized_user = (username or "").strip().lower()[:128]
+    ip = (client_ip or "unknown").strip() or "unknown"
+    return (
+        ("ip", ip),
+        ("account", normalized_user),
+        ("ip-account", ip, normalized_user),
+    )
+
+
+def _reset_login_attempts(client_ip, username):
+    """Clear lockout state for a successful camera admin login."""
+    with _login_attempt_lock:
+        for key in _login_rate_keys(client_ip, username):
+            _login_attempts.pop(key, None)
+
+
+def _login_retry_after(client_ip, username, now=None):
+    """Return seconds until login may be retried, or 0 when allowed."""
+    now = time.time() if now is None else now
+    retry_after = 0
+    with _login_attempt_lock:
+        for key in _login_rate_keys(client_ip, username):
+            state = _login_attempts.get(key)
+            if not state:
+                continue
+            if state["locked_until"] > now:
+                retry_after = max(retry_after, math.ceil(state["locked_until"] - now))
+                continue
+            if now - state["first_failed_at"] > LOGIN_FAILURE_WINDOW_SECONDS:
+                _login_attempts.pop(key, None)
+    return retry_after
+
+
+def _record_failed_login(client_ip, username, now=None):
+    """Record a failed login and return any active lockout retry-after."""
+    now = time.time() if now is None else now
+    retry_after = 0
+    with _login_attempt_lock:
+        for key in _login_rate_keys(client_ip, username):
+            state = _login_attempts.get(key)
+            if (
+                not state
+                or now - state["first_failed_at"] > LOGIN_FAILURE_WINDOW_SECONDS
+            ):
+                state = {"first_failed_at": now, "count": 0, "locked_until": 0.0}
+            state["count"] += 1
+            if state["count"] >= LOGIN_FAILURE_LIMIT:
+                state["locked_until"] = max(
+                    state["locked_until"], now + LOGIN_LOCKOUT_SECONDS
+                )
+            _login_attempts[key] = state
+            if state["locked_until"] > now:
+                retry_after = max(retry_after, math.ceil(state["locked_until"] - now))
+    return retry_after
 
 
 def _get_session_cookie(headers):
@@ -552,7 +621,11 @@ def _make_status_handler(
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-            elif self.path == "/api/status" or self.path == "/api/networks":
+            elif self.path == "/api/status":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+            elif self.path == "/api/networks":
                 if not self._require_auth():
                     return
                 self.send_response(200)
@@ -565,12 +638,30 @@ def _make_status_handler(
 
         def _is_authenticated(self):
             if not config.has_password:
-                return True
+                return False
             token = _get_session_cookie(self.headers)
             return _check_session(token)
 
         def _require_auth(self):
             """Require a valid browser session for protected human/admin paths."""
+            if not config.has_password:
+                log.error(
+                    "Blocked protected camera admin route without ADMIN_PASSWORD "
+                    "(method=%s path=%s client=%s)",
+                    self.command,
+                    self.path,
+                    self.client_address[0],
+                )
+                if self.command == "HEAD":
+                    self.send_response(503)
+                    self.end_headers()
+                elif self.path.startswith("/api/"):
+                    self._json_response({"error": AUTH_NOT_CONFIGURED_MESSAGE}, 503)
+                else:
+                    self._serve_login_page(
+                        error=AUTH_NOT_CONFIGURED_MESSAGE, status=503
+                    )
+                return False
             if self._is_authenticated():
                 return True
             if self.path.startswith("/api/"):
@@ -605,8 +696,6 @@ def _make_status_handler(
             elif self.path == "/static/qrcode.min.js":
                 self._serve_static_file("qrcode.min.js", "application/javascript")
             elif self.path == "/api/status":
-                if not self._require_auth():
-                    return
                 self._json_response(self._get_status())
             elif self.path == "/api/networks":
                 if not self._require_auth():
@@ -733,9 +822,13 @@ def _make_status_handler(
                             {"error": "Both current and new password required"}, 400
                         )
                         return
-                    if len(new_pw) < 4:
+                    if len(new_pw) < MIN_ADMIN_PASSWORD_LENGTH:
                         self._json_response(
-                            {"error": "Password must be at least 4 characters"}, 400
+                            {
+                                "error": "Password must be at least "
+                                f"{MIN_ADMIN_PASSWORD_LENGTH} characters"
+                            },
+                            400,
                         )
                         return
                     if not config.check_password(current):
@@ -755,8 +848,10 @@ def _make_status_handler(
             username = ""
             password = ""
             content_type = self.headers.get("Content-Type", "")
+            is_json = "application/json" in content_type
+            client_ip = self.client_address[0]
 
-            if "application/json" in content_type:
+            if is_json:
                 try:
                     data = json.loads(body)
                     username = data.get("username", "").strip()
@@ -772,17 +867,61 @@ def _make_status_handler(
                 password = params.get("password", [""])[0]
 
             if not username or not password:
-                self._serve_login_page(error="Username and password required")
+                if is_json:
+                    self._json_response(
+                        {"error": "Username and password required"}, 400
+                    )
+                else:
+                    self._serve_login_page(error="Username and password required")
+                return
+
+            if not config.has_password:
+                log.error(
+                    "Blocked login because camera ADMIN_PASSWORD is not configured "
+                    "(client=%s user=%s)",
+                    client_ip,
+                    username,
+                )
+                if is_json:
+                    self._json_response({"error": AUTH_NOT_CONFIGURED_MESSAGE}, 503)
+                else:
+                    self._serve_login_page(
+                        error=AUTH_NOT_CONFIGURED_MESSAGE, status=503
+                    )
+                return
+
+            retry_after = _login_retry_after(client_ip, username)
+            if retry_after:
+                log.warning(
+                    "Camera admin login locked out (client=%s user=%s retry_after=%ss)",
+                    client_ip,
+                    username,
+                    retry_after,
+                )
+                headers = {"Retry-After": str(retry_after)}
+                if is_json:
+                    self._json_response(
+                        {"error": "Too many login attempts. Try again later."},
+                        429,
+                        headers=headers,
+                    )
+                else:
+                    self._serve_login_page(
+                        error="Too many login attempts. Try again later.",
+                        status=429,
+                        headers=headers,
+                    )
                 return
 
             if username == config.admin_username and config.check_password(password):
+                _reset_login_attempts(client_ip, username)
                 token = _create_session()
                 log.info(
                     "Successful login from %s (user=%s)",
-                    self.client_address[0],
+                    client_ip,
                     username,
                 )
-                if "application/json" in content_type:
+                if is_json:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Set-Cookie", _build_session_cookie(token))
@@ -796,10 +935,34 @@ def _make_status_handler(
                     self.send_header("Location", "/")
                     self.end_headers()
             else:
+                retry_after = _record_failed_login(client_ip, username)
                 log.warning(
-                    "Failed login from %s (user=%s)", self.client_address[0], username
+                    "Failed camera admin login from %s (user=%s)",
+                    client_ip,
+                    username,
                 )
-                if "application/json" in content_type:
+                if retry_after:
+                    log.warning(
+                        "Camera admin login lockout started "
+                        "(client=%s user=%s retry_after=%ss)",
+                        client_ip,
+                        username,
+                        retry_after,
+                    )
+                    headers = {"Retry-After": str(retry_after)}
+                    if is_json:
+                        self._json_response(
+                            {"error": "Too many login attempts. Try again later."},
+                            429,
+                            headers=headers,
+                        )
+                    else:
+                        self._serve_login_page(
+                            error="Too many login attempts. Try again later.",
+                            status=429,
+                            headers=headers,
+                        )
+                elif is_json:
                     self._json_response({"error": "Invalid username or password"}, 401)
                 else:
                     self._serve_login_page(error="Invalid username or password")
@@ -871,15 +1034,17 @@ def _make_status_handler(
                 },
             }
 
-        def _json_response(self, data, code=200):
+        def _json_response(self, data, code=200, headers=None):
             body = json.dumps(data).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
-        def _serve_login_page(self, error=""):
+        def _serve_login_page(self, error="", status=200, headers=None):
             html = (
                 _load_template("login.html")
                 .replace("{{CAMERA_ID}}", config.camera_id)
@@ -887,8 +1052,10 @@ def _make_status_handler(
                 .replace("{{ERROR_DISPLAY}}", "block" if error else "none")
             )
             body = html.encode()
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", "text/html")
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

@@ -12,6 +12,8 @@ import pytest
 
 from camera_streamer.status_server import (
     CONTROL_API_PREFIX,
+    LOGIN_FAILURE_LIMIT,
+    LOGIN_LOCKOUT_SECONDS,
     SESSION_TIMEOUT,
     STATUS_ROUTE_MATRIX,
     TLS_CERT_NAME,
@@ -28,6 +30,11 @@ from camera_streamer.status_server import (
     _get_session_cookie,
     _get_uptime,
     _html_escape,
+    _login_attempt_lock,
+    _login_attempts,
+    _login_retry_after,
+    _record_failed_login,
+    _reset_login_attempts,
     _server_probe_host,
     _session_lock,
     _sessions,
@@ -39,12 +46,16 @@ from camera_streamer.status_server import (
 
 @pytest.fixture(autouse=True)
 def clear_sessions():
-    """Clear session store before/after each test."""
+    """Clear session and login lockout stores before/after each test."""
     with _session_lock:
         _sessions.clear()
+    with _login_attempt_lock:
+        _login_attempts.clear()
     yield
     with _session_lock:
         _sessions.clear()
+    with _login_attempt_lock:
+        _login_attempts.clear()
 
 
 # ---- Session management ----
@@ -106,6 +117,34 @@ class TestSessionManagement:
     def test_session_timeout_value(self):
         """Session timeout should be 2 hours."""
         assert SESSION_TIMEOUT == 7200
+
+
+class TestLoginRateLimit:
+    """Test camera admin login lockout buckets."""
+
+    def test_records_lockout_after_threshold(self):
+        now = 1000.0
+        client_ip = "192.168.1.50"
+        username = "admin"
+
+        for _ in range(LOGIN_FAILURE_LIMIT - 1):
+            assert _record_failed_login(client_ip, username, now=now) == 0
+
+        retry_after = _record_failed_login(client_ip, username, now=now)
+        assert retry_after == LOGIN_LOCKOUT_SECONDS
+        assert _login_retry_after(client_ip, username, now=now) == retry_after
+
+    def test_success_resets_lockout_state(self):
+        now = 1000.0
+        client_ip = "192.168.1.50"
+        username = "admin"
+
+        for _ in range(LOGIN_FAILURE_LIMIT):
+            _record_failed_login(client_ip, username, now=now)
+
+        assert _login_retry_after(client_ip, username, now=now) > 0
+        _reset_login_attempts(client_ip, username)
+        assert _login_retry_after(client_ip, username, now=now) == 0
 
 
 # ---- Cookie parsing ----

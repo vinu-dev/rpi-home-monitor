@@ -1364,7 +1364,7 @@ details[open] summary {
     <summary>Change password</summary>
     <div class="details-body">
       <div class="field"><label>Current password</label><input class="input" id="pw-cur" type="password"></div>
-      <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 4 characters"></div>
+      <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 12 characters"></div>
       <button class="btn btn--primary btn--full" id="btn-pw" onclick="doPassword()">Save password</button>
       <div id="pw-result"></div>
     </div>
@@ -1797,7 +1797,7 @@ function doWifi() {
 function doPassword() {
     var cur = $("pw-cur").value, nw = $("pw-new").value;
     if (!cur) return setMsg("pw-result", "err", "Enter your current password.");
-    if (!nw || nw.length < 4) return setMsg("pw-result", "err", "New password must be at least 4 characters.");
+    if (!nw || nw.length < 12) return setMsg("pw-result", "err", "New password must be at least 12 characters.");
     setBusy("btn-pw", true, "Saving…");
     setMsg("pw-result", "", "");
     fetch("/api/password", {

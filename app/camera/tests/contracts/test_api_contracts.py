@@ -14,6 +14,7 @@ Layer 4 of the testing pyramid (see docs/guides/development-guide.md Section 3.8
 """
 
 import json
+import logging
 import ssl
 from unittest.mock import patch
 from urllib.request import Request, urlopen
@@ -24,7 +25,15 @@ from tests.fixtures.tls_material import TEST_TLS_CERT, TEST_TLS_KEY
 from camera_streamer.config import ConfigManager
 from camera_streamer.control import ControlHandler
 from camera_streamer.sensor_info import capabilities_for_testing
-from camera_streamer.status_server import CameraStatusServer
+from camera_streamer.status_server import (
+    CameraStatusServer,
+    _build_session_cookie,
+    _create_session,
+    _login_attempt_lock,
+    _login_attempts,
+    _session_lock,
+    _sessions,
+)
 from camera_streamer.wifi_setup import WifiSetupServer
 
 # Use a non-privileged port for CI (port 80 requires root on Linux)
@@ -66,14 +75,19 @@ def _assert_has_fields(data, required_fields, msg=""):
     assert not missing, f"Missing fields {missing}. {msg}"
 
 
-def _json_get(path, scheme="http"):
+def _json_get(path, scheme="http", headers=None):
     """GET a JSON endpoint on localhost:TEST_PORT."""
-    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}")
+    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}", headers=headers or {})
     kwargs = {"timeout": 5}
     if scheme == "https":
         kwargs["context"] = TLS_CONTEXT
-    with urlopen(req, **kwargs) as resp:
-        return json.loads(resp.read()), resp.status
+    try:
+        with urlopen(req, **kwargs) as resp:
+            return json.loads(resp.read()), resp.status
+    except Exception as e:
+        if hasattr(e, "read"):
+            return json.loads(e.read()), e.code
+        raise
 
 
 def _json_post(path, body, headers=None, scheme="http"):
@@ -118,9 +132,13 @@ def _json_put(path, body, headers=None, scheme="http"):
         raise
 
 
-def _head(path, scheme="http"):
+def _head(path, scheme="http", headers=None):
     """HEAD request to localhost:TEST_PORT."""
-    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}", method="HEAD")
+    req = Request(
+        f"{scheme}://127.0.0.1:{TEST_PORT}{path}",
+        headers=headers or {},
+        method="HEAD",
+    )
     kwargs = {"timeout": 5}
     if scheme == "https":
         kwargs["context"] = TLS_CONTEXT
@@ -136,9 +154,9 @@ def _make_control_handler(config):
     )
 
 
-def _html_get(path, scheme="http"):
+def _html_get(path, scheme="http", headers=None):
     """GET an HTML page on localhost:TEST_PORT."""
-    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}")
+    req = Request(f"{scheme}://127.0.0.1:{TEST_PORT}{path}", headers=headers or {})
     kwargs = {"timeout": 5}
     if scheme == "https":
         kwargs["context"] = TLS_CONTEXT
@@ -159,6 +177,25 @@ def _patch_listen_port():
         patch("camera_streamer.status_server.LISTEN_PORT", TEST_PORT),
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_status_auth_state():
+    """Keep status-server sessions and lockouts isolated between tests."""
+    with _session_lock:
+        _sessions.clear()
+    with _login_attempt_lock:
+        _login_attempts.clear()
+    yield
+    with _session_lock:
+        _sessions.clear()
+    with _login_attempt_lock:
+        _login_attempts.clear()
+
+
+def _auth_headers():
+    token = _create_session()
+    return {"Cookie": _build_session_cookie(token).split(";", 1)[0]}
 
 
 @pytest.fixture
@@ -197,7 +234,7 @@ def configured_config(tmp_path):
 
 @pytest.fixture
 def noauth_config(tmp_path):
-    """ConfigManager without password (no auth needed for status server)."""
+    """ConfigManager without password for fail-closed status-server tests."""
     (tmp_path / "config").mkdir()
     (tmp_path / "certs").mkdir()
     (tmp_path / "logs").mkdir()
@@ -344,10 +381,32 @@ class TestSetupConnectContract:
                     "password": "pass123",
                     "server_ip": "192.168.1.100",
                     "admin_username": "admin",
-                    "admin_password": "testpass",
+                    "admin_password": "testpass12345",
                 },
             )
             _assert_fields(data, CONNECT_SUCCESS_FIELDS)
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_rejects_short_admin_password(self, mock_hotspot, mock_scan, setup_config):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            data, status = _json_post(
+                "/api/connect",
+                {
+                    "ssid": "TestNet",
+                    "password": "pass123",
+                    "server_ip": "192.168.1.100",
+                    "admin_username": "admin",
+                    "admin_password": "short",
+                },
+            )
+            assert status == 400
+            _assert_fields(data, {"error"})
+            assert "12" in data["error"]
         finally:
             server.stop()
 
@@ -477,14 +536,16 @@ class TestStatusServerApiStatusContract:
         return_value="cam-test",
     )
     def test_status_page_renders_local_control_panel(
-        self, mock_host, mock_ssid, mock_ip, noauth_config
+        self, mock_host, mock_ssid, mock_ip, configured_config
     ):
         server = CameraStatusServer(
-            noauth_config, stream_manager=None, wifi_interface="wlan0"
+            configured_config, stream_manager=None, wifi_interface="wlan0"
         )
         server.start()
         try:
-            html, status = _html_get("/status", scheme="https")
+            html, status = _html_get(
+                "/status", scheme="https", headers=_auth_headers()
+            )
             assert status == 200
             assert 'aria-label="Page sections"' in html
             for nav_target in [
@@ -522,18 +583,62 @@ class TestStatusServerApiStatusContract:
             server.stop()
 
 
+class TestStatusServerNoPasswordAuthContract:
+    """No-password post-setup cameras fail closed for admin operations."""
+
+    @pytest.mark.parametrize(
+        ("method", "path", "body"),
+        [
+            ("GET", "/api/networks", None),
+            ("GET", "/api/ota/status", None),
+            ("PUT", "/api/stream-config", {"fps": 20}),
+            ("POST", "/api/ota/upload", {"bundle": "x"}),
+            ("POST", "/api/ota/reboot", {}),
+            ("POST", "/api/wifi", {"ssid": "NewNet", "password": "pass123"}),
+            ("POST", "/api/factory-reset", {}),
+            ("POST", "/api/unpair", {}),
+            (
+                "POST",
+                "/api/password",
+                {"current_password": "old", "new_password": "testpass12345"},
+            ),
+        ],
+    )
+    def test_privileged_routes_fail_closed_without_password(
+        self, method, path, body, noauth_config
+    ):
+        server = CameraStatusServer(
+            noauth_config,
+            control_handler=_make_control_handler(noauth_config),
+        )
+        server.start()
+        try:
+            if method == "GET":
+                data, status = _json_get(path, scheme="https")
+            elif method == "PUT":
+                data, status = _json_put(path, body, scheme="https")
+            else:
+                data, status = _json_post(path, body, scheme="https")
+            assert status == 503
+            _assert_fields(data, {"error"})
+        finally:
+            server.stop()
+
+
 class TestStatusServerNetworksContract:
     """GET /api/networks on status server."""
 
     @patch("camera_streamer.status_server.wifi.scan_networks")
-    def test_fields(self, mock_scan, noauth_config):
+    def test_fields(self, mock_scan, configured_config):
         mock_scan.return_value = [
             {"ssid": "Net1", "signal": 70, "security": "WPA2"},
         ]
-        server = CameraStatusServer(noauth_config)
+        server = CameraStatusServer(configured_config)
         server.start()
         try:
-            data, status = _json_get("/api/networks", scheme="https")
+            data, status = _json_get(
+                "/api/networks", scheme="https", headers=_auth_headers()
+            )
             _assert_fields(data, {"networks"})
             assert isinstance(data["networks"], list)
         finally:
@@ -544,14 +649,15 @@ class TestStatusServerWifiContract:
     """POST /api/wifi on status server."""
 
     @patch("camera_streamer.status_server.wifi.connect_network")
-    def test_success_fields(self, mock_connect, noauth_config):
+    def test_success_fields(self, mock_connect, configured_config):
         mock_connect.return_value = (True, None)
-        server = CameraStatusServer(noauth_config)
+        server = CameraStatusServer(configured_config)
         server.start()
         try:
             data, status = _json_post(
                 "/api/wifi",
                 {"ssid": "NewNet", "password": "pass123"},
+                headers=_auth_headers(),
                 scheme="https",
             )
             _assert_has_fields(data, {"message"})
@@ -559,13 +665,14 @@ class TestStatusServerWifiContract:
             server.stop()
 
     @patch("camera_streamer.status_server.wifi.connect_network")
-    def test_error_missing_ssid(self, mock_connect, noauth_config):
-        server = CameraStatusServer(noauth_config)
+    def test_error_missing_ssid(self, mock_connect, configured_config):
+        server = CameraStatusServer(configured_config)
         server.start()
         try:
             data, status = _json_post(
                 "/api/wifi",
                 {"ssid": "", "password": "pass"},
+                headers=_auth_headers(),
                 scheme="https",
             )
             _assert_fields(data, {"error"})
@@ -576,18 +683,15 @@ class TestStatusServerWifiContract:
 class TestStatusServerPasswordContract:
     """POST /api/password on status server."""
 
-    def test_error_fields_short_password(self, noauth_config):
+    def test_error_fields_short_password(self, configured_config):
         """Password too short should return {error}."""
-        # Set a password so change endpoint can validate current one
-        noauth_config.set_password("oldpass")
-        noauth_config.save()
-
-        server = CameraStatusServer(noauth_config)
+        server = CameraStatusServer(configured_config)
         server.start()
         try:
             data, status = _json_post(
                 "/api/password",
-                {"current_password": "oldpass", "new_password": "ab"},
+                {"current_password": "testpass", "new_password": "ab"},
+                headers=_auth_headers(),
                 scheme="https",
             )
             _assert_fields(data, {"error"})
@@ -597,6 +701,21 @@ class TestStatusServerPasswordContract:
 
 class TestStatusServerLoginContract:
     """POST /login (JSON mode) on status server."""
+
+    def test_no_password_login_fails_closed(self, noauth_config):
+        """Missing ADMIN_PASSWORD never creates an authenticated session."""
+        server = CameraStatusServer(noauth_config)
+        server.start()
+        try:
+            data, status = _json_post(
+                "/login",
+                {"username": "admin", "password": "anything"},
+                scheme="https",
+            )
+            assert status == 503
+            _assert_fields(data, {"error"})
+        finally:
+            server.stop()
 
     def test_error_fields(self, configured_config):
         """Invalid login returns {error}."""
@@ -626,6 +745,26 @@ class TestStatusServerLoginContract:
         finally:
             server.stop()
 
+    def test_lockout_fields(self, configured_config, caplog):
+        """Repeated invalid logins return a 429 with {error}."""
+        caplog.set_level(logging.WARNING, logger="camera-streamer.status-server")
+        server = CameraStatusServer(configured_config)
+        server.start()
+        try:
+            status = None
+            data = {}
+            for _ in range(5):
+                data, status = _json_post(
+                    "/login",
+                    {"username": "admin", "password": "wrong"},
+                    scheme="https",
+                )
+            assert status == 429
+            _assert_fields(data, {"error"})
+            assert "Camera admin login lockout started" in caplog.text
+        finally:
+            server.stop()
+
     def test_head_root_redirects_or_serves(self, configured_config):
         """HEAD / should not fail for browser/probe checks."""
         server = CameraStatusServer(configured_config)
@@ -649,34 +788,36 @@ STREAM_CONFIG_SUCCESS_FIELDS = {
 class TestStatusServerStreamConfigContract:
     """PUT /api/stream-config on status server (session auth)."""
 
-    def test_requires_auth(self, noauth_config):
-        """Without password, /api/stream-config works without auth."""
+    def test_authenticated_success_fields(self, configured_config):
+        """Authenticated /api/stream-config returns applied config fields."""
         server = CameraStatusServer(
-            noauth_config,
-            control_handler=_make_control_handler(noauth_config),
+            configured_config,
+            control_handler=_make_control_handler(configured_config),
         )
         server.start()
         try:
             data, status = _json_put(
                 "/api/stream-config",
                 {"fps": 20},
+                headers=_auth_headers(),
                 scheme="https",
             )
             _assert_has_fields(data, {"applied", "status"})
         finally:
             server.stop()
 
-    def test_error_on_invalid_param(self, noauth_config):
+    def test_error_on_invalid_param(self, configured_config):
         """Invalid param returns {error}."""
         server = CameraStatusServer(
-            noauth_config,
-            control_handler=_make_control_handler(noauth_config),
+            configured_config,
+            control_handler=_make_control_handler(configured_config),
         )
         server.start()
         try:
             data, status = _json_put(
                 "/api/stream-config",
                 {"unknown_field": 42},
+                headers=_auth_headers(),
                 scheme="https",
             )
             _assert_fields(data, {"error"})
