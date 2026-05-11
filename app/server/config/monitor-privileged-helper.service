@@ -1,0 +1,35 @@
+# REQ: SWR-027, SWR-028, SWR-063; RISK: RISK-013, RISK-018; SEC: SC-013, SC-019; TEST: TC-024, TC-025, TC-044
+[Unit]
+Description=Home Monitor Privileged Helper
+After=local-fs.target
+Before=monitor.service
+RequiresMountsFor=/data
+
+[Service]
+Type=simple
+User=root
+Group=monitor
+WorkingDirectory=/opt/monitor
+Environment=PYTHONPATH=/opt/monitor
+Environment=MONITOR_PRIVILEGED_HELPER_SOCKET=/run/monitor/privileged-helper.sock
+ExecStart=/usr/bin/python3 -m monitor.services.privileged_helper
+Restart=always
+RestartSec=2
+RuntimeDirectory=monitor
+RuntimeDirectoryMode=0750
+
+# This helper is intentionally root, but its socket accepts only allowlisted
+# JSON operations from the monitor group. Do not enable ProtectSystem here:
+# USB mounts must occur in the host mount namespace so nginx and the
+# unprivileged Flask process see the selected recording disk.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SYS_TIME CAP_SYS_BOOT CAP_NET_ADMIN CAP_NET_RAW
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

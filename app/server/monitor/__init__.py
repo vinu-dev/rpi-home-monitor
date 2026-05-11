@@ -567,14 +567,21 @@ def _restore_hostname(data_dir: str):
         with open(hostname_file) as f:
             hostname = f.read().strip()
         if hostname and hostname != socket.gethostname():
-            subprocess.run(
-                ["hostnamectl", "set-hostname", hostname],
-                capture_output=True,
-                timeout=10,
-            )
+            from monitor.services import privileged
+
+            if privileged.should_use_helper():
+                privileged.request("hostname.set", {"hostname": hostname}, timeout=10)
+            else:
+                subprocess.run(
+                    ["hostnamectl", "set-hostname", hostname],
+                    capture_output=True,
+                    timeout=10,
+                )
             log.info("Hostname restored: %s", hostname)
     except FileNotFoundError:
         pass
+    except RuntimeError as exc:
+        log.warning("Failed to restore hostname via helper: %s", exc)
     except Exception as exc:
         log.warning("Failed to restore hostname: %s", exc)
 

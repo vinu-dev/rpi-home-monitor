@@ -6,17 +6,17 @@ Description=Home Monitor Server
 # network-online.target waits for NetworkManager-wait-online (~60s) and
 # systemd-networkd-wait-online (~90s on no-carrier eth0) — causing multi-minute
 # startup delays for no benefit.
-After=network.target nginx.service mediamtx.service local-fs.target
+After=network.target nginx.service mediamtx.service local-fs.target monitor-privileged-helper.service
 Wants=mediamtx.service
+Requires=monitor-privileged-helper.service
 
 [Service]
 Type=notify
 NotifyAccess=main
-# Run as root — required for USB mount/unmount/format operations.
-# This is standard for embedded appliance services. Security is
-# enforced via network firewall (nftables) and systemd sandboxing.
-User=root
-Group=root
+# Flask runs unprivileged. Root-only appliance operations go through
+# monitor-privileged-helper.service over a monitor-group Unix socket.
+User=monitor
+Group=monitor
 WorkingDirectory=/opt/monitor
 ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
 Restart=always
@@ -32,12 +32,24 @@ Environment=MONITOR_LIVE_DIR=/data/live
 Environment=MONITOR_CONFIG_DIR=/data/config
 Environment=MONITOR_CERTS_DIR=/data/certs
 Environment=MONITOR_LOG_DIR=/data/logs
+Environment=MONITOR_PRIVILEGED_HELPER_SOCKET=/run/monitor/privileged-helper.sock
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=LOG_LEVEL=INFO
 
 # Security: nftables firewall (default DROP, private nets only) + HTTPS
 # Note: systemd ProtectSystem/ProtectHome/ProtectKernel* directives create
 # private mount namespaces, which prevents USB mounts from being visible
-# to NGINX for serving recorded clips. Disabled for USB storage support.
+# to NGINX for serving recorded clips. ProtectSystem remains disabled for USB
+# storage visibility; root-only actions are delegated to the privileged helper.
+NoNewPrivileges=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

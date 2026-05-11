@@ -21,6 +21,8 @@ import shutil
 import subprocess
 import threading
 
+from monitor.services import privileged
+
 log = logging.getLogger("monitor.ota-service")
 
 # Maximum bundle size (500MB)
@@ -363,24 +365,38 @@ class OTAService:
             return True, ""  # No key + no enforcement = dev mode
 
         try:
-            result = subprocess.run(
-                [
-                    "swupdate",
-                    "-c",  # check mode (verify only, don't install)
-                    "-i",
-                    bundle_path,
-                    "-k",
-                    self._public_key_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0:
+            if privileged.should_use_helper():
+                result_data = privileged.request(
+                    "ota.verify",
+                    {
+                        "bundle_path": bundle_path,
+                        "public_key_path": self._public_key_path,
+                    },
+                    timeout=60,
+                )
+                returncode = int(result_data.get("returncode") or 0)
+                stderr = str(result_data.get("stderr") or "")
+            else:
+                result = subprocess.run(
+                    [
+                        "swupdate",
+                        "-c",  # check mode (verify only, don't install)
+                        "-i",
+                        bundle_path,
+                        "-k",
+                        self._public_key_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                returncode = result.returncode
+                stderr = result.stderr
+            if returncode == 0:
                 log.info("Bundle signature verified: %s", bundle_path)
                 return True, ""
             else:
-                error = result.stderr.strip() or "Signature verification failed"
+                error = stderr.strip() or "Signature verification failed"
                 log.error("Bundle verification failed: %s", error)
                 return False, error
 
@@ -395,6 +411,8 @@ class OTAService:
             return True, ""  # swupdate not installed (dev/test)
         except subprocess.TimeoutExpired:
             return False, "Verification timed out"
+        except privileged.PrivilegedHelperError as e:
+            return False, str(e)
         except OSError as e:
             return False, str(e)
 
@@ -440,21 +458,37 @@ class OTAService:
         t = threading.Thread(target=_ticker, daemon=True, name="ota-install-ticker")
         t.start()
         try:
-            proc = subprocess.Popen(
-                self._install_command(bundle_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            try:
-                _stdout, stderr = proc.communicate(timeout=600)
-                rc = proc.returncode
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                err = "Installation timed out (10 min)"
-                self.set_status("server", "error", error=err)
-                return False, err
+            if privileged.should_use_helper():
+                data = privileged.request(
+                    "ota.install",
+                    {
+                        "bundle_path": bundle_path,
+                        "public_key_path": (
+                            self._public_key_path
+                            if os.path.isfile(self._public_key_path)
+                            else ""
+                        ),
+                    },
+                    timeout=600,
+                )
+                rc = int(data.get("returncode") or 0)
+                stderr = str(data.get("stderr") or "")
+            else:
+                proc = subprocess.Popen(
+                    self._install_command(bundle_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    _stdout, stderr = proc.communicate(timeout=600)
+                    rc = proc.returncode
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    err = "Installation timed out (10 min)"
+                    self.set_status("server", "error", error=err)
+                    return False, err
 
             if rc == 0:
                 self.set_status("server", "installed", progress=100, error="")
@@ -472,6 +506,9 @@ class OTAService:
             err = "swupdate not installed"
             self.set_status("server", "error", error=err)
             return False, err
+        except privileged.PrivilegedHelperError as e:
+            self.set_status("server", "error", error=str(e))
+            return False, str(e)
         except OSError as e:
             self.set_status("server", "error", error=str(e))
             return False, str(e)
@@ -616,9 +653,14 @@ class OTAService:
 
             _t.sleep(delay_seconds)
             try:
-                subprocess.run(["reboot"], check=False, timeout=15)
+                if privileged.should_use_helper():
+                    privileged.request("system.reboot", timeout=15)
+                else:
+                    subprocess.run(["reboot"], check=False, timeout=15)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 log.error("reboot command failed: %s", exc)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("reboot helper command failed: %s", exc)
 
         threading.Thread(
             target=_reboot_after_delay,

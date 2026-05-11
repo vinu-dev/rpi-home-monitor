@@ -12,6 +12,8 @@ import logging
 import os
 import subprocess
 
+from monitor.services import privileged
+
 log = logging.getLogger("monitor.usb")
 
 SUPPORTED_FS = {"ext4", "ext3", "ntfs", "vfat", "exfat"}
@@ -139,6 +141,11 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
 
     Returns (success, error_message).
     """
+    if privileged.should_use_helper():
+        return privileged.request_result(
+            "usb.mount",
+            {"device_path": device_path, "mount_point": mount_point},
+        )
     try:
         os.makedirs(mount_point, exist_ok=True)
 
@@ -201,6 +208,11 @@ def unmount_device(mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
 
     Returns (success, error_message).
     """
+    if privileged.should_use_helper():
+        return privileged.request_result(
+            "usb.unmount",
+            {"mount_point": mount_point},
+        )
     if not is_mounted(mount_point):
         return True, ""
 
@@ -230,6 +242,12 @@ def format_device(device_path, fstype="ext4", label="HomeMonitor") -> tuple[bool
     WARNING: This destroys all data on the device.
     Returns (success, error_message).
     """
+    if privileged.should_use_helper():
+        return privileged.request_result(
+            "usb.format",
+            {"device_path": device_path, "fstype": fstype, "label": label},
+            timeout=130,
+        )
     # Safety: never format mmcblk (SD card) or system disks
     if "mmcblk" in device_path:
         return False, "Cannot format SD card"

@@ -15,6 +15,8 @@ import json
 import logging
 import subprocess
 
+from monitor.services import privileged
+
 log = logging.getLogger("monitor.tailscale")
 
 # Timeout for tailscale CLI commands (seconds)
@@ -146,21 +148,38 @@ class TailscaleService:
         if authkey:
             cmd.append(f"--authkey={authkey}")
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=CONNECT_TIMEOUT,
-            )
-        except FileNotFoundError:
-            return None, "Tailscale binary not found"
-        except subprocess.TimeoutExpired:
-            return None, "Connection timed out"
-        except OSError as e:
-            return None, str(e)
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request(
+                    "tailscale.up",
+                    {
+                        "accept_routes": accept_routes,
+                        "ssh": ssh,
+                        "authkey": authkey,
+                    },
+                    timeout=CONNECT_TIMEOUT,
+                )
+            except privileged.PrivilegedHelperError as exc:
+                return None, str(exc)
+            combined = str(data.get("stdout") or "") + str(data.get("stderr") or "")
+            returncode = int(data.get("returncode") or 0)
+        else:
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=CONNECT_TIMEOUT,
+                )
+            except FileNotFoundError:
+                return None, "Tailscale binary not found"
+            except subprocess.TimeoutExpired:
+                return None, "Connection timed out"
+            except OSError as e:
+                return None, str(e)
 
-        combined = proc.stdout + proc.stderr
+            combined = proc.stdout + proc.stderr
+            returncode = proc.returncode
 
         # Look for auth URL in output
         auth_url = self._extract_auth_url(combined)
@@ -168,7 +187,7 @@ class TailscaleService:
             self._log_audit("TAILSCALE_AUTH_NEEDED", "Auth URL generated")
             return auth_url, ""
 
-        if proc.returncode == 0:
+        if returncode == 0:
             self._log_audit("TAILSCALE_CONNECTED", "Tailscale connected")
             return None, ""
 
@@ -182,6 +201,16 @@ class TailscaleService:
         """
         if not self._binary_exists():
             return False, "Tailscale is not installed"
+
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request("tailscale.down", timeout=CLI_TIMEOUT)
+            except privileged.PrivilegedHelperError as exc:
+                return False, str(exc)
+            if int(data.get("returncode") or 0) == 0:
+                self._log_audit("TAILSCALE_DISCONNECTED", "Tailscale disconnected")
+                return True, ""
+            return False, str(data.get("stderr") or "Disconnect failed").strip()
 
         try:
             result = subprocess.run(
@@ -207,6 +236,16 @@ class TailscaleService:
         Returns:
             (success, error) tuple.
         """
+        if privileged.should_use_helper():
+            ok, err = privileged.request_result(
+                "tailscale.enable",
+                timeout=CLI_TIMEOUT,
+            )
+            if ok:
+                self._log_audit("TAILSCALE_ENABLED", "Daemon enabled and started")
+                return True, ""
+            return False, err
+
         try:
             result = subprocess.run(
                 ["systemctl", "enable", "--now", "tailscaled"],
@@ -233,15 +272,28 @@ class TailscaleService:
         """
         # Graceful disconnect first (ignore errors — may already be down)
         if self._binary_exists():
-            try:
-                subprocess.run(
-                    ["tailscale", "down"],
-                    capture_output=True,
-                    text=True,
-                    timeout=CLI_TIMEOUT,
-                )
-            except (subprocess.TimeoutExpired, OSError):
-                pass
+            if privileged.should_use_helper():
+                privileged.request_result("tailscale.down", timeout=CLI_TIMEOUT)
+            else:
+                try:
+                    subprocess.run(
+                        ["tailscale", "down"],
+                        capture_output=True,
+                        text=True,
+                        timeout=CLI_TIMEOUT,
+                    )
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+
+        if privileged.should_use_helper():
+            ok, err = privileged.request_result(
+                "tailscale.disable",
+                timeout=CLI_TIMEOUT,
+            )
+            if ok:
+                self._log_audit("TAILSCALE_DISABLED", "Daemon disabled and stopped")
+                return True, ""
+            return False, err
 
         try:
             result = subprocess.run(

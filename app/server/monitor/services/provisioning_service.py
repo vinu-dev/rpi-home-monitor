@@ -16,6 +16,8 @@ import os
 import socket
 import subprocess
 
+from monitor.services import privileged
+
 log = logging.getLogger("monitor.services.provisioning_service")
 
 HOTSPOT_SCRIPT = "/opt/monitor/scripts/monitor-hotspot.sh"
@@ -231,6 +233,25 @@ class ProvisioningService:
         stops the AP and connects to the target network (ADR-0013).
         Returns (success, error_message).
         """
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request(
+                    "hotspot.connect_wifi",
+                    {"ssid": ssid, "password": password},
+                    timeout=50,
+                )
+            except privileged.PrivilegedHelperError as exc:
+                return False, f"WiFi connection failed: {exc}"
+            if int(data.get("returncode") or 0) == 0:
+                log.info("WiFi connected to %s via privileged helper", ssid)
+                return True, ""
+            output = str(data.get("stderr") or data.get("stdout") or "").strip()
+            if "secrets" in output.lower() or "no suitable" in output.lower():
+                return False, "Incorrect WiFi password. Go back and try again."
+            return (
+                False,
+                f"WiFi connection failed. Go back and try again. Detail: {output}",
+            )
         try:
             result = subprocess.run(
                 [HOTSPOT_SCRIPT, "connect", ssid, password],
@@ -302,11 +323,14 @@ class ProvisioningService:
         if current == hostname:
             return
         try:
-            subprocess.run(
-                ["hostnamectl", "set-hostname", hostname],
-                capture_output=True,
-                timeout=10,
-            )
+            if privileged.should_use_helper():
+                privileged.request("hostname.set", {"hostname": hostname}, timeout=10)
+            else:
+                subprocess.run(
+                    ["hostnamectl", "set-hostname", hostname],
+                    capture_output=True,
+                    timeout=10,
+                )
             # Save to /data for persistence across OTA rootfs updates
             data_hostname = os.path.join(self._data_dir, "config", "hostname")
             try:
@@ -317,6 +341,8 @@ class ProvisioningService:
             log.info("Hostname set: %s -> %s", current, hostname)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
             log.warning("Failed to set hostname: %s", exc)
+        except privileged.PrivilegedHelperError as exc:
+            log.warning("Failed to set hostname via helper: %s", exc)
 
     def _get_hotspot_script(self) -> str:
         """Return path to the hotspot management script."""
