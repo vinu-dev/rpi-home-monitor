@@ -15,6 +15,7 @@ Source of truth note: the persisted settings-secret paths in this page hand-mirr
 | Tailscale auth key | `settings.json:tailscale_auth_key` | `plaintext-on-data` | `THREAT-005` | Opt into LUKS; rotate in the Tailscale admin console, then clear or replace the stored value (`TAILSCALE_AUTH_KEY_ROTATED`). |
 | Offsite backup secret key | `settings.json:offsite_backup_secret_access_key` | `plaintext-on-data` | `THREAT-005` | Opt into LUKS; rotate the offsite-backup credentials at the provider and update the stored value. |
 | Webhook bearer/HMAC secret | `settings.json:webhook_destinations[].secret` | `plaintext-on-data` | `THREAT-005` | Opt into LUKS; rotate the remote webhook secret and update the destination in Settings. |
+| Share-link bearer token verifier | `share_links.json:[].token_hash` | `keyed-hash` | `THREAT-005`, `THREAT-020` | New share links store only a non-secret id plus HMAC verifier. Revoke share links after suspected compromise because copied public URLs remain bearer credentials. |
 | CA private key | `/data/certs/ca.key` | `plaintext-on-data` | `THREAT-005`, `THREAT-016` | Opt into LUKS; reflash and regenerate the trust chain if compromise is suspected. |
 | Server mTLS private key | `/data/certs/server.key` | `plaintext-on-data` | `THREAT-005`, `THREAT-016` | Opt into LUKS; reflash and regenerate the server certificate if compromise is suspected. |
 | Per-camera mTLS private keys | `/data/certs/cameras/cam-*.key` | `plaintext-on-data` | `THREAT-005`, `THREAT-016` | Opt into LUKS; unpair and re-pair affected cameras so fresh certs and pairing secrets are issued. |
@@ -27,10 +28,11 @@ Source of truth note: the persisted settings-secret paths in this page hand-mirr
 ## Rotation Order After Suspected SD-Card Compromise
 
 1. Revoke each camera by unpairing it, then re-pair it so new mTLS keys and a new `pairing_secret` are minted.
-2. Rotate the Tailscale auth key in the Tailscale admin console and clear or replace the stored `tailscale_auth_key`.
-3. Reflash the server SD card and complete setup again so the server generates a fresh `.secret_key` and TLS material.
-4. Reset every user password and re-enroll TOTP where appropriate.
-5. Rotate the WiFi PSK at the router because NetworkManager persisted it outside the app.
+2. Revoke active share links and create fresh links only for recipients that still need access.
+3. Rotate the Tailscale auth key in the Tailscale admin console and clear or replace the stored `tailscale_auth_key`.
+4. Reflash the server SD card and complete setup again so the server generates a fresh `.secret_key` and TLS material.
+5. Reset every user password and re-enroll TOTP where appropriate.
+6. Rotate the WiFi PSK at the router because NetworkManager persisted it outside the app.
 
 ## Machine-Readable Field Index
 
@@ -39,6 +41,7 @@ Source of truth note: the persisted settings-secret paths in this page hand-mirr
 - field: settings.json:tailscale_auth_key
 - field: settings.json:offsite_backup_secret_access_key
 - field: settings.json:webhook_destinations[].secret
+- field: share_links.json:[].token_hash
 - field: /data/certs/ca.key
 - field: /data/certs/server.key
 - field: /data/certs/cameras/cam-*.key

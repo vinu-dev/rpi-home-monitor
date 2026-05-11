@@ -268,7 +268,7 @@ class Store:
         ]
 
     def get_share_link(self, token: str) -> ShareLink | None:
-        """Return one share link by token."""
+        """Return one share link by non-secret token identifier."""
         for link in self.get_share_links():
             if link.token == token:
                 return link

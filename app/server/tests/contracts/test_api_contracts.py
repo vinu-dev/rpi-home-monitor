@@ -1487,6 +1487,7 @@ class TestRecordingsBulkDeleteContract:
 
 SHARE_LINK_FIELDS = {
     "token",
+    "token_id",
     "resource_type",
     "resource_id",
     "owner_id",
@@ -1504,6 +1505,7 @@ SHARE_LINK_FIELDS = {
     "last_access_at",
     "resource_name",
     "share_url",
+    "share_url_available",
     "status",
     "ttl_remaining_seconds",
     "pinned_ip_bound",
@@ -1532,6 +1534,8 @@ class TestShareLinksCreateContract:
         data = resp.get_json()
         _assert_fields(data, {"link"})
         _assert_fields(data["link"], SHARE_LINK_FIELDS)
+        assert data["link"]["share_url_available"] is True
+        assert data["link"]["token"] != data["link"]["token_id"]
 
     def test_error_fields(self, app, logged_in_client):
         client = logged_in_client()
@@ -1566,7 +1570,10 @@ class TestShareLinksListContract:
         _assert_fields(data, {"resource_type", "resource_id", "resource_name", "links"})
         assert isinstance(data["links"], list) and data["links"]
         _assert_fields(data["links"][0], SHARE_LINK_FIELDS)
-        assert data["links"][0]["token"] == created["token"]
+        assert data["links"][0]["token"] == data["links"][0]["token_id"]
+        assert data["links"][0]["token"] != created["token"]
+        assert data["links"][0]["share_url"] == ""
+        assert data["links"][0]["share_url_available"] is False
 
 
 class TestShareLinksRevokeContract:

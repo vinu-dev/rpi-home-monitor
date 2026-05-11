@@ -53,12 +53,15 @@ MODEL_FIELD_PREFIXES = {
     "User": "users.json:",
     "Settings": "settings.json:",
     "WebhookDestination": "settings.json:webhook_destinations[].",
+    "ShareLink": "share_links.json:[].",
 }
+OPTIONAL_RUNTIME_CONFIG_FILES = {"share_links.json"}
 
 KNOWN_NON_SECRET_FIELDS = {
     "cameras.json:keyframe_interval": "H.264 GOP interval setting, not credential material.",
     "settings.json:offsite_backup_access_key_id": "Access key identifier only; authentication requires the secret key.",
     "users.json:must_change_password": "Password-rotation policy flag, not secret material.",
+    "share_links.json:[].token": "Non-secret share-link identifier; the bearer token secret is not persisted.",
 }
 
 
@@ -280,6 +283,13 @@ def runtime_path_is_covered(path: str, all_paths: set[str]) -> bool:
     return False
 
 
+def optional_runtime_file_is_absent(path: str, all_paths: set[str]) -> bool:
+    filename = path.split(":", 1)[0]
+    if filename not in OPTIONAL_RUNTIME_CONFIG_FILES:
+        return False
+    return not any(p == filename or p.startswith(f"{filename}:") for p in all_paths)
+
+
 def lint_runtime(inventory_fields: set[str], config_dir: Path) -> list[str]:
     errors: list[str] = []
     all_paths, candidate_paths = scan_runtime_config(config_dir)
@@ -301,6 +311,7 @@ def lint_runtime(inventory_fields: set[str], config_dir: Path) -> list[str]:
         path
         for path in inventory_config_fields
         if path not in KNOWN_NON_SECRET_FIELDS
+        and not optional_runtime_file_is_absent(path, all_paths)
         and not runtime_path_is_covered(path, all_paths)
     )
     if dead_rows:

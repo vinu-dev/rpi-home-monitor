@@ -422,6 +422,7 @@ def _init_services(app):
         recordings_service=app.recordings_service,
         live_dir=app.config["LIVE_DIR"],
         audit=app.audit,
+        secret_key=app.config["SECRET_KEY"],
     )
 
     # Pairing service — camera cert exchange and revocation
