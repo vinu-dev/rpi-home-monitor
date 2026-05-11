@@ -55,7 +55,14 @@ def test_yocoto_recipe_installs_helper_unit():
         / "monitor-server"
         / "monitor-server_1.0.bb"
     ).read_text(encoding="utf-8")
+    services = next(
+        line for line in recipe.splitlines() if line.startswith("SYSTEMD_SERVICE:${PN}")
+    )
 
     assert "file://config/monitor-privileged-helper.service" in recipe
-    assert "monitor-privileged-helper.service monitor.service" in recipe
+    assert "monitor-privileged-helper.service" in services
+    assert "monitor.service" in services
+    assert services.index("monitor-privileged-helper.service") < services.index(
+        "monitor.service"
+    )
     assert "${systemd_system_unitdir}/monitor-privileged-helper.service" in recipe

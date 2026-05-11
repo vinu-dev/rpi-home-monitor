@@ -131,8 +131,12 @@ def test_monitor_server_recipe_installs_avahi_pin_unit():
         / "monitor-server_1.0.bb"
     )
     text = recipe.read_text(encoding="utf-8")
+    services = next(
+        line for line in text.splitlines() if line.startswith("SYSTEMD_SERVICE:${PN}")
+    )
 
     assert "file://config/monitor-avahi-pin.service" in text
     assert "file://config/avahi-daemon-home-monitor.conf" in text
-    assert "monitor-avahi-pin.service monitor.service" in text
+    assert "monitor-avahi-pin.service" in services
+    assert "monitor.service" in services
     assert "avahi-daemon.service.d/10-home-monitor.conf" in text
