@@ -25,6 +25,14 @@ def _write_ca_cert(
     return ca_path
 
 
+def _write_setup_hotspot_password(app):
+    path = os.path.join(app.config["DATA_DIR"], "config", "setup-hotspot.psk")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write("PerDeviceSetup123\n")
+    return path
+
+
 class TestGetCaCert:
     """Tests for GET /api/v1/setup/ca-cert (TOFU bootstrap endpoint).
 
@@ -181,7 +189,11 @@ class TestSetAdminPassword:
         with open(stamp, "w") as f:
             f.write("done")
         response = client.post(
-            "/api/v1/setup/admin", json={"password": "newpassword123"}
+            "/api/v1/setup/admin",
+            json={
+                "password": "newpassword123",
+                "setup_hotspot_password": "PerDeviceSetup123",
+            },
         )
         assert response.status_code == 403
 
@@ -208,9 +220,16 @@ class TestSetAdminPassword:
         app.store.save_user(admin)
 
         response = client.post(
-            "/api/v1/setup/admin", json={"password": "newpassword123"}
+            "/api/v1/setup/admin",
+            json={
+                "password": "newpassword123",
+                "setup_hotspot_password": "PerDeviceSetup123",
+            },
         )
         assert response.status_code == 200
+        assert os.path.isfile(
+            os.path.join(app.config["DATA_DIR"], "config", "setup-hotspot.psk")
+        )
 
         # Verify password was changed
         updated = app.store.get_user_by_username("admin")
@@ -249,6 +268,7 @@ class TestSetupComplete:
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
         assert response.status_code == 200
+        _write_setup_hotspot_password(app)
 
         # Step 2: Complete (connects WiFi + writes stamp)
         mock_run.return_value = MagicMock(
@@ -276,6 +296,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         client.post("/api/v1/setup/complete")
@@ -293,6 +314,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         response = client.post("/api/v1/setup/complete")
         assert response.status_code == 200
@@ -308,6 +330,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "WrongNetwork", "password": "wrongpass"},
         )
+        _write_setup_hotspot_password(app)
 
         mock_run.return_value = MagicMock(
             returncode=1,
@@ -328,6 +351,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
         assert app.provisioning_service._pending_wifi["ssid"] == "HomeWiFi"
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")

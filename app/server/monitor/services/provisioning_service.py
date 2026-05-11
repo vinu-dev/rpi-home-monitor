@@ -22,6 +22,8 @@ log = logging.getLogger("monitor.services.provisioning_service")
 
 HOTSPOT_SCRIPT = "/opt/monitor/scripts/monitor-hotspot.sh"
 SERVER_HOSTNAME = "rpi-divinu"
+BLOCKED_SETUP_HOTSPOT_PASSWORDS = {"homemonitor", "homecamera"}
+MIN_SETUP_HOTSPOT_PASSWORD_LENGTH = 12
 
 
 # REQ: SWR-021, SWR-054; RISK: RISK-010; SEC: SC-010; TEST: TC-021
@@ -144,8 +146,14 @@ class ProvisioningService:
         log.info("WiFi credentials saved for SSID=%s", ssid)
         return f"WiFi credentials saved for {ssid}", 200
 
-    def set_admin_password(self, password: str) -> tuple[str, int]:
-        """Set the admin user's password.
+    @property
+    def setup_hotspot_password_path(self) -> str:
+        return os.path.join(self._data_dir, "config", "setup-hotspot.psk")
+
+    def set_admin_password(
+        self, password: str, setup_hotspot_password: str = ""
+    ) -> tuple[str, int]:
+        """Set the admin password and rotate the setup hotspot password.
 
         Returns (message, status_code).
         """
@@ -161,6 +169,10 @@ class ProvisioningService:
         admin = self._store.get_user_by_username("admin")
         if not admin:
             return "Default admin user not found", 500
+
+        hotspot_error = self._save_setup_hotspot_password(setup_hotspot_password)
+        if hotspot_error:
+            return hotspot_error, 400
 
         from monitor.auth import hash_password
 
@@ -185,6 +197,13 @@ class ProvisioningService:
             return (
                 None,
                 "WiFi credentials not saved. Go back and enter WiFi details.",
+                400,
+            )
+
+        if not os.path.isfile(self.setup_hotspot_password_path):
+            return (
+                None,
+                "Set a new setup hotspot password before finishing setup.",
                 400,
             )
 
@@ -311,6 +330,28 @@ class ProvisioningService:
             return ""
         except OSError as exc:
             return f"Failed to mark setup complete: {exc}"
+
+    def _save_setup_hotspot_password(self, password: str) -> str:
+        password = str(password or "").strip()
+        if password.lower() in BLOCKED_SETUP_HOTSPOT_PASSWORDS:
+            return "Choose a new setup hotspot password, not the factory default"
+        if len(password) < MIN_SETUP_HOTSPOT_PASSWORD_LENGTH:
+            return (
+                "Setup hotspot password must be at least "
+                f"{MIN_SETUP_HOTSPOT_PASSWORD_LENGTH} characters"
+            )
+        try:
+            path = self.setup_hotspot_password_path
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(password + "\n")
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+            return ""
+        except OSError as exc:
+            return f"Failed to save setup hotspot password: {exc}"
 
     def _set_hostname(self, hostname: str):
         """Set system hostname for mDNS discovery.

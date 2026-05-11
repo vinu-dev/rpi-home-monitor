@@ -50,7 +50,7 @@ Both the server and camera use a **captive portal** for zero-config WiFi provisi
 
 **Quick version:**
 1. **Power on** — Camera LED starts slow blinking = setup mode
-2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`)
+2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`) using the factory setup password (`homemonitor` for server, `homecamera` for camera). The setup wizard then requires a new setup hotspot password for future setup/reset mode.
 3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address + camera login (camera)
 4. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
 5. **Access camera** at `https://rpi-divinu-cam-XXXX.local` (shown after setup completes)

@@ -382,6 +382,7 @@ class TestSetupConnectContract:
                     "server_ip": "192.168.1.100",
                     "admin_username": "admin",
                     "admin_password": "testpass12345",
+                    "setup_hotspot_password": "CameraSetupPass123",
                 },
             )
             _assert_fields(data, CONNECT_SUCCESS_FIELDS)
@@ -402,11 +403,61 @@ class TestSetupConnectContract:
                     "server_ip": "192.168.1.100",
                     "admin_username": "admin",
                     "admin_password": "short",
+                    "setup_hotspot_password": "CameraSetupPass123",
                 },
             )
             assert status == 400
             _assert_fields(data, {"error"})
             assert "12" in data["error"]
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_rejects_missing_setup_hotspot_password(
+        self, mock_hotspot, mock_scan, setup_config
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            data, status = _json_post(
+                "/api/connect",
+                {
+                    "ssid": "TestNet",
+                    "password": "pass123",
+                    "server_ip": "192.168.1.100",
+                    "admin_username": "admin",
+                    "admin_password": "testpass12345",
+                },
+            )
+            assert status == 400
+            _assert_fields(data, {"error"})
+            assert "hotspot" in data["error"].lower()
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_rejects_factory_default_setup_hotspot_password(
+        self, mock_hotspot, mock_scan, setup_config
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            data, status = _json_post(
+                "/api/connect",
+                {
+                    "ssid": "TestNet",
+                    "password": "pass123",
+                    "server_ip": "192.168.1.100",
+                    "admin_username": "admin",
+                    "admin_password": "testpass12345",
+                    "setup_hotspot_password": "homecamera",
+                },
+            )
+            assert status == 400
+            _assert_fields(data, {"error"})
+            assert "new setup hotspot" in data["error"]
         finally:
             server.stop()
 
@@ -543,9 +594,7 @@ class TestStatusServerApiStatusContract:
         )
         server.start()
         try:
-            html, status = _html_get(
-                "/status", scheme="https", headers=_auth_headers()
-            )
+            html, status = _html_get("/status", scheme="https", headers=_auth_headers())
             assert status == 200
             assert 'aria-label="Page sections"' in html
             for nav_target in [

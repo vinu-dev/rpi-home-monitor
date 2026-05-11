@@ -4,12 +4,16 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from camera_streamer.wifi import (
+    HOTSPOT_DEFAULT_PASS,
     HOTSPOT_PASS,
     HOTSPOT_SSID,
     connect_network,
     get_current_ssid,
     get_hostname,
+    get_hotspot_password,
     get_ip_address,
     scan_networks,
     set_hostname,
@@ -17,6 +21,8 @@ from camera_streamer.wifi import (
     stop_hotspot,
     wait_for_interface,
 )
+
+TEST_HOTSPOT_PASS = "PerDeviceSetup123"
 
 # ===========================================================================
 # scan_networks
@@ -212,56 +218,126 @@ class TestStartHotspot:
         return [ready, delete, add, up]
 
     def test_returns_true_on_success(self):
-        with patch(
-            "camera_streamer.wifi.subprocess.run", side_effect=self._mock_success()
+        with (
+            patch(
+                "camera_streamer.wifi.subprocess.run",
+                side_effect=self._mock_success(),
+            ),
+            patch(
+                "camera_streamer.wifi.get_hotspot_password",
+                return_value=TEST_HOTSPOT_PASS,
+            ),
         ):
             with patch("camera_streamer.wifi.time.sleep"):
                 result = start_hotspot("wlan0")
         assert result is True
 
     def test_returns_false_when_interface_not_found(self):
-        with patch("camera_streamer.wifi.wait_for_interface", return_value=False):
+        with (
+            patch("camera_streamer.wifi.wait_for_interface", return_value=False),
+            patch(
+                "camera_streamer.wifi.get_hotspot_password",
+                return_value=TEST_HOTSPOT_PASS,
+            ),
+        ):
             result = start_hotspot("wlan0")
         assert result is False
 
     def test_returns_false_on_add_failure(self):
         MagicMock(stdout="wlan0:wifi\n", returncode=0)
         delete = MagicMock(returncode=0)
-        with patch("camera_streamer.wifi.wait_for_interface", return_value=True):
-            with patch(
+        with (
+            patch("camera_streamer.wifi.wait_for_interface", return_value=True),
+            patch(
+                "camera_streamer.wifi.get_hotspot_password",
+                return_value=TEST_HOTSPOT_PASS,
+            ),
+            patch(
                 "camera_streamer.wifi.subprocess.run",
                 side_effect=[delete, subprocess.CalledProcessError(1, "nmcli")],
-            ):
-                result = start_hotspot("wlan0")
+            ),
+        ):
+            result = start_hotspot("wlan0")
         assert result is False
 
     def test_uses_default_ssid_and_password(self):
-        with patch("camera_streamer.wifi.wait_for_interface", return_value=True):
-            with patch("camera_streamer.wifi.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                start_hotspot("wlan0")
+        with (
+            patch("camera_streamer.wifi.wait_for_interface", return_value=True),
+            patch(
+                "camera_streamer.wifi.get_hotspot_password",
+                return_value=TEST_HOTSPOT_PASS,
+            ),
+            patch("camera_streamer.wifi.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            start_hotspot("wlan0")
         all_args = [str(call) for call in mock_run.call_args_list]
         combined = " ".join(all_args)
         assert HOTSPOT_SSID in combined
-        assert HOTSPOT_PASS in combined
+        assert TEST_HOTSPOT_PASS in combined
+        assert HOTSPOT_PASS == HOTSPOT_DEFAULT_PASS
 
     def test_retries_activation_on_failure(self):
         MagicMock(side_effect=subprocess.CalledProcessError(1, "nmcli", stderr="busy"))
         MagicMock(returncode=0, stdout="", stderr="")
-        with patch("camera_streamer.wifi.wait_for_interface", return_value=True):
-            with patch("camera_streamer.wifi.subprocess.run") as mock_run:
-                # delete, add succeed; up fails once then succeeds
-                mock_run.side_effect = [
-                    MagicMock(returncode=0),  # delete
-                    MagicMock(returncode=0),  # add
-                    subprocess.CalledProcessError(
-                        1, "nmcli", stderr=b"busy"
-                    ),  # up fail
-                    MagicMock(returncode=0),  # up success
-                ]
-                with patch("camera_streamer.wifi.time.sleep"):
-                    result = start_hotspot("wlan0")
+        with (
+            patch("camera_streamer.wifi.wait_for_interface", return_value=True),
+            patch(
+                "camera_streamer.wifi.get_hotspot_password",
+                return_value=TEST_HOTSPOT_PASS,
+            ),
+            patch("camera_streamer.wifi.subprocess.run") as mock_run,
+        ):
+            # delete, add succeed; up fails once then succeeds
+            mock_run.side_effect = [
+                MagicMock(returncode=0),  # delete
+                MagicMock(returncode=0),  # add
+                subprocess.CalledProcessError(1, "nmcli", stderr=b"busy"),  # up fail
+                MagicMock(returncode=0),  # up success
+            ]
+            with patch("camera_streamer.wifi.time.sleep"):
+                result = start_hotspot("wlan0")
         assert result is True
+
+
+class TestHotspotPassword:
+    def test_existing_file_is_used(self, tmp_path):
+        pass_file = tmp_path / "camera-hotspot.psk"
+        pass_file.write_text("DeviceSecret12345\n")
+
+        assert get_hotspot_password(str(pass_file)) == "DeviceSecret12345"
+
+    def test_missing_file_uses_first_boot_default(self, tmp_path):
+        pass_file = tmp_path / "camera-hotspot.psk"
+
+        assert get_hotspot_password(str(pass_file)) == HOTSPOT_DEFAULT_PASS
+
+    def test_missing_file_can_require_rotated_password(self, tmp_path):
+        pass_file = tmp_path / "camera-hotspot.psk"
+
+        with pytest.raises(RuntimeError, match="not provisioned"):
+            get_hotspot_password(str(pass_file), allow_default=False)
+
+    def test_known_public_default_is_rejected(self, tmp_path):
+        pass_file = tmp_path / "camera-hotspot.psk"
+        pass_file.write_text("homecamera\n")
+
+        with pytest.raises(ValueError, match="known public"):
+            get_hotspot_password(str(pass_file))
+
+    def test_environment_override_is_validated(self):
+        with patch.dict(
+            "camera_streamer.wifi.os.environ",
+            {"CAMERA_HOTSPOT_PASS": "OperatorSecret123"},
+        ):
+            assert get_hotspot_password() == "OperatorSecret123"
+
+        with patch.dict(
+            "camera_streamer.wifi.os.environ",
+            {"CAMERA_HOTSPOT_PASS": "homemonitor"},
+        ):
+            with pytest.raises(ValueError, match="known public"):
+                get_hotspot_password()
 
 
 # ===========================================================================

@@ -19,8 +19,45 @@ log = logging.getLogger("camera-streamer.wifi")
 
 # Default hotspot settings
 HOTSPOT_SSID = "HomeCam-Setup"
-HOTSPOT_PASS = "homecamera"
 HOTSPOT_CONN_NAME = "HomeCam-Setup"
+HOTSPOT_DEFAULT_PASS = "homecamera"
+HOTSPOT_PASS = HOTSPOT_DEFAULT_PASS
+HOTSPOT_PASS_FILE = "/data/config/camera-hotspot.psk"
+_BLOCKED_HOTSPOT_PASSWORDS = {"homecamera", "homemonitor"}
+
+
+def _validate_hotspot_password(password: str) -> str:
+    password = str(password or "").strip()
+    if password.lower() in _BLOCKED_HOTSPOT_PASSWORDS:
+        raise ValueError("known public setup hotspot credential is not allowed")
+    if len(password) < 12:
+        raise ValueError("setup hotspot credential must be at least 12 characters")
+    return password
+
+
+def get_hotspot_password(
+    pass_file: str | None = None, *, allow_default: bool = True
+) -> str:
+    """Return the setup hotspot PSK.
+
+    First boot may use the factory setup default so operators can reach the
+    captive portal. Once a file/env override exists, it must be a rotated
+    operator-chosen password.
+    """
+    env_password = os.environ.get("CAMERA_HOTSPOT_PASS", "")
+    if env_password:
+        return _validate_hotspot_password(env_password)
+
+    path = pass_file or os.environ.get("CAMERA_HOTSPOT_PASS_FILE", HOTSPOT_PASS_FILE)
+    try:
+        with open(path) as f:
+            return _validate_hotspot_password(f.readline())
+    except FileNotFoundError:
+        if allow_default:
+            return HOTSPOT_DEFAULT_PASS
+        raise RuntimeError(
+            f"setup hotspot password is not provisioned at {path}"
+        ) from None
 
 
 def scan_networks(wifi_interface: str = "wlan0") -> list[dict]:
@@ -140,7 +177,7 @@ def wait_for_interface(wifi_interface: str = "wlan0", max_wait: int = 30) -> boo
 def start_hotspot(
     wifi_interface: str = "wlan0",
     ssid: str = HOTSPOT_SSID,
-    password: str = HOTSPOT_PASS,
+    password: str | None = None,
     conn_name: str = HOTSPOT_CONN_NAME,
 ) -> bool:
     """Start WiFi AP via NetworkManager.
@@ -148,6 +185,10 @@ def start_hotspot(
     Returns True on success.
     """
     try:
+        if password is None:
+            password = get_hotspot_password()
+        else:
+            password = _validate_hotspot_password(password)
         if not wait_for_interface(wifi_interface):
             log.warning("WiFi interface %s not found", wifi_interface)
             return False
@@ -222,6 +263,8 @@ def start_hotspot(
         subprocess.CalledProcessError,
         FileNotFoundError,
         subprocess.TimeoutExpired,
+        RuntimeError,
+        ValueError,
     ) as e:
         log.error("Failed to start hotspot: %s", e)
         return False

@@ -4,6 +4,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from camera_streamer import wifi
 from camera_streamer.status_server import (
     SESSION_TIMEOUT,
@@ -19,6 +21,7 @@ from camera_streamer.wifi import (
     HOTSPOT_CONN_NAME as CONN_NAME,
 )
 from camera_streamer.wifi import (
+    HOTSPOT_DEFAULT_PASS,
     HOTSPOT_PASS,
     HOTSPOT_SSID,
 )
@@ -29,6 +32,8 @@ from camera_streamer.wifi_setup import (
     is_setup_complete,
     mark_setup_complete,
 )
+
+TEST_HOTSPOT_PASS = "PerDeviceSetup123"
 
 
 class TestSetupStamp:
@@ -137,6 +142,24 @@ class TestWifiSetupServer:
         mock_server.server_close.assert_called_once()
         assert server._server is None
         assert server._thread is None
+
+    def test_saves_rotated_setup_hotspot_password(self, unconfigured_config):
+        server = WifiSetupServer(unconfigured_config)
+
+        server._save_setup_hotspot_password("CameraSetupPass123")
+
+        path = os.path.join(
+            unconfigured_config.data_dir, "config", "camera-hotspot.psk"
+        )
+        assert os.path.isfile(path)
+        with open(path) as f:
+            assert f.read().strip() == "CameraSetupPass123"
+
+    def test_rejects_factory_default_setup_hotspot_password(self, unconfigured_config):
+        server = WifiSetupServer(unconfigured_config)
+
+        with pytest.raises(ValueError, match="new setup hotspot"):
+            server._save_setup_hotspot_password("homecamera")
 
 
 class TestScanWifi:
@@ -348,7 +371,7 @@ class TestHotspot:
         mock_run.return_value = MagicMock(
             returncode=0, stdout="wlan0:wifi\n", stderr=""
         )
-        result = wifi.start_hotspot()
+        result = wifi.start_hotspot(password=TEST_HOTSPOT_PASS)
         assert result is True
 
     @patch("camera_streamer.wifi.time.sleep")
@@ -358,7 +381,7 @@ class TestHotspot:
         mock_run.return_value = MagicMock(
             returncode=0, stdout="eth0:ethernet\n", stderr=""
         )
-        result = wifi.start_hotspot()
+        result = wifi.start_hotspot(password=TEST_HOTSPOT_PASS)
         assert result is False
 
     @patch("subprocess.run")
@@ -381,7 +404,7 @@ class TestHotspot:
         import subprocess
 
         mock_run.side_effect = subprocess.CalledProcessError(1, "nmcli")
-        result = wifi.start_hotspot()
+        result = wifi.start_hotspot(password=TEST_HOTSPOT_PASS)
         assert result is False
 
     @patch("camera_streamer.wifi.time.sleep")
@@ -399,7 +422,7 @@ class TestHotspot:
             ),  # up attempt 1
             MagicMock(returncode=0),  # up attempt 2
         ]
-        result = wifi.start_hotspot()
+        result = wifi.start_hotspot(password=TEST_HOTSPOT_PASS)
         assert result is True
 
 
@@ -600,8 +623,8 @@ class TestSetupHTTPHandler:
         assert HOTSPOT_SSID == "HomeCam-Setup"
 
     def test_hotspot_password(self):
-        """Password should be homecamera."""
-        assert HOTSPOT_PASS == "homecamera"
+        """First boot uses the documented setup password until setup rotates it."""
+        assert HOTSPOT_PASS == HOTSPOT_DEFAULT_PASS
 
     def test_connection_name(self):
         """Connection name should match SSID."""

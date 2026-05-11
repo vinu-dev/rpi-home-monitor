@@ -301,14 +301,15 @@ https://rpi-divinu.local
 
 On first boot, the camera starts a WiFi hotspot for provisioning:
 
-1. Connect your phone to WiFi: **HomeCam-Setup** (password: `homecamera`)
-2. The setup wizard opens automatically (captive portal). If not, go to `http://10.42.0.1`
-3. Enter your **home WiFi SSID** and **password**
-4. Enter the **server address** (default: `rpi-divinu.local`)
-5. Set **camera login credentials** — username (default: `admin`) and password (min 12 characters). These protect the camera's status page and admin actions.
-6. Click **Save & Connect**
-7. The camera LED changes: fast blink (connecting) → solid (connected)
-8. On success, the wizard shows the camera's `.local` URL (e.g., `https://rpi-divinu-cam-d8ee.local`) and a QR fallback that opens `https://<camera-ip>:443` after you reconnect your phone to home WiFi
+1. Connect your phone to WiFi: **HomeCam-Setup** using the factory setup password `homecamera`
+2. During setup, choose a new setup hotspot password. The camera stores it in `/data/config/camera-hotspot.psk` and uses it if setup mode appears again after a reset or WiFi repair.
+3. The setup wizard opens automatically (captive portal). If not, go to `http://10.42.0.1`
+4. Enter your **home WiFi SSID** and **password**
+5. Enter the **server address** (default: `rpi-divinu.local`)
+6. Set **camera login credentials** — username (default: `admin`) and password (min 12 characters). These protect the camera's status page and admin actions.
+7. Click **Save & Connect**
+8. The camera LED changes: fast blink (connecting) → solid (connected)
+9. On success, the wizard shows the camera's `.local` URL (e.g., `https://rpi-divinu-cam-d8ee.local`) and a QR fallback that opens `https://<camera-ip>:443` after you reconnect your phone to home WiFi
 
 ### 5.3 Verify Camera Hardware
 
