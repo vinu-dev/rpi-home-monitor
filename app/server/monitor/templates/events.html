@@ -6,7 +6,17 @@
 {% block content %}
 <div x-data="eventsPage()" x-init="init()">
 
-<h1 class="page-title">Events</h1>
+<section class="page-hero page-hero--compact">
+    <div>
+        <div class="page-hero__eyebrow">Motion review</div>
+        <h1 class="page-hero__title">Events</h1>
+        <p class="page-hero__text">Scan motion activity, jump into clips, and narrow the window without leaving the event stream.</p>
+    </div>
+    <div class="page-hero__meta">
+        <span>Motion</span>
+        <span>Clip jump</span>
+    </div>
+</section>
 
 <!--
   Filters. Type-chip row + camera + date range. Chips are the primary

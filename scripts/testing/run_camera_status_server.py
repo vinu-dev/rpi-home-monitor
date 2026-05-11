@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import signal
 import sys
 import tempfile
@@ -38,6 +39,34 @@ def _seed_config(data_dir: Path) -> ConfigManager:
     return cfg
 
 
+def _install_tls_fallback_when_openssl_is_missing(cfg: ConfigManager) -> None:
+    """Let browser tests run on workstations that do not ship openssl.
+
+    Production still uses ``camera_streamer.status_server._ensure_tls_material``.
+    This helper only patches the local test launcher when OpenSSL is absent,
+    matching the pytest fallback coverage for the status server.
+    """
+    if shutil.which("openssl"):
+        return
+
+    from tests.fixtures.tls_material import TEST_TLS_CERT, TEST_TLS_KEY
+
+    cert_path_raw, key_path_raw = status_server_module._status_tls_paths(cfg)
+    cert_path = Path(cert_path_raw)
+    key_path = Path(key_path_raw)
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not cert_path.exists() or not key_path.exists():
+        cert_path.write_text(TEST_TLS_CERT, encoding="ascii")
+        key_path.write_text(TEST_TLS_KEY, encoding="ascii")
+        key_path.chmod(0o600)
+
+    status_server_module._ensure_tls_material = lambda _config: (
+        str(cert_path),
+        str(key_path),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
@@ -47,6 +76,7 @@ def main() -> None:
 
     data_dir = Path(args.data_dir or tempfile.mkdtemp(prefix="hm-camera-"))
     cfg = _seed_config(data_dir)
+    _install_tls_fallback_when_openssl_is_missing(cfg)
     status_server_module.LISTEN_PORT = args.port
     server = CameraStatusServer(cfg)
 

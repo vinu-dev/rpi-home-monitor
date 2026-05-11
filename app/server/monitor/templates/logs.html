@@ -6,7 +6,17 @@
 {% block content %}
 <div x-data="logsPage()" x-init="init()">
 
-<h1 class="page-title">Activity log</h1>
+<section class="page-hero page-hero--compact">
+    <div>
+        <div class="page-hero__eyebrow">Audit trail</div>
+        <h1 class="page-hero__title">Activity log</h1>
+        <p class="page-hero__text">Review security, camera, system, and update actions in one exportable record.</p>
+    </div>
+    <div class="page-hero__meta">
+        <span>Audit</span>
+        <span>Export</span>
+    </div>
+</section>
 
 <!-- Filter chips for common categories. Same visual pattern as /events
      so operators don't relearn a new vocabulary; the difference is the
@@ -133,7 +143,7 @@
                 <span class="event-row__time" x-text="_relativeTime(ev.timestamp)"
                       :title="ev.timestamp"></span>
                 <span class="event-row__camera" x-text="ev.user || '\u2014'"></span>
-                <span class="event-row__duration" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px;"
+                <span class="event-row__duration log-row__detail"
                       x-text="ev.detail || (ev.ip ? 'from ' + ev.ip : '')"></span>
                 <span></span>
             </div>

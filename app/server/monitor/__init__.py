@@ -174,6 +174,7 @@ def create_app(config=None):
         },
         DIAGNOSTICS_UNITS=[
             "monitor.service",
+            "monitor-avahi-pin.service",
             "mediamtx.service",
             "camera-streamer.service",
             "tailscaled.service",

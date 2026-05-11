@@ -4,22 +4,31 @@
 {% block title %}Dashboard - Home Monitor{% endblock %}
 
 {% block content %}
-<div x-data="dashboardPage()" x-init="init()">
-<h1 class="page-title">Dashboard</h1>
+<div x-data="dashboardPage()" x-init="init()" class="dashboard-page">
 
 <!--
   Tier 1 — Status strip (ADR-0018)
   One banner. State colour + one sentence. A deep link to wherever the
   user needs to go to act on the condition. Green is quiet.
 -->
-<a class="status-strip" :class="summaryStateClass"
-   :href="summary.deep_link || '#'"
-   :aria-label="'System status: ' + (summary.state || 'unknown')"
-   @click="onStatusClick($event)">
-    <span class="status-strip__dot"></span>
-    <span class="status-strip__text" x-text="summary.summary || 'Loading system status...'"></span>
-    <span class="status-strip__arrow" x-show="summary.state && summary.state !== 'green'">&rarr;</span>
-</a>
+<section class="dashboard-hero" aria-labelledby="dashboard-heading">
+    <div class="dashboard-hero__copy">
+        <div class="dashboard-hero__eyebrow">Local home control</div>
+        <h1 id="dashboard-heading" class="dashboard-hero__title">Home state</h1>
+        <p class="dashboard-hero__text">Live cameras, motion, storage, and recorder health in one local panel.</p>
+    </div>
+    <a class="status-strip dashboard-hero__status" :class="summaryStateClass"
+       :href="summary.deep_link || '#'"
+       :aria-label="'System status: ' + (summary.state || 'unknown')"
+       @click="onStatusClick($event)">
+        <span class="status-strip__dot"></span>
+        <span class="status-strip__body">
+            <span class="status-strip__label">System status</span>
+            <span class="status-strip__text" x-text="summary.summary || 'Loading system status...'"></span>
+        </span>
+        <span class="status-strip__arrow" x-show="summary.state && summary.state !== 'green'">Open</span>
+    </a>
+</section>
 
 <!--
   Tier 2 — Four summary tiles (ADR-0018)
@@ -27,28 +36,37 @@
   Each tile shows derived state (badge + one value + one caption), never
   raw metrics. Raw metrics live in Settings → System / Storage.
 -->
-<div class="tile-grid">
+<div class="tile-grid dashboard-metrics">
 
     <!-- Cameras -->
     <a class="tile" href="#cameras-section" :class="tileStateClass('cameras')">
-        <div class="tile__label">Cameras</div>
-        <div class="tile__value">
+        <div class="tile__topline">
+            <div class="tile__label">Cameras</div>
+            <span class="tile__icon tile__icon--cameras" aria-hidden="true"></span>
+        </div>
+        <div class="tile__value tile__value--split">
             <span x-text="(summary.details && summary.details.cameras) ? summary.details.cameras.online : '\u2014'"></span>
-            <span class="tile__value-sub"> / <span x-text="(summary.details && summary.details.cameras) ? summary.details.cameras.total : '\u2014'"></span></span>
+            <span class="tile__value-sub">of <span x-text="(summary.details && summary.details.cameras) ? summary.details.cameras.total : '\u2014'"></span></span>
         </div>
         <div class="tile__caption" x-text="camerasCaption"></div>
     </a>
 
     <!-- Last activity -->
     <a class="tile" :href="latestClip ? ('/recordings?camera=' + encodeURIComponent(latestClip.camera_id)) : '/recordings'">
-        <div class="tile__label">Last activity</div>
+        <div class="tile__topline">
+            <div class="tile__label">Last activity</div>
+            <span class="tile__icon tile__icon--activity" aria-hidden="true"></span>
+        </div>
         <div class="tile__value" x-text="latestRelativeTime"></div>
         <div class="tile__caption" x-text="latestCaption"></div>
     </a>
 
     <!-- Storage -->
     <a class="tile" href="/settings#storage" :class="tileStateClass('storage')">
-        <div class="tile__label">Storage</div>
+        <div class="tile__topline">
+            <div class="tile__label">Storage</div>
+            <span class="tile__icon tile__icon--storage" aria-hidden="true"></span>
+        </div>
         <div class="tile__value">
             <span x-text="storagePercentLabel"></span>
         </div>
@@ -57,7 +75,10 @@
 
     <!-- Recorder host -->
     <a class="tile" href="/settings#system" :class="tileStateClass('recorder')">
-        <div class="tile__label">Recorder host</div>
+        <div class="tile__topline">
+            <div class="tile__label">Recorder host</div>
+            <span class="tile__icon tile__icon--recorder" aria-hidden="true"></span>
+        </div>
         <div class="tile__value" x-text="recorderStateLabel"></div>
         <div class="tile__caption" x-text="health.uptime || '\u2014'"></div>
     </a>
@@ -71,9 +92,12 @@
   surface ADR-0018 describes.
   Slice 3 will turn the Cameras section below into a compact roll-call.
 -->
-<div class="section-header" x-show="recentEvents.length > 0">
-    Recent events
-    <a class="text-small" style="float:right;" href="/events">All events &rarr;</a>
+<div class="section-header section-header--rich" x-show="recentEvents.length > 0">
+    <div>
+        <span class="section-header__eyebrow">Recent events</span>
+        <span class="section-header__title">Motion timeline</span>
+    </div>
+    <a class="section-header__link" href="/events">All events</a>
 </div>
 <div class="events-feed" x-show="recentEvents.length > 0">
     <!-- Unified feed: recording clips AND motion events, sorted newest first.
@@ -119,14 +143,17 @@
      for inline-playback) — "Green is quiet" per ADR-0018. -->
 
 <!-- Cameras roll-call (Tier 3 — to be restyled in Slice 3) -->
-<div id="cameras-section" class="section-header">
-    Cameras
+<div id="cameras-section" class="section-header section-header--rich">
+    <div>
+        <span class="section-header__eyebrow">Cameras</span>
+        <span class="section-header__title">Device roll call</span>
+    </div>
     <!-- Scan + Add Camera are admin-only (backend enforces via @admin_required
          on the underlying /api/v1/cameras POST + /api/v1/cameras/<id>/scan).
          Issue #86. -->
-    <span x-show="isAdmin" style="float:right;margin-top:-4px;display:flex;gap:8px;">
+    <span class="section-header__actions" x-show="isAdmin">
         <button class="btn btn--secondary btn--small" @click="scanCameras()" :disabled="scanning">
-            <span x-show="!scanning">&#x1F50D; Scan</span>
+            <span x-show="!scanning">Scan</span>
             <span x-show="scanning">Scanning...</span>
         </button>
         <button class="btn btn--primary btn--small" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : 'Add Camera'"></button>
@@ -135,7 +162,7 @@
 
 <!-- Add Camera Form -->
 <template x-if="showAddForm">
-    <div class="card mb-16">
+    <div class="card mb-16 add-camera-panel">
         <div class="form-group">
             <label for="add-cam-id">Camera ID</label>
             <input class="form-input" id="add-cam-id" x-model="newCam.id" placeholder="e.g. cam-351ad8ee">
@@ -154,7 +181,7 @@
 
 <!-- Pairing PIN Display -->
 <template x-if="pairingPin">
-    <div class="card mb-16 pairing-pin-card" style="border:1px solid var(--accent);background:var(--bg-card);">
+    <div class="card mb-16 pairing-pin-card">
         <div style="text-align:center;margin-bottom:12px;">
             <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:4px;">Enter this PIN on your camera</div>
             <div class="pairing-pin-card__pin" x-text="pairingPin"></div>
@@ -175,7 +202,7 @@
     </div>
 </template>
 
-<div class="grid" id="cameras-grid">
+<div class="grid cameras-grid" id="cameras-grid">
     <template x-if="cameras.length === 0 && !showAddForm">
         <div class="empty-state">
             <div class="empty-state__title">No cameras found</div>
@@ -193,7 +220,7 @@
         </div>
     </template>
     <template x-for="cam in discoveredCameras" :key="cam.id">
-        <div class="card camera-card" :data-cam-id="cam.id">
+        <div class="card camera-card camera-card--pending" :data-cam-id="cam.id">
             <div class="camera-card__info">
                 <div class="camera-card__name" x-text="cam.name || cam.id"></div>
                 <div class="camera-card__location" x-text="cam.ip ? 'IP: ' + cam.ip : 'Detected via mDNS'"></div>
@@ -224,7 +251,12 @@
         </div>
     </template>
     <template x-for="cam in pairedCameras" :key="cam.id">
-        <div class="card camera-card"
+        <div class="card camera-card camera-card--device"
+             :class="{
+                 'camera-card--online': cam.status === 'online',
+                 'camera-card--offline': cam.status === 'offline',
+                 'camera-card--expanded': isCameraDetailsOpen(cam.id)
+             }"
              :id="'camera-' + cam.id"
              :data-cam-id="cam.id"
              style="scroll-margin-top:80px;">
@@ -297,14 +329,24 @@
                      comes back from /api/v1/cameras — we were just not
                      rendering most of it. Click "Details" (doesn't bubble to
                      the outer "go to Live" handler — see @click.stop). -->
-                <details class="camera-card__details" x-show="cam.status !== 'pending'"
-                         @click.stop>
-                    <summary class="text-small text-muted">Details</summary>
-                    <dl class="camera-card__details-grid">
+                <div class="camera-card__details" x-show="cam.status === 'online'"
+                     @click.stop>
+                    <button type="button"
+                            class="camera-card__details-toggle text-small text-muted"
+                            @click.stop="toggleCameraDetails(cam.id, $event.currentTarget)"
+                            :aria-expanded="isCameraDetailsOpen(cam.id).toString()"
+                            :aria-controls="'camera-details-' + cam.id">
+                        <span aria-hidden="true" x-text="isCameraDetailsOpen(cam.id) ? '\u25BE' : '\u25B8'"></span>
+                        <span>Details</span>
+                    </button>
+                    <dl class="camera-card__details-grid"
+                        :id="'camera-details-' + cam.id"
+                        x-show="isCameraDetailsOpen(cam.id)"
+                        x-cloak>
                         <dt>Recording</dt>
                         <dd x-text="_recordingModeLabel(cam)"></dd>
 
-                        <dt>Motion detect</dt>
+                        <dt>Motion</dt>
                         <dd>
                             <span x-text="cam.recording_motion_enabled ? 'On' : 'Off'"
                                   :class="cam.recording_motion_enabled ? 'text-success' : 'text-muted'"></span>
@@ -351,7 +393,7 @@
                             </dd>
                         </template>
                     </dl>
-                </details>
+                </div>
             </div>
             <div class="camera-card__actions">
                 <span class="badge" :class="{
@@ -373,7 +415,12 @@
                          @admin_required on PUT/DELETE /api/v1/cameras/<id>).
                          Hide for viewers so they don't see the controls only
                          to be rejected with a 403 on click. -->
-                    <button x-show="isAdmin" class="btn btn--secondary btn--small" @click.stop="openStreamSettings(cam)">Settings</button>
+                    <button x-show="isAdmin"
+                            class="btn btn--secondary btn--small"
+                            :class="{ 'btn--muted-disabled': cam.status !== 'online' }"
+                            :disabled="cam.status !== 'online'"
+                            :title="cam.status === 'online' ? 'Open camera settings' : 'Camera is offline. Settings unlock when it reconnects.'"
+                            @click.stop="cam.status === 'online' && openStreamSettings(cam)">Settings</button>
                     <button x-show="isAdmin" class="btn btn--danger btn--small btn--icon" @click.stop="deleteCamera(cam.id)"
                             aria-label="Remove camera">&#x2715;</button>
                 </div>
@@ -669,6 +716,7 @@ function dashboardPage() {
         streamSaveOk: false,
         encoderPresets: [],
         encoderPresetsLoaded: false,
+        expandedCameraDetails: {},
 
         _summaryInterval: null,
         _cameraInterval: null,
@@ -676,6 +724,42 @@ function dashboardPage() {
         // Derived lists — split pending (discovered) from paired (online/offline)
         get discoveredCameras() { return this.cameras.filter(c => c.status === 'pending'); },
         get pairedCameras() { return this.cameras.filter(c => c.status !== 'pending'); },
+
+        isCameraDetailsOpen(id) {
+            return Boolean(this.expandedCameraDetails[id]);
+        },
+
+        toggleCameraDetails(id, triggerEl) {
+            var next = Object.assign({}, this.expandedCameraDetails);
+            var opening = !next[id];
+            next[id] = opening;
+            this.expandedCameraDetails = next;
+            if (opening && triggerEl) {
+                var scrollCameraIntoView = function() {
+                    var card = triggerEl.closest('.camera-card');
+                    if (!card) return;
+                    var nav = document.querySelector('.bottom-nav');
+                    var navRect = nav ? nav.getBoundingClientRect() : null;
+                    var navTop = navRect ? navRect.top : window.innerHeight;
+                    var clearBottom = Math.min(window.innerHeight, navTop) - 18;
+                    var cardRect = card.getBoundingClientRect();
+                    if (cardRect.bottom > clearBottom) {
+                        window.scrollBy({
+                            top: cardRect.bottom - clearBottom,
+                            behavior: 'smooth'
+                        });
+                    }
+                };
+                if (this.$nextTick) {
+                    this.$nextTick(function() {
+                        requestAnimationFrame(scrollCameraIntoView);
+                        setTimeout(scrollCameraIntoView, 220);
+                    });
+                } else {
+                    setTimeout(scrollCameraIntoView, 220);
+                }
+            }
+        },
 
         // --- Tier-1 status strip ---
         get summaryStateClass() {
@@ -1337,6 +1421,9 @@ function dashboardPage() {
         },
 
         openStreamSettings(cam) {
+            if (!cam || cam.status !== 'online') {
+                return;
+            }
             this.editCam = cam;
             var resKey = cam.width + 'x' + cam.height;
             var options = this._resolutionOptionsFor(cam);

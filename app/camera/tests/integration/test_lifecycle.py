@@ -412,6 +412,9 @@ class TestRunning:
         assert (
             MockStream.call_args.kwargs["server_resolver"] is MockResolver.return_value
         )
+        assert (
+            MockStatus.call_args.kwargs["server_resolver"] is MockResolver.return_value
+        )
 
     @patch("camera_streamer.lifecycle._ServerResolver")
     @patch("camera_streamer.lifecycle.led")

@@ -209,7 +209,7 @@ The server advertises itself via mDNS. From any computer on the same LAN:
 
 ```bash
 # Linux/macOS
-ping home-monitor.local
+ping rpi-divinu.local
 
 # If mDNS doesn't work, check your router's DHCP lease table for the Pi's IP
 # Or connect a monitor + keyboard temporarily and run:
@@ -219,7 +219,7 @@ ip addr show eth0
 ### 4.3 SSH In (Dev Image Only)
 
 ```bash
-ssh root@home-monitor.local
+ssh root@rpi-divinu.local
 # Dev image: no password required (debug-tweaks enabled)
 ```
 
@@ -280,7 +280,7 @@ ls /data/
 From your phone or laptop browser:
 
 ```
-https://home-monitor.local
+https://rpi-divinu.local
 ```
 
 - **Accept the self-signed certificate warning** (the system generates its own CA on first boot).
@@ -444,7 +444,7 @@ nmcli connection up "Wired connection 1"
 | Connection refused | nginx not running | `systemctl start nginx` |
 | 502 Bad Gateway | Flask app crashed | `systemctl restart monitor` and check logs |
 | Certificate error | Self-signed cert | Accept the browser warning (expected) |
-| Can't reach `home-monitor.local` | mDNS not working | Use IP address directly |
+| Can't reach `rpi-divinu.local` | mDNS not working | Use IP address directly |
 
 ### 7.5 Poor Video Quality or Lag
 
@@ -500,7 +500,7 @@ MicroSD cards degrade with writes. Signs of failure:
 
 # Upload via the web dashboard: System → OTA Update
 # Or push via API:
-curl -X POST https://home-monitor.local/api/v1/ota/upload \
+curl -X POST https://rpi-divinu.local/api/v1/ota/upload \
   -F "image=@signed-update.swu"
 ```
 

@@ -266,6 +266,43 @@ class TestPosterSignatureHeaders:
         assert body["event_id"] == "mot-test-001"
         assert body["peak_score"] == 0.12
 
+    def test_poster_prefers_resolved_server_ip(self, monkeypatch):
+        from camera_streamer.motion_runner import MotionEventPoster
+
+        captured = {}
+
+        class _FakeResp:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_urlopen(req, context=None, timeout=None):
+            captured["url"] = req.full_url
+            return _FakeResp()
+
+        monkeypatch.setattr(
+            "camera_streamer.motion_runner.urllib.request.urlopen",
+            fake_urlopen,
+        )
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+
+        poster = MotionEventPoster(_cfg(), _pairing(), server_resolver=resolver)
+        ok = poster.post(
+            phase="start",
+            event_id="mot-test-002",
+            peak_score=0.12,
+            peak_pixels_changed=1500,
+            duration_seconds=0.0,
+            started_at_epoch=1776620000.0,
+        )
+        assert ok
+        assert captured["url"] == ("https://192.168.1.244/api/v1/cameras/motion-event")
+
 
 class TestWarmupGate:
     """Frames delivered within warmup_seconds after start() must be discarded."""

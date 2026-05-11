@@ -1,0 +1,2 @@
+# REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
+"""Shared camera test fixtures."""

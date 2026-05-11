@@ -133,9 +133,10 @@ class MotionEventPoster:
     block the detector thread.
     """
 
-    def __init__(self, config, pairing_manager):
+    def __init__(self, config, pairing_manager, server_resolver=None):
         self._config = config
         self._pairing = pairing_manager
+        self._server_resolver = server_resolver
 
     def post(
         self,
@@ -146,7 +147,11 @@ class MotionEventPoster:
         duration_seconds: float,
         started_at_epoch: float,
     ) -> bool:
-        server_ip = self._config.server_ip
+        server_ip = (
+            getattr(self._server_resolver, "resolved_ip", None)
+            if self._server_resolver is not None
+            else None
+        ) or self._config.server_ip
         if not server_ip:
             log.debug("No server_ip — skipping motion event POST")
             return False
@@ -245,6 +250,7 @@ class MotionRunner:
         frame_reader: Callable | None = None,
         passive: bool = False,
         warmup_seconds: float = 3.0,
+        server_resolver=None,
     ):
         if not passive and frame_fd is None and frame_reader is None:
             raise ValueError(
@@ -255,7 +261,12 @@ class MotionRunner:
         self._frame_fd = frame_fd
         self._detector = MotionDetector(motion_config)
         factory = poster_factory or MotionEventPoster
-        self._poster = factory(config, pairing_manager)
+        if server_resolver is None:
+            self._poster = factory(config, pairing_manager)
+        else:
+            self._poster = factory(
+                config, pairing_manager, server_resolver=server_resolver
+            )
         self._running = False
         self._thread: threading.Thread | None = None
         self._frame_reader = frame_reader

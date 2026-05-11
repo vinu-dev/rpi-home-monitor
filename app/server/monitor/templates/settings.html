@@ -4,8 +4,14 @@
 {% block title %}Settings - Home Monitor{% endblock %}
 
 {% block content %}
-<div x-data="settingsPage()" x-init="init()">
-<h1 class="page-title">Settings</h1>
+<div x-data="settingsPage()" x-init="init()" class="settings-page">
+<section class="page-hero page-hero--compact">
+    <div>
+        <div class="page-hero__eyebrow">System control</div>
+        <h1 class="page-hero__title">Settings</h1>
+        <p class="page-hero__text">Configure security, storage, updates, users, and camera behavior without leaving the control panel.</p>
+    </div>
+</section>
 
 <!-- Settings Tab Bar -->
 <div class="settings-tabs">
@@ -35,6 +41,15 @@
          camera-level defaults inside the panel. -->
     <button class="settings-tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'; loadNotificationPrefs()">Notifications</button>
 </div>
+
+<label class="settings-section-picker">
+    <span>Section</span>
+    <select class="form-input" x-model="tab" @change="selectSettingsTab($event.target.value)" aria-label="Settings section">
+        <template x-for="item in settingsNavItems()" :key="item.id">
+            <option :value="item.id" x-text="item.label"></option>
+        </template>
+    </select>
+</label>
 
 <!-- ═══════════════════════════════════════════════════════════
      SYSTEM TAB (admin only)
@@ -780,8 +795,8 @@
 
         <!-- User Table -->
         <div class="card mt-16">
-            <div class="user-table-wrap">
-                <table class="user-table">
+            <div class="user-table-wrap settings-table-cards">
+                <table class="user-table user-management-table">
                     <thead>
                         <tr>
                             <th>Username</th>
@@ -797,16 +812,16 @@
                         </template>
                         <template x-for="u in users" :key="u.id">
                             <tr>
-                                <td>
+                                <td data-label="Username">
                                     <span x-text="u.username"></span>
                                     <span x-show="currentUser && currentUser.id === u.id" class="text-muted"> (you)</span>
                                 </td>
-                                <td><span class="badge" :class="u.role === 'admin' ? 'badge--pending' : 'badge--offline'" x-text="u.role"></span></td>
-                                <td>
+                                <td data-label="Role"><span class="badge" :class="u.role === 'admin' ? 'badge--pending' : 'badge--offline'" x-text="u.role"></span></td>
+                                <td data-label="2FA">
                                     <span class="badge" :class="u.totp_enabled ? 'badge--ok' : 'badge--offline'" x-text="u.totp_enabled ? 'on' : 'off'"></span>
                                 </td>
-                                <td class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
-                                <td style="display:flex; gap:6px; align-items:center;">
+                                <td data-label="Created" class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
+                                <td data-label="Actions" style="display:flex; gap:6px; align-items:center;">
                                     <!-- Reset password — admin-only, and
                                          hidden for the admin's own row (they
                                          use Settings → Change Password). Sets
@@ -931,8 +946,8 @@
                 <div class="text-small text-muted">No active sessions are currently indexed for this account.</div>
             </template>
 
-            <div class="user-table-wrap" x-show="!sessions.loading && sessions.rows.length > 0">
-                <table class="user-table">
+            <div class="user-table-wrap settings-table-cards" x-show="!sessions.loading && sessions.rows.length > 0">
+                <table class="user-table session-table">
                     <thead>
                         <tr>
                             <th x-show="isAdmin && sessions.includeAll">User</th>
@@ -946,11 +961,11 @@
                     <tbody>
                         <template x-for="row in sessions.rows" :key="row.id">
                             <tr>
-                                <td x-show="isAdmin && sessions.includeAll">
+                                <td data-label="User" x-show="isAdmin && sessions.includeAll">
                                     <div style="font-weight:600;" x-text="row.username"></div>
                                     <div class="text-small text-muted" x-show="row.is_locked_out">Account locked out</div>
                                 </td>
-                                <td>
+                                <td data-label="Device">
                                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                         <span style="font-weight:600;" x-text="sessionDeviceLabel(row)"></span>
                                         <span x-show="row.is_current" class="badge badge--ok">this device</span>
@@ -958,10 +973,10 @@
                                     </div>
                                     <div class="text-small text-muted" x-show="row.user_agent" x-text="row.user_agent"></div>
                                 </td>
-                                <td class="text-small" x-text="row.source_ip || '--'"></td>
-                                <td class="text-small" x-text="formatLocalTime(row.created_at)"></td>
-                                <td class="text-small" x-text="formatRelativeTime(row.last_active)"></td>
-                                <td>
+                                <td data-label="Source IP" class="text-small" x-text="row.source_ip || '--'"></td>
+                                <td data-label="Signed in" class="text-small" x-text="formatLocalTime(row.created_at)"></td>
+                                <td data-label="Last active" class="text-small" x-text="formatRelativeTime(row.last_active)"></td>
+                                <td data-label="Action">
                                     <button x-show="row.is_legacy || !row.is_current"
                                             class="btn btn--secondary btn--small"
                                             :disabled="sessions.busy"
@@ -2421,6 +2436,85 @@ function settingsPage() {
         // Audit-log browsing stays on /logs where the operator can
         // filter and inspect the full event stream.
 
+        settingsNavItems() {
+            if (!this.currentUser) {
+                return [
+                    { id: 'system', label: 'System' },
+                    { id: 'network', label: 'Network' },
+                    { id: 'tailscale', label: 'Tailscale' },
+                    { id: 'users', label: 'Users' },
+                    { id: 'security', label: 'Security' },
+                    { id: 'recording', label: 'Recording' },
+                    { id: 'storage', label: 'Storage' },
+                    { id: 'webhooks', label: 'Webhooks' },
+                    { id: 'updates', label: 'Updates' },
+                    { id: 'account', label: 'Account' },
+                    { id: 'notifications', label: 'Notifications' },
+                ];
+            }
+            if (!this.isAdmin) {
+                return [
+                    { id: 'account', label: 'Account' },
+                    { id: 'security', label: 'Security' },
+                    { id: 'notifications', label: 'Notifications' },
+                ];
+            }
+            return [
+                { id: 'system', label: 'System' },
+                { id: 'network', label: 'Network' },
+                { id: 'tailscale', label: 'Tailscale' },
+                { id: 'users', label: 'Users' },
+                { id: 'security', label: 'Security' },
+                { id: 'recording', label: 'Recording' },
+                { id: 'storage', label: 'Storage' },
+                { id: 'webhooks', label: 'Webhooks' },
+                { id: 'updates', label: 'Updates' },
+                { id: 'account', label: 'Account' },
+                { id: 'notifications', label: 'Notifications' },
+            ];
+        },
+
+        runTabLoaders(tabId) {
+            if (tabId === 'updates' && this.isAdmin) { this.loadOtaStatus(); }
+            if (tabId === 'security') { this.loadSessions(); }
+            if (tabId === 'webhooks' && this.isAdmin) { this.loadWebhooks(); }
+            if (tabId === 'account') { this.loadTotpStatus(); }
+            if (tabId === 'notifications') { this.loadNotificationPrefs(); }
+        },
+
+        selectSettingsTab(tabId) {
+            var validTabs = this.settingsNavItems().map(function(item) { return item.id; });
+            if (validTabs.indexOf(tabId) === -1) {
+                tabId = this.isAdmin ? 'system' : 'account';
+            }
+            this.tab = tabId;
+            this.runTabLoaders(tabId);
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', '#' + tabId);
+            }
+        },
+
+        applyHashTab() {
+            // Honour a URL fragment like /settings#storage so status-strip
+            // deep-links (/settings#system, /settings#storage etc.) open
+            // directly on the correct tab instead of bouncing the user
+            // through the default tab. Unknown fragments are ignored.
+            var validTabs = this.settingsNavItems().map(function(item) { return item.id; });
+            var frag = (window.location.hash || '').replace('#','').toLowerCase();
+            if (frag && validTabs.indexOf(frag) !== -1) {
+                this.tab = frag;
+                this.runTabLoaders(frag);
+                window.setTimeout(function() {
+                    var active = document.querySelector('.settings-tabs .settings-tab.active');
+                    if (active && active.scrollIntoView) {
+                        active.scrollIntoView({ block: 'nearest', inline: 'center' });
+                    }
+                }, 0);
+                return true;
+            }
+            return false;
+        },
+
         async init() {
             try {
                 await window.HM.auth.getMe();
@@ -2428,17 +2522,13 @@ function settingsPage() {
                 this.isAdmin = this.currentUser && this.currentUser.role === 'admin';
             } catch(e) {}
 
-            // Honour a URL fragment like /settings#storage so status-strip
-            // deep-links (/settings#system, /settings#storage etc.) open
-            // directly on the correct tab instead of bouncing the user
-            // through the default tab. Unknown fragments are ignored.
-            var validTabs = ['system','network','tailscale','users','account','recording','storage','webhooks','updates','security','notifications'];
-            var frag = (window.location.hash || '').replace('#','').toLowerCase();
-            if (frag && validTabs.indexOf(frag) !== -1) {
-                this.tab = frag;
-                if (frag === 'updates' && this.isAdmin) { this.loadOtaStatus(); }
-                if (frag === 'security') { this.loadSessions(); }
+            if (!this.applyHashTab()) {
+                var validTabs = this.settingsNavItems().map(function(item) { return item.id; });
+                if (validTabs.indexOf(this.tab) === -1) {
+                    this.tab = validTabs[0] || 'account';
+                }
             }
+            window.addEventListener('hashchange', () => this.applyHashTab());
 
             this.loadSystemInfo();
             this.loadTimeStatus();

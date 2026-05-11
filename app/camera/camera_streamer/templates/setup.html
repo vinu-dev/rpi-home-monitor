@@ -1,4 +1,4 @@
-{# REQ: SWR-036; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-034 #}
+<!-- REQ: SWR-036; RISK: RISK-010, RISK-012; SEC: SC-010, SC-012; TEST: TC-034 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,6 +46,322 @@ input:focus { border-color: #e94560; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #view-form, #view-connecting, #view-result { display: none; }
 #view-form.active, #view-connecting.active, #view-result.active { display: block; }
+
+/* Premium local-control camera setup skin. Keep this standalone:
+   captive portal mode cannot depend on the server stylesheet. */
+:root {
+  --ui-bg: #f4f7fb;
+  --ui-surface: rgba(255,255,255,.92);
+  --ui-border: rgba(15,23,42,.1);
+  --ui-text: #111827;
+  --ui-muted: #64748b;
+  --ui-accent: #2563eb;
+  --ui-accent-strong: #1d4ed8;
+  --ui-success: #15803d;
+  --ui-danger: #dc2626;
+  --ui-shadow: 0 22px 55px rgba(15,23,42,.12);
+}
+body {
+  background:
+    linear-gradient(116deg, rgba(37,99,235,.16) 0%, rgba(37,99,235,0) 38%),
+    linear-gradient(302deg, rgba(20,184,166,.12) 0%, rgba(20,184,166,0) 42%),
+    linear-gradient(180deg, #f8fafc, var(--ui-bg));
+  color: var(--ui-text);
+}
+.container { max-width: 460px; }
+h1 { color: var(--ui-text); font-size: 1.75rem; font-weight: 760; }
+.cam-id, .hint, label, p { color: var(--ui-muted); }
+.card {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
+}
+.card h3 { color: var(--ui-text); }
+input[type=text], input[type=password] {
+  background: rgba(255,255,255,.9);
+  border: 1px solid rgba(15,23,42,.14);
+  border-radius: 16px;
+  color: var(--ui-text);
+}
+input:focus {
+  border-color: rgba(37,99,235,.65);
+  box-shadow: 0 0 0 4px rgba(37,99,235,.13);
+}
+.btn { border-radius: 999px; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+.btn-primary { background: linear-gradient(180deg, #3b82f6, var(--ui-accent)); }
+.btn-primary:hover { background: linear-gradient(180deg, #2563eb, var(--ui-accent-strong)); }
+.btn-secondary {
+  background: #fff;
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text);
+}
+.net {
+  border-bottom-color: rgba(15,23,42,.08);
+  border-radius: 14px;
+}
+.net:hover { background: #fff; }
+.net-ssid { color: var(--ui-text); }
+.net-signal { color: var(--ui-success); }
+.msg { border-radius: 18px; }
+.msg-info { background: #dbeafe; color: #1e3a8a; }
+.msg-ok { background: #dcfce7; color: #166534; }
+.msg-err { background: #fee2e2; color: #991b1b; }
+.msg-warn { background: #fef3c7; color: #92400e; }
+#cam-address-display,
+#result-address-display {
+  background: #f8fafc !important;
+  color: var(--ui-success) !important;
+  border: 1px solid var(--ui-border);
+  border-radius: 18px !important;
+}
+
+/* Aurora setup pass: same product skin as the server and camera console. */
+:root {
+  --ui-bg: #edf4fb;
+  --ui-surface: rgba(255,255,255,.86);
+  --ui-border: rgba(20,35,61,.13);
+  --ui-text: #111827;
+  --ui-muted: #60708a;
+  --ui-accent: #0a84ff;
+  --ui-accent-strong: #006ee0;
+  --ui-success: #22a06b;
+  --ui-danger: #df2f3f;
+  --ui-shadow: 0 32px 90px rgba(28,50,87,.18), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+
+html {
+  background: #edf4fb;
+}
+
+body {
+  color: var(--ui-text);
+  background:
+    linear-gradient(116deg, rgba(10,132,255,.15) 0%, rgba(10,132,255,0) 38%),
+    linear-gradient(302deg, rgba(0,199,190,.16) 0%, rgba(0,199,190,0) 42%),
+    linear-gradient(180deg, #fbfdff 0%, #edf4fb 56%, #e8f1fa 100%);
+  background-attachment: fixed;
+}
+
+.container {
+  max-width: 680px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+h1 {
+  color: #07111f;
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 830;
+  letter-spacing: 0;
+  margin-top: 8px;
+}
+
+.cam-id {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(20,35,61,.11);
+  border-radius: 999px;
+  background: rgba(255,255,255,.74);
+  box-shadow: 0 1px 0 rgba(255,255,255,.86) inset;
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(247,250,254,.76));
+  border: 1px solid var(--ui-border);
+  border-radius: 30px;
+  box-shadow: 0 18px 44px rgba(26,45,76,.1), 0 1px 0 rgba(255,255,255,.88) inset;
+}
+
+.card:first-of-type {
+  box-shadow: var(--ui-shadow);
+}
+
+.card h3 {
+  color: #111827;
+  font-weight: 820;
+}
+
+input[type=text],
+input[type=password] {
+  min-height: 50px;
+  background: rgba(255,255,255,.88);
+  border: 1px solid rgba(20,35,61,.14);
+  border-radius: 17px;
+  color: var(--ui-text);
+  box-shadow: 0 1px 0 rgba(255,255,255,.88) inset;
+}
+
+input:focus {
+  border-color: rgba(10,132,255,.62);
+  box-shadow: 0 0 0 4px rgba(10,132,255,.14);
+}
+
+.btn {
+  min-height: 50px;
+  border-radius: 999px;
+  font-weight: 780;
+  box-shadow: 0 1px 0 rgba(255,255,255,.65) inset, 0 16px 34px rgba(20,35,61,.11);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0a84ff 0%, #00c7be 52%, #7d5cff 100%);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0077ea 0%, #00b7af 52%, #6f4ff0 100%);
+}
+
+.btn-secondary {
+  background: rgba(255,255,255,.86);
+  border-color: rgba(20,35,61,.13);
+  color: #172033;
+}
+
+.network-list {
+  display: grid;
+  gap: 10px;
+}
+
+.net {
+  min-height: 48px;
+  padding: 13px 15px;
+  background: rgba(255,255,255,.72);
+  border: 1px solid rgba(20,35,61,.1);
+  border-radius: 17px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.86) inset;
+}
+
+.net:hover {
+  background: #fff;
+  border-color: rgba(10,132,255,.25);
+}
+
+.msg {
+  border-radius: 22px;
+  border: 1px solid transparent;
+}
+
+.msg-info { background: #eaf4ff; color: #0a4f9f; border-color: rgba(10,132,255,.2); }
+.msg-ok { background: #e9f8ef; color: #12633f; border-color: rgba(34,160,107,.22); }
+.msg-err { background: #fff0f2; color: #a81729; border-color: rgba(223,47,63,.24); }
+.msg-warn { background: #fff6df; color: #804700; border-color: rgba(182,106,0,.24); }
+
+#cam-address-display,
+#result-address-display {
+  background: #f8fbff !important;
+  color: #12633f !important;
+  border: 1px solid rgba(20,35,61,.12);
+  border-radius: 20px !important;
+}
+
+#cam-address-qr,
+#result-address-qr,
+#result-ip-qr {
+  border: 1px solid rgba(20,35,61,.1);
+  border-radius: 18px !important;
+  box-shadow: 0 12px 28px rgba(20,35,61,.08);
+}
+
+#result-host-link,
+#result-ip-link {
+  color: #0a5fd0 !important;
+}
+
+@media (max-width: 520px) {
+  .container {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  h1 {
+    font-size: 2.1rem;
+  }
+
+  .card {
+    border-radius: 26px;
+  }
+}
+
+/* Camera setup parity pass: same calm control-panel language as the
+   server and camera console, with clearer repeated network rows. */
+body {
+  background:
+    linear-gradient(120deg, rgba(0,199,190,.14) 0%, rgba(0,199,190,0) 34%),
+    linear-gradient(300deg, rgba(125,92,255,.13) 0%, rgba(125,92,255,0) 38%),
+    linear-gradient(180deg, #fbfdff 0%, #eef5fc 46%, #e7eef8 100%);
+}
+
+.container {
+  max-width: 760px;
+}
+
+h1 {
+  margin-top: 18px;
+}
+
+.card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(20,35,61,.11);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.92), transparent);
+  pointer-events: none;
+}
+
+.card h3 {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(20,35,61,.08);
+  letter-spacing: .01em;
+}
+
+.network-list {
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(20,35,61,.09);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,.74), rgba(244,249,255,.62));
+}
+
+.net {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin: 0;
+}
+
+.net:nth-child(even) {
+  background: linear-gradient(180deg, rgba(247,251,255,.98), rgba(239,246,255,.86));
+}
+
+.net-signal {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding-left: 12px;
+  border-left: 1px solid rgba(20,35,61,.08);
+}
+
+.hint,
+label,
+p {
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .card h3 {
+    padding-bottom: 10px;
+  }
+}
 </style>
 </head>
 <body>

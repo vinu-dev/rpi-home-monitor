@@ -1,4 +1,4 @@
-{# REQ: SWR-013, SWR-037; RISK: RISK-002, RISK-022; SEC: SC-001, SC-020; TEST: TC-004, TC-035 #}
+<!-- REQ: SWR-013, SWR-037; RISK: RISK-002, RISK-022; SEC: SC-001, SC-020; TEST: TC-004, TC-035 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,12 +47,9 @@ body {
     line-height: 1.5;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
-    /* Layered background: deep navy + two soft radial glows in the
-       accent colors, anchored top-left and top-right. Cheap (pure
-       CSS), gives the page a subtle gradient hero without images. */
     background:
-        radial-gradient(900px 600px at -10% -20%, rgba(255,92,124,0.18), transparent 60%),
-        radial-gradient(800px 500px at 110% -10%, rgba(176,107,248,0.15), transparent 60%),
+        linear-gradient(116deg, rgba(255,92,124,0.16) 0%, rgba(255,92,124,0) 38%),
+        linear-gradient(302deg, rgba(176,107,248,0.14) 0%, rgba(176,107,248,0) 42%),
         var(--bg);
     background-attachment: fixed;
 }
@@ -431,6 +428,825 @@ details[open] summary::after { transform: rotate(45deg); }
     .hero__sub dd { margin-bottom: 4px; }
     .bar__inner, .toc, .wrap { padding-left: var(--gap-3); padding-right: var(--gap-3); }
 }
+
+/* Premium camera control-panel refresh. Kept CSS-only so handler
+   routes, forms, and machine-control APIs remain untouched. */
+:root {
+    --bg: #f4f7fb;
+    --bg-2: #eef2f6;
+    --surface: rgba(255,255,255,.92);
+    --surface-2: #f8fafc;
+    --surface-3: #ffffff;
+    --border: rgba(15,23,42,.1);
+    --border-soft: rgba(15,23,42,.08);
+    --text: #111827;
+    --muted: #64748b;
+    --dim: #94a3b8;
+    --accent-1: #3b82f6;
+    --accent-2: #2563eb;
+    --accent: #2563eb;
+    --accent-grad: linear-gradient(180deg, var(--accent-1), var(--accent-2));
+    --ok: #15803d;
+    --warn: #b45309;
+    --err: #dc2626;
+    --ok-glow: rgba(21,128,61,.16);
+    --warn-glow: rgba(180,83,9,.16);
+    --err-glow: rgba(220,38,38,.16);
+    --r-sm: 12px;
+    --r-md: 16px;
+    --r-lg: 24px;
+    --shadow-card: 0 1px 2px rgba(15,23,42,.06);
+    --shadow-lift: 0 22px 55px rgba(15,23,42,.12);
+}
+body {
+    background:
+        linear-gradient(116deg, rgba(37,99,235,.16) 0%, rgba(37,99,235,0) 38%),
+        linear-gradient(302deg, rgba(20,184,166,.12) 0%, rgba(20,184,166,0) 42%),
+        linear-gradient(180deg, #f8fafc, var(--bg));
+}
+.bar {
+    background: rgba(255,255,255,.82);
+    border-bottom-color: var(--border-soft);
+    box-shadow: 0 1px 0 rgba(255,255,255,.75);
+}
+.bar__title,
+h1,
+h2,
+h3,
+.hero__line,
+.card h3,
+.metric__value {
+    color: var(--text);
+}
+.bar__logo {
+    box-shadow: 0 10px 28px rgba(37,99,235,.24);
+}
+.toc {
+    background: rgba(255,255,255,.72);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-card);
+}
+.toc a {
+    border-radius: 999px;
+}
+.toc a.active,
+.toc a:hover {
+    background: #111827;
+    color: #fff;
+}
+.hero,
+.card,
+details,
+.metric,
+.msg,
+.net {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+}
+.hero {
+    box-shadow: var(--shadow-lift);
+}
+.input,
+input[type=text],
+input[type=password],
+input[type=number],
+select {
+    background: rgba(255,255,255,.9);
+    border-color: rgba(15,23,42,.14);
+    border-radius: 16px;
+    color: var(--text);
+}
+.input:focus,
+input:focus,
+select:focus {
+    border-color: rgba(37,99,235,.65);
+    box-shadow: 0 0 0 4px rgba(37,99,235,.13);
+}
+.btn {
+    border-radius: 999px;
+    box-shadow: var(--shadow-card);
+}
+.btn--primary {
+    background: var(--accent-grad);
+}
+.btn--outline,
+.btn--secondary {
+    background: #fff;
+    border-color: var(--border);
+    color: var(--text);
+}
+.btn--danger {
+    background: linear-gradient(180deg, #ef4444, #dc2626);
+}
+.pill,
+.chip,
+.status {
+    border-radius: 999px;
+}
+.msg--ok { background: #dcfce7; color: #166534; border-color: rgba(21,128,61,.22); }
+.msg--warn { background: #fef3c7; color: #92400e; border-color: rgba(180,83,9,.24); }
+.msg--err { background: #fee2e2; color: #991b1b; border-color: rgba(220,38,38,.24); }
+
+/* Aurora camera pass: visual parity with the server control panel while
+   keeping all camera actions, OTA, pairing, reset, and auth wiring intact. */
+:root {
+    --bg: #edf4fb;
+    --bg-2: #f8fbff;
+    --surface: rgba(255,255,255,.82);
+    --surface-2: rgba(246,249,253,.86);
+    --surface-3: rgba(255,255,255,.96);
+    --border: rgba(20,35,61,.13);
+    --border-soft: rgba(20,35,61,.08);
+    --text: #111827;
+    --muted: #60708a;
+    --dim: #8a98ad;
+    --accent-1: #0a84ff;
+    --accent-2: #00c7be;
+    --accent-3: #7d5cff;
+    --accent: #0a84ff;
+    --accent-grad: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 52%, var(--accent-3) 100%);
+    --ok: #22a06b;
+    --warn: #b66a00;
+    --err: #df2f3f;
+    --ok-glow: rgba(34,160,107,.18);
+    --warn-glow: rgba(182,106,0,.18);
+    --err-glow: rgba(223,47,63,.18);
+    --r-sm: 14px;
+    --r-md: 20px;
+    --r-lg: 30px;
+    --shadow-card: 0 1px 0 rgba(255,255,255,.82) inset, 0 18px 44px rgba(26,45,76,.1);
+    --shadow-lift: 0 32px 90px rgba(28,50,87,.18), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+
+html {
+    background: #edf4fb;
+}
+
+body {
+    color: var(--text);
+    background:
+        linear-gradient(116deg, rgba(10,132,255,.15) 0%, rgba(10,132,255,0) 38%),
+        linear-gradient(302deg, rgba(0,199,190,.16) 0%, rgba(0,199,190,0) 42%),
+        linear-gradient(180deg, #fbfdff 0%, #edf4fb 56%, #e8f1fa 100%);
+    background-attachment: fixed;
+}
+
+::selection {
+    background: rgba(10,132,255,.22);
+    color: #07111f;
+}
+
+.bar {
+    background: rgba(249,252,255,.78);
+    border-bottom-color: rgba(20,35,61,.1);
+    box-shadow: 0 1px 0 rgba(255,255,255,.85) inset, 0 18px 42px rgba(25,45,77,.08);
+}
+
+.bar__inner,
+.toc,
+.wrap {
+    max-width: 980px;
+}
+
+.bar__inner {
+    padding-top: 16px;
+    padding-bottom: 12px;
+}
+
+.bar__brand {
+    min-width: 0;
+}
+
+.bar__logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 13px;
+    background: var(--accent-grad);
+    box-shadow: 0 14px 34px rgba(10,132,255,.24), 0 1px 0 rgba(255,255,255,.55) inset;
+}
+
+.bar__title {
+    color: #111827;
+    font-size: 1.06rem;
+    font-weight: 780;
+}
+
+.bar__title span {
+    color: var(--muted);
+}
+
+.bar__logout {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(255,255,255,.82);
+    border-color: rgba(20,35,61,.13);
+    color: #243148;
+    box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 10px 24px rgba(20,35,61,.08);
+}
+
+.bar__logout:hover {
+    background: #fff;
+    border-color: rgba(10,132,255,.32);
+    color: #0a5fd0;
+}
+
+.toc {
+    margin-top: 4px;
+    padding: 8px 10px;
+    border: 1px solid rgba(20,35,61,.1);
+    border-radius: 999px;
+    background: rgba(255,255,255,.72);
+    box-shadow: 0 1px 0 rgba(255,255,255,.88) inset, 0 18px 42px rgba(25,45,77,.08);
+}
+
+.toc a {
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: transparent;
+    color: #63738d;
+    font-weight: 760;
+}
+
+.toc a:hover {
+    background: rgba(10,132,255,.08);
+    color: #152238;
+}
+
+.toc a.active {
+    background: var(--accent-grad);
+    color: #fff;
+    box-shadow: 0 16px 34px rgba(10,132,255,.22), 0 1px 0 rgba(255,255,255,.55) inset;
+}
+
+.wrap {
+    padding-top: 26px;
+    padding-bottom: 48px;
+}
+
+section {
+    scroll-margin-top: 154px;
+}
+
+section.active {
+    padding-top: 8px;
+}
+
+h2 {
+    color: #536782;
+    letter-spacing: .12em;
+    margin-bottom: 14px;
+}
+
+h2 svg {
+    color: var(--accent-1);
+}
+
+.hero,
+.card,
+details,
+.metric,
+.msg,
+.net {
+    background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(247,250,254,.72));
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.hero {
+    padding: 28px;
+    overflow: hidden;
+    box-shadow: var(--shadow-lift);
+}
+
+.hero::before {
+    height: 4px;
+    opacity: 1;
+    background: var(--accent-grad);
+}
+
+.hero::after {
+    content: "";
+    position: absolute;
+    inset: 4px 0 auto;
+    height: 88px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0));
+}
+
+.hero__line {
+    position: relative;
+    z-index: 1;
+    color: #07111f;
+    font-size: 1.24rem;
+    font-weight: 820;
+}
+
+.hero__dot {
+    z-index: 1;
+}
+
+.hero__sub {
+    position: relative;
+    z-index: 1;
+    border-top-color: rgba(20,35,61,.1);
+}
+
+.hero__sub dt,
+.muted,
+.hint,
+.text-muted {
+    color: var(--muted);
+}
+
+.hero__sub dd,
+.mono,
+.inline-code,
+.card h3,
+.metric__value,
+summary,
+.net__ssid,
+.net-ssid {
+    color: var(--text);
+}
+
+.chips {
+    position: relative;
+    z-index: 1;
+}
+
+.chip,
+.pill,
+.status {
+    border-radius: 999px;
+    background: rgba(255,255,255,.74);
+    border: 1px solid rgba(20,35,61,.1);
+    box-shadow: 0 1px 0 rgba(255,255,255,.85) inset;
+}
+
+details {
+    overflow: hidden;
+}
+
+summary {
+    min-height: 58px;
+    padding: 18px 20px;
+    font-weight: 780;
+}
+
+.details-body {
+    border-top-color: rgba(20,35,61,.1);
+}
+
+.input,
+input[type=text],
+input[type=password],
+input[type=number],
+select {
+    min-height: 48px;
+    background: rgba(255,255,255,.88);
+    border: 1px solid rgba(20,35,61,.14);
+    border-radius: 17px;
+    color: var(--text);
+    box-shadow: 0 1px 0 rgba(255,255,255,.88) inset;
+}
+
+.input:focus,
+input:focus,
+select:focus {
+    border-color: rgba(10,132,255,.62);
+    box-shadow: 0 0 0 4px rgba(10,132,255,.14);
+}
+
+.btn {
+    min-height: 46px;
+    border-radius: 999px;
+    font-weight: 780;
+    box-shadow: 0 1px 0 rgba(255,255,255,.65) inset, 0 14px 30px rgba(20,35,61,.1);
+}
+
+.btn--primary {
+    background: var(--accent-grad);
+    color: #fff;
+}
+
+.btn--primary:hover {
+    filter: saturate(1.06) brightness(1.02);
+}
+
+.btn--outline,
+.btn--secondary {
+    background: rgba(255,255,255,.86);
+    border-color: rgba(20,35,61,.13);
+    color: #172033;
+}
+
+.btn--danger {
+    background: linear-gradient(135deg, #ff6b76 0%, #df2f3f 100%);
+    color: #fff;
+}
+
+.msg {
+    padding: 15px 18px;
+    border-radius: 22px;
+}
+
+.msg--ok { background: #e9f8ef; color: #12633f; border-color: rgba(34,160,107,.22); }
+.msg--warn { background: #fff6df; color: #804700; border-color: rgba(182,106,0,.24); }
+.msg--err { background: #fff0f2; color: #a81729; border-color: rgba(223,47,63,.24); }
+
+.bar-fill {
+    background: rgba(20,35,61,.1);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+#ota-fill {
+    background: var(--accent-grad);
+}
+
+.danger {
+    border-radius: var(--r-lg);
+    background: linear-gradient(180deg, rgba(255,240,242,.9), rgba(255,255,255,.72));
+    border: 1px solid rgba(223,47,63,.22);
+    box-shadow: 0 18px 44px rgba(223,47,63,.1);
+}
+
+#result-ip-qr,
+#cam-address-qr,
+#result-address-qr {
+    border: 1px solid rgba(20,35,61,.1);
+    box-shadow: 0 12px 28px rgba(20,35,61,.08);
+}
+
+@media (max-width: 760px) {
+    .bar__inner {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .bar__title span {
+        display: block;
+        margin-left: 0;
+        margin-top: 1px;
+        max-width: 52vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .toc {
+        margin-left: 14px;
+        margin-right: 14px;
+        border-radius: 26px;
+        padding: 7px;
+    }
+
+    .toc a {
+        min-width: 116px;
+        justify-content: center;
+    }
+
+    .wrap {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .hero {
+        padding: 22px;
+        border-radius: 26px;
+    }
+
+    .hero__sub {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}
+
+/* Camera tabs match the server: fixed bottom switcher, no floating top block. */
+.toc {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    width: min(720px, calc(100vw - 24px));
+    transform: translateX(-50%);
+    z-index: 40;
+    margin: 0;
+}
+
+.wrap {
+    padding-bottom: calc(130px + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 760px) {
+    .toc {
+        bottom: 0;
+        width: 100%;
+        margin: 0;
+        border-right: 0;
+        border-left: 0;
+        border-bottom: 0;
+        border-radius: 20px 20px 0 0;
+        overflow-x: hidden;
+        justify-content: space-between;
+        gap: 4px;
+    }
+
+    .toc a {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 0 4px;
+        gap: 4px;
+        font-size: .74rem;
+    }
+
+    .toc a svg {
+        width: 15px;
+        height: 15px;
+        flex: 0 0 auto;
+    }
+}
+
+/* Server-parity camera control panel. This is visual-only: the existing
+   pairing, WiFi, stream, OTA, reset, and auth handlers stay untouched. */
+:root {
+    --suite-blue: #0a84ff;
+    --suite-cyan: #00c7be;
+    --suite-violet: #7d5cff;
+    --suite-ink: #07111f;
+    --suite-panel: #102640;
+    --suite-line: rgba(20, 35, 61, .11);
+}
+
+body {
+    background:
+        linear-gradient(120deg, rgba(0, 199, 190, .14) 0%, rgba(0, 199, 190, 0) 34%),
+        linear-gradient(300deg, rgba(125, 92, 255, .13) 0%, rgba(125, 92, 255, 0) 38%),
+        linear-gradient(180deg, #fbfdff 0%, #eef5fc 46%, #e7eef8 100%);
+}
+
+.bar {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .985), rgba(242, 247, 255, .955));
+    border-bottom-color: rgba(20, 35, 61, .1);
+    box-shadow: 0 1px 0 rgba(255,255,255,.85) inset, 0 12px 34px rgba(20,35,61,.07);
+}
+
+.bar__inner,
+.wrap {
+    max-width: 1320px;
+}
+
+.bar__logo {
+    background: linear-gradient(135deg, var(--suite-blue), var(--suite-cyan) 52%, var(--suite-violet));
+}
+
+.toc {
+    max-width: 760px;
+    background: linear-gradient(180deg, rgba(18, 29, 48, .94), rgba(7, 12, 24, .94));
+    border-color: rgba(255, 255, 255, .18);
+    box-shadow: 0 24px 80px rgba(7, 12, 24, .34), 0 1px 0 rgba(255,255,255,.17) inset;
+}
+
+.toc a {
+    color: rgba(232, 240, 252, .78);
+    background: transparent;
+    border-color: transparent;
+    font-weight: 760;
+}
+
+.toc a:hover {
+    color: #fff;
+    background: rgba(255,255,255,.08);
+}
+
+.toc a.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--suite-blue), var(--suite-cyan) 54%, var(--suite-violet));
+    box-shadow: 0 12px 28px rgba(10,132,255,.34), 0 1px 0 rgba(255,255,255,.32) inset;
+}
+
+.hero {
+    color: #fff;
+    background:
+        linear-gradient(112deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 25%),
+        linear-gradient(135deg, var(--suite-ink) 0%, var(--suite-panel) 46%, #064b5b 100%);
+    border-color: rgba(255,255,255,.24);
+    box-shadow: 0 38px 90px rgba(7,17,31,.28), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+
+.hero::before {
+    height: 3px;
+    opacity: 1;
+    background: linear-gradient(90deg, var(--suite-blue), var(--suite-cyan), var(--suite-violet));
+}
+
+.hero::after {
+    content: none;
+}
+
+.hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+.hero__line {
+    color: #fff;
+    font-size: clamp(1.35rem, 3.2vw, 2.2rem);
+    font-weight: 840;
+    letter-spacing: 0;
+}
+
+.hero__sub {
+    border-top-color: rgba(255,255,255,.18);
+}
+
+.hero__sub dt,
+.hero__sub dd {
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+}
+
+.hero__sub dt {
+    color: rgba(226,244,255,.74);
+}
+
+.hero__sub dd {
+    color: rgba(255,255,255,.94);
+}
+
+.hero .mono,
+.hero .inline-code {
+    color: rgba(255,255,255,.94);
+}
+
+.chip {
+    background: rgba(255,255,255,.12);
+    border-color: rgba(255,255,255,.18);
+    color: rgba(232,240,252,.86);
+}
+
+.chip b {
+    color: #fff;
+}
+
+.card,
+details,
+.metric,
+.net {
+    background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(248,251,255,.78));
+    border-color: var(--suite-line);
+    box-shadow: 0 18px 44px rgba(26,45,76,.1), 0 1px 0 rgba(255,255,255,.88) inset;
+}
+
+details {
+    overflow: hidden;
+}
+
+summary {
+    min-height: 58px;
+    padding: 0 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(245,249,255,.72));
+}
+
+details[open] summary {
+    border-bottom: 1px solid rgba(20,35,61,.09);
+}
+
+.details-body {
+    background: rgba(255,255,255,.35);
+}
+
+.hero__sub,
+.netlist {
+    background: rgba(255,255,255,.04);
+    border-radius: 20px;
+}
+
+.netlist {
+    display: grid;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(20,35,61,.09);
+    background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(244,249,255,.58));
+}
+
+.net {
+    min-height: 50px;
+    padding: 0 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    border-radius: 16px;
+}
+
+.net:nth-child(even) {
+    background: linear-gradient(180deg, rgba(247,251,255,.98), rgba(239,246,255,.86));
+}
+
+.net__signal {
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    padding-left: 14px;
+    border-left: 1px solid rgba(20,35,61,.08);
+}
+
+/* Stream settings reuses .hero__sub markup, but it lives inside a light
+   settings card. Keep it readable and row-like instead of inheriting the
+   dark status hero colors. */
+.details-body .hero__sub {
+    margin-top: 0;
+    padding: 10px 14px;
+    border: 1px solid rgba(20,35,61,.09);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(244,249,255,.64));
+}
+
+.details-body .hero__sub dt,
+.details-body .hero__sub dd {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(20,35,61,.08);
+}
+
+.details-body .hero__sub dt {
+    color: #5f6f86;
+    font-weight: 760;
+}
+
+.details-body .hero__sub dd,
+.details-body .hero__sub .mono,
+.details-body .hero__sub .inline-code {
+    color: #111827;
+}
+
+.details-body .hero__sub dt:nth-last-child(2),
+.details-body .hero__sub dd:last-child {
+    border-bottom: 0;
+}
+
+@media (max-width: 760px) {
+    .hero__sub {
+        grid-template-columns: minmax(82px, .42fr) minmax(0, 1fr);
+        gap: 0 12px;
+    }
+
+    .toc {
+        background: linear-gradient(180deg, rgba(18, 29, 48, .96), rgba(7, 12, 24, .96));
+    }
+
+    .hero {
+        padding: 22px;
+    }
+
+    .hero__line {
+        font-size: 1.42rem;
+    }
+
+    .hero__sub dt,
+    .hero__sub dd {
+        padding: 7px 0;
+    }
+
+    .bar {
+        padding-bottom: 0;
+    }
+
+    .bar__inner {
+        min-height: 60px;
+        padding: 7px 14px;
+    }
+
+    .bar__logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 11px;
+    }
+
+    .bar__title {
+        font-size: 1rem;
+        line-height: 1.08;
+    }
+
+    .bar__title span {
+        max-width: 48vw;
+        font-size: .76rem;
+        line-height: 1.15;
+    }
+
+    .bar__logout {
+        min-height: 40px;
+        padding: 0 13px;
+    }
+}
 </style>
 </head>
 <body>
@@ -448,7 +1264,8 @@ details[open] summary::after { transform: rotate(45deg); }
     </div>
     <a href="/logout" class="bar__logout">Sign out</a>
   </div>
-  <nav class="toc" aria-label="Page sections">
+</div>
+<nav class="toc" aria-label="Page sections">
     <a href="#status" data-toc class="active">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       Status
@@ -466,7 +1283,6 @@ details[open] summary::after { transform: rotate(45deg); }
       Reset
     </a>
   </nav>
-</div>
 
 <main class="wrap">
 
@@ -485,7 +1301,7 @@ details[open] summary::after { transform: rotate(45deg); }
   <div class="hero">
     <div><span id="hero-dot" class="hero__dot"></span><span id="hero-line" class="hero__line">Loading status…</span></div>
     <dl class="hero__sub">
-      <dt>Network</dt><dd><span id="h-host" class="mono">--</span> · <span id="h-ip" class="mono">--</span></dd>
+      <dt>Network</dt><dd><span id="h-host" class="mono">--</span><span id="h-ip" hidden></span></dd>
       <dt>WiFi</dt><dd id="h-wifi">--</dd>
       <dt>Server</dt><dd id="h-server">--</dd>
       <dt>Running for</dt><dd id="h-uptime">--</dd>
@@ -495,33 +1311,6 @@ details[open] summary::after { transform: rotate(45deg); }
       <span class="chip"><b>CPU</b><span id="h-cpu">--</span></span>
       <span class="chip"><b>Memory</b><span id="h-mem">--</span></span>
       <span class="chip"><b>Stream</b><span id="h-stream">--</span></span>
-    </div>
-  </div>
-
-  <div id="reach-card" class="card" hidden style="margin-top:var(--gap-3);padding:var(--gap-4)">
-    <h2 style="margin-top:0">Reach this camera</h2>
-    <p class="muted" style="font-size:.88rem;line-height:1.6">
-      Use the IP link below if <span class="inline-code">.local</span> stops working on your WiFi.
-    </p>
-    <div id="reach-host-row" style="margin-top:16px">
-      <div class="text-small text-muted" style="text-transform:uppercase;letter-spacing:.08em">By hostname</div>
-      <a id="reach-host-url" class="mono" href="" style="display:inline-block;margin-top:6px;color:var(--text)"></a>
-      <div class="hint">Works on most home networks. Some routers block .local discovery.</div>
-    </div>
-    <div style="margin-top:16px">
-      <div class="text-small text-muted" style="text-transform:uppercase;letter-spacing:.08em">By IP</div>
-      <div id="reach-ip-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px" hidden>
-        <a id="reach-ip-url" class="mono" href="" style="color:var(--text)"></a>
-        <button id="btn-copy-reach-url" class="btn btn--outline btn--sm" type="button">Copy</button>
-      </div>
-      <div id="reach-ip-note" class="hint" hidden>
-        IP fallback not available yet - refresh this page in a few seconds.
-      </div>
-      <div id="reach-qr" hidden style="margin-top:14px;background:#fff;border-radius:12px;padding:10px;width:fit-content"></div>
-      <div id="reach-qr-note" class="hint" hidden>QR not rendered; copy the URL manually.</div>
-    </div>
-    <div id="reach-help-row" style="margin-top:14px" hidden>
-      <a id="reach-help-link" class="text-small text-muted" href="">Help: what to do when .local does not work</a>
     </div>
   </div>
 
@@ -724,9 +1513,6 @@ details[open] summary::after { transform: rotate(45deg); }
 
 </main>
 
-<script src="/static/qrcode.min.js"
-        integrity="sha256-uyNl5JAvT4SFLPQCXm9qYDJaaCrq+kP7Y7f8jwmNHvI="
-        crossorigin="anonymous"></script>
 <script>
 (function(){
 "use strict";
@@ -735,70 +1521,6 @@ function $(id) { return document.getElementById(id); }
 function esc(s) { var d = document.createElement("div"); d.textContent = String(s == null ? "" : s); return d.innerHTML; }
 function show(id) { $(id).hidden = false; }
 function hide(id) { $(id).hidden = true; }
-function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        return navigator.clipboard.writeText(text);
-    }
-    return new Promise(function(resolve, reject) {
-        var area = document.createElement("textarea");
-        area.value = text;
-        area.setAttribute("readonly", "readonly");
-        area.style.position = "absolute";
-        area.style.left = "-9999px";
-        document.body.appendChild(area);
-        area.select();
-        try {
-            if (!document.execCommand("copy")) {
-                throw new Error("copy failed");
-            }
-            resolve();
-        } catch (err) {
-            reject(err);
-        } finally {
-            document.body.removeChild(area);
-        }
-    });
-}
-function flashCopyButton(id) {
-    var btn = $(id);
-    if (!btn) return;
-    var original = btn.textContent;
-    btn.textContent = "Copied!";
-    btn.disabled = true;
-    setTimeout(function() {
-        btn.textContent = original;
-        btn.disabled = false;
-    }, 1500);
-}
-function buildServerHelpUrl(serverAddress) {
-    if (!serverAddress) return "";
-    var base = serverAddress.indexOf("://") === -1
-        ? ("https://" + serverAddress)
-        : serverAddress;
-    return base.replace(/\/+$/, "") + "/help/network-fallback";
-}
-function renderQr(containerId, noteId, url) {
-    var container = $(containerId);
-    if (!container) return;
-    container.innerHTML = "";
-    hide(containerId);
-    hide(noteId);
-    if (!url) return;
-    if (typeof window.qrcode !== "function") {
-        show(noteId);
-        return;
-    }
-    try {
-        var qr = window.qrcode(0, "M");
-        qr.addData(url);
-        qr.make();
-        container.innerHTML = qr.createSvgTag(4, 0);
-        show(containerId);
-    } catch (err) {
-        show(noteId);
-    }
-}
-
 // ---- Tab switcher ----
 // Proper tabs: one section visible at a time. Clicking a pill hides
 // the others. Deep links via #hash still work (opening the page at
@@ -844,43 +1566,7 @@ function statusSentence(d) {
 }
 
 function updateReachability(d) {
-    var hostUrl = _hostname ? ("https://" + _hostname + ".local") : "";
-    var ipUrl = d.ip_address ? ("https://" + d.ip_address + ":443/") : "";
-    var helpUrl = buildServerHelpUrl(d.server_address || "");
-
-    show("reach-card");
-    if (hostUrl) {
-        $("reach-host-url").href = hostUrl;
-        $("reach-host-url").textContent = hostUrl;
-        show("reach-host-row");
-    } else {
-        hide("reach-host-row");
-    }
-
-    if (ipUrl) {
-        $("reach-ip-url").href = ipUrl;
-        $("reach-ip-url").textContent = ipUrl;
-        show("reach-ip-row");
-        hide("reach-ip-note");
-        $("btn-copy-reach-url").onclick = function() {
-            copyText(ipUrl).then(function() {
-                flashCopyButton("btn-copy-reach-url");
-            }).catch(function() {});
-        };
-        renderQr("reach-qr", "reach-qr-note", ipUrl);
-    } else {
-        hide("reach-ip-row");
-        hide("reach-qr");
-        hide("reach-qr-note");
-        show("reach-ip-note");
-    }
-
-    if (helpUrl) {
-        $("reach-help-link").href = helpUrl;
-        show("reach-help-row");
-    } else {
-        hide("reach-help-row");
-    }
+    return;
 }
 
 // ---- Status (/api/status) ----
@@ -1429,7 +2115,6 @@ window.rebootCamera = rebootCamera;
 loadStatus();
 pollOta();
 setInterval(loadStatus, 10000);
-updateToc();
 })();
 </script>
 </body>
