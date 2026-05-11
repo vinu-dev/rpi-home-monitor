@@ -50,7 +50,9 @@ class TestOTAStatus:
             "allows_unsigned_fallback": True,
             "warning": "unsigned fallback",
         }
-        monkeypatch.setattr(app.ota_service, "get_verification_posture", lambda: posture)
+        monkeypatch.setattr(
+            app.ota_service, "get_verification_posture", lambda: posture
+        )
 
         data = logged_in_client().get("/api/v1/ota/status").get_json()
 

@@ -37,9 +37,7 @@ _login_attempts: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 5  # attempts per window
 RATE_LIMIT_BLOCK = 10  # block after this many in window
-_DUMMY_PASSWORD_HASH = (
-    "$2b$12$8F9hUeUPKp0SlH2tZV.xie8XJch6fLZl1mmf/10adBjJexfXcIn2S"
-)
+_DUMMY_PASSWORD_HASH = "$2b$12$8F9hUeUPKp0SlH2tZV.xie8XJch6fLZl1mmf/10adBjJexfXcIn2S"
 
 # Account lockout thresholds (ADR-0011)
 LOCKOUT_THRESHOLDS = [

@@ -142,7 +142,9 @@ class DataProtectionService:
             if parsed is None:
                 continue
             mount_point = parsed["mount_point"]
-            if target == mount_point or target.startswith(mount_point.rstrip("/") + "/"):
+            if target == mount_point or target.startswith(
+                mount_point.rstrip("/") + "/"
+            ):
                 matches.append(parsed)
 
         if not matches:
@@ -173,7 +175,9 @@ class DataProtectionService:
     def _read_dm_uuid(self, major_minor: str) -> str:
         try:
             return (
-                self._sys_dev_block_root / major_minor / "dm" / "uuid"
-            ).read_text().strip()
+                (self._sys_dev_block_root / major_minor / "dm" / "uuid")
+                .read_text()
+                .strip()
+            )
         except OSError:
             return ""

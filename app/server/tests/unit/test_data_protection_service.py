@@ -4,7 +4,9 @@
 from monitor.services.data_protection import DataProtectionService
 
 
-def _write_mountinfo(path, *, major_minor, mount_point="/data", source="/dev/mmcblk0p4"):
+def _write_mountinfo(
+    path, *, major_minor, mount_point="/data", source="/dev/mmcblk0p4"
+):
     path.write_text(
         f"42 1 {major_minor} / {mount_point} rw,relatime - ext4 {source} rw\n"
     )

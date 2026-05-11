@@ -118,7 +118,9 @@ class HmacReplayGuard:
         now: float,
     ) -> dict[str, float]:
         cache = state.get(camera_id, {})
-        return {key: expires_at for key, expires_at in cache.items() if expires_at > now}
+        return {
+            key: expires_at for key, expires_at in cache.items() if expires_at > now
+        }
 
     @staticmethod
     def _key(camera_id: str, timestamp: str, signature: str) -> str:

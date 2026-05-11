@@ -55,7 +55,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor-privileged-helper.service monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor.service monitor-privileged-helper.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group

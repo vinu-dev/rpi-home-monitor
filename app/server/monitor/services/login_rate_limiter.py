@@ -98,7 +98,9 @@ class LoginRateLimiter:
         for key, value in raw.items():
             if not isinstance(key, str) or not isinstance(value, list):
                 continue
-            timestamps = [float(item) for item in value if isinstance(item, int | float)]
+            timestamps = [
+                float(item) for item in value if isinstance(item, int | float)
+            ]
             if timestamps:
                 state[key] = timestamps
         return state

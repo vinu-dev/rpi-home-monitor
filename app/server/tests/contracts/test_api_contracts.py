@@ -488,6 +488,10 @@ class TestSetupCompleteContract:
 
     @patch("monitor.services.provisioning_service.subprocess.run")
     def test_success_fields(self, mock_run, app, client):
+        Path(app.config["CONFIG_DIR"], "setup-hotspot.psk").write_text(
+            "PerDeviceSetup123\n",
+            encoding="utf-8",
+        )
         # Save WiFi first
         client.post(
             "/api/v1/setup/wifi/save",
