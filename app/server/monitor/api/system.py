@@ -5,6 +5,7 @@ System health and info API.
 Endpoints:
   GET  /system/network                 - LAN fallback URL for this server
   GET  /system/health                  - CPU temp, CPU%, RAM%, disk usage, warnings
+  GET  /system/data-protection         - /data encryption-at-rest posture
   GET  /system/time/health             - derived server/camera time integrity (admin only)
   POST /system/time/resync             - restart timesyncd on server or queue camera resync
   GET  /system/info                    - firmware version, uptime, hostname, OS version
@@ -226,7 +227,20 @@ def health():
     """
     data_dir = current_app.config.get("DATA_DIR", "/data")
     summary = get_health_summary(data_dir)
+    service = getattr(current_app, "data_protection_service", None)
+    if service is not None:
+        summary["data_protection"] = service.status()
     return jsonify(summary), 200
+
+
+@system_bp.route("/data-protection", methods=["GET"])
+@login_required
+def data_protection():
+    """Return the live /data encryption-at-rest posture."""
+    service = getattr(current_app, "data_protection_service", None)
+    if service is None:
+        return jsonify({"state": "unknown", "warning": "Data protection unavailable"}), 200
+    return jsonify(service.status()), 200
 
 
 @system_bp.route("/summary", methods=["GET"])

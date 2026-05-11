@@ -4,6 +4,8 @@ If your SD card walks away, every row classified as `plaintext-on-data` below is
 
 No row in this document becomes `encrypted-at-rest` until the operator opts into the LUKS migration tracked in [docs/exec-plans/luks-post-pair-migration.md](../exec-plans/luks-post-pair-migration.md). Until then, file permissions reduce casual exposure but do not protect against raw SD-card access.
 
+Runtime check: the server reports the live `/data` posture in Settings -> System -> Data Protection, `/api/v1/system/health`, `/api/v1/system/data-protection`, and diagnostics exports. Set `MONITOR_REQUIRE_ENCRYPTED_DATA=1` or create `/data/config/require-encrypted-data` to make secret-bearing enrollment fail closed unless `/data` is mounted through LUKS/dm-crypt.
+
 Source of truth note: the persisted settings-secret paths in this page hand-mirror `monitor.services.settings_service.SECRET_FIELDS`; the pre-commit guard imports the same constant.
 
 | Asset | File / field | Classification | Linked threat | Linked mitigation |

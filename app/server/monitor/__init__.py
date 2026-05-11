@@ -27,6 +27,7 @@ from monitor.services.cert_service import CertService
 from monitor.services.clip_stamp_queue import ClipStampQueue
 from monitor.services.clip_stamper import ClipStamper
 from monitor.services.config_backup_service import ConfigBackupService
+from monitor.services.data_protection import DataProtectionService
 from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
@@ -186,6 +187,7 @@ def create_app(config=None):
             "gpio-trigger.service",
         ],
         WATCHDOG_PROBE_URL="http://127.0.0.1:5000/healthz",
+        REQUIRE_ENCRYPTED_DATA=os.environ.get("MONITOR_REQUIRE_ENCRYPTED_DATA", ""),
     )
     if config:
         app.config.update(config)
@@ -259,6 +261,13 @@ def _init_infrastructure(app):
     app.camera_hmac_replay_guard = HmacReplayGuard(
         os.path.join(app.config["CONFIG_DIR"], "camera_hmac_replay.json"),
         ttl_seconds=30,
+    )
+    app.data_protection_service = DataProtectionService(
+        data_dir=app.config["DATA_DIR"],
+        require_encrypted=app.config.get("REQUIRE_ENCRYPTED_DATA", ""),
+        require_marker_path=os.path.join(
+            app.config["CONFIG_DIR"], "require-encrypted-data"
+        ),
     )
 
     # Notification policy + snapshot extractor (ADR-0027, #128) —
@@ -490,6 +499,7 @@ def _init_services(app):
         rate_limit_per_session=app.config["DIAGNOSTICS_RATE_LIMIT_PER_SESSION"],
         rate_limit_window_seconds=app.config["DIAGNOSTICS_RATE_LIMIT_WINDOW_SECONDS"],
         cleanup_grace_seconds=app.config["DIAGNOSTICS_CLEANUP_GRACE_SECONDS"],
+        data_protection_service=app.data_protection_service,
     )
 
     # Connect storage manager → streaming service for dir change notifications.

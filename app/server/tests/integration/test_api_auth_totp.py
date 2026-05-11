@@ -5,6 +5,7 @@
 """End-to-end tests for /api/v1/auth/totp/* and /api/v1/users/<id>/totp/reset."""
 
 import time
+from unittest.mock import MagicMock
 
 import pyotp
 import pytest
@@ -57,6 +58,46 @@ def test_confirm_with_wrong_code_does_not_persist(app, logged_in_client):
     user = app.store.get_user_by_username("admin")
     assert user.totp_enabled is False
     assert user.totp_secret == ""
+
+
+def test_enroll_start_blocks_when_encrypted_data_required(app, logged_in_client):
+    app.data_protection_service = MagicMock()
+    app.data_protection_service.check_secret_write_allowed.return_value = (
+        False,
+        {
+            "error": "data_encryption_required",
+            "message": "Encrypted /data required",
+            "data_protection": {"secret_enrollment_blocked": True},
+        },
+    )
+    client = logged_in_client()
+
+    resp = client.post("/api/v1/auth/totp/enroll/start")
+
+    assert resp.status_code == 428
+    assert resp.get_json()["error"] == "data_encryption_required"
+
+
+def test_enroll_confirm_blocks_when_policy_changes_before_persist(
+    app, logged_in_client
+):
+    app.data_protection_service = MagicMock()
+    app.data_protection_service.check_secret_write_allowed.return_value = (
+        False,
+        {
+            "error": "data_encryption_required",
+            "message": "Encrypted /data required",
+            "data_protection": {"secret_enrollment_blocked": True},
+        },
+    )
+    client = logged_in_client()
+    with client.session_transaction() as sess:
+        sess["totp_pending_secret"] = pyotp.random_base32()
+
+    resp = client.post("/api/v1/auth/totp/enroll/confirm", json={"code": "000000"})
+
+    assert resp.status_code == 428
+    assert app.store.get_user_by_username("admin").totp_secret == ""
 
 
 def test_disable_requires_password_and_code(app, logged_in_client):

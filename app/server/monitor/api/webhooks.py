@@ -3,6 +3,7 @@
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from monitor.api.security_preconditions import require_secret_storage_allowed
 from monitor.auth import admin_required, csrf_protect
 
 webhooks_bp = Blueprint("webhooks", __name__)
@@ -25,6 +26,10 @@ def create_webhook():
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify({"error": "JSON body required"}), 400
+    if payload.get("secret"):
+        blocked = require_secret_storage_allowed("webhook_secret")
+        if blocked:
+            return blocked
     destination, error, status = (
         current_app.webhook_delivery_service.create_destination(
             payload,
@@ -45,6 +50,10 @@ def update_webhook(destination_id):
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify({"error": "JSON body required"}), 400
+    if payload.get("secret"):
+        blocked = require_secret_storage_allowed("webhook_secret")
+        if blocked:
+            return blocked
     destination, error, status = (
         current_app.webhook_delivery_service.update_destination(
             destination_id,

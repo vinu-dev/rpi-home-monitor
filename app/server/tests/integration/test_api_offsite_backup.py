@@ -72,6 +72,34 @@ class TestUpdateOffsiteBackupSettings:
         assert resp.status_code == 400
         assert "HTTPS" in resp.get_json()["error"]
 
+    def test_secret_key_blocked_when_encrypted_data_required(
+        self, app, logged_in_client
+    ):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.check_secret_write_allowed.return_value = (
+            False,
+            {
+                "error": "data_encryption_required",
+                "message": "Encrypted /data required",
+                "data_protection": {"secret_enrollment_blocked": True},
+            },
+        )
+        client = logged_in_client()
+
+        resp = client.put(
+            "/api/v1/settings/offsite-backup",
+            json={
+                "enabled": True,
+                "endpoint": "minio.example.com:9000",
+                "bucket": "hm-backups",
+                "access_key_id": "AKIATEST",
+                "secret_access_key": "very-secret-value",
+            },
+        )
+
+        assert resp.status_code == 428
+        assert resp.get_json()["error"] == "data_encryption_required"
+
 
 class TestOffsiteBackupConnectionProbe:
     def test_test_connection_requires_admin(self, logged_in_client):

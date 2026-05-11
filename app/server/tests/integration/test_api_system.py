@@ -42,6 +42,39 @@ class TestHealthEndpoint:
         assert "memory" in data
         assert "disk" in data
 
+    def test_health_includes_data_protection_posture(self, app, logged_in_client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.status.return_value = {
+            "state": "unencrypted",
+            "protected": False,
+            "warning": "plaintext-on-data",
+        }
+        client = logged_in_client()
+
+        response = client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        assert response.get_json()["data_protection"]["state"] == "unencrypted"
+
+
+class TestDataProtectionEndpoint:
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/system/data-protection").status_code == 401
+
+    def test_returns_live_posture(self, app, logged_in_client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.status.return_value = {
+            "state": "encrypted",
+            "protected": True,
+            "warning": "",
+        }
+        client = logged_in_client()
+
+        resp = client.get("/api/v1/system/data-protection")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["protected"] is True
+
 
 class TestInfoEndpoint:
     """Test GET /api/v1/system/info."""

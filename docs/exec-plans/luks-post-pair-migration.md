@@ -87,6 +87,13 @@ a) **Feature flag gating.** Migration runs only if
    auto-migrate. Operator opts in by creating the file (CLI or
    admin-only dashboard control).
 
+   Runtime enforcement is separate from migration opt-in:
+   `MONITOR_REQUIRE_ENCRYPTED_DATA=1` or
+   `/data/config/require-encrypted-data` makes the app fail closed for
+   new secret-bearing enrollment unless the live `/data` mount is proven
+   to be LUKS/dm-crypt. This gives production/security-profile images a
+   gate before the full migration flow is enabled.
+
 b) **Pre-flight checks** (any failure → abort with audit log entry,
    no destructive action):
    - free space on `/data` ≥ 2× currently-used space

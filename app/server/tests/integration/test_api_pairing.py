@@ -3,7 +3,7 @@
 
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -83,6 +83,26 @@ class TestInitiatePairing:
         client = logged_in_client()
         resp = client.post("/api/v1/cameras/nonexistent/pair")
         assert resp.status_code == 404
+
+    def test_pairing_blocked_when_encrypted_data_required(
+        self, app, logged_in_client
+    ):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.check_secret_write_allowed.return_value = (
+            False,
+            {
+                "error": "data_encryption_required",
+                "message": "Encrypted /data required",
+                "data_protection": {"secret_enrollment_blocked": True},
+            },
+        )
+        client = logged_in_client()
+        _add_camera(app)
+
+        resp = client.post("/api/v1/cameras/cam-001/pair")
+
+        assert resp.status_code == 428
+        assert resp.get_json()["error"] == "data_encryption_required"
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_rejects_online_camera(self, mock_gen, app, logged_in_client):
@@ -167,6 +187,25 @@ class TestExchangeCerts:
             json={"pin": "123456", "camera_id": "cam-001"},
         )
         assert resp.status_code == 404
+
+    def test_exchange_blocked_when_encrypted_data_required(self, app, client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.check_secret_write_allowed.return_value = (
+            False,
+            {
+                "error": "data_encryption_required",
+                "message": "Encrypted /data required",
+                "data_protection": {"secret_enrollment_blocked": True},
+            },
+        )
+
+        resp = client.post(
+            "/api/v1/pair/exchange",
+            json={"pin": "123456", "camera_id": "cam-001"},
+        )
+
+        assert resp.status_code == 428
+        assert resp.get_json()["error"] == "data_encryption_required"
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_full_pairing_flow(self, mock_gen, app, logged_in_client):

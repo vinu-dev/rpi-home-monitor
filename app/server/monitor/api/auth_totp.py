@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from monitor.api.security_preconditions import require_secret_storage_allowed
 from monitor.auth import (
     admin_required,
     check_password,
@@ -63,6 +64,9 @@ def enroll_start():
     user = _user_or_401()
     if not user:
         return jsonify({"error": "Authentication required"}), 401
+    blocked = require_secret_storage_allowed("totp_enrollment")
+    if blocked:
+        return blocked
 
     totp = current_app.totp_service
     secret = totp.generate_secret()
@@ -85,6 +89,9 @@ def enroll_confirm():
     user = _user_or_401()
     if not user:
         return jsonify({"error": "Authentication required"}), 401
+    blocked = require_secret_storage_allowed("totp_enrollment")
+    if blocked:
+        return blocked
     if user.totp_enabled:
         return jsonify({"error": "Two-factor authentication is already enabled"}), 409
 

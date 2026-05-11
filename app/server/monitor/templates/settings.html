@@ -111,6 +111,32 @@
         </div>
     </div>
 
+    <div class="settings-section">
+        <div class="settings-section__title">Data Protection</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">/data at rest</span>
+                <span class="info-row__value">
+                    <span class="badge"
+                          :class="dataProtectionBadgeClass(sysInfo.dataProtection.state)"
+                          x-text="dataProtectionLabel(sysInfo.dataProtection.state)"></span>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Security profile</span>
+                <span class="info-row__value"
+                      x-text="sysInfo.dataProtection.enforcement_required ? 'Encrypted /data required' : 'Warn only'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Volume</span>
+                <span class="info-row__value" x-text="sysInfo.dataProtection.data_dir || '/data'"></span>
+            </div>
+            <div class="warning-item" x-show="sysInfo.dataProtection.warning"
+                 x-text="sysInfo.dataProtection.warning"
+                 style="margin-top:var(--space-3);"></div>
+        </div>
+    </div>
+
     <!-- Date & Time (ADR-0019) -->
     <div class="settings-section">
         <div class="settings-section__title">Date & Time</div>
@@ -1029,9 +1055,13 @@
             <div class="text-small text-muted" x-show="totp.status.enabled && totp.status.recovery_codes_remaining <= 3" style="margin-top:var(--space-2);">
                 Recovery codes are low. Regenerate a new set.
             </div>
+            <div class="warning-item"
+                 x-show="sysInfo.dataProtection.warning && !totp.status.enabled"
+                 x-text="sysInfo.dataProtection.warning"
+                 style="margin-top:var(--space-3); margin-bottom:var(--space-3);"></div>
 
             <template x-if="!totp.status.enabled && !totp.enrolling">
-                <button type="button" class="btn btn--primary" @click="startTotpEnroll()" :disabled="totp.busy">
+                <button type="button" class="btn btn--primary" @click="startTotpEnroll()" :disabled="totp.busy || sysInfo.dataProtection.secret_enrollment_blocked">
                     Enable 2FA
                 </button>
             </template>
@@ -2308,6 +2338,14 @@ function settingsPage() {
             disk_total: '', disk_used: '', disk_free: '', retention: '',
             temp: '', temp_class: '', cpu: '', cpu_class: '',
             memory: '', mem_class: '', warnings: [],
+            dataProtection: {
+                state: 'unknown',
+                warning: '',
+                message: '',
+                data_dir: '/data',
+                enforcement_required: false,
+                secret_enrollment_blocked: false,
+            },
         },
         users: [],
         sessions: { loading: false, busy: false, includeAll: false, rows: [] },
@@ -2760,6 +2798,21 @@ function settingsPage() {
             if (state === 'amber') return 'background: var(--color-warning); color: var(--color-bg);';
             if (state === 'red') return 'background: var(--color-danger); color: var(--color-bg);';
             return 'background: #555; color: #ccc;';
+        },
+
+        dataProtectionLabel(state) {
+            var labels = {
+                encrypted: 'Encrypted',
+                unencrypted: 'Plaintext',
+                unknown: 'Unknown',
+            };
+            return labels[state] || 'Unknown';
+        },
+
+        dataProtectionBadgeClass(state) {
+            if (state === 'encrypted') return 'badge--ok';
+            if (state === 'unencrypted') return 'badge--warn';
+            return 'badge--offline';
         },
 
         sessionDeviceLabel(row) {
@@ -3328,6 +3381,9 @@ function settingsPage() {
                         health.memory.used_mb + ' / ' + health.memory.total_mb + ' MB)';
                     this.sysInfo.mem_class = this._usageClass(health.memory.percent);
                 }
+                if (health.data_protection) {
+                    this.sysInfo.dataProtection = health.data_protection;
+                }
                 this.sysInfo.warnings = health.warnings || [];
             } catch(e) {}
             try {
@@ -3453,6 +3509,10 @@ function settingsPage() {
         },
 
         async startTotpEnroll() {
+            if (this.sysInfo.dataProtection.secret_enrollment_blocked) {
+                window.HM.toast(this.sysInfo.dataProtection.warning || 'Encrypted data volume required', 'error');
+                return;
+            }
             this.totp.busy = true;
             this.totp.recoveryCodes = [];
             try {

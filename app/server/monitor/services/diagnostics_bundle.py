@@ -161,6 +161,7 @@ class DiagnosticsBundleService:
         rate_limit_per_session: int = 6,
         rate_limit_window_seconds: int = 60 * 60,
         cleanup_grace_seconds: int = 60,
+        data_protection_service=None,
     ) -> None:
         self._data_dir = Path(data_dir)
         self._config_dir = Path(config_dir)
@@ -175,6 +176,7 @@ class DiagnosticsBundleService:
         self._rate_limit_per_session = rate_limit_per_session
         self._rate_limit_window_seconds = rate_limit_window_seconds
         self._cleanup_grace_seconds = cleanup_grace_seconds
+        self._data_protection_service = data_protection_service
         self._export_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._active_run_id = ""
@@ -238,6 +240,7 @@ class DiagnosticsBundleService:
         redactions: list[dict] = []
         aborted = False
         tool_versions = self._tool_versions()
+        data_protection = self._data_protection_status()
 
         try:
             self._purge_stale_runs()
@@ -289,6 +292,7 @@ class DiagnosticsBundleService:
                 sections=sections,
                 redactions=redactions,
                 tool_versions=tool_versions,
+                data_protection=data_protection,
                 aborted=aborted,
             )
             self._write_bundle(
@@ -417,6 +421,7 @@ class DiagnosticsBundleService:
 
     def _collect_identity(self, *, deadline: float) -> SectionSummary:
         section = SectionSummary(name="identity")
+        data_protection = self._data_protection_status()
         section.files.extend(
             [
                 CollectedFile(
@@ -430,6 +435,10 @@ class DiagnosticsBundleService:
                 CollectedFile(
                     path="identity/hostname.txt",
                     content=((socket.gethostname() or "host") + "\n").encode("utf-8"),
+                ),
+                CollectedFile(
+                    path="identity/data-protection.json",
+                    content=_json_bytes(data_protection),
                 ),
             ]
         )
@@ -678,6 +687,7 @@ class DiagnosticsBundleService:
         sections: dict[str, SectionSummary],
         redactions: list[dict],
         tool_versions: dict[str, str],
+        data_protection: dict,
         aborted: bool,
     ) -> dict:
         section_rows: list[dict] = []
@@ -716,8 +726,17 @@ class DiagnosticsBundleService:
             "sections": section_rows,
             "redactions": redactions,
             "tool_versions": tool_versions,
+            "data_protection": data_protection,
             "aborted": aborted,
         }
+
+    def _data_protection_status(self) -> dict:
+        if self._data_protection_service is None:
+            return {"state": "unknown", "warning": "Data protection unavailable"}
+        try:
+            return self._data_protection_service.status()
+        except Exception as exc:
+            return {"state": "unknown", "warning": str(exc)}
 
     def _tool_versions(self) -> dict[str, str]:
         versions = {}
