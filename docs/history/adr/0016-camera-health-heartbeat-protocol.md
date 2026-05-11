@@ -70,7 +70,8 @@ Camera                               Server
 **Auth:** HMAC-SHA256 — same scheme as `config-notify` (ADR-0015):
   `signature = HMAC(secret, camera_id:timestamp:sha256(body))`
 **Frequency:** Every 15 seconds (±3s random jitter to spread load)
-**Timeout:** 300-second replay window (same as `config-notify`)
+**Timeout:** 30-second freshness and replay window for camera-to-server
+requests.
 
 **Request payload:**
 ```json
@@ -91,7 +92,10 @@ Camera                               Server
 ```
 
 **Server processing:**
-1. Verify HMAC and timestamp freshness.
+1. Verify HMAC and timestamp freshness. The replay guard persists a digest of
+   each accepted `(camera_id, timestamp, signature)` under
+   `/data/config/camera_hmac_replay.json` until the freshness window expires,
+   so restarting the web service does not reopen a still-valid signed request.
 2. If `config_sync != "pending"`: accept `stream_config` and mark synced.
 3. If `config_sync == "pending"`: keep server's stored params (they are the
    desired state) and return them in the response for the camera to apply.

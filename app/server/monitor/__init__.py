@@ -30,6 +30,7 @@ from monitor.services.config_backup_service import ConfigBackupService
 from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
+from monitor.services.hmac_replay_guard import HmacReplayGuard
 from monitor.services.login_rate_limiter import LoginRateLimiter
 from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.motion_clip_correlator import MotionClipCorrelator
@@ -254,6 +255,10 @@ def _init_infrastructure(app):
         window_seconds=60,
         warn_after=5,
         block_after=10,
+    )
+    app.camera_hmac_replay_guard = HmacReplayGuard(
+        os.path.join(app.config["CONFIG_DIR"], "camera_hmac_replay.json"),
+        ttl_seconds=30,
     )
 
     # Notification policy + snapshot extractor (ADR-0027, #128) —
