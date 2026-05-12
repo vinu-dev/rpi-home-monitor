@@ -505,6 +505,18 @@ class TestConfigBackup:
         assert b"totp-owner" not in response.data
         assert b"root-cert" not in response.data
 
+    def test_backup_export_rejects_weak_passphrase(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": "short"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason"] == "weak_passphrase"
+
     def test_backup_preview_returns_summary(self, app, logged_in_client):
         self._seed_backup_state(app)
         client = logged_in_client()
@@ -532,6 +544,23 @@ class TestConfigBackup:
         data = response.get_json()
         assert data["filename"] == "config-backup.hmb"
         assert data["preview"]["users"]["remove"] == 1
+
+    def test_backup_preview_rejects_wrong_passphrase(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        response = client.post(
+            "/api/v1/system/backup/preview",
+            data={
+                "passphrase": "wrong horse battery staple",
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason"] == "decrypt_failed"
 
     def test_backup_import_restores_state(self, app, logged_in_client):
         self._seed_backup_state(app)
