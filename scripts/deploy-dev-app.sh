@@ -198,7 +198,7 @@ deploy_server() {
             nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
         fi
         id -u monitor >/dev/null 2>&1 || useradd -r -d /opt/monitor -s /bin/false -U monitor
-        install -d -o monitor -g monitor /data/config /data/recordings /data/live /data/logs /data/certs
+        mkdir -p /data/config /data/recordings /data/live /data/logs /data/certs
         chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs /data/certs
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
