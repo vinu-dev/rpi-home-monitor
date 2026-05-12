@@ -488,6 +488,10 @@ class TestSetupCompleteContract:
 
     @patch("monitor.services.provisioning_service.subprocess.run")
     def test_success_fields(self, mock_run, app, client):
+        Path(app.config["CONFIG_DIR"], "setup-hotspot.psk").write_text(
+            "PerDeviceSetup123\n",
+            encoding="utf-8",
+        )
         # Save WiFi first
         client.post(
             "/api/v1/setup/wifi/save",
@@ -795,6 +799,7 @@ class TestWebhooksTestContract:
 
     def test_success_fields(self, app, logged_in_client):
         client = logged_in_client()
+        app.webhook_delivery_service._resolver = lambda host, port: ["93.184.216.34"]
         app.webhook_delivery_service._http_client = lambda url, body, headers, timeout: (
             HttpResult(
                 202,
@@ -1092,6 +1097,12 @@ class TestBackupExportContract:
         assert resp.status_code == 200
         assert "attachment" in resp.headers.get("Content-Disposition", "")
         assert resp.data
+        body = json.loads(resp.data)
+        _assert_fields(body, {"format", "encryption", "ciphertext_b64"})
+        assert body["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "payload" not in body
+        assert b"hash-owner" not in resp.data
+        assert b"totp-owner" not in resp.data
 
     def test_requires_admin(self, app, logged_in_client):
         client = logged_in_client("viewer")
@@ -1487,6 +1498,7 @@ class TestRecordingsBulkDeleteContract:
 
 SHARE_LINK_FIELDS = {
     "token",
+    "token_id",
     "resource_type",
     "resource_id",
     "owner_id",
@@ -1504,6 +1516,7 @@ SHARE_LINK_FIELDS = {
     "last_access_at",
     "resource_name",
     "share_url",
+    "share_url_available",
     "status",
     "ttl_remaining_seconds",
     "pinned_ip_bound",
@@ -1532,6 +1545,8 @@ class TestShareLinksCreateContract:
         data = resp.get_json()
         _assert_fields(data, {"link"})
         _assert_fields(data["link"], SHARE_LINK_FIELDS)
+        assert data["link"]["share_url_available"] is True
+        assert data["link"]["token"] != data["link"]["token_id"]
 
     def test_error_fields(self, app, logged_in_client):
         client = logged_in_client()
@@ -1566,7 +1581,10 @@ class TestShareLinksListContract:
         _assert_fields(data, {"resource_type", "resource_id", "resource_name", "links"})
         assert isinstance(data["links"], list) and data["links"]
         _assert_fields(data["links"][0], SHARE_LINK_FIELDS)
-        assert data["links"][0]["token"] == created["token"]
+        assert data["links"][0]["token"] == data["links"][0]["token_id"]
+        assert data["links"][0]["token"] != created["token"]
+        assert data["links"][0]["share_url"] == ""
+        assert data["links"][0]["share_url_available"] is False
 
 
 class TestShareLinksRevokeContract:

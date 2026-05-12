@@ -572,11 +572,23 @@
                     <label>New password</label>
                     <input type="password" id="admin-password" placeholder="Enter new password"
                            oninput="validatePasswords()">
-                    <div class="input-hint">Minimum 8 characters</div>
+                    <div class="input-hint">Minimum 12 characters</div>
                 </div>
                 <div class="input-group">
                     <label>Confirm password</label>
                     <input type="password" id="admin-password-confirm" placeholder="Confirm new password"
+                           oninput="validatePasswords()"
+                           onkeydown="if(event.key==='Enter')saveAdminPassword()">
+                </div>
+                <div class="input-group">
+                    <label>New setup hotspot password</label>
+                    <input type="password" id="setup-hotspot-password" placeholder="Password for future setup mode"
+                           oninput="validatePasswords()">
+                    <div class="input-hint">Minimum 12 characters. If setup mode returns, reconnect with this password.</div>
+                </div>
+                <div class="input-group">
+                    <label>Confirm setup hotspot password</label>
+                    <input type="password" id="setup-hotspot-password-confirm" placeholder="Confirm setup hotspot password"
                            oninput="validatePasswords()"
                            onkeydown="if(event.key==='Enter')saveAdminPassword()">
                 </div>
@@ -600,6 +612,10 @@
                     </div>
                     <div class="review-item">
                         <span class="review-label">Admin Password</span>
+                        <span class="review-value">Changed</span>
+                    </div>
+                    <div class="review-item">
+                        <span class="review-label">Setup Hotspot Password</span>
                         <span class="review-value">Changed</span>
                     </div>
 
@@ -856,21 +872,33 @@
         function validatePasswords() {
             var pw = document.getElementById('admin-password').value;
             var confirm = document.getElementById('admin-password-confirm').value;
+            var setupPw = document.getElementById('setup-hotspot-password').value;
+            var setupConfirm = document.getElementById('setup-hotspot-password-confirm').value;
             var btn = document.getElementById('btn-admin-save');
 
-            btn.disabled = !(pw.length >= 8 && pw === confirm);
+            btn.disabled = !(pw.length >= 12 && pw === confirm && setupPw.length >= 12 && setupPw === setupConfirm);
         }
 
         function saveAdminPassword() {
             var pw = document.getElementById('admin-password').value;
             var confirm = document.getElementById('admin-password-confirm').value;
+            var setupPw = document.getElementById('setup-hotspot-password').value;
+            var setupConfirm = document.getElementById('setup-hotspot-password-confirm').value;
 
-            if (pw.length < 8) {
-                showToast('Password must be at least 8 characters', 'error');
+            if (pw.length < 12) {
+                showToast('Password must be at least 12 characters', 'error');
                 return;
             }
             if (pw !== confirm) {
                 showToast('Passwords do not match', 'error');
+                return;
+            }
+            if (setupPw.length < 12) {
+                showToast('Setup hotspot password must be at least 12 characters', 'error');
+                return;
+            }
+            if (setupPw !== setupConfirm) {
+                showToast('Setup hotspot passwords do not match', 'error');
                 return;
             }
 
@@ -880,7 +908,7 @@
             fetch(API_BASE + '/admin', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({password: pw})
+                body: JSON.stringify({password: pw, setup_hotspot_password: setupPw})
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {

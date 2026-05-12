@@ -89,7 +89,10 @@ class TestSendGoodbye:
 
         with (
             patch("camera_streamer.pairing.urllib.request.urlopen", _urlopen),
-            patch("camera_streamer.pairing.ssl.SSLContext"),
+            patch(
+                "camera_streamer.pairing.paired_server_context",
+                return_value=MagicMock(),
+            ),
         ):
             ok, err = pm.send_goodbye("https://srv")
 
@@ -130,7 +133,10 @@ class TestSendGoodbye:
 
         with (
             patch("camera_streamer.pairing.urllib.request.urlopen", _raise),
-            patch("camera_streamer.pairing.ssl.SSLContext"),
+            patch(
+                "camera_streamer.pairing.paired_server_context",
+                return_value=MagicMock(),
+            ),
         ):
             ok, err = pm.send_goodbye("https://srv")
 
@@ -147,9 +153,24 @@ class TestSendGoodbye:
 
         with (
             patch("camera_streamer.pairing.urllib.request.urlopen", _raise),
-            patch("camera_streamer.pairing.ssl.SSLContext"),
+            patch(
+                "camera_streamer.pairing.paired_server_context",
+                return_value=MagicMock(),
+            ),
         ):
             ok, err = pm.send_goodbye("https://srv")
 
         assert ok is False
         assert err  # non-empty message
+
+    def test_requires_verified_server_trust(self, tmp_path):
+        pm = self._pm_with_certs(tmp_path)
+
+        with patch(
+            "camera_streamer.pairing.paired_server_context",
+            side_effect=FileNotFoundError("ca.crt"),
+        ):
+            ok, err = pm.send_goodbye("https://srv")
+
+        assert ok is False
+        assert "trust" in err.lower()

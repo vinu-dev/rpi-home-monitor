@@ -62,7 +62,11 @@ class TestNotifyConfigChange:
         config.server_ip = ""
         pairing = MagicMock()
         # Should not raise
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)
         pairing.get_pairing_secret.assert_not_called()
 
     def test_skips_when_no_pairing_secret(self):
@@ -70,7 +74,11 @@ class TestNotifyConfigChange:
         config.server_ip = "203.0.113.10"
         pairing = MagicMock()
         pairing.get_pairing_secret.return_value = ""
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)
 
     @staticmethod
     def _mock_config():
@@ -102,7 +110,11 @@ class TestNotifyConfigChange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)
 
         req = mock_urlopen.call_args[0][0]
         assert req.get_header("X-camera-id") == "cam-test01"
@@ -124,7 +136,11 @@ class TestNotifyConfigChange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)
 
         req = mock_urlopen.call_args[0][0]
         body = json.loads(req.data)
@@ -144,7 +160,11 @@ class TestNotifyConfigChange:
             "url", 401, "Unauthorized", {}, None
         )
         # Should not raise
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)
 
     @patch("camera_streamer.server_notifier.urllib.request.urlopen")
     def test_handles_network_error_gracefully(self, mock_urlopen):
@@ -156,4 +176,8 @@ class TestNotifyConfigChange:
 
         mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
         # Should not raise
-        notify_config_change(config, pairing)
+        with patch(
+            "camera_streamer.server_notifier.paired_server_context",
+            return_value=MagicMock(),
+        ):
+            notify_config_change(config, pairing)

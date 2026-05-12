@@ -27,6 +27,8 @@ from flask import (
     send_file,
 )
 
+from monitor.services.cert_service import ca_fingerprint_from_file
+
 log = logging.getLogger("monitor.provisioning")
 
 provisioning_bp = Blueprint("provisioning", __name__)
@@ -128,6 +130,7 @@ def set_admin_password():
 
     msg, status = current_app.provisioning_service.set_admin_password(
         password=data.get("password", ""),
+        setup_hotspot_password=data.get("setup_hotspot_password", ""),
     )
     if status != 200:
         return jsonify({"error": msg}), status
@@ -160,11 +163,25 @@ def get_ca_cert():
     ca_cert_path = Path(certs_dir) / "ca.crt"
     if not ca_cert_path.is_file():
         return jsonify({"error": "CA certificate not available"}), 404
-    return send_file(
+    response = send_file(
         str(ca_cert_path),
         mimetype="application/x-pem-file",
         as_attachment=False,
     )
+    response.headers["X-CA-SHA256-Fingerprint"] = ca_fingerprint_from_file(
+        str(ca_cert_path)
+    )
+    return response
+
+
+@provisioning_bp.route("/ca-fingerprint", methods=["GET"])
+def get_ca_fingerprint():
+    """Return the server CA fingerprint for operator pairing confirmation."""
+    certs_dir = current_app.config.get("CERTS_DIR", "/data/certs")
+    ca_cert_path = Path(certs_dir) / "ca.crt"
+    if not ca_cert_path.is_file():
+        return jsonify({"error": "CA certificate not available"}), 404
+    return jsonify({"fingerprint": ca_fingerprint_from_file(str(ca_cert_path))})
 
 
 @provisioning_bp.route("/wizard", methods=["GET"])

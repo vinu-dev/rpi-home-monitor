@@ -112,6 +112,30 @@ class TestDiagnosticsBundleService:
             "config/settings.json",
         }
 
+    def test_includes_data_protection_posture(self, app):
+        app.diagnostics_service._data_protection_service.status = lambda: {
+            "state": "unencrypted",
+            "protected": False,
+            "warning": "plaintext-on-data",
+        }
+
+        result = app.diagnostics_service.collect_sections(
+            requested_by="admin",
+            requested_ip="127.0.0.1",
+        )
+        try:
+            _members, manifest, files = _load_bundle(result.archive_path)
+        finally:
+            app.diagnostics_service.cleanup(result.run_id)
+
+        posture_file = next(
+            text
+            for name, text in files.items()
+            if name.endswith("/identity/data-protection.json")
+        )
+        assert manifest["data_protection"]["state"] == "unencrypted"
+        assert json.loads(posture_file)["warning"] == "plaintext-on-data"
+
     def test_rejects_concurrent_export_when_active_run_exists(self, app):
         svc = app.diagnostics_service
         assert svc._export_lock.acquire(blocking=False)

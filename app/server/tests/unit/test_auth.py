@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from monitor.auth import (
+    _DUMMY_PASSWORD_HASH,
     _check_rate_limit,
     _get_lockout_duration,
     _is_account_locked,
@@ -110,6 +111,28 @@ class TestLogin:
             },
         )
         assert response.status_code == 401
+
+    def test_login_unknown_user_still_runs_password_verification(
+        self, client, monkeypatch
+    ):
+        calls = []
+
+        def fake_check_password(password, password_hash):
+            calls.append((password, password_hash))
+            return False
+
+        monkeypatch.setattr("monitor.auth.check_password", fake_check_password)
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "nobody",
+                "password": "test",
+            },
+        )
+
+        assert response.status_code == 401
+        assert calls == [("test", _DUMMY_PASSWORD_HASH)]
 
     def test_login_missing_fields(self, client):
         response = client.post("/api/v1/auth/login", json={})
@@ -249,6 +272,35 @@ class TestRateLimiting:
                     "password": "wrong",
                 },
             )
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "admin",
+                "password": "correct-password",
+            },
+        )
+        assert response.status_code == 429
+
+    def test_blocks_after_restart_with_persisted_attempts(self, app, client):
+        from monitor.services.login_rate_limiter import LoginRateLimiter
+
+        _create_test_user(app)
+        for _ in range(10):
+            client.post(
+                "/api/v1/auth/login",
+                json={
+                    "username": "admin",
+                    "password": "wrong",
+                },
+            )
+
+        app.login_rate_limiter = LoginRateLimiter(
+            app.config["CONFIG_DIR"] + "/login_rate_limits.json",
+            window_seconds=60,
+            warn_after=5,
+            block_after=10,
+        )
 
         response = client.post(
             "/api/v1/auth/login",

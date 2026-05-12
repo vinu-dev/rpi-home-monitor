@@ -170,6 +170,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/setup.py" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/requirements.txt" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -195,6 +197,11 @@ deploy_server() {
             cp '$SERVER_STAGE/nginx-monitor.conf' /etc/nginx/sites-enabled/monitor.conf
             nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
         fi
+        id -u monitor >/dev/null 2>&1 || useradd -r -d /opt/monitor -s /bin/false -U monitor
+        mkdir -p /data/config /data/recordings /data/live /data/logs /data/certs
+        chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs /data/certs
+        cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
+        cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
     "
 
     log "Applying boot optimisation overrides"
@@ -203,50 +210,26 @@ deploy_server() {
         # Removes network-online.target: monitor only needs localhost:5000, not internet.
         # systemd-networkd-wait-online times out ~90s on eth0 no-carrier (server is on
         # WiFi); NetworkManager-wait-online adds another ~60s. Total: ~2min wasted.
-        cat > /etc/systemd/system/monitor.service << 'SVCEOF'
-[Unit]
-Description=Home Monitor Server
-After=network.target nginx.service mediamtx.service local-fs.target
-Wants=mediamtx.service
-
-[Service]
-Type=simple
-User=root
-Group=root
-WorkingDirectory=/opt/monitor
-ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
-Restart=always
-RestartSec=5
-Environment=PYTHONPATH=/opt/monitor
-Environment=FLASK_APP=monitor
-Environment=MONITOR_DATA_DIR=/data
-Environment=MONITOR_RECORDINGS_DIR=/data/recordings
-Environment=MONITOR_LIVE_DIR=/data/live
-Environment=MONITOR_CONFIG_DIR=/data/config
-Environment=MONITOR_CERTS_DIR=/data/certs
-Environment=MONITOR_LOG_DIR=/data/logs
-Environment=LOG_LEVEL=INFO
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
+        cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
+        cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         # mediamtx: same — only listens on local RTSP port, no internet needed
         sed 's|After=network-online.target|After=network.target|;s|Wants=network-online.target||' \
             /usr/lib/systemd/system/mediamtx.service > /etc/systemd/system/mediamtx.service
         # Mask systemd-networkd-wait-online: always times out on eth0 no-carrier
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
+        systemctl enable monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
         log "Restarting server services"
-        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart monitor nginx && systemctl is-active monitor nginx >/dev/null"
+        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart monitor-privileged-helper monitor nginx && systemctl is-active monitor-privileged-helper monitor nginx >/dev/null"
     fi
 
     log "Validating server health"
     wait_for_http_status "https://${SERVER_IP}/login" "200" "" "45"
     wait_for_http_status "https://${SERVER_IP}/static/css/style.css" "200" "" "20"
-    ssh "${SSH_OPTS[@]}" "$host" "systemctl is-active monitor nginx mediamtx"
+    ssh "${SSH_OPTS[@]}" "$host" "systemctl is-active monitor-privileged-helper monitor nginx mediamtx"
 
     log "Cleaning server staging area"
     ssh "${SSH_OPTS[@]}" "$host" "rm -rf '$SERVER_STAGE'"

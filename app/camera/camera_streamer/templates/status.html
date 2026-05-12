@@ -1364,7 +1364,7 @@ details[open] summary {
     <summary>Change password</summary>
     <div class="details-body">
       <div class="field"><label>Current password</label><input class="input" id="pw-cur" type="password"></div>
-      <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 4 characters"></div>
+      <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 12 characters"></div>
       <button class="btn btn--primary btn--full" id="btn-pw" onclick="doPassword()">Save password</button>
       <div id="pw-result"></div>
     </div>
@@ -1476,6 +1476,7 @@ details[open] summary {
     <div class="field">
       <input class="input" type="file" id="ota-file" accept=".swu" onchange="onOtaFileSelected()">
     </div>
+    <div id="ota-verification" class="msg msg--warn" hidden></div>
     <div class="actions">
       <button class="btn btn--primary" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; install</button>
       <button class="btn btn--outline" id="btn-ota-reboot" hidden onclick="rebootCamera()">Reboot to apply</button>
@@ -1664,18 +1665,39 @@ function friendlyUptime(s) {
 }
 
 // ---- Pairing ----
+function confirmServerFingerprint(url) {
+    return fetch("/api/pair/fingerprint?server_url=" + encodeURIComponent(url))
+        .then(function(r){ return r.json().then(function(d){ return {status:r.status, data:d}; }); })
+        .then(function(res){
+            if (res.status >= 400 || res.data.error) {
+                throw new Error(res.data.error || "Could not fetch server fingerprint.");
+            }
+            var fp = res.data.fingerprint || "";
+            var ok = confirm(
+                "Verify this server fingerprint matches the Home Monitor pairing screen:\n\n" +
+                fp +
+                "\n\nContinue pairing?"
+            );
+            if (!ok) throw new Error("Pairing cancelled before certificate exchange.");
+            return fp;
+        });
+}
+
 function doPair() {
     var pin = $("pair-pin").value.trim();
     var addr = $("pair-server").value.trim();
     if (pin.length !== 6) return setMsg("pair-result", "err", "Enter the 6-digit PIN.");
     if (!addr) return setMsg("pair-result", "err", "Enter the server address.");
     var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
-    setBusy("btn-pair", true, "Pairing…");
+    setBusy("btn-pair", true, "Checking server…");
     setMsg("pair-result", "", "");
-    fetch("/api/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin, server_url: url })
+    confirmServerFingerprint(url).then(function(fingerprint){
+        setBusy("btn-pair", true, "Pairing…");
+        return fetch("/api/pair", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: pin, server_url: url, ca_fingerprint: fingerprint })
+        });
     }).then(function(r){ return r.json(); }).then(function(d){
         setBusy("btn-pair", false, "Pair camera");
         if (d.error) setMsg("pair-result", "err", d.error);
@@ -1683,9 +1705,9 @@ function doPair() {
             setMsg("pair-result", "ok", d.message || "Paired — restarting.");
             setTimeout(loadStatus, 1500);
         }
-    }).catch(function(){
+    }).catch(function(e){
         setBusy("btn-pair", false, "Pair camera");
-        setMsg("pair-result", "err", "Request failed.");
+        setMsg("pair-result", "err", e.message || "Request failed.");
     });
 }
 
@@ -1700,12 +1722,15 @@ function doRepair() {
     if (!addr) return setMsg("unpair-result", "err", "Enter the server address.");
     if (!confirm("Move this camera to server " + addr + "?\nThe current pairing will be replaced.")) return;
     var url = addr.indexOf("://") === -1 ? "https://" + addr : addr;
-    setBusy("btn-repair", true, "Re-pairing…");
+    setBusy("btn-repair", true, "Checking server…");
     setMsg("unpair-result", "", "");
-    fetch("/api/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin, server_url: url })
+    confirmServerFingerprint(url).then(function(fingerprint){
+        setBusy("btn-repair", true, "Re-pairing…");
+        return fetch("/api/pair", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: pin, server_url: url, ca_fingerprint: fingerprint })
+        });
     }).then(function(r){ return r.json(); }).then(function(d){
         setBusy("btn-repair", false, "Re-pair");
         if (d.error) setMsg("unpair-result", "err", d.error);
@@ -1713,9 +1738,9 @@ function doRepair() {
             setMsg("unpair-result", "warn", "Re-pair accepted — camera restarting. Page will reload.");
             setTimeout(function(){ window.location.reload(); }, 6000);
         }
-    }).catch(function(){
+    }).catch(function(e){
         setBusy("btn-repair", false, "Re-pair");
-        setMsg("unpair-result", "err", "Request failed.");
+        setMsg("unpair-result", "err", e.message || "Request failed.");
     });
 }
 
@@ -1796,7 +1821,7 @@ function doWifi() {
 function doPassword() {
     var cur = $("pw-cur").value, nw = $("pw-new").value;
     if (!cur) return setMsg("pw-result", "err", "Enter your current password.");
-    if (!nw || nw.length < 4) return setMsg("pw-result", "err", "New password must be at least 4 characters.");
+    if (!nw || nw.length < 12) return setMsg("pw-result", "err", "New password must be at least 12 characters.");
     setBusy("btn-pw", true, "Saving…");
     setMsg("pw-result", "", "");
     fetch("/api/password", {
@@ -1901,6 +1926,7 @@ function doReset() {
 
 // ---- OTA update ----
 var _otaPoll = null;
+var _otaVerification = null;
 var OTA_TEXT = {
     uploading:  "Uploading to the camera",
     downloading:"Receiving on the camera",
@@ -1909,17 +1935,38 @@ var OTA_TEXT = {
     installed:  "Install complete — reboot to apply",
     error:      "Install failed"
 };
+function renderOtaVerification(posture) {
+    _otaVerification = posture || _otaVerification;
+    var el = $("ota-verification");
+    if (!el) return;
+    var warning = _otaVerification && _otaVerification.warning;
+    if (!warning) {
+        el.textContent = "";
+        el.hidden = true;
+        return;
+    }
+    el.className = "msg msg--" + (_otaVerification.install_blocked ? "err" : "warn");
+    el.textContent = warning;
+    el.hidden = false;
+}
+function otaInstallBlocked() {
+    return !!(_otaVerification && _otaVerification.install_blocked);
+}
+function otaBlockReason() {
+    return (_otaVerification && _otaVerification.warning) || "OTA verification is blocked on this camera.";
+}
 function renderOta(s) {
     var state = (s && s.state) || "idle";
     var progress = (s && typeof s.progress === "number") ? s.progress : 0;
     var err = (s && s.error) || "";
     var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
-    $("btn-ota-upload").disabled = busy;
+    if (s && s.verification) renderOtaVerification(s.verification);
+    $("btn-ota-upload").disabled = busy || otaInstallBlocked();
     // Also lock the file input while busy so a mid-upload click doesn't
     // open the browser's file picker. Without this the user could
     // select a different (or the same) file and race the upload that's
     // already in flight.
-    $("ota-file").disabled = busy;
+    $("ota-file").disabled = busy || otaInstallBlocked();
     $("btn-ota-reboot").hidden = (state !== "installed");
 
     // Version diff row. Show it once the bundle has been staged —
@@ -2018,6 +2065,11 @@ async function validateCameraSwu(file) {
 // "Unsigned bundle — select a signed .swu" before clicking Upload.
 async function onOtaFileSelected() {
     var file = $("ota-file").files[0];
+    if (otaInstallBlocked()) {
+        $("btn-ota-upload").disabled = true;
+        setMsg("ota-result", "err", otaBlockReason());
+        return;
+    }
     $("btn-ota-upload").disabled = false;
     if (!file) { setMsg("ota-result", "", ""); return; }
     if (!/\.swu$/i.test(file.name)) {
@@ -2035,11 +2087,19 @@ async function onOtaFileSelected() {
 }
 
 async function uploadOta() {
+    if (otaInstallBlocked()) {
+        setMsg("ota-result", "err", otaBlockReason());
+        return;
+    }
     var file = $("ota-file").files[0];
     if (!file) return setMsg("ota-result", "err", "Choose a firmware file first.");
     if (!/\.swu$/i.test(file.name)) return setMsg("ota-result", "err", "File must be a .swu firmware bundle.");
     var check = await validateCameraSwu(file);
     if (!check.ok) { setMsg("ota-result", "err", check.reason); return; }
+    if (_otaVerification && _otaVerification.warning) {
+        var proceed = confirm(_otaVerification.warning + "\n\nContinue staging this signed bundle?");
+        if (!proceed) return;
+    }
     setMsg("ota-result", "warn", "Uploading — do not close this page.");
     renderOta({ state: "uploading", progress: 0 });
     var xhr = new XMLHttpRequest();

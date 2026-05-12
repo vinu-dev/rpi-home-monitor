@@ -20,6 +20,7 @@ SRC_URI = " \
     file://monitor/ \
     file://release_version/release_version.py \
     file://config/monitor.service \
+    file://config/monitor-privileged-helper.service \
     file://config/monitor-avahi-pin.service \
     file://config/monitor-hotspot.service \
     file://config/monitor-hotspot.sh \
@@ -40,9 +41,12 @@ RDEPENDS:${PN} = " \
     python3-flask \
     python3-jinja2 \
     python3-bcrypt \
+    python3-cryptography \
     python3-pyotp \
     python3-boto3 \
     ffmpeg \
+    util-linux \
+    e2fsprogs-mke2fs \
     nginx \
     openssl \
     nftables \
@@ -51,7 +55,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor-privileged-helper.service monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -87,6 +91,7 @@ do_install() {
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/monitor.service ${D}${systemd_system_unitdir}/monitor.service
+    install -m 0644 ${WORKDIR}/config/monitor-privileged-helper.service ${D}${systemd_system_unitdir}/monitor-privileged-helper.service
     install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.service ${D}${systemd_system_unitdir}/monitor-avahi-pin.service
     install -m 0644 ${WORKDIR}/config/monitor-hotspot.service ${D}${systemd_system_unitdir}/monitor-hotspot.service
 
@@ -116,6 +121,7 @@ do_install() {
 FILES:${PN} = " \
     /opt/monitor \
     ${systemd_system_unitdir}/monitor.service \
+    ${systemd_system_unitdir}/monitor-privileged-helper.service \
     ${systemd_system_unitdir}/monitor-avahi-pin.service \
     ${systemd_system_unitdir}/monitor-hotspot.service \
     ${systemd_system_unitdir}/avahi-daemon.service.d/10-home-monitor.conf \

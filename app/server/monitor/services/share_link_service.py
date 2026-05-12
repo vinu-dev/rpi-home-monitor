@@ -3,11 +3,13 @@
 
 Admins can mint revocable, time-limited public links for exactly one clip or
 one live camera. Public recipients never get a session; every request is
-validated against the stored token + scope.
+validated against a stored token identifier, keyed token hash, and scope.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import logging
 import re
@@ -36,6 +38,8 @@ _PUBLIC_LINK_FAILURE = (
 _PUBLIC_RESOURCE_FAILURE = (
     "This shared resource is not available right now. Contact the person who shared it."
 )
+_TOKEN_HASH_PREFIX = "hmac-sha256:"
+_LEGACY_REVOKED_HASH = "revoked-legacy-plaintext"
 
 
 def _utc_now() -> datetime:
@@ -64,11 +68,20 @@ def _redact_token(token: str) -> str:
 class ShareLinkService:
     """Business logic for admin-issued public share links."""
 
-    def __init__(self, store, recordings_service, live_dir: str, audit=None):
+    def __init__(
+        self,
+        store,
+        recordings_service,
+        live_dir: str,
+        audit=None,
+        secret_key: str = "",
+    ):
         self._store = store
         self._recordings_service = recordings_service
         self._live_dir = Path(live_dir)
         self._audit = audit
+        self._secret_key = (secret_key or "").encode("utf-8")
+        self._revoke_legacy_plaintext_links()
 
     # ------------------------------------------------------------------
     # Public helpers used by routes and templates
@@ -129,7 +142,8 @@ class ShareLinkService:
         if not owner_id or not owner_username:
             return None, "Owner identity required", 400
 
-        token = "sharelink_" + secrets.token_urlsafe(24)
+        token_id = "sharelink_" + secrets.token_urlsafe(10)
+        public_token = f"{token_id}.{secrets.token_urlsafe(32)}"
         created_at = _utc_now()
         ttl_seconds = _TTL_SECONDS[ttl]
         expires_at = ""
@@ -139,10 +153,11 @@ class ShareLinkService:
             )
 
         share_link = ShareLink(
-            token=token,
+            token=token_id,
             resource_type=resource_type,
             resource_id=resource_id,
             owner_id=owner_id,
+            token_hash=self._hash_public_token(public_token),
             owner_username=owner_username,
             created_at=created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             expires_at=expires_at,
@@ -163,7 +178,7 @@ class ShareLinkService:
             user=owner_username,
             ip=requesting_ip,
             detail=(
-                f"token={_redact_token(token)} resource={resource_type}:{resource_id} "
+                f"token={_redact_token(token_id)} resource={resource_type}:{resource_id} "
                 f"ttl={ttl} pin={pin_label} note={share_link.note or '-'}"
             ),
         )
@@ -173,6 +188,7 @@ class ShareLinkService:
                 share_link,
                 base_url=base_url,
                 resource_name=resource_meta["resource_name"],
+                public_token=public_token,
             ),
             None,
             201,
@@ -219,7 +235,7 @@ class ShareLinkService:
         self, token: str, requesting_user: str = "", requesting_ip: str = ""
     ):
         """Revoke a share link immediately."""
-        link = self._store.get_share_link(token)
+        link = self._store.get_share_link(self._token_id_from_public_token(token))
         if link is None:
             return None, "Share link not found", 404
 
@@ -279,7 +295,7 @@ class ShareLinkService:
             {
                 "share_link": link,
                 "resource_name": clip_result["resource_name"],
-                "video_url": f"/share/clip/{link.token}/video.mp4",
+                "video_url": f"/share/clip/{token}/video.mp4",
                 "device_name": self._device_name(),
             },
             None,
@@ -313,7 +329,7 @@ class ShareLinkService:
                 "share_link": link,
                 "resource_name": result["resource_name"],
                 "camera_id": result["camera_id"],
-                "whep_url": f"/share/camera/{link.token}/whep",
+                "whep_url": f"/share/camera/{token}/whep",
                 "device_name": self._device_name(),
             },
             None,
@@ -392,22 +408,33 @@ class ShareLinkService:
         *,
         base_url: str = "",
         resource_name: str = "",
+        public_token: str = "",
     ) -> dict:
         """Stable API shape for admin pages/tests."""
         payload = asdict(share_link)
+        payload.pop("token_hash", None)
+        payload["token_id"] = share_link.token
+        payload["token"] = public_token or share_link.token
         payload["resource_name"] = resource_name or self._resource_name_for_link(
             share_link
         )
-        payload["share_url"] = self.public_url_for_link(share_link, base_url=base_url)
+        payload["share_url"] = self.public_url_for_link(
+            share_link, base_url=base_url, public_token=public_token
+        )
+        payload["share_url_available"] = bool(public_token)
         payload["status"] = self._status_for_link(share_link)
         payload["ttl_remaining_seconds"] = self._ttl_remaining_seconds(share_link)
         payload["pinned_ip_bound"] = bool(share_link.pinned_ip)
         payload["pinned_ua_bound"] = bool(share_link.pinned_ua)
         return payload
 
-    def public_url_for_link(self, share_link: ShareLink, *, base_url: str = "") -> str:
+    def public_url_for_link(
+        self, share_link: ShareLink, *, base_url: str = "", public_token: str = ""
+    ) -> str:
         """Build the absolute or relative public URL for a link."""
-        path = f"/share/{share_link.resource_type}/{share_link.token}"
+        if not public_token:
+            return ""
+        path = f"/share/{share_link.resource_type}/{public_token}"
         if not base_url:
             return path
         return base_url.rstrip("/") + path
@@ -525,8 +552,10 @@ class ShareLinkService:
         visitor_ip: str,
         visitor_ua: str,
     ):
-        link = self._store.get_share_link(token)
+        link = self._store.get_share_link(self._token_id_from_public_token(token))
         if link is None:
+            return None, self.public_link_failure_message(), 404
+        if not self._verify_public_token(link, token):
             return None, self.public_link_failure_message(), 404
         if link.resource_type != expected_type:
             return None, self.public_link_failure_message(), 404
@@ -597,6 +626,41 @@ class ShareLinkService:
         if expires_at is None:
             return False
         return expires_at <= _utc_now()
+
+    def _hash_public_token(self, token: str) -> str:
+        digest = hmac.new(self._secret_key, token.encode("utf-8"), hashlib.sha256)
+        return _TOKEN_HASH_PREFIX + digest.hexdigest()
+
+    def _verify_public_token(self, share_link: ShareLink, token: str) -> bool:
+        token_hash = share_link.token_hash or ""
+        if not token_hash.startswith(_TOKEN_HASH_PREFIX):
+            return False
+        return hmac.compare_digest(token_hash, self._hash_public_token(token))
+
+    @staticmethod
+    def _token_id_from_public_token(token: str) -> str:
+        if token.startswith("sharelink_") and "." in token:
+            return token.split(".", 1)[0]
+        return token
+
+    @staticmethod
+    def _legacy_token_id(token: str) -> str:
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+        return f"sharelink_legacy_{digest}"
+
+    def _revoke_legacy_plaintext_links(self) -> None:
+        links = self._store.get_share_links()
+        changed = False
+        for link in links:
+            if link.token_hash:
+                continue
+            if not link.revoked_at:
+                link.revoked_at = _utc_now_iso()
+            link.token = self._legacy_token_id(link.token)
+            link.token_hash = _LEGACY_REVOKED_HASH
+            changed = True
+        if changed:
+            self._store.replace_share_links(links)
 
     def _resource_name_for_link(self, share_link: ShareLink) -> str:
         if share_link.resource_type == "camera":

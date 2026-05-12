@@ -100,7 +100,7 @@
  * Live View Player — WebRTC-first with HLS fallback.
  *
  * Cascade: WebRTC (WHEP, sub-1s) → HLS.js (10-15s) → native HLS (Safari)
- * WebRTC uses MediaMTX WHEP endpoint via nginx /webrtc/ proxy.
+ * WebRTC uses the authenticated Flask /webrtc/ WHEP proxy.
  */
 (function() {
     var videoEl = document.getElementById('live-video');

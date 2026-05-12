@@ -22,7 +22,6 @@ import json
 import logging
 import os
 import socket
-import ssl
 import subprocess
 import tempfile
 import threading
@@ -764,9 +763,7 @@ class CameraLifecycle:
             import json
 
             data = json.dumps({"camera_id": camera_id}).encode()
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+            ctx = self._pairing.build_bootstrap_tls_context(base_url)
             req = urllib.request.Request(
                 url, data=data, headers={"Content-Type": "application/json"}
             )
@@ -774,7 +771,7 @@ class CameraLifecycle:
                 log.info("Registered with server as pending (status=%d)", resp.status)
         except urllib.error.HTTPError as e:
             log.debug("Server registration rejected by %s: HTTP %s", url, e.code)
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, RuntimeError) as e:
             log.debug("Server registration failed for %s: %s", url, e)
 
     HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"

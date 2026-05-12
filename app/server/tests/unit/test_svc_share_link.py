@@ -1,9 +1,10 @@
 # REQ: SWR-058, SWR-059, SWR-060, SWR-061; RISK: RISK-023, RISK-024, RISK-025; SEC: SC-022, SC-023, SC-024; TEST: TC-050, TC-051, TC-052, TC-053
 """Unit tests for ShareLinkService."""
 
+import json
 from pathlib import Path
 
-from monitor.models import Camera
+from monitor.models import Camera, ShareLink
 from monitor.services.share_link_service import ShareLinkService
 
 
@@ -65,6 +66,8 @@ class TestShareLinkService:
         assert result["share_url"].startswith(
             "https://device.local/share/clip/sharelink_"
         )
+        assert result["token"].startswith(result["token_id"] + ".")
+        assert result["share_url_available"] is True
         assert result["resource_type"] == "clip"
         assert result["resource_id"] == resource_id
         assert result["pin_ip"] is True
@@ -78,6 +81,32 @@ class TestShareLinkService:
         assert listed["resource_name"] == "Front Door · 2026-05-04 · 12-00-00.mp4"
         assert len(listed["links"]) == 1
         assert listed["links"][0]["note"] == "insurance"
+        assert listed["links"][0]["token"] == listed["links"][0]["token_id"]
+        assert listed["links"][0]["token"] != result["token"]
+        assert listed["links"][0]["share_url"] == ""
+        assert listed["links"][0]["share_url_available"] is False
+
+    def test_create_clip_share_does_not_persist_bearer_token(self, app):
+        resource_id = _seed_clip(app)
+
+        result, error, status = app.share_link_service.create_share_link(
+            resource_type="clip",
+            resource_id=resource_id,
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+
+        assert error is None
+        assert status == 201
+        persisted = json.loads(
+            (Path(app.config["CONFIG_DIR"]) / "share_links.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert persisted[0]["token"] == result["token_id"]
+        assert persisted[0]["token_hash"].startswith("hmac-sha256:")
+        assert result["token"] not in json.dumps(persisted)
 
     def test_first_use_pinning_binds_then_rejects_other_ip(self, app):
         resource_id = _seed_clip(app)
@@ -127,12 +156,12 @@ class TestShareLinkService:
             ttl="1h",
         )
         assert error is None
-        link = app.store.get_share_link(created["token"])
+        link = app.store.get_share_link(created["token_id"])
         link.expires_at = "2026-01-01T00:00:00Z"
         app.store.save_share_link(link)
 
         _result, error, status = app.share_link_service.get_shared_clip_page(
-            link.token,
+            created["token"],
             visitor_ip="192.168.1.45",
             visitor_ua="Mozilla/5.0 Chrome/136.0",
         )
@@ -200,3 +229,56 @@ class TestShareLinkService:
         assert error is None
         assert status == 200
         assert result["whep_path"] == "cam-live/whep"
+
+    def test_token_identifier_alone_does_not_authorise_public_access(self, app):
+        resource_id = _seed_clip(app)
+        created, error, _status = app.share_link_service.create_share_link(
+            resource_type="clip",
+            resource_id=resource_id,
+            owner_id="user-admin",
+            owner_username="admin",
+            ttl="24h",
+        )
+        assert error is None
+
+        _result, error, status = app.share_link_service.get_shared_clip_page(
+            created["token_id"],
+            visitor_ip="192.168.1.45",
+            visitor_ua="Mozilla/5.0 Chrome/136.0",
+        )
+        assert status == 404
+        assert error == app.share_link_service.public_link_failure_message()
+
+    def test_legacy_plaintext_links_are_revoked_and_rewritten(self, app):
+        legacy_token = "sharelink_plaintext_secret"
+        app.store.replace_share_links(
+            [
+                ShareLink(
+                    token=legacy_token,
+                    resource_type="clip",
+                    resource_id="cam-001/2026-05-04/12-00-00.mp4",
+                    owner_id="user-admin",
+                    owner_username="admin",
+                    created_at="2026-05-04T12:00:00Z",
+                )
+            ]
+        )
+
+        ShareLinkService(
+            store=app.store,
+            recordings_service=app.recordings_service,
+            live_dir=app.config["LIVE_DIR"],
+            audit=app.audit,
+            secret_key=app.config["SECRET_KEY"],
+        )
+
+        links = app.store.get_share_links()
+        assert links[0].revoked_at
+        assert links[0].token != legacy_token
+        assert links[0].token_hash == "revoked-legacy-plaintext"
+        persisted = json.loads(
+            (Path(app.config["CONFIG_DIR"]) / "share_links.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert legacy_token not in json.dumps(persisted)

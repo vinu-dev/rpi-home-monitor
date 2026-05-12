@@ -12,7 +12,35 @@ set -e
 CONN_NAME="HomeMonitor-Setup"
 IFACE="wlan0"
 HOTSPOT_SSID="HomeMonitor-Setup"
-HOTSPOT_PASS="homemonitor"
+HOTSPOT_PASS_FILE="${HOTSPOT_PASS_FILE:-/data/config/setup-hotspot.psk}"
+HOTSPOT_DEFAULT_PASS="homemonitor"
+
+get_hotspot_pass() {
+    if [ -n "${HOTSPOT_PASS:-}" ]; then
+        PASS="$HOTSPOT_PASS"
+        SOURCE="override"
+    elif [ -f "$HOTSPOT_PASS_FILE" ]; then
+        PASS=$(sed -n '1p' "$HOTSPOT_PASS_FILE" | tr -d '\r\n')
+        SOURCE="file"
+    else
+        PASS="$HOTSPOT_DEFAULT_PASS"
+        SOURCE="default"
+    fi
+
+    if [ "$SOURCE" != "default" ]; then
+        case "$PASS" in
+            homemonitor|homecamera)
+                echo "ERROR: known public setup hotspot credential is not allowed" >&2
+                exit 1
+                ;;
+        esac
+        if [ "${#PASS}" -lt 12 ]; then
+            echo "ERROR: setup hotspot credential must be at least 12 characters" >&2
+            exit 1
+        fi
+    fi
+    printf "%s" "$PASS"
+}
 
 # --- LED control (ACT LED on RPi) ---
 LED_PATH="/sys/class/leds/ACT"
@@ -62,6 +90,7 @@ wait_for_wifi() {
 
 start_hotspot() {
     echo "Starting WiFi hotspot: ${HOTSPOT_SSID}"
+    HOTSPOT_PASS_VALUE="$(get_hotspot_pass)"
 
     # Wait for WiFi hardware to be ready (firmware may still be loading)
     if ! wait_for_wifi; then
@@ -84,7 +113,7 @@ start_hotspot() {
         wifi.mode ap \
         wifi.band bg \
         wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "${HOTSPOT_PASS}" \
+        wifi-sec.psk "${HOTSPOT_PASS_VALUE}" \
         ipv4.method shared
 
     # Bring up the connection with explicit interface binding + retry.

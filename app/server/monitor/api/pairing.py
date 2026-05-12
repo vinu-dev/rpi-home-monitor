@@ -22,6 +22,7 @@ import time
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from monitor.api.security_preconditions import require_secret_storage_allowed
 from monitor.auth import admin_required, csrf_protect
 
 pairing_bp = Blueprint("pairing", __name__)
@@ -74,14 +75,29 @@ def initiate_pairing(camera_id):
 
     Returns a 6-digit PIN to display on the dashboard.
     """
-    pin, error, status = current_app.pairing_service.initiate_pairing(
+    blocked = require_secret_storage_allowed("camera_pairing_trust")
+    if blocked:
+        return blocked
+    pairing, error, status = current_app.pairing_service.initiate_pairing(
         camera_id,
         user=session.get("username", ""),
         ip=request.remote_addr or "",
     )
     if error:
         return jsonify({"error": _safe_pairing_error(error)}), status
-    return jsonify({"pin": pin, "expires_in": 300}), 200
+    if isinstance(pairing, dict):
+        pin = pairing.get("pin", "")
+        ca_fingerprint = pairing.get("ca_fingerprint", "")
+    else:
+        pin = pairing
+        ca_fingerprint = ""
+    return jsonify(
+        {
+            "pin": pin,
+            "expires_in": 300,
+            "ca_fingerprint": ca_fingerprint,
+        }
+    ), 200
 
 
 @pairing_bp.route("/cameras/<camera_id>/unpair", methods=["POST"])
@@ -164,6 +180,9 @@ def exchange_certs():
 
     if not pin or not camera_id:
         return jsonify({"error": "pin and camera_id are required"}), 400
+    blocked = require_secret_storage_allowed("camera_pairing_trust")
+    if blocked:
+        return blocked
 
     result, error, status = current_app.pairing_service.exchange_certs(
         pin,

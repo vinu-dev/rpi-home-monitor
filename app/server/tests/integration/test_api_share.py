@@ -97,13 +97,16 @@ class TestShareApi:
         links = listed.get_json()["links"]
         assert len(links) == 1
         assert links[0]["note"] == "insurance"
+        assert links[0]["token"] == created_body["token_id"]
+        assert links[0]["share_url"] == ""
+        assert links[0]["share_url_available"] is False
 
         revoked = client.delete("/api/v1/share/links/" + created_body["token"])
         assert revoked.status_code == 200
         assert revoked.get_json()["message"] == "Share link revoked"
 
         events = app.audit.get_events(limit=10, event_type="SHARE_LINK_REVOKED")
-        assert any(created_body["token"][-6:] in event["detail"] for event in events)
+        assert any(created_body["token_id"][-6:] in event["detail"] for event in events)
 
     def test_share_routes_require_admin(self, app, logged_in_client):
         client = logged_in_client("viewer")

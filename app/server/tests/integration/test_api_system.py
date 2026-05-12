@@ -42,6 +42,39 @@ class TestHealthEndpoint:
         assert "memory" in data
         assert "disk" in data
 
+    def test_health_includes_data_protection_posture(self, app, logged_in_client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.status.return_value = {
+            "state": "unencrypted",
+            "protected": False,
+            "warning": "plaintext-on-data",
+        }
+        client = logged_in_client()
+
+        response = client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        assert response.get_json()["data_protection"]["state"] == "unencrypted"
+
+
+class TestDataProtectionEndpoint:
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/system/data-protection").status_code == 401
+
+    def test_returns_live_posture(self, app, logged_in_client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.status.return_value = {
+            "state": "encrypted",
+            "protected": True,
+            "warning": "",
+        }
+        client = logged_in_client()
+
+        resp = client.get("/api/v1/system/data-protection")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["protected"] is True
+
 
 class TestInfoEndpoint:
     """Test GET /api/v1/system/info."""
@@ -465,7 +498,24 @@ class TestConfigBackup:
         assert response.mimetype == "application/vnd.home-monitor.backup+json"
         assert "attachment" in response.headers["Content-Disposition"]
         bundle = json.loads(response.data)
-        assert bundle["manifest"]["schema_version"] == 1
+        assert bundle["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "ciphertext_b64" in bundle
+        assert "payload" not in bundle
+        assert b"hash-owner" not in response.data
+        assert b"totp-owner" not in response.data
+        assert b"root-cert" not in response.data
+
+    def test_backup_export_rejects_weak_passphrase(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+
+        response = client.post(
+            "/api/v1/system/backup/export",
+            json={"passphrase": "short"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason"] == "weak_passphrase"
 
     def test_backup_preview_returns_summary(self, app, logged_in_client):
         self._seed_backup_state(app)
@@ -494,6 +544,23 @@ class TestConfigBackup:
         data = response.get_json()
         assert data["filename"] == "config-backup.hmb"
         assert data["preview"]["users"]["remove"] == 1
+
+    def test_backup_preview_rejects_wrong_passphrase(self, app, logged_in_client):
+        self._seed_backup_state(app)
+        client = logged_in_client()
+        bundle_bytes = self._export_bundle(client)
+
+        response = client.post(
+            "/api/v1/system/backup/preview",
+            data={
+                "passphrase": "wrong horse battery staple",
+                "file": (io.BytesIO(bundle_bytes), "config-backup.hmb"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason"] == "decrypt_failed"
 
     def test_backup_import_restores_state(self, app, logged_in_client):
         self._seed_backup_state(app)
@@ -550,7 +617,7 @@ class TestConfigBackup:
         )
 
         assert response.status_code == 400
-        assert response.get_json()["reason"] == "signature_mismatch"
+        assert response.get_json()["reason"] == "decrypt_failed"
 
     def test_backup_snapshots_lists_metadata(self, app, logged_in_client):
         self._seed_backup_state(app)

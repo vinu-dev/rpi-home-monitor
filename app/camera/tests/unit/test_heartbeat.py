@@ -331,7 +331,10 @@ class TestHeartbeatSender:
             return FakeResp()
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch("camera_streamer.heartbeat.urllib.request.urlopen", fake_urlopen),
         ):
             result = sender.send_once()
@@ -352,7 +355,10 @@ class TestHeartbeatSender:
         import urllib.error
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch(
                 "camera_streamer.heartbeat.urllib.request.urlopen",
                 side_effect=urllib.error.URLError("connection refused"),
@@ -386,7 +392,10 @@ class TestHeartbeatSender:
             return FakeResp()
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch("camera_streamer.heartbeat.urllib.request.urlopen", fake_urlopen),
         ):
             result = sender.send_once()
@@ -416,7 +425,10 @@ class TestHeartbeatSender:
                 pass
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch(
                 "camera_streamer.heartbeat.urllib.request.urlopen",
                 return_value=FakeResp(),
@@ -728,7 +740,10 @@ class TestHeartbeatUnpairDetection:
 
         err = self._http_error(401, '{"error": "Unknown camera"}')
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch("camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err),
         ):
             sender.send_once()
@@ -747,7 +762,10 @@ class TestHeartbeatUnpairDetection:
         resp.__exit__ = lambda self, *a: False
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch(
                 "camera_streamer.heartbeat.urllib.request.urlopen", return_value=resp
             ),
@@ -763,7 +781,10 @@ class TestHeartbeatUnpairDetection:
 
         err = self._http_error(401, '{"error": "Invalid signature"}')
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch("camera_streamer.heartbeat.urllib.request.urlopen", side_effect=err),
         ):
             sender.send_once()
@@ -777,7 +798,10 @@ class TestHeartbeatUnpairDetection:
         sender = HeartbeatSender(cfg, _make_pairing())
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch(
                 "camera_streamer.heartbeat.urllib.request.urlopen",
                 side_effect=urllib.error.URLError("unreachable"),
@@ -810,7 +834,10 @@ class TestHeartbeatUnpairDetection:
             kill_calls.append((pid, sig))
 
         with (
-            patch("camera_streamer.heartbeat.ssl.SSLContext"),
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
             patch(
                 "camera_streamer.heartbeat.urllib.request.urlopen",
                 side_effect=_fresh_err,

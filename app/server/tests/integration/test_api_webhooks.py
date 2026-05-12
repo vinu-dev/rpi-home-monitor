@@ -1,6 +1,8 @@
 # REQ: SWR-056, SWR-057; RISK: RISK-017, RISK-020, RISK-021; SEC: SC-012, SC-020, SC-021; TEST: TC-023, TC-041, TC-042, TC-048, TC-049
 """Integration tests for the webhook management API."""
 
+from unittest.mock import MagicMock
+
 from monitor.services.webhook_delivery_service import HttpResult
 
 
@@ -76,10 +78,37 @@ class TestWebhookCrud:
         assert response.status_code == 400
         assert "private" in response.get_json()["error"].lower()
 
+    def test_secret_blocked_when_encrypted_data_required(self, app, logged_in_client):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.check_secret_write_allowed.return_value = (
+            False,
+            {
+                "error": "data_encryption_required",
+                "message": "Encrypted /data required",
+                "data_protection": {"secret_enrollment_blocked": True},
+            },
+        )
+        client = logged_in_client()
+
+        response = client.post(
+            "/api/v1/webhooks",
+            json={
+                "url": "https://hooks.example.com/inbound",
+                "auth_type": "bearer",
+                "secret": "token-123",
+                "event_classes": ["motion"],
+                "enabled": True,
+            },
+        )
+
+        assert response.status_code == 428
+        assert response.get_json()["error"] == "data_encryption_required"
+
 
 class TestWebhookDeliveryEndpoints:
     def test_send_test_and_recent_deliveries(self, app, logged_in_client):
         client = logged_in_client()
+        app.webhook_delivery_service._resolver = lambda host, port: ["93.184.216.34"]
         app.webhook_delivery_service._http_client = lambda url, body, headers, timeout: (
             HttpResult(
                 202,

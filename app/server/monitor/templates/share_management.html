@@ -57,9 +57,12 @@
     function buildRow(link) {
         var row = document.createElement('article');
         row.className = 'share-row';
+        var shareUrlText = link.share_url_available
+            ? link.share_url
+            : 'Full link is shown only when it is created';
         row.innerHTML =
             '<div class="share-row__meta">' +
-                '<div class="share-row__url">' + escapeHtml(link.share_url) + '</div>' +
+                '<div class="share-row__url">' + escapeHtml(shareUrlText) + '</div>' +
                 '<div class="share-row__facts">' +
                     '<span>' + escapeHtml(formatRemaining(link.ttl_remaining_seconds)) + '</span>' +
                     '<span>' + escapeHtml(pinningLabel(link)) + '</span>' +
@@ -72,7 +75,13 @@
                 '<button type="button" class="btn btn--danger btn--small" data-revoke>Revoke</button>' +
             '</div>';
 
-        row.querySelector('[data-copy]').addEventListener('click', function() {
+        var copyButton = row.querySelector('[data-copy]');
+        copyButton.disabled = !link.share_url_available;
+        copyButton.addEventListener('click', function() {
+            if (!link.share_url_available) {
+                window.HM.toast('Full link is only available at creation time', 'info');
+                return;
+            }
             navigator.clipboard.writeText(link.share_url).then(function() {
                 window.HM.toast('Share link copied', 'success');
             }).catch(function() {

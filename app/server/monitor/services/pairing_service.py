@@ -27,6 +27,7 @@ from monitor.services.camera_trust import (
     remove_pinned_status_cert,
     status_cert_fingerprint_from_pem,
 )
+from monitor.services.cert_service import ca_fingerprint_from_pem
 
 log = logging.getLogger("monitor.pairing_service")
 
@@ -74,7 +75,7 @@ class PairingService:
     def initiate_pairing(self, camera_id, user="", ip=""):
         """Generate client cert and PIN for a camera.
 
-        Returns (pin, error, status_code).
+        Returns ({"pin": pin, "ca_fingerprint": fingerprint}, error, status_code).
         """
         camera = self._store.get_camera(camera_id)
         if camera is None:
@@ -105,7 +106,10 @@ class PairingService:
             f"pairing initiated for camera {camera_id}",
         )
 
-        return pin, "", 200
+        ca_cert = self._read_file(self._certs_dir / "ca.crt")
+        ca_fingerprint = ca_fingerprint_from_pem(ca_cert) if ca_cert else ""
+
+        return {"pin": pin, "ca_fingerprint": ca_fingerprint}, "", 200
 
     def exchange_certs(self, pin, camera_id, ip="", status_cert=""):
         """Validate PIN and return certs + pairing_secret.

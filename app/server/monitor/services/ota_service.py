@@ -21,6 +21,8 @@ import shutil
 import subprocess
 import threading
 
+from monitor.services import privileged
+
 log = logging.getLogger("monitor.ota-service")
 
 # Maximum bundle size (500MB)
@@ -89,11 +91,19 @@ class OTAService:
 
     # REQ: SWR-010; RISK: RISK-004; SEC: SC-003; TEST: TC-009
 
-    def __init__(self, store, audit=None, data_dir="/data", public_key_path=None):
+    def __init__(
+        self,
+        store,
+        audit=None,
+        data_dir="/data",
+        public_key_path=None,
+        enforce_marker_path=None,
+    ):
         self._store = store
         self._audit = audit
         self._data_dir = data_dir
         self._public_key_path = public_key_path or "/etc/swupdate-public.crt"
+        self._enforce_marker_path = enforce_marker_path or "/etc/swupdate-enforce"
         self._status = {}
         self._status_lock = threading.Lock()
 
@@ -139,6 +149,51 @@ class OTAService:
         """
         state = self.get_status(device_id).get("state", "idle")
         return state in ("uploading", "verifying", "installing", "rebooting")
+
+    def get_verification_posture(self):
+        """Return operator-visible OTA signature verification posture."""
+        public_key_present = os.path.isfile(self._public_key_path)
+        enforcement_marker_present = os.path.isfile(self._enforce_marker_path)
+        swupdate_available = shutil.which("swupdate") is not None
+        verification_active = public_key_present and swupdate_available
+        install_blocked = enforcement_marker_present and not verification_active
+        allows_unsigned_fallback = (not enforcement_marker_present) and (
+            not verification_active
+        )
+
+        if install_blocked:
+            mode = "blocked"
+            warning = (
+                "OTA signature enforcement is enabled, but SWUpdate verification "
+                "is unavailable. Installs are blocked until the verifier and "
+                "public certificate are restored."
+            )
+        elif verification_active and enforcement_marker_present:
+            mode = "enforced"
+            warning = ""
+        elif verification_active:
+            mode = "verified"
+            warning = (
+                "OTA bundles are signature-checked, but this image is missing "
+                "the production enforcement marker."
+            )
+        else:
+            mode = "dev-fallback"
+            warning = (
+                "OTA signature verification is unavailable on this device. "
+                "This is a development fallback; unsigned bundles may be accepted."
+            )
+
+        return {
+            "mode": mode,
+            "verification_active": verification_active,
+            "verification_enforced": enforcement_marker_present,
+            "public_key_present": public_key_present,
+            "swupdate_available": swupdate_available,
+            "install_blocked": install_blocked,
+            "allows_unsigned_fallback": allows_unsigned_fallback,
+            "warning": warning,
+        }
 
     def _find_staged_bundle(self):
         """Return the filename of the newest staged .swu, or '' if none."""
@@ -293,7 +348,7 @@ class OTAService:
             return False, "Bundle file not found"
 
         if not os.path.isfile(self._public_key_path):
-            if os.path.isfile("/etc/swupdate-enforce"):
+            if os.path.isfile(self._enforce_marker_path):
                 log.error(
                     "Signing enforced but cert missing at %s — refusing install",
                     self._public_key_path,
@@ -310,32 +365,54 @@ class OTAService:
             return True, ""  # No key + no enforcement = dev mode
 
         try:
-            result = subprocess.run(
-                [
-                    "swupdate",
-                    "-c",  # check mode (verify only, don't install)
-                    "-i",
-                    bundle_path,
-                    "-k",
-                    self._public_key_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0:
+            if privileged.should_use_helper():
+                result_data = privileged.request(
+                    "ota.verify",
+                    {
+                        "bundle_path": bundle_path,
+                        "public_key_path": self._public_key_path,
+                    },
+                    timeout=60,
+                )
+                returncode = int(result_data.get("returncode") or 0)
+                stderr = str(result_data.get("stderr") or "")
+            else:
+                result = subprocess.run(
+                    [
+                        "swupdate",
+                        "-c",  # check mode (verify only, don't install)
+                        "-i",
+                        bundle_path,
+                        "-k",
+                        self._public_key_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                returncode = result.returncode
+                stderr = result.stderr
+            if returncode == 0:
                 log.info("Bundle signature verified: %s", bundle_path)
                 return True, ""
             else:
-                error = result.stderr.strip() or "Signature verification failed"
+                error = stderr.strip() or "Signature verification failed"
                 log.error("Bundle verification failed: %s", error)
                 return False, error
 
         except FileNotFoundError:
+            if os.path.isfile(self._enforce_marker_path):
+                log.error("Signing enforced but swupdate is not installed")
+                return False, (
+                    "Signature enforcement is on but swupdate is not installed. "
+                    "Repair the OTA verifier before installing updates."
+                )
             log.warning("swupdate not found — skipping verification")
             return True, ""  # swupdate not installed (dev/test)
         except subprocess.TimeoutExpired:
             return False, "Verification timed out"
+        except privileged.PrivilegedHelperError as e:
+            return False, str(e)
         except OSError as e:
             return False, str(e)
 
@@ -381,21 +458,37 @@ class OTAService:
         t = threading.Thread(target=_ticker, daemon=True, name="ota-install-ticker")
         t.start()
         try:
-            proc = subprocess.Popen(
-                self._install_command(bundle_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            try:
-                _stdout, stderr = proc.communicate(timeout=600)
-                rc = proc.returncode
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                err = "Installation timed out (10 min)"
-                self.set_status("server", "error", error=err)
-                return False, err
+            if privileged.should_use_helper():
+                data = privileged.request(
+                    "ota.install",
+                    {
+                        "bundle_path": bundle_path,
+                        "public_key_path": (
+                            self._public_key_path
+                            if os.path.isfile(self._public_key_path)
+                            else ""
+                        ),
+                    },
+                    timeout=600,
+                )
+                rc = int(data.get("returncode") or 0)
+                stderr = str(data.get("stderr") or "")
+            else:
+                proc = subprocess.Popen(
+                    self._install_command(bundle_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    _stdout, stderr = proc.communicate(timeout=600)
+                    rc = proc.returncode
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    err = "Installation timed out (10 min)"
+                    self.set_status("server", "error", error=err)
+                    return False, err
 
             if rc == 0:
                 self.set_status("server", "installed", progress=100, error="")
@@ -413,6 +506,9 @@ class OTAService:
             err = "swupdate not installed"
             self.set_status("server", "error", error=err)
             return False, err
+        except privileged.PrivilegedHelperError as e:
+            self.set_status("server", "error", error=str(e))
+            return False, str(e)
         except OSError as e:
             self.set_status("server", "error", error=str(e))
             return False, str(e)
@@ -557,9 +653,14 @@ class OTAService:
 
             _t.sleep(delay_seconds)
             try:
-                subprocess.run(["reboot"], check=False, timeout=15)
+                if privileged.should_use_helper():
+                    privileged.request("system.reboot", timeout=15)
+                else:
+                    subprocess.run(["reboot"], check=False, timeout=15)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 log.error("reboot command failed: %s", exc)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("reboot helper command failed: %s", exc)
 
         threading.Thread(
             target=_reboot_after_delay,

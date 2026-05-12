@@ -189,14 +189,20 @@
                 Camera: <strong x-text="pairingCameraId"></strong>
             </div>
         </div>
+        <template x-if="pairingCaFingerprint">
+            <div style="font-size:0.8em;color:var(--text-secondary);line-height:1.5;margin-bottom:12px;">
+                <strong>Server fingerprint</strong><br>
+                <span class="mono" style="word-break:break-all;" x-text="pairingCaFingerprint"></span>
+            </div>
+        </template>
         <div style="font-size:0.85em;color:var(--text-secondary);line-height:1.6;margin-bottom:12px;">
             <strong>Steps:</strong><br>
             1. Open the camera's web page (shown after setup)<br>
             2. Go to <strong>Settings</strong> &rarr; <strong>Server Pairing</strong><br>
-            3. Enter the 6-digit PIN above<br>
+            3. Enter the 6-digit PIN above and confirm the fingerprint matches<br>
         </div>
         <div style="display:flex;gap:8px;justify-content:center;">
-            <button class="btn btn--secondary btn--small" @click="pairingPin = ''; pairingCameraId = '';">Dismiss</button>
+            <button class="btn btn--secondary btn--small" @click="pairingPin = ''; pairingCameraId = ''; pairingCaFingerprint = '';">Dismiss</button>
         </div>
         <div style="text-align:center;margin-top:8px;font-size:0.75em;color:var(--text-muted);">Expires in 5 minutes</div>
     </div>
@@ -691,6 +697,7 @@ function dashboardPage() {
         newCam: { id: '', name: '', location: '' },
         pairingPin: '',
         pairingCameraId: '',
+        pairingCaFingerprint: '',
         scanning: false,
         editCam: null,
         editForm: {
@@ -1089,6 +1096,7 @@ function dashboardPage() {
                 var data = await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(camId) + '/pair', {});
                 this.pairingPin = data.pin;
                 this.pairingCameraId = camId;
+                this.pairingCaFingerprint = data.ca_fingerprint || '';
             } catch(e) {
                 alert(e.message || 'Failed to initiate pairing');
             }

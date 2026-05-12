@@ -285,8 +285,9 @@ class Settings:
     # TOTP 2FA policy (issue #238). When enabled, sessions from Tailscale
     # Funnel IPs must present a TOTP code after password verification.
     require_2fa_for_remote: bool = False
-    # Offsite backup (#243). Credentials are stored on the encrypted /data
-    # volume and are never returned in plaintext from API reads.
+    # Offsite backup (#243). Credentials are stored on /data; the live
+    # data-protection posture is surfaced separately because LUKS remains
+    # operator/profile gated. API reads never return the secret in plaintext.
     offsite_backup_enabled: bool = False
     offsite_backup_endpoint: str = ""
     offsite_backup_bucket: str = ""
@@ -367,8 +368,9 @@ class Clip:
 class ShareLink:
     """Public, single-resource share link minted by an admin.
 
-    Tokens are persisted under /data/config/share_links.json. ``resource_id``
-    is:
+    New rows persist a non-secret token identifier plus ``token_hash`` under
+    /data/config/share_links.json; the bearer token itself is returned only at
+    creation time. ``resource_id`` is:
       - ``camera_id`` for live camera shares
       - ``camera_id/YYYY-MM-DD/filename.mp4`` for clip shares
 
@@ -379,10 +381,11 @@ class ShareLink:
         first successful access and later requires an exact match.
     """
 
-    token: str
+    token: str  # Non-secret token identifier for new rows; legacy rows may differ.
     resource_type: str  # clip | camera
     resource_id: str
     owner_id: str
+    token_hash: str = ""  # HMAC-SHA256 verifier for the full bearer token.
     owner_username: str = ""
     created_at: str = ""
     expires_at: str = ""

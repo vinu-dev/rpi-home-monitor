@@ -133,3 +133,12 @@ Concretely:
 The original "Negative" point — "Dev images accept unsigned bundles" —
 no longer applies. Dev developers must run `generate-ota-keys.sh` once
 the same as prod operators do; the cost is small and well-contained.
+
+## Update - 2026-05-11: runtime verification posture
+
+Server and camera update screens now surface the runtime OTA verification
+posture reported by the application services. If `/etc/swupdate-enforce`
+is present but the public certificate or `swupdate` verifier is missing,
+installs fail closed and the UI blocks staging with an operator-visible
+warning. Non-enforced development fallback remains visible as a warning
+instead of silently accepting the fallback path.

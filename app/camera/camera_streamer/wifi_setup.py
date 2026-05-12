@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 from camera_streamer import led, wifi
+from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
 
 log = logging.getLogger("camera-streamer.wifi-setup")
 
@@ -35,6 +36,8 @@ SETUP_STAMP = ".setup-done"
 LISTEN_PORT = 80
 CONNECT_DELAY = 3
 HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
+BLOCKED_SETUP_HOTSPOT_PASSWORDS = {"homecamera", "homemonitor"}
+MIN_SETUP_HOTSPOT_PASSWORD_LENGTH = 12
 
 # Template directory (adjacent to this module)
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -155,9 +158,13 @@ class WifiSetupServer:
         server_port="8554",
         admin_username="admin",
         admin_password="",
+        setup_hotspot_password="",
     ):
         """Save settings and attempt WiFi connection in background."""
         self._connect_result = None
+
+        if setup_hotspot_password:
+            self._save_setup_hotspot_password(setup_hotspot_password)
 
         if admin_password:
             if admin_username:
@@ -226,6 +233,24 @@ class WifiSetupServer:
             return False, "Connection timed out"
         except OSError as e:
             return False, str(e)
+
+    def _save_setup_hotspot_password(self, password):
+        password = str(password or "").strip()
+        if password.lower() in BLOCKED_SETUP_HOTSPOT_PASSWORDS:
+            raise ValueError("Choose a new setup hotspot password")
+        if len(password) < MIN_SETUP_HOTSPOT_PASSWORD_LENGTH:
+            raise ValueError(
+                "Setup hotspot password must be at least "
+                f"{MIN_SETUP_HOTSPOT_PASSWORD_LENGTH} characters"
+            )
+        path = os.path.join(self._config.data_dir, "config", "camera-hotspot.psk")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(password + "\n")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
 
     def _compute_hostname(self):
         """Pre-compute the hostname from CPU serial (same logic as _set_unique_hostname)."""
@@ -369,6 +394,7 @@ def _make_handler(config, setup_server):
                     server_port = data.get("server_port", "8554").strip()
                     admin_username = data.get("admin_username", "admin").strip()
                     admin_password = data.get("admin_password", "")
+                    setup_hotspot_password = data.get("setup_hotspot_password", "")
 
                     if not ssid:
                         self._json_response({"error": "WiFi name required"}, 400)
@@ -384,9 +410,37 @@ def _make_handler(config, setup_server):
                             {"error": "Username required (min 3 characters)"}, 400
                         )
                         return
-                    if not admin_password or len(admin_password) < 4:
+                    if (
+                        not admin_password
+                        or len(admin_password) < MIN_ADMIN_PASSWORD_LENGTH
+                    ):
                         self._json_response(
-                            {"error": "Password required (min 4 characters)"}, 400
+                            {
+                                "error": "Password required "
+                                f"(min {MIN_ADMIN_PASSWORD_LENGTH} characters)"
+                            },
+                            400,
+                        )
+                        return
+                    if setup_hotspot_password.strip().lower() in (
+                        BLOCKED_SETUP_HOTSPOT_PASSWORDS
+                    ):
+                        self._json_response(
+                            {"error": "Choose a new setup hotspot password"},
+                            400,
+                        )
+                        return
+                    if (
+                        not setup_hotspot_password
+                        or len(setup_hotspot_password.strip())
+                        < MIN_SETUP_HOTSPOT_PASSWORD_LENGTH
+                    ):
+                        self._json_response(
+                            {
+                                "error": "Setup hotspot password required "
+                                f"(min {MIN_SETUP_HOTSPOT_PASSWORD_LENGTH} characters)"
+                            },
+                            400,
                         )
                         return
 
@@ -397,6 +451,7 @@ def _make_handler(config, setup_server):
                         server_port,
                         admin_username=admin_username,
                         admin_password=admin_password,
+                        setup_hotspot_password=setup_hotspot_password,
                     )
                     self._json_response(
                         {

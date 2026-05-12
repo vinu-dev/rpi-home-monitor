@@ -189,6 +189,28 @@ class TestSettingsAuditLog:
         assert events[0]["detail"] == "tailscale auth key updated via settings"
         assert "tskey-auth-k123" not in events[0]["detail"]
 
+    def test_tailscale_auth_key_blocked_when_encrypted_data_required(
+        self, app, logged_in_client
+    ):
+        app.data_protection_service = MagicMock()
+        app.data_protection_service.check_secret_write_allowed.return_value = (
+            False,
+            {
+                "error": "data_encryption_required",
+                "message": "Encrypted /data required",
+                "data_protection": {"secret_enrollment_blocked": True},
+            },
+        )
+        client = logged_in_client()
+
+        resp = client.put(
+            "/api/v1/settings",
+            json={"tailscale_auth_key": "tskey-auth-k123"},
+        )
+
+        assert resp.status_code == 428
+        assert resp.get_json()["error"] == "data_encryption_required"
+
 
 class TestTimeEndpoints:
     """Tests for GET/POST /api/v1/settings/time."""

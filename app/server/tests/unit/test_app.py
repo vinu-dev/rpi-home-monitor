@@ -103,14 +103,16 @@ class TestBlueprintRegistration:
           25 after #246 added active-session enumeration + revoke APIs.
           26 after #249 added the watchdog `healthz` blueprint.
           27 after #251 added timestamp-backfill controls.
+          28 after #297 added the authenticated /webrtc browser path alias.
         """
-        assert len(app.blueprints) == 27
+        assert len(app.blueprints) == 28
 
     def test_on_demand_blueprint_registered(self, app):
         assert "on_demand" in app.blueprints
 
     def test_webrtc_blueprint_registered(self, app):
         assert "webrtc" in app.blueprints
+        assert "webrtc_browser" in app.blueprints
 
     def test_audit_blueprint_registered(self, app):
         assert "audit" in app.blueprints

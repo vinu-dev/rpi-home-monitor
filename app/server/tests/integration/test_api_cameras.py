@@ -1,6 +1,7 @@
 # REQ: SWR-003, SWR-004, SWR-011, SWR-026, SWR-065, SWR-066; RISK: RISK-002, RISK-005, RISK-007, RISK-015, RISK-021; SEC: SC-002, SC-021; TEST: TC-008, TC-012, TC-030, TC-042, TC-054
 """Tests for the cameras API."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 from monitor.models import Camera
@@ -428,6 +429,36 @@ class TestCameraHMACAuth:
         )
         assert resp1.status_code == 200
         # Exact same headers + body → replay
+        resp2 = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
+        assert resp2.status_code == 401
+        assert "replay" in resp2.get_json()["error"].lower()
+
+    def test_replay_rejected_after_app_replay_guard_restart(self, app, client):
+        """Persisted replay state survives a service object restart."""
+        from monitor.services.hmac_replay_guard import HmacReplayGuard
+
+        _make_camera_with_secret(app)
+        body = b'{"streaming": false}'
+        headers = _hmac_headers("cam-001", body)
+
+        resp1 = client.post(
+            "/api/v1/cameras/heartbeat",
+            data=body,
+            content_type="application/json",
+            headers=headers,
+        )
+        assert resp1.status_code == 200
+
+        app.camera_hmac_replay_guard = HmacReplayGuard(
+            Path(app.config["CONFIG_DIR"]) / "camera_hmac_replay.json",
+            ttl_seconds=30,
+        )
+
         resp2 = client.post(
             "/api/v1/cameras/heartbeat",
             data=body,

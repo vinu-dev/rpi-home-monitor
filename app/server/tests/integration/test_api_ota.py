@@ -35,6 +35,28 @@ class TestOTAStatus:
         assert "current_version" in data["server"]
         assert isinstance(data["server"]["current_version"], str)
         assert "cameras" in data
+        assert "verification" in data["server"]
+
+    def test_status_surfaces_ota_verification_posture(
+        self, monkeypatch, app, logged_in_client
+    ):
+        posture = {
+            "mode": "dev-fallback",
+            "verification_active": False,
+            "verification_enforced": False,
+            "public_key_present": False,
+            "swupdate_available": False,
+            "install_blocked": False,
+            "allows_unsigned_fallback": True,
+            "warning": "unsigned fallback",
+        }
+        monkeypatch.setattr(
+            app.ota_service, "get_verification_posture", lambda: posture
+        )
+
+        data = logged_in_client().get("/api/v1/ota/status").get_json()
+
+        assert data["server"]["verification"] == posture
 
     def test_includes_camera_status(self, app, logged_in_client):
         client = logged_in_client()

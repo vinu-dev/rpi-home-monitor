@@ -400,8 +400,17 @@ p {
       <label>Username</label>
       <input type="text" id="in-admin-user" value="admin" placeholder="admin">
       <label>Password</label>
-      <input type="password" id="in-admin-pw" placeholder="Password (min 4 characters)">
+      <input type="password" id="in-admin-pw" placeholder="Password (min 12 characters)">
       <div class="hint">You'll use these credentials to access the camera's status page and change settings later.</div>
+    </div>
+
+    <div class="card">
+      <h3>Setup Hotspot Password</h3>
+      <label>New password</label>
+      <input type="password" id="in-hotspot-pw" placeholder="Password for future setup mode">
+      <label>Confirm password</label>
+      <input type="password" id="in-hotspot-pw-confirm" placeholder="Confirm setup hotspot password">
+      <div class="hint">If setup mode returns, reconnect to HomeCam-Setup with this password.</div>
     </div>
 
     <button class="btn btn-primary" id="btn-save" onclick="doConnect()">
@@ -850,6 +859,8 @@ function doConnect() {
   var port = $('in-port').value.trim() || '8554';
   var adminUser = $('in-admin-user').value.trim() || 'admin';
   var adminPw = $('in-admin-pw').value;
+  var hotspotPw = $('in-hotspot-pw').value;
+  var hotspotPwConfirm = $('in-hotspot-pw-confirm').value;
 
   if (!ssid) { alert('Enter WiFi network name'); return; }
   if (!pass) { alert('Enter WiFi password'); return; }
@@ -858,8 +869,16 @@ function doConnect() {
     alert('Set a username (at least 3 characters)');
     return;
   }
-  if (!adminPw || adminPw.length < 4) {
-    alert('Set a password (at least 4 characters)');
+  if (!adminPw || adminPw.length < 12) {
+    alert('Set a password (at least 12 characters)');
+    return;
+  }
+  if (!hotspotPw || hotspotPw.length < 12) {
+    alert('Set a setup hotspot password (at least 12 characters)');
+    return;
+  }
+  if (hotspotPw !== hotspotPwConfirm) {
+    alert('Setup hotspot passwords do not match');
     return;
   }
 
@@ -871,7 +890,8 @@ function doConnect() {
     body: JSON.stringify({
       ssid: ssid, password: pass,
       server_ip: server, server_port: port,
-      admin_username: adminUser, admin_password: adminPw
+      admin_username: adminUser, admin_password: adminPw,
+      setup_hotspot_password: hotspotPw
     })
   })
   .then(function(r) { return r.json(); })

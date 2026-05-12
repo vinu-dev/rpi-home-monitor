@@ -183,11 +183,8 @@ class TestConnecting:
 class TestPairingRegistration:
     """Test best-effort camera registration during pairing state."""
 
-    @patch("camera_streamer.lifecycle.ssl.create_default_context")
     @patch("camera_streamer.lifecycle.urllib.request.urlopen")
-    def test_registers_with_https_pair_register_endpoint(
-        self, mock_urlopen, mock_create_context
-    ):
+    def test_registers_with_https_pair_register_endpoint(self, mock_urlopen):
         config = _make_config(
             server_ip="rpi-divinu.local",
             server_https_url="https://rpi-divinu.local",
@@ -195,6 +192,8 @@ class TestPairingRegistration:
         )
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
+        fake_ctx = MagicMock()
+        lc._pairing.build_bootstrap_tls_context = MagicMock(return_value=fake_ctx)
 
         mock_response = MagicMock()
         mock_response.__enter__.return_value.status = 200
@@ -205,8 +204,10 @@ class TestPairingRegistration:
         request = mock_urlopen.call_args.args[0]
         context = mock_urlopen.call_args.kwargs["context"]
         assert request.full_url == "https://rpi-divinu.local/api/v1/pair/register"
-        assert context is mock_create_context.return_value
-        assert mock_create_context.return_value.check_hostname is False
+        assert context is fake_ctx
+        lc._pairing.build_bootstrap_tls_context.assert_called_once_with(
+            "https://rpi-divinu.local"
+        )
 
     @patch("camera_streamer.lifecycle.urllib.request.urlopen")
     def test_register_respects_explicit_scheme(self, mock_urlopen):
@@ -217,6 +218,7 @@ class TestPairingRegistration:
         )
         platform = _make_platform()
         lc = CameraLifecycle(config, platform, lambda: False)
+        lc._pairing.build_bootstrap_tls_context = MagicMock(return_value=MagicMock())
 
         mock_response = MagicMock()
         mock_response.__enter__.return_value.status = 200

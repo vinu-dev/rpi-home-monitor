@@ -21,6 +21,8 @@ import secrets
 
 log = logging.getLogger("camera-streamer.config")
 
+MIN_ADMIN_PASSWORD_LENGTH = 12
+
 # Defaults
 DEFAULTS = {
     "SERVER_IP": "",

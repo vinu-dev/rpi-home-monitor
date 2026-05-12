@@ -72,8 +72,10 @@ optional (must not block first-boot setup). ADR-0011 already names
 5. User types the current six-digit code into the confirm box and submits.
 6. Server verifies the code against the pending secret. On success:
    - persists `totp_secret` and sets `totp_enabled = true`
-   - generates 10 single-use recovery codes (16 alphanumeric chars each,
-     formatted in two `xxxx-xxxx-xxxx-xxxx` groups for readability)
+  - generates 10 single-use recovery codes (issue #313 raises new
+    recovery codes to five `xxxx` groups / 100 bits of entropy while
+    keeping existing four-group codes valid until consumed or
+    regenerated)
    - stores **only bcrypt hashes** of the recovery codes; plaintext codes
      are returned exactly once on this response
    - shows recovery codes with "Download .txt" and "Print" affordances

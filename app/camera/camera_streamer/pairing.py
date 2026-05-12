@@ -15,8 +15,8 @@ TLS security (TOFU — trust on first use):
 - This prevents a passive MITM from intercepting the client cert undetected:
   if the attacker serves a fake CA cert, subsequent mTLS connections to the
   real server will fail and the admin will be alerted.
-- If the CA cert fetch also fails (no network), we fall back to CERT_NONE
-  with a warning (same behaviour as before, now the explicit last resort).
+- If the CA cert fetch fails or the displayed fingerprint is not confirmed,
+  pairing refuses the certificate exchange.
 - Reference: RFC 8555 §10.2 (ACME TOFU pattern).
 
 Design patterns:
@@ -30,6 +30,14 @@ import os
 import ssl
 import urllib.error
 import urllib.request
+
+from camera_streamer.server_tls import (
+    ca_fingerprint_from_file,
+    ca_fingerprint_from_pem,
+    context_from_ca_pem,
+    normalize_fingerprint,
+    paired_server_context,
+)
 
 log = logging.getLogger("camera-streamer.pairing")
 
@@ -65,12 +73,12 @@ class PairingManager:
     def ca_cert_path(self):
         return os.path.join(self._certs_dir, "ca.crt")
 
-    def exchange(self, pin, server_url):
+    def exchange(self, pin, server_url, expected_ca_fingerprint=""):
         """Exchange PIN for certificates and pairing secret.
 
         Uses TOFU (trust on first use) TLS verification: fetches the server's
-        CA cert before the exchange and uses it to verify the TLS connection.
-        Falls back to unverified only if the CA cert cannot be fetched.
+        CA cert before the exchange, requires the operator-confirmed
+        fingerprint, and uses that CA to verify the TLS connection.
 
         Args:
             pin: 6-digit PIN string from admin dashboard.
@@ -85,7 +93,11 @@ class PairingManager:
             return False, "Camera ID not configured"
 
         # Build TLS context (TOFU if no CA cert on disk yet)
-        tls_ctx = self._build_tls_context(server_url)
+        try:
+            tls_ctx = self._build_tls_context(server_url, expected_ca_fingerprint)
+        except RuntimeError as exc:
+            log.error("Pairing exchange blocked: %s", exc)
+            return False, str(exc)
 
         url = f"{server_url}/api/v1/pair/exchange"
         payload_dict = {"pin": pin, "camera_id": camera_id}
@@ -170,30 +182,63 @@ class PairingManager:
             log.debug("Could not fetch server CA cert for TOFU: %s", e)
         return ""
 
-    def _build_tls_context(self, server_url):
-        """Build a TLS context for the pairing exchange request.
-
-        Priority:
-        1. Existing CA cert on disk (re-pairing after unpair) — full verification.
-        2. TOFU: fetch CA cert from server over HTTP, verify exchange with it.
-        3. Last resort: no verification (logs a warning).
-        """
-        # REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-012
-        # Already have a CA cert from a previous pairing — use it
+    def get_server_ca_fingerprint(self, server_url):
+        """Fetch the server CA and return its operator-verifiable fingerprint."""
+        ca_pem = self._fetch_server_ca_cert(server_url)
+        if ca_pem:
+            return ca_fingerprint_from_pem(ca_pem)
         if os.path.isfile(self.ca_cert_path):
-            ctx = ssl.create_default_context(cafile=self.ca_cert_path)
-            ctx.check_hostname = False
-            log.info("Using existing CA cert for TLS verification during pairing")
-            return ctx
+            return ca_fingerprint_from_file(self.ca_cert_path)
+        raise RuntimeError("Server CA certificate could not be fetched")
 
-        # TOFU: fetch CA cert from server before the exchange
+    def _context_from_fetched_ca(self, server_url):
+        ca_pem = self._fetch_server_ca_cert(server_url)
+        if not ca_pem:
+            raise RuntimeError("Server CA certificate could not be fetched")
+        return context_from_ca_pem(ca_pem)
+
+    def build_bootstrap_tls_context(self, server_url):
+        """Build a verified context for non-secret pre-pair registration."""
+        try:
+            return self._context_from_fetched_ca(server_url)
+        except RuntimeError:
+            pass
+        if os.path.isfile(self.ca_cert_path):
+            return paired_server_context(
+                self._certs_dir,
+                include_client_cert=False,
+            )
+        raise RuntimeError("Server CA certificate could not be fetched")
+
+    def _build_tls_context(self, server_url, expected_ca_fingerprint=""):
+        """Build a verified TLS context for the pairing exchange request."""
+        # REQ: SWR-003; RISK: RISK-002; SEC: SC-002; TEST: TC-012
+        if os.path.isfile(self.ca_cert_path):
+            fingerprint = ca_fingerprint_from_file(self.ca_cert_path)
+            if not expected_ca_fingerprint or normalize_fingerprint(
+                fingerprint
+            ) == normalize_fingerprint(expected_ca_fingerprint):
+                self._require_confirmed_fingerprint(
+                    fingerprint, expected_ca_fingerprint
+                )
+                log.info("Using existing CA cert for TLS verification during pairing")
+                try:
+                    return paired_server_context(
+                        self._certs_dir,
+                        include_client_cert=False,
+                    )
+                except (FileNotFoundError, ssl.SSLError, OSError) as exc:
+                    log.warning("Stored server CA could not be loaded: %s", exc)
+
         ca_pem = self._fetch_server_ca_cert(server_url)
         if ca_pem:
             try:
-                # Load the PEM in-memory — no temp file needed
-                ctx = ssl.create_default_context()
-                ctx.check_hostname = False
-                ctx.load_verify_locations(cadata=ca_pem)
+                fingerprint = ca_fingerprint_from_pem(ca_pem)
+                self._require_confirmed_fingerprint(
+                    fingerprint,
+                    expected_ca_fingerprint,
+                )
+                ctx = context_from_ca_pem(ca_pem)
                 log.info(
                     "TOFU: verifying pairing exchange TLS using fetched server CA cert"
                 )
@@ -201,15 +246,17 @@ class PairingManager:
             except ssl.SSLError as e:
                 log.warning("Could not load fetched CA cert for TOFU: %s", e)
 
-        # Last resort: no verification (same risk as before, now explicit fallback)
-        log.warning(
-            "Pairing exchange TLS is unverified — no CA cert available. "
-            "Ensure you are on a trusted network before pairing."
+        raise RuntimeError(
+            "Server CA certificate could not be verified. "
+            "Confirm the server address and fingerprint, then try again."
         )
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+
+    def _require_confirmed_fingerprint(self, actual, expected):
+        expected_normalized = normalize_fingerprint(expected)
+        if not expected_normalized:
+            raise RuntimeError("Confirm the server CA fingerprint before pairing")
+        if normalize_fingerprint(actual) != expected_normalized:
+            raise RuntimeError("Server CA fingerprint does not match confirmation")
 
     def _store_certs(self, data):
         """Write certificate files to disk."""
@@ -298,15 +345,10 @@ class PairingManager:
         except ValueError:
             return False, "Stored pairing secret is not valid hex"
 
-        # mTLS context — server only accepts our signed requests when they
-        # come over a TLS connection presenting our client cert.
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        if os.path.isfile(self.client_cert_path) and os.path.isfile(
-            self.client_key_path
-        ):
-            ctx.load_cert_chain(self.client_cert_path, self.client_key_path)
+        try:
+            ctx = paired_server_context(self._certs_dir)
+        except (FileNotFoundError, ssl.SSLError, OSError) as exc:
+            return False, f"Server CA trust is missing or invalid: {exc}"
 
         req = urllib.request.Request(
             url,

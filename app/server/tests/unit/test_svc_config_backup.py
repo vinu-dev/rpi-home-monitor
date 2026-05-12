@@ -3,13 +3,19 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from unittest.mock import MagicMock
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from monitor.models import Camera, Settings, User, WebhookDestination
 from monitor.services.config_backup_service import (
+    AESGCM_NONCE_BYTES,
+    BACKUP_AAD,
+    ENCRYPTED_BUNDLE_FORMAT,
+    PBKDF2_ITERATIONS,
     ConfigBackupError,
     ConfigBackupService,
 )
@@ -98,13 +104,41 @@ def backup_env(tmp_path):
 class TestConfigBackupExport:
     """Export + preview behavior."""
 
+    def test_list_snapshots_returns_valid_metadata_only(self, backup_env):
+        service = backup_env["service"]
+        snapshot_root = service._paths.backup_snapshot_root
+
+        assert service.list_snapshots() == []
+
+        (snapshot_root / "without-metadata").mkdir(parents=True)
+        invalid = snapshot_root / "invalid"
+        invalid.mkdir()
+        (invalid / "metadata.json").write_text("{", encoding="utf-8")
+        valid = snapshot_root / "valid"
+        valid.mkdir()
+        (valid / "metadata.json").write_text(
+            json.dumps({"id": "snap-001", "created_at": "2026-05-12T12:00:00Z"}),
+            encoding="utf-8",
+        )
+
+        assert service.list_snapshots() == [
+            {"id": "snap-001", "created_at": "2026-05-12T12:00:00Z"}
+        ]
+
     def test_export_excludes_secrets_by_default(self, backup_env):
         service = backup_env["service"]
 
         filename, bundle_bytes, preview = service.export_bundle(passphrase=PASSPHRASE)
-        bundle = json.loads(bundle_bytes)
+        envelope = json.loads(bundle_bytes)
+        bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
 
         assert filename.endswith(".hmb")
+        assert envelope["format"] == "home-monitor-config-backup.encrypted.v1"
+        assert "ciphertext_b64" in envelope
+        assert "payload" not in envelope
+        assert b"hash-admin" not in bundle_bytes
+        assert b"totp-admin" not in bundle_bytes
+        assert b"root-cert" not in bundle_bytes
         assert bundle["manifest"]["scope"]["camera_trust"] is True
         assert preview["counts"]["users"] == 2
         assert preview["counts"]["cameras"] == 1
@@ -211,14 +245,192 @@ class TestConfigBackupImport:
         service = backup_env["service"]
 
         _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
-        bundle = json.loads(bundle_bytes)
-        bundle["payload"]["users"][0]["username"] = "mallory"
-        tampered_bytes = json.dumps(bundle).encode("utf-8")
+        envelope = json.loads(bundle_bytes)
+        ciphertext = bytearray(base64.b64decode(envelope["ciphertext_b64"]))
+        ciphertext[-1] ^= 0x01
+        envelope["ciphertext_b64"] = base64.b64encode(ciphertext).decode("ascii")
+        tampered_bytes = json.dumps(envelope).encode("utf-8")
 
         with pytest.raises(ConfigBackupError) as excinfo:
             service.preview_bundle(tampered_bytes, passphrase=PASSPHRASE)
 
-        assert excinfo.value.reason == "signature_mismatch"
+        assert excinfo.value.reason == "decrypt_failed"
+
+    def test_rejects_legacy_unencrypted_bundle(self, backup_env):
+        service = backup_env["service"]
+
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+        signed_bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
+        plaintext_bytes = json.dumps(signed_bundle).encode("utf-8")
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(plaintext_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == "unencrypted_bundle"
+
+    @pytest.mark.parametrize(
+        ("mutate", "reason"),
+        [
+            (lambda envelope: envelope.pop("encryption"), "corrupt_bundle"),
+            (
+                lambda envelope: envelope["encryption"].update(
+                    {"algorithm": "AES-128-GCM"}
+                ),
+                "format_mismatch",
+            ),
+            (
+                lambda envelope: envelope["encryption"].update({"kdf": "scrypt"}),
+                "format_mismatch",
+            ),
+            (
+                lambda envelope: envelope["encryption"].update({"iterations": "many"}),
+                "corrupt_bundle",
+            ),
+            (
+                lambda envelope: envelope["encryption"].update({"iterations": 1}),
+                "format_mismatch",
+            ),
+            (
+                lambda envelope: envelope["encryption"].update(
+                    {"salt_b64": "not base64!"}
+                ),
+                "corrupt_bundle",
+            ),
+            (
+                lambda envelope: envelope["encryption"].update(
+                    {"nonce_b64": base64.b64encode(b"short").decode("ascii")}
+                ),
+                "corrupt_bundle",
+            ),
+            (
+                lambda envelope: envelope.update({"ciphertext_b64": "not base64!"}),
+                "corrupt_bundle",
+            ),
+        ],
+    )
+    def test_rejects_malformed_encrypted_envelopes(self, backup_env, mutate, reason):
+        service = backup_env["service"]
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+        envelope = json.loads(bundle_bytes)
+        mutate(envelope)
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(
+                json.dumps(envelope).encode("utf-8"),
+                passphrase=PASSPHRASE,
+            )
+
+        assert excinfo.value.reason == reason
+
+    @pytest.mark.parametrize(
+        ("bundle_bytes", "reason"),
+        [
+            (b"not json", "corrupt_bundle"),
+            (b"[]", "corrupt_bundle"),
+            (json.dumps({"format": "unknown"}).encode("utf-8"), "corrupt_bundle"),
+        ],
+    )
+    def test_rejects_malformed_bundle_documents(self, backup_env, bundle_bytes, reason):
+        service = backup_env["service"]
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(bundle_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == reason
+
+    def test_rejects_wrong_backup_passphrase(self, backup_env):
+        service = backup_env["service"]
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(
+                bundle_bytes,
+                passphrase="wrong horse battery staple",
+            )
+
+        assert excinfo.value.reason == "decrypt_failed"
+
+    def test_rejects_decrypted_non_object_bundle(self, backup_env):
+        service = backup_env["service"]
+        bundle_bytes = service._encrypt_bundle(
+            ["not", "a", "dict"], passphrase=PASSPHRASE
+        )
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(bundle_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == "corrupt_bundle"
+
+    def test_rejects_decrypted_malformed_json(self, backup_env):
+        service = backup_env["service"]
+        salt = b"1" * 16
+        nonce = b"2" * AESGCM_NONCE_BYTES
+        key = service._derive_raw_key(passphrase=PASSPHRASE, salt=salt)
+        ciphertext = AESGCM(key).encrypt(nonce, b"{", BACKUP_AAD)
+        envelope = {
+            "format": ENCRYPTED_BUNDLE_FORMAT,
+            "encryption": {
+                "algorithm": "AES-256-GCM",
+                "kdf": "PBKDF2-HMAC-SHA256",
+                "iterations": PBKDF2_ITERATIONS,
+                "salt_b64": base64.b64encode(salt).decode("ascii"),
+                "nonce_b64": base64.b64encode(nonce).decode("ascii"),
+            },
+            "ciphertext_b64": base64.b64encode(ciphertext).decode("ascii"),
+        }
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(
+                json.dumps(envelope).encode("utf-8"),
+                passphrase=PASSPHRASE,
+            )
+
+        assert excinfo.value.reason == "corrupt_bundle"
+
+    def test_rejects_decrypted_signed_bundle_with_non_object_payload(self, backup_env):
+        service = backup_env["service"]
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+        signed_bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
+        signed_bundle["payload"] = []
+        encrypted_bytes = service._encrypt_bundle(signed_bundle, passphrase=PASSPHRASE)
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(encrypted_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == "corrupt_bundle"
+
+    @pytest.mark.parametrize(
+        ("mutate", "reason"),
+        [
+            (lambda bundle: bundle.pop("signature"), "corrupt_bundle"),
+            (
+                lambda bundle: bundle["manifest"].update({"format": "future"}),
+                "format_mismatch",
+            ),
+            (
+                lambda bundle: bundle["manifest"].update({"schema_version": 999}),
+                "schema_mismatch",
+            ),
+            (
+                lambda bundle: bundle["manifest"].update({"payload_sha256": "bad"}),
+                "signature_mismatch",
+            ),
+            (lambda bundle: bundle.update({"signature": "bad"}), "signature_mismatch"),
+        ],
+    )
+    def test_rejects_decrypted_signed_bundle_mismatches(
+        self, backup_env, mutate, reason
+    ):
+        service = backup_env["service"]
+        _, bundle_bytes, _ = service.export_bundle(passphrase=PASSPHRASE)
+        signed_bundle = service._load_bundle(bundle_bytes, passphrase=PASSPHRASE)
+        mutate(signed_bundle)
+        encrypted_bytes = service._encrypt_bundle(signed_bundle, passphrase=PASSPHRASE)
+
+        with pytest.raises(ConfigBackupError) as excinfo:
+            service.preview_bundle(encrypted_bytes, passphrase=PASSPHRASE)
+
+        assert excinfo.value.reason == reason
 
     def test_rejects_restore_scope_not_present_in_bundle(self, backup_env):
         service = backup_env["service"]

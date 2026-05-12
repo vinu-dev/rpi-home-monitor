@@ -28,7 +28,9 @@ single-use recovery code.
 ## Recovery Codes
 
 Recovery codes are shown only when they are created or regenerated. The device
-stores only hashes of those codes.
+generates 10 single-use codes. New codes use five groups of four characters
+from a 32-character alphabet, giving a documented 100-bit entropy target per
+code. The device stores only bcrypt hashes of those codes.
 
 To rotate them, open **Settings > Account**, enter the current password plus a
 TOTP or recovery code, then regenerate. Old recovery codes stop working as soon
@@ -55,6 +57,14 @@ to expire every other active session. Non-admin users can view and revoke their
 own sessions only. Revocation removes the server-side session inventory row and
 records an audit event; the affected browser must sign in again on its next
 request.
+
+## Login Throttling
+
+The server applies per-IP sign-in throttling before password verification. The
+active throttle window is persisted under `/data/config/login_rate_limits.json`
+so a normal service restart, deploy, or future multi-worker runtime does not
+grant a fresh attack budget. The file self-prunes to the active window and can
+be removed only as an explicit maintenance action.
 
 ## Remote Access Policy
 

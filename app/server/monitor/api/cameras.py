@@ -18,6 +18,7 @@ Routes are thin — all orchestration is in CameraService.
 
 import hashlib
 import hmac
+import os
 import threading
 import time
 
@@ -25,6 +26,7 @@ from flask import Blueprint, current_app, jsonify, request, session
 
 from monitor.auth import admin_required, csrf_protect, login_required
 from monitor.services.encoder_presets import list_encoder_presets
+from monitor.services.hmac_replay_guard import HmacReplayGuard
 from monitor.services.network_info import preferred_lan_ip_for_remote
 
 # ── HMAC auth for camera M2M requests ────────────────────────────────────────
@@ -32,42 +34,27 @@ from monitor.services.network_info import preferred_lan_ip_for_remote
 # tolerating real-world clock skew between camera and server (ADR-0016).
 _HMAC_MAX_AGE = 30  # seconds (was 300 — reduced to shrink replay window)
 
-# Thread-safe lock for per-app nonce cache mutation.
-_seen_nonces_lock = threading.Lock()
 
-
-def _get_seen_nonces() -> dict:
-    """Return the per-app replay cache, creating it if needed.
-
-    Stored on the app object (not module-level) so each Flask test app
-    gets its own fresh cache — preventing test state bleed.
-    """
+def _get_replay_guard() -> HmacReplayGuard:
+    """Return the persisted camera HMAC replay guard."""
     app_obj = current_app._get_current_object()
-    if not hasattr(app_obj, "_hmac_seen_nonces"):
-        app_obj._hmac_seen_nonces = {}
-    return app_obj._hmac_seen_nonces
+    guard = getattr(app_obj, "camera_hmac_replay_guard", None)
+    if guard is None:
+        guard = HmacReplayGuard(
+            os.path.join(current_app.config["CONFIG_DIR"], "camera_hmac_replay.json"),
+            ttl_seconds=_HMAC_MAX_AGE,
+        )
+        app_obj.camera_hmac_replay_guard = guard
+    return guard
 
 
 def _record_and_check_replay(camera_id: str, timestamp_str: str, sig: str) -> bool:
     """Return True if this (timestamp, sig) pair has been seen (replay attempt).
 
-    Thread-safe. Automatically expires stale entries.
+    Persisted under /data/config so a service restart cannot reset the replay
+    budget while a signed request is still inside its freshness window.
     """
-    key = (timestamp_str, sig)
-    now = time.time()
-
-    with _seen_nonces_lock:
-        nonces = _get_seen_nonces()
-        camera_cache = nonces.setdefault(camera_id, {})
-        # Purge expired entries (TTL = _HMAC_MAX_AGE)
-        expired = [k for k, exp in camera_cache.items() if exp <= now]
-        for k in expired:
-            del camera_cache[k]
-
-        if key in camera_cache:
-            return True  # replay detected — reject
-        camera_cache[key] = now + _HMAC_MAX_AGE
-    return False
+    return _get_replay_guard().record_and_check(camera_id, timestamp_str, sig)
 
 
 cameras_bp = Blueprint("cameras", __name__)

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import pytest
 
 from camera_streamer.pairing import PairingManager
+from camera_streamer.server_tls import ca_fingerprint_from_pem
 
 
 def _write_status_cert(data_dir):
@@ -92,7 +93,8 @@ class TestExchange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
         assert ok is True
         assert err == ""
 
@@ -122,7 +124,8 @@ class TestExchange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        pairing_mgr.exchange("654321", "https://10.0.0.1")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            pairing_mgr.exchange("654321", "https://10.0.0.1")
 
         call_args = mock_urlopen.call_args
         req = call_args[0][0]
@@ -143,7 +146,8 @@ class TestExchange:
             "url", 403, "Forbidden", {}, error_resp
         )
 
-        ok, err = pairing_mgr.exchange("000000", "https://192.168.1.100")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            ok, err = pairing_mgr.exchange("000000", "https://192.168.1.100")
         assert ok is False
         assert "Invalid PIN" in err
 
@@ -154,7 +158,8 @@ class TestExchange:
 
         mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
 
-        ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
         assert ok is False
         assert "Cannot reach server" in err
 
@@ -167,7 +172,8 @@ class TestExchange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
         assert ok is False
         assert "Failed to store certificates" in err
 
@@ -185,7 +191,8 @@ class TestExchange:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
+        with patch.object(pairing_mgr, "_build_tls_context", return_value=MagicMock()):
+            ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
         assert ok is True
 
 
@@ -252,38 +259,132 @@ class TestTOFU:
 
     def test_build_tls_context_uses_existing_ca_cert(self, pairing_mgr, data_dir):
         """Uses existing ca.crt on disk without fetching from server."""
-        import ssl
-
         ca_path = data_dir / "certs" / "ca.crt"
-        # Write a real self-signed cert for ssl to load
         ca_path.parent.mkdir(parents=True, exist_ok=True)
-        # Use a minimal PEM that ssl can at least attempt to load
-        ca_path.write_text(
-            "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n"
-            "-----END CERTIFICATE-----\n"
-        )
-        with patch.object(pairing_mgr, "_fetch_server_ca_cert") as mock_fetch:
-            try:
-                pairing_mgr._build_tls_context("https://192.168.1.100")
-            except ssl.SSLError:
-                pass  # invalid cert content — that's OK, we just check fetch was not called
+        ca_pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
+        ca_path.write_text(ca_pem)
+        fingerprint = ca_fingerprint_from_pem(ca_pem)
+        fake_ctx = MagicMock()
+        with (
+            patch.object(pairing_mgr, "_fetch_server_ca_cert") as mock_fetch,
+            patch(
+                "camera_streamer.pairing.paired_server_context",
+                return_value=fake_ctx,
+            ),
+        ):
+            ctx = pairing_mgr._build_tls_context(
+                "https://192.168.1.100",
+                expected_ca_fingerprint=fingerprint,
+            )
+            assert ctx is fake_ctx
             mock_fetch.assert_not_called()
+
+    def test_get_server_ca_fingerprint_fetches_current_server_before_cache(
+        self, pairing_mgr, data_dir
+    ):
+        cached = "-----BEGIN CERTIFICATE-----\nOLD\n-----END CERTIFICATE-----\n"
+        current = "-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n"
+        ca_path = data_dir / "certs" / "ca.crt"
+        ca_path.parent.mkdir(parents=True, exist_ok=True)
+        ca_path.write_text(cached)
+
+        with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=current):
+            fingerprint = pairing_mgr.get_server_ca_fingerprint("https://192.168.1.100")
+
+        assert fingerprint == ca_fingerprint_from_pem(current)
+
+    def test_build_tls_context_fetches_new_ca_when_cached_ca_differs(
+        self, pairing_mgr, data_dir
+    ):
+        cached = "-----BEGIN CERTIFICATE-----\nOLD\n-----END CERTIFICATE-----\n"
+        current = "-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n"
+        ca_path = data_dir / "certs" / "ca.crt"
+        ca_path.parent.mkdir(parents=True, exist_ok=True)
+        ca_path.write_text(cached)
+        current_fingerprint = ca_fingerprint_from_pem(current)
+        fake_ctx = MagicMock()
+
+        with (
+            patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=current),
+            patch("camera_streamer.pairing.context_from_ca_pem", return_value=fake_ctx),
+        ):
+            ctx = pairing_mgr._build_tls_context(
+                "https://192.168.1.100",
+                expected_ca_fingerprint=current_fingerprint,
+            )
+
+        assert ctx is fake_ctx
+
+    def test_build_bootstrap_tls_context_fetches_current_server_before_cache(
+        self, pairing_mgr, data_dir
+    ):
+        ca_path = data_dir / "certs" / "ca.crt"
+        ca_path.parent.mkdir(parents=True, exist_ok=True)
+        ca_path.write_text(
+            "-----BEGIN CERTIFICATE-----\nOLD\n-----END CERTIFICATE-----\n"
+        )
+        fetched = "-----BEGIN CERTIFICATE-----\nNEW\n-----END CERTIFICATE-----\n"
+        fake_ctx = MagicMock()
+
+        with (
+            patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=fetched),
+            patch("camera_streamer.pairing.context_from_ca_pem", return_value=fake_ctx),
+            patch("camera_streamer.pairing.paired_server_context") as cached_context,
+        ):
+            ctx = pairing_mgr.build_bootstrap_tls_context("https://192.168.1.100")
+
+        assert ctx is fake_ctx
+        cached_context.assert_not_called()
 
     def test_build_tls_context_attempts_tofu_when_no_ca(self, pairing_mgr):
         """Fetches CA cert via TOFU when none is on disk."""
         with patch.object(
             pairing_mgr, "_fetch_server_ca_cert", return_value=""
         ) as mock_fetch:
-            pairing_mgr._build_tls_context("https://192.168.1.100")
+            with pytest.raises(RuntimeError, match="could not be verified"):
+                pairing_mgr._build_tls_context(
+                    "https://192.168.1.100",
+                    expected_ca_fingerprint="AA",
+                )
             mock_fetch.assert_called_once_with("https://192.168.1.100")
 
-    def test_build_tls_context_falls_back_to_unverified(self, pairing_mgr):
-        """Falls back to CERT_NONE when TOFU fetch returns empty."""
-        import ssl
-
+    def test_build_tls_context_refuses_missing_ca(self, pairing_mgr):
+        """No silent unverified TLS fallback when the CA cannot be fetched."""
         with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=""):
-            ctx = pairing_mgr._build_tls_context("https://192.168.1.100")
-        assert ctx.verify_mode == ssl.CERT_NONE
+            with pytest.raises(RuntimeError, match="could not be verified"):
+                pairing_mgr._build_tls_context(
+                    "https://192.168.1.100",
+                    expected_ca_fingerprint="AA",
+                )
+
+    def test_build_tls_context_requires_fingerprint_confirmation(self, pairing_mgr):
+        pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
+        with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=pem):
+            with pytest.raises(RuntimeError, match="Confirm"):
+                pairing_mgr._build_tls_context("https://192.168.1.100")
+
+    def test_build_tls_context_rejects_mismatched_fingerprint(self, pairing_mgr):
+        pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
+        with patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=pem):
+            with pytest.raises(RuntimeError, match="does not match"):
+                pairing_mgr._build_tls_context(
+                    "https://192.168.1.100",
+                    expected_ca_fingerprint="00" * 32,
+                )
+
+    def test_build_tls_context_accepts_confirmed_fingerprint(self, pairing_mgr):
+        pem = "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"
+        fingerprint = ca_fingerprint_from_pem(pem)
+        fake_ctx = MagicMock()
+        with (
+            patch.object(pairing_mgr, "_fetch_server_ca_cert", return_value=pem),
+            patch("camera_streamer.pairing.context_from_ca_pem", return_value=fake_ctx),
+        ):
+            ctx = pairing_mgr._build_tls_context(
+                "https://192.168.1.100",
+                expected_ca_fingerprint=fingerprint,
+            )
+        assert ctx is fake_ctx
 
     @patch("camera_streamer.pairing.urllib.request.urlopen")
     def test_exchange_uses_tofu_context(self, mock_urlopen, pairing_mgr):
@@ -301,15 +402,15 @@ class TestTOFU:
         mock_urlopen.return_value = mock_resp
 
         with patch.object(pairing_mgr, "_build_tls_context") as mock_ctx:
-            import ssl
-
-            fake_ctx = ssl.create_default_context()
-            fake_ctx.check_hostname = False
-            fake_ctx.verify_mode = ssl.CERT_NONE
+            fake_ctx = MagicMock()
             mock_ctx.return_value = fake_ctx
-            ok, err = pairing_mgr.exchange("123456", "https://192.168.1.100")
+            ok, err = pairing_mgr.exchange(
+                "123456",
+                "https://192.168.1.100",
+                expected_ca_fingerprint="AA",
+            )
 
-        mock_ctx.assert_called_once_with("https://192.168.1.100")
+        mock_ctx.assert_called_once_with("https://192.168.1.100", "AA")
         assert ok is True
 
 

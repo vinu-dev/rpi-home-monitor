@@ -104,11 +104,13 @@ class TestInitiatePairing:
             {"cert": "CERT", "key": "KEY", "serial": "ABC123"},
             "",
         )
-        pin, error, status = svc.initiate_pairing("cam-001")
+        pairing, error, status = svc.initiate_pairing("cam-001")
         assert status == 200
         assert error == ""
+        pin = pairing["pin"]
         assert len(pin) == PIN_DIGITS
         assert pin.isdigit()
+        assert pairing["ca_fingerprint"]
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_stores_pending_pairing(self, mock_gen, svc, store):
@@ -150,8 +152,9 @@ class TestInitiatePairing:
             {"cert": "CERT", "key": "KEY", "serial": "ABC123"},
             "",
         )
-        pin, error, status = svc.initiate_pairing("cam-001")
+        pairing, error, status = svc.initiate_pairing("cam-001")
         assert status == 200
+        assert pairing["pin"]
 
 
 class TestExchangeCerts:
@@ -472,7 +475,7 @@ class TestAuditFailureResilience:
         svc = PairingService(store=store, audit=audit, certs_dir=str(certs_dir))
         store.get_camera.return_value = _make_camera(status="pending")
         mock_gen.return_value = ({"cert": "C", "key": "K", "serial": "S"}, "")
-        pin, error, status = svc.initiate_pairing("cam-001")
+        pairing, error, status = svc.initiate_pairing("cam-001")
         assert status == 200
 
     def test_unpair_works_when_audit_fails(self, store, certs_dir):

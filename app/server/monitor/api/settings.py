@@ -15,6 +15,7 @@ Endpoints:
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from monitor.api.security_preconditions import require_secret_storage_allowed
 from monitor.auth import admin_required, csrf_protect, login_required
 
 settings_bp = Blueprint("settings", __name__)
@@ -36,6 +37,10 @@ def update_settings():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
+    if data.get("tailscale_auth_key"):
+        blocked = require_secret_storage_allowed("tailscale_auth_key")
+        if blocked:
+            return blocked
 
     msg, status = current_app.settings_service.update_settings(
         data=data,
@@ -63,6 +68,10 @@ def update_offsite_backup_settings():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
+    if data.get("secret_access_key"):
+        blocked = require_secret_storage_allowed("offsite_backup_secret")
+        if blocked:
+            return blocked
 
     msg, status = current_app.offsite_backup_service.update_config(
         payload=data,

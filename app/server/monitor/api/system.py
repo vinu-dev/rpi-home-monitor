@@ -5,6 +5,7 @@ System health and info API.
 Endpoints:
   GET  /system/network                 - LAN fallback URL for this server
   GET  /system/health                  - CPU temp, CPU%, RAM%, disk usage, warnings
+  GET  /system/data-protection         - /data encryption-at-rest posture
   GET  /system/time/health             - derived server/camera time integrity (admin only)
   POST /system/time/resync             - restart timesyncd on server or queue camera resync
   GET  /system/info                    - firmware version, uptime, hostname, OS version
@@ -15,7 +16,7 @@ Endpoints:
   POST /system/tailscale/disable       - Disable tailscaled daemon
   POST /system/tailscale/apply-config  - Apply saved Tailscale settings
   POST /system/factory-reset           - Wipe all data and return to first-boot state
-  POST /system/backup/export           - Download a signed configuration bundle
+  POST /system/backup/export           - Download an encrypted, signed configuration bundle
   POST /system/backup/preview          - Validate + preview a backup bundle
   POST /system/backup/import           - Restore a backup bundle
   POST /system/diagnostics/export      - Download a diagnostics tarball
@@ -226,7 +227,22 @@ def health():
     """
     data_dir = current_app.config.get("DATA_DIR", "/data")
     summary = get_health_summary(data_dir)
+    service = getattr(current_app, "data_protection_service", None)
+    if service is not None:
+        summary["data_protection"] = service.status()
     return jsonify(summary), 200
+
+
+@system_bp.route("/data-protection", methods=["GET"])
+@login_required
+def data_protection():
+    """Return the live /data encryption-at-rest posture."""
+    service = getattr(current_app, "data_protection_service", None)
+    if service is None:
+        return jsonify(
+            {"state": "unknown", "warning": "Data protection unavailable"}
+        ), 200
+    return jsonify(service.status()), 200
 
 
 @system_bp.route("/summary", methods=["GET"])
@@ -488,7 +504,7 @@ def factory_reset():
 @admin_required
 @csrf_protect
 def backup_export():
-    """Export a signed configuration backup bundle. Admin only."""
+    """Export an encrypted, signed configuration backup bundle. Admin only."""
     body = request.get_json(silent=True) or {}
     user = session.get("username", "")
     ip = request.remote_addr or ""

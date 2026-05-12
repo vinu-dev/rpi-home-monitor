@@ -240,6 +240,10 @@ class TestPosterSignatureHeaders:
             "camera_streamer.motion_runner.urllib.request.urlopen",
             fake_urlopen,
         )
+        monkeypatch.setattr(
+            "camera_streamer.motion_runner.paired_server_context",
+            lambda *_args, **_kwargs: MagicMock(),
+        )
 
         poster = MotionEventPoster(_cfg(), _pairing())
         ok = poster.post(
@@ -287,6 +291,10 @@ class TestPosterSignatureHeaders:
         monkeypatch.setattr(
             "camera_streamer.motion_runner.urllib.request.urlopen",
             fake_urlopen,
+        )
+        monkeypatch.setattr(
+            "camera_streamer.motion_runner.paired_server_context",
+            lambda *_args, **_kwargs: MagicMock(),
         )
         resolver = MagicMock()
         resolver.resolved_ip = "192.168.1.244"

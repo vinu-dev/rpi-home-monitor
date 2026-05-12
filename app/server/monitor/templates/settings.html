@@ -111,6 +111,32 @@
         </div>
     </div>
 
+    <div class="settings-section">
+        <div class="settings-section__title">Data Protection</div>
+        <div class="card">
+            <div class="info-row">
+                <span class="info-row__label">/data at rest</span>
+                <span class="info-row__value">
+                    <span class="badge"
+                          :class="dataProtectionBadgeClass(sysInfo.dataProtection.state)"
+                          x-text="dataProtectionLabel(sysInfo.dataProtection.state)"></span>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-row__label">Security profile</span>
+                <span class="info-row__value"
+                      x-text="sysInfo.dataProtection.enforcement_required ? 'Encrypted /data required' : 'Warn only'"></span>
+            </div>
+            <div class="info-row" style="border-bottom:none;">
+                <span class="info-row__label">Volume</span>
+                <span class="info-row__value" x-text="sysInfo.dataProtection.data_dir || '/data'"></span>
+            </div>
+            <div class="warning-item" x-show="sysInfo.dataProtection.warning"
+                 x-text="sysInfo.dataProtection.warning"
+                 style="margin-top:var(--space-3);"></div>
+        </div>
+    </div>
+
     <!-- Date & Time (ADR-0019) -->
     <div class="settings-section">
         <div class="settings-section__title">Date & Time</div>
@@ -319,7 +345,7 @@
         <div class="settings-section__title">Configuration Backup</div>
         <div class="card">
             <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
-                Export server-side users, paired cameras, settings, and trust material into a signed `.hmb` bundle. Keep bundles secure if you include credentials or camera trust.
+                Export server-side users, paired cameras, settings, and trust material into an encrypted, signed `.hmb` bundle. Keep the passphrase separate from the file.
             </p>
             <div class="form-row">
                 <div class="form-group">
@@ -374,7 +400,7 @@
         <div class="settings-section__title">Configuration Restore</div>
         <div class="card">
             <p class="text-small text-muted" style="margin-bottom:var(--space-3);">
-                Upload a backup bundle, preview the changes, then confirm restore. A rollback snapshot is created automatically before import.
+                Upload an encrypted backup bundle, preview the changes, then confirm restore. A rollback snapshot is created automatically before import.
             </p>
             <div class="form-row">
                 <div class="form-group">
@@ -1029,9 +1055,13 @@
             <div class="text-small text-muted" x-show="totp.status.enabled && totp.status.recovery_codes_remaining <= 3" style="margin-top:var(--space-2);">
                 Recovery codes are low. Regenerate a new set.
             </div>
+            <div class="warning-item"
+                 x-show="sysInfo.dataProtection.warning && !totp.status.enabled"
+                 x-text="sysInfo.dataProtection.warning"
+                 style="margin-top:var(--space-3); margin-bottom:var(--space-3);"></div>
 
             <template x-if="!totp.status.enabled && !totp.enrolling">
-                <button type="button" class="btn btn--primary" @click="startTotpEnroll()" :disabled="totp.busy">
+                <button type="button" class="btn btn--primary" @click="startTotpEnroll()" :disabled="totp.busy || sysInfo.dataProtection.secret_enrollment_blocked">
                     Enable 2FA
                 </button>
             </template>
@@ -2165,6 +2195,18 @@
                     <span class="text-muted" x-show="ota.server.error" x-text="'— ' + ota.server.error"></span>
                 </span>
             </div>
+            <div class="info-row">
+                <span class="info-row__label">Signature verification</span>
+                <span class="info-row__value">
+                    <span class="badge"
+                          :class="ota.server.verification && ota.server.verification.install_blocked ? 'badge--offline' : (ota.server.verification && ota.server.verification.allows_unsigned_fallback ? 'badge--warn' : 'badge--ok')"
+                          x-text="otaVerificationLabel(ota.server.verification)"></span>
+                </span>
+            </div>
+            <template x-if="ota.server.verification && ota.server.verification.warning">
+                <div class="warning-item" style="margin-top:var(--space-3);"
+                     x-text="ota.server.verification.warning"></div>
+            </template>
             <div style="margin-top:var(--space-3);">
                 <label class="btn btn--secondary" :class="{ 'btn--disabled': ota.server.busy }" style="display:inline-block;">
                     <input type="file" accept=".swu" style="display:none;"
@@ -2176,7 +2218,7 @@
                       x-show="ota.server.staged_filename"
                       x-text="ota.server.staged_filename"></span>
                 <button class="btn btn--primary" style="margin-left:var(--space-2);"
-                        :disabled="!ota.server.staged_filename || ota.server.busy"
+                        :disabled="!ota.server.staged_filename || ota.server.busy || (ota.server.verification && ota.server.verification.install_blocked)"
                         @click="installServerBundle()">Install &amp; Reboot</button>
             </div>
             <div x-show="ota.server.busy" style="margin-top:var(--space-3);">
@@ -2224,6 +2266,10 @@
                         <span class="text-muted" x-show="cam.error" x-text="'— ' + cam.error"></span>
                     </span>
                 </div>
+                <template x-if="cam.verification && cam.verification.warning">
+                    <div class="warning-item" style="margin-top:var(--space-3);"
+                         x-text="cam.verification.warning"></div>
+                </template>
                 <div style="margin-top:var(--space-3);">
                     <label class="btn btn--secondary" :class="{ 'btn--disabled': cameraBusy(cam) }" style="display:inline-block;">
                         <input type="file" accept=".swu" style="display:none;"
@@ -2292,6 +2338,14 @@ function settingsPage() {
             disk_total: '', disk_used: '', disk_free: '', retention: '',
             temp: '', temp_class: '', cpu: '', cpu_class: '',
             memory: '', mem_class: '', warnings: [],
+            dataProtection: {
+                state: 'unknown',
+                warning: '',
+                message: '',
+                data_dir: '/data',
+                enforcement_required: false,
+                secret_enrollment_blocked: false,
+            },
         },
         users: [],
         sessions: { loading: false, busy: false, includeAll: false, rows: [] },
@@ -2429,7 +2483,7 @@ function settingsPage() {
         deletingAllRecordings: false,
 
         // OTA state (ADR-0020 dual-transport updates)
-        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false }, cameras: [] },
+        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false, verification: null }, cameras: [] },
         _otaPollTimer: null,
 
         // Security-tab state is limited to active-session inventory.
@@ -2744,6 +2798,21 @@ function settingsPage() {
             if (state === 'amber') return 'background: var(--color-warning); color: var(--color-bg);';
             if (state === 'red') return 'background: var(--color-danger); color: var(--color-bg);';
             return 'background: #555; color: #ccc;';
+        },
+
+        dataProtectionLabel(state) {
+            var labels = {
+                encrypted: 'Encrypted',
+                unencrypted: 'Plaintext',
+                unknown: 'Unknown',
+            };
+            return labels[state] || 'Unknown';
+        },
+
+        dataProtectionBadgeClass(state) {
+            if (state === 'encrypted') return 'badge--ok';
+            if (state === 'unencrypted') return 'badge--warn';
+            return 'badge--offline';
         },
 
         sessionDeviceLabel(row) {
@@ -3312,6 +3381,9 @@ function settingsPage() {
                         health.memory.used_mb + ' / ' + health.memory.total_mb + ' MB)';
                     this.sysInfo.mem_class = this._usageClass(health.memory.percent);
                 }
+                if (health.data_protection) {
+                    this.sysInfo.dataProtection = health.data_protection;
+                }
                 this.sysInfo.warnings = health.warnings || [];
             } catch(e) {}
             try {
@@ -3437,6 +3509,10 @@ function settingsPage() {
         },
 
         async startTotpEnroll() {
+            if (this.sysInfo.dataProtection.secret_enrollment_blocked) {
+                window.HM.toast(this.sysInfo.dataProtection.warning || 'Encrypted data volume required', 'error');
+                return;
+            }
             this.totp.busy = true;
             this.totp.recoveryCodes = [];
             try {
@@ -3894,6 +3970,15 @@ function settingsPage() {
             );
         },
 
+        otaVerificationLabel(v) {
+            if (!v) return 'unknown';
+            if (v.install_blocked) return 'blocked';
+            if (v.verification_enforced && v.verification_active) return 'enforced';
+            if (v.verification_active) return 'verified';
+            if (v.allows_unsigned_fallback) return 'dev fallback';
+            return v.mode || 'unknown';
+        },
+
         async loadOtaStatus() {
             try {
                 var data = await window.HM.api.get('/api/v1/ota/status');
@@ -4068,9 +4153,17 @@ function settingsPage() {
                     function(pct) { self.ota.server.progress = pct; }
                 );
                 this.ota.server.staged_filename = data.filename || file.name;
+                if (data.verification) {
+                    this.ota.server.verification = data.verification;
+                }
                 this.ota.server.state = 'staged';
                 this.ota.server.busy = false;
-                window.HM.toast('Bundle uploaded and verified', 'success');
+                window.HM.toast(
+                    this.ota.server.verification && this.ota.server.verification.warning
+                        ? 'Bundle staged with verification warning'
+                        : 'Bundle uploaded and verified',
+                    this.ota.server.verification && this.ota.server.verification.warning ? 'info' : 'success'
+                );
             } catch(e) {
                 this.ota.server.state = 'error';
                 this.ota.server.error = e.message || 'Upload failed';
@@ -4082,7 +4175,16 @@ function settingsPage() {
         },
 
         async installServerBundle() {
-            if (!confirm('Install this update? The server will reboot into the new partition.')) return;
+            var posture = this.ota.server.verification || {};
+            if (posture.install_blocked) {
+                window.HM.toast(posture.warning || 'OTA verification is blocked', 'error');
+                return;
+            }
+            var prompt = 'Install this update? The server will reboot into the new partition.';
+            if (posture.warning) {
+                prompt = posture.warning + '\n\n' + prompt;
+            }
+            if (!confirm(prompt)) return;
             this.ota.server.busy = true;
             this.ota.server.state = 'installing';
             this.ota.server.progress = 0;

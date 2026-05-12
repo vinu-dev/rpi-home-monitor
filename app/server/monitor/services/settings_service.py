@@ -16,6 +16,7 @@ import time
 
 from flask import current_app
 
+from monitor.services import privileged
 from monitor.services.audit import TAILSCALE_AUTH_KEY_ROTATED
 
 log = logging.getLogger("monitor.services.settings_service")
@@ -234,29 +235,43 @@ class SettingsService:
     def _apply_timezone(self, tz: str) -> None:
         """Apply a timezone via timedatectl. Best-effort; logs on failure."""
         try:
-            subprocess.run(
-                ["timedatectl", "set-timezone", tz],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
+            if privileged.should_use_helper():
+                privileged.request("time.set_timezone", {"timezone": tz}, timeout=10)
+            else:
+                subprocess.run(
+                    ["timedatectl", "set-timezone", tz],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("Failed to apply timezone %r: %s", tz, e)
+        except privileged.PrivilegedHelperError as e:
+            log.warning("Failed to apply timezone %r via helper: %s", tz, e)
 
     def _apply_ntp_mode(self, mode: str) -> None:
         """Enable/disable automatic NTP sync."""
         flag = "true" if mode == "auto" else "false"
         try:
-            subprocess.run(
-                ["timedatectl", "set-ntp", flag],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
+            if privileged.should_use_helper():
+                privileged.request(
+                    "time.set_ntp",
+                    {"enabled": mode == "auto"},
+                    timeout=10,
+                )
+            else:
+                subprocess.run(
+                    ["timedatectl", "set-ntp", flag],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("Failed to set NTP mode %r: %s", mode, e)
+        except privileged.PrivilegedHelperError as e:
+            log.warning("Failed to set NTP mode %r via helper: %s", mode, e)
 
     def get_time_status(self) -> dict:
         """Return current system time + NTP state (via timedatectl)."""
@@ -326,6 +341,14 @@ class SettingsService:
 
     def restart_timesyncd(self) -> tuple[str, int]:
         """Restart systemd-timesyncd using the standard time-helper pattern."""
+        if privileged.should_use_helper():
+            ok, err = privileged.request_result(
+                "time.restart_timesyncd",
+                timeout=10,
+            )
+            if ok:
+                return "System time resync requested", 200
+            return err, 500
         try:
             result = subprocess.run(
                 ["systemctl", "restart", "systemd-timesyncd"],
@@ -357,18 +380,27 @@ class SettingsService:
         # timedatectl accepts "YYYY-MM-DD HH:MM:SS"
         stamp = iso_time.replace("T", " ").rstrip("Z").split(".", 1)[0]
 
-        try:
-            result = subprocess.run(
-                ["timedatectl", "set-time", stamp],
-                capture_output=True,
-                text=True,
+        if privileged.should_use_helper():
+            ok, err = privileged.request_result(
+                "time.set_manual",
+                {"stamp": stamp},
                 timeout=10,
-                check=False,
             )
-            if result.returncode != 0:
-                return _trim_command_error(result, "timedatectl failed"), 500
-        except (OSError, subprocess.SubprocessError) as e:
-            return str(e), 500
+            if not ok:
+                return err, 500
+        else:
+            try:
+                result = subprocess.run(
+                    ["timedatectl", "set-time", stamp],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    return _trim_command_error(result, "timedatectl failed"), 500
+            except (OSError, subprocess.SubprocessError) as e:
+                return str(e), 500
 
         self._log_audit(
             "TIME_SET_MANUAL",
@@ -479,6 +511,19 @@ class SettingsService:
 
     def _do_wifi_connect(self, ssid: str, password: str) -> tuple[bool, str]:
         """Connect to a WiFi network. Returns (ok, error_message)."""
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request(
+                    "network.connect_wifi",
+                    {"ssid": ssid, "password": password},
+                    timeout=35,
+                )
+            except privileged.PrivilegedHelperError as exc:
+                return False, str(exc)
+            if int(data.get("returncode") or 0) == 0:
+                return True, ""
+            err = str(data.get("stderr") or data.get("stdout") or "").strip()
+            return False, err or "Connection failed"
         try:
             result = subprocess.run(
                 [

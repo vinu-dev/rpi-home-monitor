@@ -30,7 +30,8 @@ import pyotp
 log = logging.getLogger("monitor.services.totp_service")
 
 RECOVERY_CODE_COUNT = 10
-RECOVERY_CODE_GROUPS = 4
+RECOVERY_CODE_GROUPS = 5
+RECOVERY_CODE_LEGACY_GROUPS = 4
 RECOVERY_CODE_GROUP_LEN = 4
 RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -126,7 +127,7 @@ class TotpService:
     ) -> tuple[list[str], list[str]]:
         """Return ``(plaintext_codes, bcrypt_hashes)``.
 
-        Plaintext codes are formatted ``xxxx-xxxx-xxxx-xxxx``. Only the
+        Plaintext codes are formatted ``xxxx-xxxx-xxxx-xxxx-xxxx``. Only the
         hashes should be persisted; plaintext is returned to the user
         exactly once.
         """
@@ -163,10 +164,15 @@ class TotpService:
         if not code or not hashes:
             return False, list(hashes)
         cleaned = code.strip().replace(" ", "").upper()
-        # Accept dashed and undashed forms.
-        if "-" not in cleaned and len(cleaned) == (
-            RECOVERY_CODE_GROUPS * RECOVERY_CODE_GROUP_LEN
-        ):
+        # Accept dashed and undashed forms. New codes use five groups, but
+        # old four-group hashes remain valid until the user consumes or
+        # regenerates them.
+        if "-" not in cleaned:
+            if len(cleaned) % RECOVERY_CODE_GROUP_LEN:
+                return False, list(hashes)
+            group_count = len(cleaned) // RECOVERY_CODE_GROUP_LEN
+            if group_count not in (RECOVERY_CODE_GROUPS, RECOVERY_CODE_LEGACY_GROUPS):
+                return False, list(hashes)
             cleaned = "-".join(
                 cleaned[i : i + RECOVERY_CODE_GROUP_LEN]
                 for i in range(0, len(cleaned), RECOVERY_CODE_GROUP_LEN)

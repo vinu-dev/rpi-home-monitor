@@ -25,6 +25,14 @@ def _write_ca_cert(
     return ca_path
 
 
+def _write_setup_hotspot_password(app):
+    path = os.path.join(app.config["DATA_DIR"], "config", "setup-hotspot.psk")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write("PerDeviceSetup123\n")
+    return path
+
+
 class TestGetCaCert:
     """Tests for GET /api/v1/setup/ca-cert (TOFU bootstrap endpoint).
 
@@ -38,6 +46,19 @@ class TestGetCaCert:
         response = client.get("/api/v1/setup/ca-cert")
         assert response.status_code == 200
         assert b"BEGIN CERTIFICATE" in response.data
+        assert response.headers["X-CA-SHA256-Fingerprint"]
+
+    def test_returns_ca_fingerprint_when_exists(self, app, client):
+        """Returns display fingerprint for operator confirmation."""
+        _write_ca_cert(app)
+        response = client.get("/api/v1/setup/ca-fingerprint")
+        assert response.status_code == 200
+        assert response.get_json()["fingerprint"]
+
+    def test_ca_fingerprint_returns_404_when_no_ca_cert(self, client):
+        response = client.get("/api/v1/setup/ca-fingerprint")
+        assert response.status_code == 404
+        assert "error" in response.get_json()
 
     def test_returns_404_when_no_ca_cert(self, client):
         """Returns 404 when ca.crt has not been generated yet."""
@@ -181,7 +202,11 @@ class TestSetAdminPassword:
         with open(stamp, "w") as f:
             f.write("done")
         response = client.post(
-            "/api/v1/setup/admin", json={"password": "newpassword123"}
+            "/api/v1/setup/admin",
+            json={
+                "password": "newpassword123",
+                "setup_hotspot_password": "PerDeviceSetup123",
+            },
         )
         assert response.status_code == 403
 
@@ -208,9 +233,16 @@ class TestSetAdminPassword:
         app.store.save_user(admin)
 
         response = client.post(
-            "/api/v1/setup/admin", json={"password": "newpassword123"}
+            "/api/v1/setup/admin",
+            json={
+                "password": "newpassword123",
+                "setup_hotspot_password": "PerDeviceSetup123",
+            },
         )
         assert response.status_code == 200
+        assert os.path.isfile(
+            os.path.join(app.config["DATA_DIR"], "config", "setup-hotspot.psk")
+        )
 
         # Verify password was changed
         updated = app.store.get_user_by_username("admin")
@@ -249,6 +281,7 @@ class TestSetupComplete:
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
         assert response.status_code == 200
+        _write_setup_hotspot_password(app)
 
         # Step 2: Complete (connects WiFi + writes stamp)
         mock_run.return_value = MagicMock(
@@ -276,6 +309,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         client.post("/api/v1/setup/complete")
@@ -293,6 +327,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         response = client.post("/api/v1/setup/complete")
         assert response.status_code == 200
@@ -308,6 +343,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "WrongNetwork", "password": "wrongpass"},
         )
+        _write_setup_hotspot_password(app)
 
         mock_run.return_value = MagicMock(
             returncode=1,
@@ -328,6 +364,7 @@ class TestSetupComplete:
             "/api/v1/setup/wifi/save",
             json={"ssid": "HomeWiFi", "password": "wifipass123"},
         )
+        _write_setup_hotspot_password(app)
         assert app.provisioning_service._pending_wifi["ssid"] == "HomeWiFi"
 
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")

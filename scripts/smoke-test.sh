@@ -90,6 +90,18 @@ skip() {
     SKIPPED=$((SKIPPED + 1))
 }
 
+find_python() {
+    local candidate
+    for candidate in python3 python py; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import json, sys" >/dev/null 2>&1; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    fail "Missing usable Python interpreter: tried python3, python, and py"
+    exit 1
+}
+
 check_status() {
     local desc="$1" url="$2" expected_status="$3"
     local status
@@ -105,7 +117,7 @@ check_json_field() {
     local desc="$1" url="$2" field="$3"
     local body
     body=$(server_curl "$url" 2>/dev/null) || true
-    if echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
+    if echo "$body" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
         pass "$desc (has '$field')"
     else
         fail "$desc (missing '$field')"
@@ -123,6 +135,8 @@ server_curl() {
 reset_viewer_curl() {
     curl "${CURL_OPTS[@]}" -b "$RESET_COOKIE_JAR" "$@"
 }
+
+PYTHON_BIN="$(find_python)"
 
 # ---------------------------------------------------------------------------
 # Cleanup
@@ -181,9 +195,9 @@ else
         -d "{\"username\":\"admin\",\"password\":\"${PASSWORD}\"}" \
         "${API_BASE}/auth/login" 2>/dev/null) || true
 
-    if echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
+    if echo "$LOGIN_RESP" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
         pass "Login successful"
-        CSRF=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+        CSRF=$(echo "$LOGIN_RESP" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
     else
         fail "Login failed (check password)"
         CSRF=""
@@ -202,9 +216,9 @@ else
         -d "{\"username\":\"admin\",\"password\":\"${PASSWORD}\"}" \
         "${API_BASE}/auth/login" 2>/dev/null) || true
 
-    if echo "$LOGIN_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
+    if echo "$LOGIN_RESP" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert 'csrf_token' in d" 2>/dev/null; then
         pass "Re-login successful after logout"
-        CSRF=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+        CSRF=$(echo "$LOGIN_RESP" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
     else
         fail "Re-login failed after logout"
         CSRF=""
@@ -215,7 +229,7 @@ fi
 check_status "GET /auth/me" "${API_BASE}/auth/me" 200
 check_json_field "/auth/me has user" "${API_BASE}/auth/me" "user"
 if [ -z "${CSRF:-}" ]; then
-    CSRF=$(server_curl "${API_BASE}/auth/me" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null) || true
+    CSRF=$(server_curl "${API_BASE}/auth/me" 2>/dev/null | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null) || true
 fi
 if [ -n "${CSRF:-}" ]; then
     EXPORT_STATUS=$(server_curl -H "X-CSRF-Token: ${CSRF}" -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" \
@@ -259,11 +273,11 @@ echo "[5/7] Camera endpoints"
 check_status "GET /cameras" "${API_BASE}/cameras" 200
 
 CAMERAS=$(server_curl "${API_BASE}/cameras" 2>/dev/null) || true
-CAM_COUNT=$(echo "$CAMERAS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || CAM_COUNT=0
+CAM_COUNT=$(echo "$CAMERAS" | "$PYTHON_BIN" -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || CAM_COUNT=0
 
 if [ "$CAM_COUNT" -gt 0 ]; then
     pass "Found $CAM_COUNT camera(s)"
-    CAM_ID=$(echo "$CAMERAS" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])" 2>/dev/null) || true
+    CAM_ID=$(echo "$CAMERAS" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin)[0]['id'])" 2>/dev/null) || true
     if [ -n "$CAM_ID" ]; then
         check_status "GET /cameras/$CAM_ID/status" "${API_BASE}/cameras/${CAM_ID}/status" 200
         check_status "GET /recordings/$CAM_ID/dates" "${API_BASE}/recordings/${CAM_ID}/dates" 200
@@ -293,7 +307,7 @@ if [ -n "${CSRF:-}" ]; then
     if [ "$DIAG_STATUS" = "200" ]; then
         rm -rf "$DIAGNOSTICS_EXTRACT_DIR"
         mkdir -p "$DIAGNOSTICS_EXTRACT_DIR"
-        if python3 - "$DIAGNOSTICS_EXPORT_TMP" "$DIAGNOSTICS_EXTRACT_DIR" <<'PY' >/dev/null 2>&1
+        if "$PYTHON_BIN" - "$DIAGNOSTICS_EXPORT_TMP" "$DIAGNOSTICS_EXTRACT_DIR" <<'PY' >/dev/null 2>&1
 import sys
 import tarfile
 from pathlib import Path
@@ -306,7 +320,7 @@ PY
         then
             DIAG_CONFIG_DIR=$(find "$DIAGNOSTICS_EXTRACT_DIR" -type d -path '*/config' | head -n 1)
             if [ -n "$DIAG_CONFIG_DIR" ]; then
-                DIAG_CHECK_OUTPUT=$(python3 tools/secrets/check_persisted_secrets.py --runtime-config-dir "$DIAG_CONFIG_DIR" 2>&1) || true
+                DIAG_CHECK_OUTPUT=$("$PYTHON_BIN" tools/secrets/check_persisted_secrets.py --runtime-config-dir "$DIAG_CONFIG_DIR" 2>&1) || true
                 if echo "$DIAG_CHECK_OUTPUT" | grep -q "Persisted-secret inventory check passed."; then
                     pass "Diagnostics export config matches docs/operations/secrets-inventory.md"
                 else
@@ -332,11 +346,11 @@ if [ -n "$SMOKE_RESET_USERNAME$SMOKE_RESET_TEMP_PASSWORD$SMOKE_RESET_FINAL_PASSW
         skip "Admin password reset smoke skipped: no CSRF token available"
     else
         USERS_JSON=$(server_curl "${API_BASE}/users" 2>/dev/null) || true
-        RESET_USER_ID=$(echo "$USERS_JSON" | python3 -c "import json,os,sys; users=json.load(sys.stdin); target=os.environ['SMOKE_RESET_USERNAME']; print(next((u['id'] for u in users if u.get('username') == target), ''))" 2>/dev/null) || true
+        RESET_USER_ID=$(echo "$USERS_JSON" | "$PYTHON_BIN" -c "import json,os,sys; users=json.load(sys.stdin); target=os.environ['SMOKE_RESET_USERNAME']; print(next((u['id'] for u in users if u.get('username') == target), ''))" 2>/dev/null) || true
         if [ -z "$RESET_USER_ID" ]; then
             fail "Admin password reset smoke could not find user '${SMOKE_RESET_USERNAME}'"
         else
-            RESET_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_TEMP_PASSWORD'], 'force_change': True}))")
+            RESET_PAYLOAD=$("$PYTHON_BIN" -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_TEMP_PASSWORD'], 'force_change': True}))")
             RESET_STATUS=$(server_curl -o /dev/null -w "%{http_code}" \
                 -X PUT \
                 -H "Content-Type: application/json" \
@@ -350,16 +364,16 @@ if [ -n "$SMOKE_RESET_USERNAME$SMOKE_RESET_TEMP_PASSWORD$SMOKE_RESET_FINAL_PASSW
             fi
 
             if [ "$RESET_STATUS" = "200" ]; then
-                VIEWER_LOGIN_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'username': os.environ['SMOKE_RESET_USERNAME'], 'password': os.environ['SMOKE_RESET_TEMP_PASSWORD']}))")
+                VIEWER_LOGIN_PAYLOAD=$("$PYTHON_BIN" -c "import json,os; print(json.dumps({'username': os.environ['SMOKE_RESET_USERNAME'], 'password': os.environ['SMOKE_RESET_TEMP_PASSWORD']}))")
                 VIEWER_LOGIN=$(curl "${CURL_OPTS[@]}" -c "$RESET_COOKIE_JAR" \
                     -H "Content-Type: application/json" \
                     -d "$VIEWER_LOGIN_PAYLOAD" \
                     "${API_BASE}/auth/login" 2>/dev/null) || true
 
-                if echo "$VIEWER_LOGIN" | python3 -c "import json,sys; body=json.load(sys.stdin); assert body.get('must_change_password') is True; assert 'csrf_token' in body; assert 'user' in body" 2>/dev/null; then
+                if echo "$VIEWER_LOGIN" | "$PYTHON_BIN" -c "import json,sys; body=json.load(sys.stdin); assert body.get('must_change_password') is True; assert 'csrf_token' in body; assert 'user' in body" 2>/dev/null; then
                     pass "Reset target login returns must_change_password=true"
-                    RESET_VIEWER_CSRF=$(echo "$VIEWER_LOGIN" | python3 -c "import json,sys; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
-                    RESET_VIEWER_ID=$(echo "$VIEWER_LOGIN" | python3 -c "import json,sys; print(json.load(sys.stdin)['user']['id'])" 2>/dev/null) || true
+                    RESET_VIEWER_CSRF=$(echo "$VIEWER_LOGIN" | "$PYTHON_BIN" -c "import json,sys; print(json.load(sys.stdin)['csrf_token'])" 2>/dev/null) || true
+                    RESET_VIEWER_ID=$(echo "$VIEWER_LOGIN" | "$PYTHON_BIN" -c "import json,sys; print(json.load(sys.stdin)['user']['id'])" 2>/dev/null) || true
                 else
                     fail "Reset target login did not return a forced-change challenge"
                     RESET_VIEWER_CSRF=""
@@ -368,13 +382,13 @@ if [ -n "$SMOKE_RESET_USERNAME$SMOKE_RESET_TEMP_PASSWORD$SMOKE_RESET_FINAL_PASSW
 
                 if [ -n "$RESET_VIEWER_CSRF" ] && [ -n "$RESET_VIEWER_ID" ]; then
                     BLOCK_STATUS=$(reset_viewer_curl -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" "${API_BASE}/cameras" 2>/dev/null) || true
-                    if [ "$BLOCK_STATUS" = "403" ] && python3 -c "import json,sys; body=json.load(open(sys.argv[1], encoding='utf-8')); assert body.get('must_change_password') is True" "$AUDIT_EXPORT_TMP" 2>/dev/null; then
+                    if [ "$BLOCK_STATUS" = "403" ] && "$PYTHON_BIN" -c "import json,sys; body=json.load(open(sys.argv[1], encoding='utf-8')); assert body.get('must_change_password') is True" "$AUDIT_EXPORT_TMP" 2>/dev/null; then
                         pass "Forced-change gate blocks protected routes until the target rotates"
                     else
                         fail "Forced-change gate did not block /cameras for the reset target"
                     fi
 
-                    FINAL_PAYLOAD=$(python3 -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_FINAL_PASSWORD']}))")
+                    FINAL_PAYLOAD=$("$PYTHON_BIN" -c "import json,os; print(json.dumps({'new_password': os.environ['SMOKE_RESET_FINAL_PASSWORD']}))")
                     FINAL_STATUS=$(reset_viewer_curl -o /dev/null -w "%{http_code}" \
                         -X PUT \
                         -H "Content-Type: application/json" \
@@ -396,7 +410,7 @@ if [ -n "$SMOKE_RESET_USERNAME$SMOKE_RESET_TEMP_PASSWORD$SMOKE_RESET_FINAL_PASSW
 
                     EXPORT_STATUS=$(server_curl -H "X-CSRF-Token: ${CSRF}" -o "$AUDIT_EXPORT_TMP" -w "%{http_code}" \
                         "${API_BASE}/audit/events/export?format=csv" 2>/dev/null) || true
-                    if [ "$EXPORT_STATUS" = "200" ] && python3 -c "import csv,sys; rows=list(csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8'))); target=sys.argv[2]; reset=any(row.get('event') == 'PASSWORD_RESET_BY_ADMIN' and target in row.get('detail', '') for row in rows); changed=any(row.get('event') == 'PASSWORD_CHANGED' and target in row.get('detail', '') for row in rows); assert reset and changed" "$AUDIT_EXPORT_TMP" "$RESET_USER_ID" 2>/dev/null; then
+                    if [ "$EXPORT_STATUS" = "200" ] && "$PYTHON_BIN" -c "import csv,sys; rows=list(csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8'))); target=sys.argv[2]; reset=any(row.get('event') == 'PASSWORD_RESET_BY_ADMIN' and target in row.get('detail', '') for row in rows); changed=any(row.get('event') == 'PASSWORD_CHANGED' and target in row.get('detail', '') for row in rows); assert reset and changed" "$AUDIT_EXPORT_TMP" "$RESET_USER_ID" 2>/dev/null; then
                         pass "Audit export records PASSWORD_RESET_BY_ADMIN and PASSWORD_CHANGED for the reset target"
                     else
                         fail "Audit export did not show the expected reset/change event pair"
@@ -457,11 +471,11 @@ if [ -n "$CAMERA_IP" ]; then
     fi
     CAM_AUTHED=false
 
-    if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'camera_id' in d" 2>/dev/null; then
+    if echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert 'camera_id' in d" 2>/dev/null; then
         # No auth required - status is open
         pass "Camera /api/status accessible (no auth)"
         CAM_AUTHED=true
-    elif echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'error' in d" 2>/dev/null; then
+    elif echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert 'error' in d" 2>/dev/null; then
         # Auth required - login
         pass "Camera /api/status requires auth (expected)"
 
@@ -475,7 +489,7 @@ if [ -n "$CAMERA_IP" ]; then
                 -d "{\"username\":\"admin\",\"password\":\"${CAMERA_PASSWORD}\"}" \
                 "${CAM_URL}/login" 2>/dev/null) || true
 
-            if echo "$CAM_LOGIN" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'message' in d" 2>/dev/null; then
+            if echo "$CAM_LOGIN" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert 'message' in d" 2>/dev/null; then
                 pass "Camera login successful"
                 CAM_AUTHED=true
                 # Re-fetch status with session cookie
@@ -495,7 +509,7 @@ if [ -n "$CAMERA_IP" ]; then
         for field in camera_id hostname ip_address wifi_ssid server_address \
                      server_connected streaming cpu_temp uptime \
                      memory_total_mb memory_used_mb; do
-            if echo "$CAM_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
+            if echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
                 pass "Camera status has '$field'"
             else
                 fail "Camera status missing '$field'"
@@ -503,9 +517,9 @@ if [ -n "$CAMERA_IP" ]; then
         done
 
         # Show key values for human review
-        CAM_ID=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('camera_id','?'))" 2>/dev/null) || CAM_ID="?"
-        CAM_STREAM=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('streaming','?'))" 2>/dev/null) || CAM_STREAM="?"
-        CAM_TEMP=$(echo "$CAM_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu_temp','?'))" 2>/dev/null) || CAM_TEMP="?"
+        CAM_ID=$(echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin).get('camera_id','?'))" 2>/dev/null) || CAM_ID="?"
+        CAM_STREAM=$(echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin).get('streaming','?'))" 2>/dev/null) || CAM_STREAM="?"
+        CAM_TEMP=$(echo "$CAM_STATUS" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin).get('cpu_temp','?'))" 2>/dev/null) || CAM_TEMP="?"
         echo -e "  ${YELLOW}INFO${NC} Camera: id=${CAM_ID}, streaming=${CAM_STREAM}, cpu_temp=${CAM_TEMP}"
         skip "Manual camera fallback check: setup-complete and status pages show IP QR + Copy"
     fi

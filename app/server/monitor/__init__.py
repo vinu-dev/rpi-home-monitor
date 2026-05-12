@@ -27,9 +27,12 @@ from monitor.services.cert_service import CertService
 from monitor.services.clip_stamp_queue import ClipStampQueue
 from monitor.services.clip_stamper import ClipStamper
 from monitor.services.config_backup_service import ConfigBackupService
+from monitor.services.data_protection import DataProtectionService
 from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
+from monitor.services.hmac_replay_guard import HmacReplayGuard
+from monitor.services.login_rate_limiter import LoginRateLimiter
 from monitor.services.loop_recorder import LoopRecorder
 from monitor.services.motion_clip_correlator import MotionClipCorrelator
 from monitor.services.motion_event_store import MotionEventStore
@@ -184,6 +187,7 @@ def create_app(config=None):
             "gpio-trigger.service",
         ],
         WATCHDOG_PROBE_URL="http://127.0.0.1:5000/healthz",
+        REQUIRE_ENCRYPTED_DATA=os.environ.get("MONITOR_REQUIRE_ENCRYPTED_DATA", ""),
     )
     if config:
         app.config.update(config)
@@ -247,6 +251,23 @@ def _init_infrastructure(app):
         audit_logger=app.audit,
         motion_event_store=app.motion_event_store,
         read_state_path=alert_state_path,
+    )
+    app.login_rate_limiter = LoginRateLimiter(
+        os.path.join(app.config["CONFIG_DIR"], "login_rate_limits.json"),
+        window_seconds=60,
+        warn_after=5,
+        block_after=10,
+    )
+    app.camera_hmac_replay_guard = HmacReplayGuard(
+        os.path.join(app.config["CONFIG_DIR"], "camera_hmac_replay.json"),
+        ttl_seconds=30,
+    )
+    app.data_protection_service = DataProtectionService(
+        data_dir=app.config["DATA_DIR"],
+        require_encrypted=app.config.get("REQUIRE_ENCRYPTED_DATA", ""),
+        require_marker_path=os.path.join(
+            app.config["CONFIG_DIR"], "require-encrypted-data"
+        ),
     )
 
     # Notification policy + snapshot extractor (ADR-0027, #128) —
@@ -401,6 +422,7 @@ def _init_services(app):
         recordings_service=app.recordings_service,
         live_dir=app.config["LIVE_DIR"],
         audit=app.audit,
+        secret_key=app.config["SECRET_KEY"],
     )
 
     # Pairing service — camera cert exchange and revocation
@@ -478,6 +500,7 @@ def _init_services(app):
         rate_limit_per_session=app.config["DIAGNOSTICS_RATE_LIMIT_PER_SESSION"],
         rate_limit_window_seconds=app.config["DIAGNOSTICS_RATE_LIMIT_WINDOW_SECONDS"],
         cleanup_grace_seconds=app.config["DIAGNOSTICS_CLEANUP_GRACE_SECONDS"],
+        data_protection_service=app.data_protection_service,
     )
 
     # Connect storage manager → streaming service for dir change notifications.
@@ -544,14 +567,21 @@ def _restore_hostname(data_dir: str):
         with open(hostname_file) as f:
             hostname = f.read().strip()
         if hostname and hostname != socket.gethostname():
-            subprocess.run(
-                ["hostnamectl", "set-hostname", hostname],
-                capture_output=True,
-                timeout=10,
-            )
+            from monitor.services import privileged
+
+            if privileged.should_use_helper():
+                privileged.request("hostname.set", {"hostname": hostname}, timeout=10)
+            else:
+                subprocess.run(
+                    ["hostnamectl", "set-hostname", hostname],
+                    capture_output=True,
+                    timeout=10,
+                )
             log.info("Hostname restored: %s", hostname)
     except FileNotFoundError:
         pass
+    except RuntimeError as exc:
+        log.warning("Failed to restore hostname via helper: %s", exc)
     except Exception as exc:
         log.warning("Failed to restore hostname: %s", exc)
 
@@ -783,6 +813,7 @@ def _register_blueprints(app):
     app.register_blueprint(pairing_bp, url_prefix="/api/v1")
     app.register_blueprint(storage_bp, url_prefix="/api/v1/storage")
     app.register_blueprint(webrtc_bp, url_prefix="/api/v1/webrtc")
+    app.register_blueprint(webrtc_bp, url_prefix="/webrtc", name="webrtc_browser")
     app.register_blueprint(audit_bp, url_prefix="/api/v1/audit")
     app.register_blueprint(alerts_bp, url_prefix="/api/v1/alerts")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1/notifications")
