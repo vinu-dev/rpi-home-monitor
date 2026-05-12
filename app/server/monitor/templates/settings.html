@@ -1415,6 +1415,7 @@
                             <div style="font-weight:500;">
                                 <span x-text="d.model"></span>
                                 <span x-show="d.in_use" class="badge badge--ok" style="margin-left:8px;">In use</span>
+                                <span x-show="d.configured_inactive" class="badge badge--warn" style="margin-left:8px;">Configured</span>
                             </div>
                             <div class="text-small text-muted">
                                 <span x-text="d.path"></span> &middot;
@@ -1422,10 +1423,13 @@
                                 <span x-text="d.fstype || 'unformatted'"></span>
                                 <span x-show="d.supported" style="color:#4ade80;"> Compatible</span>
                                 <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
+                                <span x-show="d.configured_inactive"> &middot; not active right now</span>
                             </div>
                         </div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-                            <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d.path)">Use</button>
+                            <button x-show="d.supported && !d.in_use" class="btn btn--primary btn--small" @click="selectUsb(d)">
+                                <span x-text="d.configured_inactive ? 'Reconnect' : 'Use'"></span>
+                            </button>
                             <span x-show="d.in_use" class="text-small text-muted">Active</span>
                             <!-- Issue #107: Reformat available for all device states.
                                  In-use drives auto-eject first via showFormat(). -->
@@ -3905,8 +3909,13 @@ function settingsPage() {
             this.storage.scanning = false;
         },
 
-        async selectUsb(path) {
-            if (!confirm('Use this USB device for recordings?')) return;
+        async selectUsb(device) {
+            var path = (typeof device === 'string') ? device : (device && device.path);
+            if (!path) return;
+            var prompt = device && device.configured_inactive
+                ? 'Reconnect the configured USB drive and use it for recordings?'
+                : 'Use this USB device for recordings?';
+            if (!confirm(prompt)) return;
             try {
                 var data = await window.HM.api.post('/api/v1/storage/select', { device_path: path });
                 window.HM.toast(data.message || 'USB storage active', 'success');

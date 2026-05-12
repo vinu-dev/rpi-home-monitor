@@ -60,13 +60,32 @@
                 return Promise.reject(new Error('Authentication required'));
             }
 
-            return resp.json().then(function(data) {
+            return _readResponseBody(resp).then(function(data) {
                 if (!resp.ok) {
                     var msg = data.error || data.message || 'Request failed';
                     return Promise.reject(new Error(msg));
                 }
                 return data;
             });
+        });
+    }
+
+    function _readResponseBody(resp) {
+        var contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
+        if (contentType.indexOf('application/json') !== -1) {
+            return resp.json().catch(function() {
+                return { error: 'Invalid JSON response from server' };
+            });
+        }
+        return resp.text().then(function(text) {
+            var message = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!message) {
+                message = resp.statusText || 'Request failed';
+            }
+            if (message.length > 180) {
+                message = message.slice(0, 177) + '...';
+            }
+            return { error: message };
         });
     }
 

@@ -62,8 +62,13 @@ class StorageService:
         """
         devices = usb.detect_devices()
         rec_dir = self._active_recordings_dir()
+        configured_device = self._configured_usb_device()
         for d in devices:
-            d["in_use"] = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
+            is_active = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
+            is_configured = bool(configured_device) and d.get("path") == configured_device
+            d["in_use"] = is_active
+            d["configured"] = is_configured
+            d["configured_inactive"] = is_configured and not is_active
         return devices
 
     def _active_recordings_dir(self) -> str:
@@ -73,6 +78,14 @@ class StorageService:
         if not isinstance(rec_dir, str) or not rec_dir:
             return ""
         return rec_dir
+
+    def _configured_usb_device(self) -> str:
+        try:
+            settings = self._store.get_settings()
+        except Exception:
+            return ""
+        value = getattr(settings, "usb_device", "")
+        return value if isinstance(value, str) else ""
 
     @staticmethod
     def _device_backs_dir(device: dict, rec_dir: str) -> bool:
@@ -129,7 +142,16 @@ class StorageService:
             return None, f"Failed to mount: {err}", 500
 
         # Create recordings folder
-        rec_dir = usb.prepare_recordings_dir()
+        try:
+            rec_dir = usb.prepare_recordings_dir()
+        except OSError as exc:
+            log.exception("Failed to prepare USB recordings directory")
+            return (
+                None,
+                "USB mounted, but the recordings folder could not be prepared. "
+                f"Check permissions on {usb.DEFAULT_MOUNT_POINT}: {exc}",
+                500,
+            )
 
         # Switch storage manager
         if self._storage_manager:

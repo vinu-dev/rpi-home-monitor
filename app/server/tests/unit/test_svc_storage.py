@@ -11,7 +11,12 @@ USB_PATCH = "monitor.services.storage_service.usb"
 
 
 def _make_device(
-    path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
+    path="/dev/sda1",
+    model="USB Stick",
+    size="32G",
+    fstype="ext4",
+    supported=True,
+    mountpoint="",
 ):
     return {
         "path": path,
@@ -19,6 +24,7 @@ def _make_device(
         "size": size,
         "fstype": fstype,
         "supported": supported,
+        "mountpoint": mountpoint,
     }
 
 
@@ -60,6 +66,34 @@ class TestListDevices:
         result = svc.list_devices()
         assert len(result) == 1
         mock_usb.detect_devices.assert_called_once()
+
+    @patch(USB_PATCH)
+    def test_marks_configured_but_inactive_usb(self, mock_usb, svc, deps):
+        sm, store, _ = deps
+        sm.recordings_dir = "/data/recordings"
+        store.get_settings.return_value.usb_device = "/dev/sda1"
+        mock_usb.detect_devices.return_value = [_make_device(mountpoint="")]
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_inactive"] is True
+        assert result[0]["in_use"] is False
+
+    @patch(USB_PATCH)
+    def test_marks_mounted_configured_usb_as_in_use(self, mock_usb, svc, deps):
+        sm, store, _ = deps
+        sm.recordings_dir = "/mnt/recordings/home-monitor-recordings"
+        store.get_settings.return_value.usb_device = "/dev/sda1"
+        mock_usb.detect_devices.return_value = [
+            _make_device(mountpoint="/mnt/recordings")
+        ]
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_inactive"] is False
+        assert result[0]["in_use"] is True
 
 
 class TestSelectDevice:
@@ -107,6 +141,24 @@ class TestSelectDevice:
         assert result["recordings_dir"] == "/mnt/usb/recordings"
         sm.set_recordings_dir.assert_called_once_with("/mnt/usb/recordings")
         audit.log_event.assert_called_once()
+
+    @patch(USB_PATCH)
+    def test_prepare_recordings_permission_failure_returns_clean_error(
+        self, mock_usb, svc
+    ):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, None)
+        mock_usb.prepare_recordings_dir.side_effect = PermissionError(
+            "permission denied"
+        )
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/recordings"
+
+        result, err, status = svc.select_device("/dev/sda1")
+
+        assert result is None
+        assert status == 500
+        assert "recordings folder could not be prepared" in err
+        assert "permission denied" in err
 
     @patch(USB_PATCH)
     def test_saves_usb_config(self, mock_usb, svc, deps):
