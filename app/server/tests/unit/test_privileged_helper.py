@@ -73,6 +73,7 @@ def test_usb_mount_delegates_to_usb_module():
             return_value=[{"path": "/dev/sda1"}],
         ),
         patch.object(helper.usb, "mount_device", return_value=(True, "")) as mount,
+        patch.object(helper, "_ensure_monitor_can_write_mount") as ensure_writable,
     ):
         data = helper.handle_request(
             b'{"operation":"usb.mount","payload":{"device_path":"/dev/sda1"}}'
@@ -80,6 +81,51 @@ def test_usb_mount_delegates_to_usb_module():
 
     assert data == {}
     mount.assert_called_once_with("/dev/sda1", helper.usb.DEFAULT_MOUNT_POINT)
+    ensure_writable.assert_called_once_with(helper.usb.DEFAULT_MOUNT_POINT)
+
+
+def test_usb_mount_fails_when_helper_cannot_make_mount_writable():
+    with (
+        patch.object(
+            helper.usb,
+            "detect_devices",
+            return_value=[{"path": "/dev/sda1"}],
+        ),
+        patch.object(helper.usb, "mount_device", return_value=(True, "")),
+        patch.object(
+            helper,
+            "_ensure_monitor_can_write_mount",
+            side_effect=helper.HelperRequestError("not writable"),
+        ),
+        pytest.raises(helper.HelperRequestError, match="not writable"),
+    ):
+        helper.handle_request(
+            b'{"operation":"usb.mount","payload":{"device_path":"/dev/sda1"}}'
+        )
+
+
+def test_helper_mount_ownership_covers_recordings_folder():
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+
+    with (
+        patch.object(helper, "pwd", fake_pwd),
+        patch.object(helper, "grp", fake_grp),
+        patch.object(helper.os, "chown", create=True) as chown,
+        patch.object(helper.os, "chmod") as chmod,
+        patch.object(helper.os, "makedirs") as makedirs,
+    ):
+        helper._ensure_monitor_can_write_mount("/mnt/recordings")
+
+    makedirs.assert_called_once_with(
+        f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", exist_ok=True
+    )
+    chown.assert_any_call("/mnt/recordings", 996, 994)
+    chown.assert_any_call(f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 996, 994)
+    chmod.assert_any_call("/mnt/recordings", 0o775)
+    chmod.assert_any_call(f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 0o775)
 
 
 def test_usb_unmount_and_format_delegate_to_usb_module():

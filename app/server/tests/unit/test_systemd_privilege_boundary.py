@@ -45,6 +45,8 @@ def test_helper_unit_is_the_only_root_service_in_boundary():
         "/usr/bin/python3 -m monitor.services.privileged_helper"
     ]
     assert "CAP_SYS_ADMIN" in data["CapabilityBoundingSet"][0]
+    assert data["ProtectHome"] == ["false"]
+    assert data["PrivateMounts"] == ["false"]
 
 
 def test_yocoto_recipe_installs_helper_unit():

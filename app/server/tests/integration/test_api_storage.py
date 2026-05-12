@@ -180,6 +180,30 @@ class TestSelectDevice:
         assert response.status_code == 500
         assert "Failed to mount" in response.get_json()["error"]
 
+    @patch(USB_PATCH)
+    def test_prepare_recordings_failure_returns_json_error(
+        self, mock_usb, logged_in_client
+    ):
+        client = logged_in_client()
+        device = _make_device("/dev/sda1")
+        mock_usb.detect_devices.return_value = [device]
+        mock_usb.mount_device.return_value = (True, None)
+        mock_usb.prepare_recordings_dir.side_effect = PermissionError(
+            "permission denied"
+        )
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/recordings"
+
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
+
+        assert response.status_code == 500
+        assert response.is_json
+        assert "recordings folder could not be prepared" in response.get_json()["error"]
+
     def test_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")
         response = client.post(

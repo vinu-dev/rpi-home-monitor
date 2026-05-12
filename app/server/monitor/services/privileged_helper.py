@@ -28,6 +28,11 @@ try:
 except ImportError:  # pragma: no cover - non-POSIX development hosts
     grp = None
 
+try:
+    import pwd
+except ImportError:  # pragma: no cover - non-POSIX development hosts
+    pwd = None
+
 log = logging.getLogger("monitor.privileged-helper")
 
 MAX_REQUEST_BYTES = 8192
@@ -104,13 +109,41 @@ def _run_command(
 
 
 def _op_usb_mount(payload: dict[str, Any]) -> dict[str, Any]:
+    mount_point = _validate_mount_point(payload.get("mount_point"))
     ok, err = usb.mount_device(
         _validate_device_path(payload.get("device_path")),
-        _validate_mount_point(payload.get("mount_point")),
+        mount_point,
     )
     if not ok:
         raise HelperRequestError(err or "mount failed")
+    _ensure_monitor_can_write_mount(mount_point)
     return {}
+
+
+def _ensure_monitor_can_write_mount(mount_point: str) -> None:
+    """Make a helper-mounted USB root writable by ``monitor``.
+
+    The helper runs as root, so ``usb.mount_device`` cannot infer the Flask
+    service UID from ``os.getuid()``. Without this correction ext4 USB drives
+    mount as root-owned and the unprivileged app cannot create the recordings
+    folder, causing the Storage tab's "Use" action to fail after a successful
+    mount.
+    """
+    if pwd is None or grp is None:
+        return
+    try:
+        uid = pwd.getpwnam("monitor").pw_uid
+        gid = grp.getgrnam("monitor").gr_gid
+        os.chown(mount_point, uid, gid)
+        os.chmod(mount_point, 0o775)
+        recordings_dir = posixpath.join(mount_point, usb.RECORDINGS_FOLDER)
+        os.makedirs(recordings_dir, exist_ok=True)
+        os.chown(recordings_dir, uid, gid)
+        os.chmod(recordings_dir, 0o775)
+    except (KeyError, PermissionError, OSError) as exc:
+        raise HelperRequestError(
+            f"USB mounted but {mount_point} is not writable by monitor: {exc}"
+        ) from exc
 
 
 def _op_usb_unmount(payload: dict[str, Any]) -> dict[str, Any]:
