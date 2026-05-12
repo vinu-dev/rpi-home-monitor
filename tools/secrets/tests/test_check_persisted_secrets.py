@@ -78,7 +78,7 @@ def test_lint_repo_accepts_inventory_and_known_non_secret_allowlist(monkeypatch)
 
     errors = MODULE.lint_repo(
         {
-            "cameras.json:pairing_secret",
+            "cameras.json:cameras[].pairing_secret",
             "settings.json:tailscale_auth_key",
         }
     )
@@ -135,10 +135,57 @@ def test_lint_runtime_accepts_documented_fields_and_empty_nested_collections(tmp
             "settings.json:tailscale_auth_key",
             "settings.json:webhook_destinations[].secret",
             "settings.json:offsite_backup_secret_access_key",
-            "users.json:password_hash",
-            "users.json:recovery_code_hashes",
-            "users.json:totp_secret",
-            "cameras.json:pairing_secret",
+            "users.json:users[].password_hash",
+            "users.json:users[].recovery_code_hashes",
+            "users.json:users[].totp_secret",
+            "cameras.json:cameras[].pairing_secret",
+        },
+        config_dir,
+    )
+
+    assert errors == []
+
+
+def test_lint_runtime_accepts_runtime_wrapper_paths_and_known_non_secret_aliases(
+    tmp_path,
+):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "users.json").write_text(
+        json.dumps(
+            {
+                "users": [
+                    {
+                        "password_hash": "hash",
+                        "recovery_code_hashes": [],
+                        "totp_secret": "",
+                        "must_change_password": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "cameras.json").write_text(
+        json.dumps(
+            {
+                "cameras": [
+                    {
+                        "pairing_secret": "",
+                        "keyframe_interval": 30,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    errors = MODULE.lint_runtime(
+        {
+            "users.json:users[].password_hash",
+            "users.json:users[].recovery_code_hashes",
+            "users.json:users[].totp_secret",
+            "cameras.json:cameras[].pairing_secret",
         },
         config_dir,
     )

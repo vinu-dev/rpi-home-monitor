@@ -18,7 +18,7 @@ Canonical inventory rows use ``field: <path>`` lines, for example:
 
 - ``field: settings.json:tailscale_auth_key``
 - ``field: settings.json:webhook_destinations[].secret``
-- ``field: users.json:password_hash``
+- ``field: users.json:users[].password_hash``
 
 Secret-like field matching is intentionally conservative:
 
@@ -56,6 +56,10 @@ MODEL_FIELD_PREFIXES = {
     "ShareLink": "share_links.json:[].",
 }
 OPTIONAL_RUNTIME_CONFIG_FILES = {"share_links.json"}
+RUNTIME_WRAPPER_ALIASES = {
+    "cameras.json:": "cameras.json:cameras[].",
+    "users.json:": "users.json:users[].",
+}
 
 KNOWN_NON_SECRET_FIELDS = {
     "cameras.json:keyframe_interval": "H.264 GOP interval setting, not credential material.",
@@ -112,6 +116,28 @@ def looks_secret_like(name: str) -> bool:
     if any(excluded in lowered for excluded in EXCLUDED_FIELD_NAMES):
         return False
     return any(token in lowered for token in SUSPECT_SUBSTRINGS)
+
+
+def equivalent_inventory_paths(path: str) -> set[str]:
+    """Return model and runtime-wrapper forms for a persisted config path."""
+    paths = {path}
+    for model_prefix, runtime_prefix in RUNTIME_WRAPPER_ALIASES.items():
+        if path.startswith(model_prefix) and not path.startswith(runtime_prefix):
+            paths.add(f"{runtime_prefix}{path[len(model_prefix) :]}")
+        if path.startswith(runtime_prefix):
+            paths.add(f"{model_prefix}{path[len(runtime_prefix) :]}")
+    return paths
+
+
+def field_is_documented(path: str, inventory_fields: set[str]) -> bool:
+    return bool(equivalent_inventory_paths(path) & inventory_fields)
+
+
+def field_is_known_non_secret(path: str) -> bool:
+    return any(
+        candidate in KNOWN_NON_SECRET_FIELDS
+        for candidate in equivalent_inventory_paths(path)
+    )
 
 
 def load_settings_secret_fields() -> set[str]:
@@ -181,7 +207,8 @@ def lint_repo(inventory_fields: set[str]) -> list[str]:
     undeclared = sorted(
         path
         for path in candidates
-        if path not in inventory_fields and path not in KNOWN_NON_SECRET_FIELDS
+        if not field_is_documented(path, inventory_fields)
+        and not field_is_known_non_secret(path)
     )
     if undeclared:
         errors.append("Undeclared persisted-secret fields:")
@@ -275,11 +302,13 @@ def scan_runtime_config(config_dir: Path) -> tuple[set[str], set[str]]:
 
 
 def runtime_path_is_covered(path: str, all_paths: set[str]) -> bool:
-    if path in all_paths:
-        return True
-    if "[]." in path:
-        parent = path.split("[].", 1)[0]
-        return parent in all_paths
+    for candidate in equivalent_inventory_paths(path):
+        if candidate in all_paths:
+            return True
+        if "[]." in candidate:
+            parent = candidate.split("[].", 1)[0]
+            if parent in all_paths:
+                return True
     return False
 
 
@@ -297,7 +326,8 @@ def lint_runtime(inventory_fields: set[str], config_dir: Path) -> list[str]:
     missing_runtime = sorted(
         path
         for path in candidate_paths
-        if path not in inventory_fields and path not in KNOWN_NON_SECRET_FIELDS
+        if not field_is_documented(path, inventory_fields)
+        and not field_is_known_non_secret(path)
     )
     if missing_runtime:
         errors.append("Runtime secret-like config keys missing from inventory:")
@@ -310,7 +340,7 @@ def lint_runtime(inventory_fields: set[str], config_dir: Path) -> list[str]:
     dead_rows = sorted(
         path
         for path in inventory_config_fields
-        if path not in KNOWN_NON_SECRET_FIELDS
+        if not field_is_known_non_secret(path)
         and not optional_runtime_file_is_absent(path, all_paths)
         and not runtime_path_is_covered(path, all_paths)
     )
