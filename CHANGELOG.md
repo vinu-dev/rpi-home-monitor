@@ -6,6 +6,78 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.6.0] — 2026-05-12
+
+Feature and security release. Ships the rebuilt local control-panel UI for the
+server and camera surfaces, then closes the follow-up security-hardening defect
+batch found during release review. Hardware-smoke verified against the live
+Pi 4B server and Pi Zero 2W camera before release prep.
+
+### Added
+- **Polished local control-panel UI** for the server dashboard, live view,
+  recordings, events, settings, setup, login, TOTP, logs, alerts, update, and
+  error surfaces. The redesign keeps the existing Flask/Jinja routes and API
+  wiring while adding a shared lightweight CSS layer for cards, tables, forms,
+  dialogs, status badges, responsive navigation, and touch-friendly mobile
+  layouts.
+- **Matching camera-side control UI** for camera status, settings, update, reset,
+  setup, and login pages, so server and camera devices now share the same visual
+  language and mobile behavior.
+- **Additional browser and server view coverage** for the redesigned GUI,
+  including modal, settings, dashboard, and authentication paths.
+
+### Security
+- **Authenticated live-stream access through nginx.** WebRTC/WHEP stream paths
+  now stay behind the same auth boundary as the dashboard.
+- **Camera control-channel TLS hardening.** Paired cameras verify the server
+  certificate path instead of silently falling back to unverified TLS.
+- **Camera pairing trust confirmation.** Initial pairing now surfaces the server
+  fingerprint/trust decision instead of relying on silent TOFU behavior.
+- **Camera admin login hardening.** The camera admin surface now fails closed
+  when no admin password exists and applies brute-force throttling.
+- **Persistent replay/rate-limit protections.** Login rate limits and camera HMAC
+  replay guards use durable state where required instead of process-local memory
+  only.
+- **Encrypted secret export paths.** Configuration backup/export handling now
+  encrypts secret-bearing payloads with the operator passphrase and rejects weak
+  or malformed restore material.
+- **Share-link token hardening.** Share-link bearer tokens are protected in the
+  persisted store and covered by the secrets inventory guardrail.
+- **Privileged-operation boundary.** Root-only server operations move behind a
+  small allowlisted privileged helper instead of running the web process as root.
+- **Webhook DNS-rebinding protection.** Webhook delivery now resolves and pins
+  destination addresses before delivery to avoid public-IP validation races.
+- **OTA operator visibility.** OTA verification fallback states now surface to
+  the operator instead of failing open quietly.
+- **First-boot hotspot credential flow.** Setup keeps a usable default-password
+  path for first access, then guides the operator to change it rather than
+  creating an unknowable device-only password.
+- **Server mDNS identity pinning.** The server Avahi publication is pinned to the
+  intended host identity so the `.local` name does not drift to a collision
+  suffix such as `-2`.
+
+### Fixed
+- **Responsive layout regressions from the UI redesign**: settings tabs, camera
+  cards, details disclosure rows, dialogs, bottom navigation, alert queues, and
+  mobile headers were tightened after live-device review.
+- **Scrollable dialogs on touch devices**: camera settings and other tall modal
+  forms now remain usable on phone-sized viewports.
+- **Yocto dev deploy portability**: the development deploy script no longer
+  assumes the target image includes the `install` command.
+- **Runtime secrets smoke checks**: the smoke-test secrets inventory check now
+  understands the deployed wrapper schema for users and cameras.
+
+### Verification
+- Local server, camera, security, contract, coverage, repository-governance,
+  pre-commit, shell, and version checks passed during the release-candidate
+  merge.
+- GitHub PR CI for the security-hardening batch passed before merge, including
+  server/camera unit, integration, contract, security, coverage, browser E2E,
+  Ruff, shell lint, governance, traceability, and Yocto parse jobs.
+- Live deploy and smoke test passed on the hardware lab:
+  `scripts/smoke-test.sh 192.168.1.244 otatest1234 192.168.1.148 1234`
+  reported 45 passed, 0 failed, and 7 manual/optional skips.
+
 ## [1.5.1] — 2026-05-10
 
 Patch release for the live lab/server fixes that landed after 1.5.0. This
