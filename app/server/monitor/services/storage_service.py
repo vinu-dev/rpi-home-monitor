@@ -65,7 +65,9 @@ class StorageService:
         configured_device = self._configured_usb_device()
         for d in devices:
             is_active = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
-            is_configured = bool(configured_device) and d.get("path") == configured_device
+            is_configured = (
+                bool(configured_device) and d.get("path") == configured_device
+            )
             d["in_use"] = is_active
             d["configured"] = is_configured
             d["configured_inactive"] = is_configured and not is_active

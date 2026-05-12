@@ -202,9 +202,7 @@ class TestSelectDevice:
 
         assert response.status_code == 500
         assert response.is_json
-        assert "recordings folder could not be prepared" in response.get_json()[
-            "error"
-        ]
+        assert "recordings folder could not be prepared" in response.get_json()["error"]
 
     def test_requires_admin(self, logged_in_client):
         client = logged_in_client("viewer")

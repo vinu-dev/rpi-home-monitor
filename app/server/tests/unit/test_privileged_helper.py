@@ -123,9 +123,7 @@ def test_helper_mount_ownership_covers_recordings_folder():
         f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", exist_ok=True
     )
     chown.assert_any_call("/mnt/recordings", 996, 994)
-    chown.assert_any_call(
-        f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 996, 994
-    )
+    chown.assert_any_call(f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 996, 994)
     chmod.assert_any_call("/mnt/recordings", 0o775)
     chmod.assert_any_call(f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 0o775)
 
