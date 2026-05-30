@@ -12,8 +12,10 @@ Design patterns:
 """
 
 import logging
+import os
+from pathlib import Path
 
-from monitor.services import usb
+from monitor.services import privileged, usb
 
 log = logging.getLogger("monitor.storage_service")
 
@@ -321,6 +323,89 @@ class StorageService:
             200,
         )
 
+    def handle_recording_storage_fault(
+        self, recordings_dir: str, camera_id: str = "", error: str = ""
+    ) -> str:
+        """Repair an external recording path or fail over to internal storage.
+
+        The saved USB selection is intentionally preserved. A faulted USB should
+        show up as configured-but-inactive so the operator can reselect,
+        reformat, or eject it deliberately; recording continuity goes to the
+        internal partition immediately.
+        """
+        active_dir = self._active_recordings_dir()
+        if active_dir and _same_path(active_dir, recordings_dir):
+            current_dir = active_dir
+        elif active_dir:
+            return active_dir
+        else:
+            current_dir = recordings_dir or self._default_dir
+
+        if _same_path(current_dir, self._default_dir):
+            log.error(
+                "Internal recording storage fault at %s for %s: %s",
+                current_dir,
+                camera_id or "unknown camera",
+                error,
+            )
+            return current_dir
+
+        repair_error = ""
+        if self._try_repair_recordings_dir(current_dir, camera_id):
+            ok, repair_error = self._probe_recording_path(current_dir, camera_id)
+            if ok:
+                self._log_audit(
+                    "USB_STORAGE_REPAIRED",
+                    "",
+                    "",
+                    f"path={current_dir}, camera={camera_id or 'all'}",
+                )
+                return current_dir
+
+        if self._storage_manager:
+            self._storage_manager.set_recordings_dir(self._default_dir)
+
+        detail = (
+            f"path={current_dir}, fallback={self._default_dir}, "
+            f"camera={camera_id or 'unknown'}, error={error or repair_error}"
+        )
+        log.warning("Recording storage fault; falling back to internal: %s", detail)
+        self._log_audit("USB_STORAGE_FALLBACK", "", "", detail)
+        return self._default_dir
+
+    def _try_repair_recordings_dir(self, recordings_dir: str, camera_id: str) -> bool:
+        if not privileged.should_use_helper():
+            return False
+        try:
+            privileged.request(
+                "recording_storage.repair_permissions",
+                {"recordings_dir": recordings_dir, "camera_id": camera_id},
+                timeout=60,
+            )
+            return True
+        except privileged.PrivilegedHelperError as exc:
+            log.warning("USB recording permission repair failed: %s", exc)
+            return False
+
+    @staticmethod
+    def _probe_recording_path(
+        recordings_dir: str, camera_id: str = ""
+    ) -> tuple[bool, str]:
+        target = Path(recordings_dir)
+        if camera_id:
+            target = target / camera_id
+        probe = target / ".home-monitor-write-test"
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            with open(probe, "ab") as f:
+                f.write(b"ok\n")
+                f.flush()
+                os.fsync(f.fileno())
+            probe.unlink(missing_ok=True)
+            return True, ""
+        except OSError as exc:
+            return False, str(exc)
+
     def _save_usb_config(
         self,
         device_path: str,
@@ -357,3 +442,7 @@ def _storage_error_message(error: str) -> str:
         "Eject the USB drive or reformat/replace it before trusting recordings. "
         f"Detail: {detail}"
     )
+
+
+def _same_path(left: str, right: str) -> bool:
+    return os.path.normpath(left or "") == os.path.normpath(right or "")

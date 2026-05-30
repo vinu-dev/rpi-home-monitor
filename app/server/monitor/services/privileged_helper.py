@@ -42,6 +42,7 @@ HOSTNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,62}$")
 TIMEZONE_RE = re.compile(r"^[A-Za-z0-9_+./-]{1,80}$")
 ISO_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 LABEL_RE = re.compile(r"^[A-Za-z0-9_. -]{1,32}$")
+CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 OTA_PUBLIC_KEY = "/etc/swupdate-public.crt"
 
 
@@ -144,6 +145,55 @@ def _ensure_monitor_can_write_mount(mount_point: str) -> None:
         raise HelperRequestError(
             f"USB mounted but {mount_point} is not writable by monitor: {exc}"
         ) from exc
+
+
+def _validate_recordings_repair_target(payload: dict[str, Any]) -> str:
+    recordings_dir = _as_text(payload.get("recordings_dir"), max_len=256)
+    recordings_dir = posixpath.normpath(recordings_dir)
+    allowed_root = posixpath.normpath(
+        posixpath.join(usb.DEFAULT_MOUNT_POINT, usb.RECORDINGS_FOLDER)
+    )
+    if recordings_dir != allowed_root:
+        raise HelperRequestError("recordings directory is not allowlisted")
+
+    camera_id = str(payload.get("camera_id") or "").strip()
+    if not camera_id:
+        return recordings_dir
+    if not CAMERA_ID_RE.fullmatch(camera_id):
+        raise HelperRequestError("camera id is invalid")
+    return posixpath.join(recordings_dir, camera_id)
+
+
+def _op_recording_storage_repair_permissions(payload: dict[str, Any]) -> dict[str, Any]:
+    target = _validate_recordings_repair_target(payload)
+    if pwd is None or grp is None:
+        raise HelperRequestError("user/group lookup unavailable")
+
+    def _raise_walk_error(exc: OSError) -> None:
+        raise exc
+
+    try:
+        uid = pwd.getpwnam("monitor").pw_uid
+        gid = grp.getgrnam("monitor").gr_gid
+        os.makedirs(target, exist_ok=True)
+        os.chown(target, uid, gid)
+        os.chmod(target, 0o775)
+        for root, dirs, files in os.walk(target, onerror=_raise_walk_error):
+            os.chown(root, uid, gid)
+            os.chmod(root, 0o775)
+            for dirname in dirs:
+                directory = posixpath.join(root, dirname)
+                os.chown(directory, uid, gid)
+                os.chmod(directory, 0o775)
+            for filename in files:
+                path = posixpath.join(root, filename)
+                os.chown(path, uid, gid)
+                os.chmod(path, 0o664)
+    except (KeyError, PermissionError, OSError) as exc:
+        raise HelperRequestError(
+            f"recording storage permission repair failed: {exc}"
+        ) from exc
+    return {"path": target}
 
 
 def _op_usb_unmount(payload: dict[str, Any]) -> dict[str, Any]:
@@ -323,6 +373,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "usb.mount": _op_usb_mount,
     "usb.unmount": _op_usb_unmount,
     "usb.format": _op_usb_format,
+    "recording_storage.repair_permissions": (_op_recording_storage_repair_permissions),
     "time.set_timezone": _op_time_set_timezone,
     "time.set_ntp": _op_time_set_ntp,
     "time.set_manual": _op_time_set_manual,

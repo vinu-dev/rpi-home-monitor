@@ -430,7 +430,73 @@ class TestEject:
 
 
 # ---------------------------------------------------------------------------
-# 7. Audit failure resilience
+# 7. Runtime recording storage faults
+# ---------------------------------------------------------------------------
+
+
+class TestRecordingStorageFault:
+    def test_external_fault_falls_back_without_clearing_usb_config(self):
+        mgr = MagicMock()
+        mgr.recordings_dir = "/mnt/recordings/home-monitor-recordings"
+        store = MagicMock()
+        settings = MagicMock(
+            usb_device="/dev/sda1",
+            usb_uuid="usb-uuid",
+            usb_label="HomeMonitor",
+            usb_recordings_dir="/mnt/recordings/home-monitor-recordings",
+        )
+        store.get_settings.return_value = settings
+        audit = MagicMock()
+        svc = _make_service(storage_manager=mgr, store=store, audit=audit)
+
+        with patch.object(svc, "_try_repair_recordings_dir", return_value=False):
+            result = svc.handle_recording_storage_fault(
+                "/mnt/recordings/home-monitor-recordings",
+                "cam-x",
+                "Permission denied",
+            )
+
+        assert result == "/data/recordings"
+        mgr.set_recordings_dir.assert_called_once_with("/data/recordings")
+        store.save_settings.assert_not_called()
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "USB_STORAGE_FALLBACK"
+
+    def test_external_fault_uses_repaired_usb_when_probe_passes(self):
+        mgr = MagicMock()
+        mgr.recordings_dir = "/mnt/recordings/home-monitor-recordings"
+        svc = _make_service(storage_manager=mgr)
+
+        with (
+            patch.object(svc, "_try_repair_recordings_dir", return_value=True),
+            patch.object(svc, "_probe_recording_path", return_value=(True, "")),
+        ):
+            result = svc.handle_recording_storage_fault(
+                "/mnt/recordings/home-monitor-recordings",
+                "cam-x",
+                "Permission denied",
+            )
+
+        assert result == "/mnt/recordings/home-monitor-recordings"
+        mgr.set_recordings_dir.assert_not_called()
+
+    def test_internal_fault_does_not_recurse_into_fallback(self):
+        mgr = MagicMock()
+        mgr.recordings_dir = "/data/recordings"
+        svc = _make_service(storage_manager=mgr)
+
+        result = svc.handle_recording_storage_fault(
+            "/data/recordings",
+            "cam-x",
+            "Input/output error",
+        )
+
+        assert result == "/data/recordings"
+        mgr.set_recordings_dir.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 8. Audit failure resilience
 # ---------------------------------------------------------------------------
 
 
@@ -471,7 +537,7 @@ class TestAuditFailureResilience:
 
 
 # ---------------------------------------------------------------------------
-# 8. Config persistence failure resilience
+# 9. Config persistence failure resilience
 # ---------------------------------------------------------------------------
 
 

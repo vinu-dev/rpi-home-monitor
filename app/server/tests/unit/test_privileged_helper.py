@@ -128,6 +128,62 @@ def test_helper_mount_ownership_covers_recordings_folder():
     chmod.assert_any_call(f"/mnt/recordings/{helper.usb.RECORDINGS_FOLDER}", 0o775)
 
 
+def test_recording_storage_repair_rejects_non_allowlisted_path():
+    request = (
+        b'{"operation":"recording_storage.repair_permissions","payload":'
+        b'{"recordings_dir":"/etc","camera_id":"cam-x"}}'
+    )
+    with pytest.raises(helper.HelperRequestError, match="allowlisted"):
+        helper.handle_request(request)
+
+
+def test_recording_storage_repair_rejects_bad_camera_id():
+    request = (
+        b'{"operation":"recording_storage.repair_permissions","payload":'
+        b'{"recordings_dir":"/mnt/recordings/home-monitor-recordings",'
+        b'"camera_id":"../bad"}}'
+    )
+    with pytest.raises(helper.HelperRequestError, match="camera id"):
+        helper.handle_request(request)
+
+
+def test_recording_storage_repair_chowns_camera_tree():
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+    root = "/mnt/recordings/home-monitor-recordings/cam-x"
+
+    with (
+        patch.object(helper, "pwd", fake_pwd),
+        patch.object(helper, "grp", fake_grp),
+        patch.object(helper.os, "makedirs") as makedirs,
+        patch.object(
+            helper.os,
+            "walk",
+            return_value=[
+                (root, ["2026-05-30"], [".segments.log"]),
+                (f"{root}/2026-05-30", [], ["clip.mp4"]),
+            ],
+        ),
+        patch.object(helper.os, "chown", create=True) as chown,
+        patch.object(helper.os, "chmod") as chmod,
+    ):
+        data = helper.handle_request(
+            b'{"operation":"recording_storage.repair_permissions","payload":'
+            b'{"recordings_dir":"/mnt/recordings/home-monitor-recordings",'
+            b'"camera_id":"cam-x"}}'
+        )
+
+    assert data == {"path": root}
+    makedirs.assert_called_once_with(root, exist_ok=True)
+    chown.assert_any_call(root, 996, 994)
+    chown.assert_any_call(f"{root}/.segments.log", 996, 994)
+    chown.assert_any_call(f"{root}/2026-05-30/clip.mp4", 996, 994)
+    chmod.assert_any_call(root, 0o775)
+    chmod.assert_any_call(f"{root}/.segments.log", 0o664)
+
+
 def test_usb_unmount_and_format_delegate_to_usb_module():
     with patch.object(helper.usb, "unmount_device", return_value=(True, "")) as unmount:
         assert helper.handle_request(b'{"operation":"usb.unmount","payload":{}}') == {}

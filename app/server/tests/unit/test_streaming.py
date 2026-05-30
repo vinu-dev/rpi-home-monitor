@@ -152,6 +152,88 @@ class TestRecorderPipeline:
         assert svc.is_recording("cam-x") is True
         svc.stop()
 
+    @patch("subprocess.Popen")
+    def test_start_recorder_falls_back_when_storage_unwritable(
+        self, mock_popen, tmp_path
+    ):
+        proc = MagicMock()
+        proc.pid = 1
+        proc.poll.return_value = None
+        mock_popen.return_value = proc
+        bad_dir = tmp_path / "usb"
+        bad_dir.mkdir()
+        (bad_dir / "cam-x").write_text("not a directory")
+        fallback_dir = tmp_path / "recordings"
+        faults = []
+
+        def handle_fault(recordings_dir, camera_id, error):
+            faults.append((recordings_dir, camera_id, error))
+            return str(fallback_dir)
+
+        svc = StreamingService(
+            str(tmp_path / "live"),
+            str(bad_dir),
+            storage_fault_handler=handle_fault,
+        )
+        svc.start()
+
+        assert svc.start_recorder("cam-x", f"{MEDIAMTX_URL}/cam-x") is True
+
+        cmd = mock_popen.call_args[0][0]
+        assert faults
+        assert faults[0][0] == str(bad_dir)
+        assert faults[0][1] == "cam-x"
+        assert cmd[-1] == str(fallback_dir / "cam-x" / "%Y%m%d_%H%M%S.mp4")
+        svc.stop()
+
+    @patch("subprocess.Popen")
+    def test_start_recorder_allows_storage_handler_to_repair_same_path(
+        self, mock_popen, tmp_path
+    ):
+        proc = MagicMock()
+        proc.pid = 1
+        proc.poll.return_value = None
+        mock_popen.return_value = proc
+        rec_dir = tmp_path / "usb"
+        rec_dir.mkdir()
+        broken_cam_path = rec_dir / "cam-x"
+        broken_cam_path.write_text("not a directory")
+
+        def handle_fault(recordings_dir, camera_id, error):
+            broken_cam_path.unlink()
+            broken_cam_path.mkdir()
+            return recordings_dir
+
+        svc = StreamingService(
+            str(tmp_path / "live"),
+            str(rec_dir),
+            storage_fault_handler=handle_fault,
+        )
+        svc.start()
+
+        assert svc.start_recorder("cam-x", f"{MEDIAMTX_URL}/cam-x") is True
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[-1] == str(rec_dir / "cam-x" / "%Y%m%d_%H%M%S.mp4")
+        svc.stop()
+
+    @patch("subprocess.Popen")
+    def test_start_recorder_returns_false_when_storage_cannot_recover(
+        self, mock_popen, tmp_path
+    ):
+        bad_dir = tmp_path / "usb"
+        bad_dir.mkdir()
+        (bad_dir / "cam-x").write_text("not a directory")
+        svc = StreamingService(
+            str(tmp_path / "live"),
+            str(bad_dir),
+            storage_fault_handler=lambda _dir, _cam, _error: "",
+        )
+        svc.start()
+
+        assert svc.start_recorder("cam-x", f"{MEDIAMTX_URL}/cam-x") is False
+        mock_popen.assert_not_called()
+        svc.stop()
+
 
 class TestWatchdogIntent:
     """Deliberately-stopped processes are NOT restarted by the watchdog."""
