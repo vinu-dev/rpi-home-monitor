@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from monitor.models import Camera
 from monitor.services.clip_stamper import StampResult, stamp_sentinel_path
@@ -65,6 +66,31 @@ def test_cancel_when_idle_returns_status(app, logged_in_client):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["state"] == "idle"
+
+
+def test_status_reports_storage_error_without_claiming_ffmpeg_missing(
+    app, logged_in_client, monkeypatch
+):
+    app.clip_stamper.tools_available = lambda: True
+    recordings_dir = Path(app.config["RECORDINGS_DIR"])
+    real_iterdir = Path.iterdir
+
+    def broken_iterdir(path):
+        if path == recordings_dir:
+            raise OSError(5, "Input/output error")
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", broken_iterdir)
+    client = logged_in_client()
+
+    resp = client.get("/api/v1/recordings/timestamp-backfill/status")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ffmpeg_available"] is True
+    assert "Input/output error" in data["storage_error"]
+    assert data["summary"]["stamped"] == 0
+    assert data["summary"]["unstamped"] == 0
 
 
 def test_backfill_recovers_from_stamp_exception(app, logged_in_client):

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from monitor.models import Settings
@@ -191,6 +192,49 @@ class TestSync:
         assert state["pending"][0]["attempts"] == 1
         assert state["pending"][0]["next_attempt_at"] != ""
         assert "credentials" in state["last_error"].lower()
+
+    def test_discovery_skips_unavailable_recordings_root(self, tmp_path, monkeypatch):
+        service, store, recordings_dir = _make_service(
+            tmp_path,
+            settings=_configured_settings(),
+        )
+        original_is_dir = Path.is_dir
+
+        def _is_dir(path):
+            if path == recordings_dir:
+                raise OSError("input/output error")
+            return original_is_dir(path)
+
+        monkeypatch.setattr(Path, "is_dir", _is_dir)
+
+        assert service._discover_finalized_clips(store.get_settings()) == {}
+
+    def test_local_storage_fault_retries_without_crashing(self, tmp_path, monkeypatch):
+        service, store, _recordings_dir = _make_service(
+            tmp_path,
+            settings=_configured_settings(),
+        )
+        state = service._state_template()
+        state["pending"] = [
+            {
+                "clip_id": "cam-001/2026-05-04/20260504_101500.mp4",
+                "path": "/mnt/recordings/cam-001/20260504_101500.mp4",
+                "object_key": "backups/home-monitor/cam-001/20260504_101500.mp4",
+                "attempts": 0,
+                "next_attempt_at": "",
+            }
+        ]
+
+        def _is_file(_path):
+            raise OSError("input/output error")
+
+        monkeypatch.setattr(Path, "is_file", _is_file)
+
+        service._process_pending_uploads(state, store.get_settings())
+
+        assert len(state["pending"]) == 1
+        assert state["pending"][0]["attempts"] == 1
+        assert "local recordings storage" in state["last_error"].lower()
 
     def test_run_once_prunes_old_remote_objects_on_retention_sweep(self, tmp_path):
         deleted = []

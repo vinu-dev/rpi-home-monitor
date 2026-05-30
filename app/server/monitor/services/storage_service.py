@@ -48,7 +48,11 @@ class StorageService:
         """
         if not self._storage_manager:
             return None, "Storage manager not initialized"
-        stats = self._storage_manager.get_storage_stats()
+        try:
+            stats = self._storage_manager.get_storage_stats()
+        except OSError as exc:
+            log.warning("Storage status unavailable: %s", exc)
+            stats = self._unavailable_stats(str(exc))
         return stats, ""
 
     def list_devices(self) -> list[dict]:
@@ -63,15 +67,52 @@ class StorageService:
         devices = usb.detect_devices()
         rec_dir = self._active_recordings_dir()
         configured_device = self._configured_usb_device()
+        configured_uuid = self._configured_usb_uuid()
+        configured_present = any(d.get("path") == configured_device for d in devices)
+        legacy_single_candidate = (
+            bool(configured_device)
+            and not configured_uuid
+            and not configured_present
+            and len(devices) == 1
+            and bool(devices[0].get("supported"))
+        )
         for d in devices:
             is_active = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
             is_configured = (
-                bool(configured_device) and d.get("path") == configured_device
+                (bool(configured_device) and d.get("path") == configured_device)
+                or (bool(configured_uuid) and d.get("uuid") == configured_uuid)
+                or legacy_single_candidate
             )
             d["in_use"] = is_active
             d["configured"] = is_configured
             d["configured_inactive"] = is_configured and not is_active
+            d["configured_path_changed"] = (
+                is_configured
+                and bool(configured_device)
+                and d.get("path") != configured_device
+            )
         return devices
+
+    def _unavailable_stats(self, error: str) -> dict:
+        rec_dir = self._active_recordings_dir() or self._default_dir
+        return {
+            "total_gb": 0,
+            "used_gb": 0,
+            "free_gb": 0,
+            "percent": 0.0,
+            "recordings_mb": 0,
+            "camera_count": 0,
+            "clip_count": 0,
+            "per_camera": {},
+            "recordings_dir": rec_dir,
+            "is_usb": not rec_dir.startswith("/data"),
+            "reserve_mb": 0,
+            "threshold_percent": None,
+            "oldest_segment": None,
+            "newest_segment": None,
+            "storage_health": "unavailable",
+            "storage_error": _storage_error_message(error),
+        }
 
     def _active_recordings_dir(self) -> str:
         if not self._storage_manager:
@@ -87,6 +128,14 @@ class StorageService:
         except Exception:
             return ""
         value = getattr(settings, "usb_device", "")
+        return value if isinstance(value, str) else ""
+
+    def _configured_usb_uuid(self) -> str:
+        try:
+            settings = self._store.get_settings()
+        except Exception:
+            return ""
+        value = getattr(settings, "usb_uuid", "")
         return value if isinstance(value, str) else ""
 
     @staticmethod
@@ -175,7 +224,12 @@ class StorageService:
             self._storage_manager.set_recordings_dir(rec_dir)
 
         # Persist config
-        self._save_usb_config(device_path, rec_dir)
+        self._save_usb_config(
+            device_path,
+            rec_dir,
+            uuid=device.get("uuid", ""),
+            label=device.get("label", ""),
+        )
 
         self._log_audit(
             "USB_STORAGE_SELECTED",
@@ -267,11 +321,20 @@ class StorageService:
             200,
         )
 
-    def _save_usb_config(self, device_path: str, recordings_dir: str):
+    def _save_usb_config(
+        self,
+        device_path: str,
+        recordings_dir: str,
+        *,
+        uuid: str = "",
+        label: str = "",
+    ):
         """Persist USB storage selection in settings.json."""
         try:
             settings = self._store.get_settings()
             settings.usb_device = device_path
+            settings.usb_uuid = uuid
+            settings.usb_label = label
             settings.usb_recordings_dir = recordings_dir
             self._store.save_settings(settings)
         except Exception as e:
@@ -285,3 +348,12 @@ class StorageService:
             self._audit.log_event(event, user=user, ip=ip, detail=detail)
         except Exception as e:
             log.warning("Audit log failed: %s", e)
+
+
+def _storage_error_message(error: str) -> str:
+    detail = (error or "unknown storage error").strip()
+    return (
+        "Recording storage cannot be read. "
+        "Eject the USB drive or reformat/replace it before trusting recordings. "
+        f"Detail: {detail}"
+    )

@@ -99,6 +99,7 @@ class TimestampBackfillService:
             current_camera = self._current_camera
             started_at = self._started_at
         summary = self._timestamp_summary()
+        storage_error = summary.get("storage_error", "")
         return {
             "state": state,
             "processed": processed,
@@ -106,6 +107,7 @@ class TimestampBackfillService:
             "current_camera": current_camera,
             "started_at": started_at,
             "ffmpeg_available": self._stamper.tools_available(),
+            "storage_error": storage_error,
             "summary": summary,
         }
 
@@ -172,19 +174,43 @@ class TimestampBackfillService:
         cameras: list[dict] = []
         stamped_total = 0
         unstamped_total = 0
-        if not self._recordings_dir.is_dir():
-            return {"stamped": 0, "unstamped": 0, "cameras": cameras}
+        storage_error = ""
+        try:
+            if not self._recordings_dir.is_dir():
+                return {
+                    "stamped": 0,
+                    "unstamped": 0,
+                    "cameras": cameras,
+                    "storage_error": "",
+                }
+            cam_dirs = sorted(self._recordings_dir.iterdir())
+        except OSError as exc:
+            return {
+                "stamped": 0,
+                "unstamped": 0,
+                "cameras": cameras,
+                "storage_error": _storage_error_message(self._recordings_dir, exc),
+            }
 
-        for cam_dir in sorted(self._recordings_dir.iterdir()):
-            if not cam_dir.is_dir() or not _CAMERA_ID_RE.match(cam_dir.name):
+        for cam_dir in cam_dirs:
+            try:
+                is_dir = cam_dir.is_dir()
+            except OSError as exc:
+                storage_error = storage_error or _storage_error_message(cam_dir, exc)
+                continue
+            if not is_dir or not _CAMERA_ID_RE.match(cam_dir.name):
                 continue
             stamped = 0
             unstamped = 0
-            for clip_path in cam_dir.rglob("*.mp4"):
-                if stamp_sentinel_path(clip_path).exists():
-                    stamped += 1
-                else:
-                    unstamped += 1
+            try:
+                for clip_path in cam_dir.rglob("*.mp4"):
+                    if stamp_sentinel_path(clip_path).exists():
+                        stamped += 1
+                    else:
+                        unstamped += 1
+            except OSError as exc:
+                storage_error = storage_error or _storage_error_message(cam_dir, exc)
+                continue
             if stamped == 0 and unstamped == 0:
                 continue
             camera = self._store.get_camera(cam_dir.name)
@@ -202,6 +228,7 @@ class TimestampBackfillService:
             "stamped": stamped_total,
             "unstamped": unstamped_total,
             "cameras": cameras,
+            "storage_error": storage_error,
         }
 
     def _log_audit(self, event: str, *, detail: str) -> None:
@@ -211,3 +238,10 @@ class TimestampBackfillService:
             self._audit.log_event(event, detail=detail)
         except Exception:
             log.debug("timestamp_backfill: audit log failed for %s", event)
+
+
+def _storage_error_message(path: Path, exc: OSError) -> str:
+    return (
+        f"Recording storage at {path} cannot be scanned: {exc}. "
+        "Eject the USB drive or reformat/replace it before backfilling timestamps."
+    )

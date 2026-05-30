@@ -180,6 +180,30 @@ def is_mounted(mount_point=DEFAULT_MOUNT_POINT) -> bool:
         return False
 
 
+def mounted_source(mount_point=DEFAULT_MOUNT_POINT) -> str:
+    """Return the block device currently mounted at mount_point, if any."""
+    try:
+        with open("/proc/mounts", encoding="utf-8") as mounts:
+            for line in mounts:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == mount_point:
+                    return parts[0]
+    except OSError:
+        return ""
+    return ""
+
+
+def _same_block_device(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    try:
+        return os.stat(left).st_rdev == os.stat(right).st_rdev
+    except OSError:
+        return False
+
+
 # REQ: SWR-027; RISK: RISK-013; SEC: SC-013; TEST: TC-024
 def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, str]:
     """Mount a USB device at the given mount point.
@@ -199,9 +223,24 @@ def mount_device(device_path, mount_point=DEFAULT_MOUNT_POINT) -> tuple[bool, st
         os.makedirs(mount_point, exist_ok=True)
 
         # Check if already mounted
-        if is_mounted(mount_point):
-            log.info("Mount point %s already mounted", mount_point)
-            return True, ""
+        current_source = mounted_source(mount_point)
+        if current_source:
+            if _same_block_device(current_source, device_path):
+                log.info("Mount point %s already mounted", mount_point)
+                return True, ""
+            log.warning(
+                "Mount point %s is mounted from %s; unmounting before mounting %s",
+                mount_point,
+                current_source,
+                device_path,
+            )
+            ok, err = unmount_device(mount_point)
+            if not ok:
+                return (
+                    False,
+                    f"Mount point {mount_point} is already mounted from "
+                    f"{current_source}; unmount failed: {err}",
+                )
 
         # Detect filesystem to set proper mount options
         fstype = _get_fstype_blkid(device_path)

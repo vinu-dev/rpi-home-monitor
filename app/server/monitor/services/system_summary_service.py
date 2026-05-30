@@ -320,22 +320,39 @@ class SystemSummaryService:
             stats = self._storage.get_storage_stats()
         except Exception as exc:
             log.warning("summary: get_storage_stats failed: %s", exc)
-            return "green", {"percent": 0.0, "retention_days": None}, "/settings"
+            return (
+                "red",
+                {
+                    "percent": 0.0,
+                    "retention_days": None,
+                    "storage_health": "unavailable",
+                    "storage_error": str(exc),
+                },
+                "/settings#storage",
+            )
 
         percent = float(stats.get("percent", 0.0) or 0.0)
-        if percent >= DISK_RED_PERCENT:
+        storage_health = stats.get("storage_health", "ok") or "ok"
+        storage_error = stats.get("storage_error", "") or ""
+        if storage_health != "ok" or storage_error or percent >= DISK_RED_PERCENT:
             state = "red"
         elif percent >= DISK_AMBER_PERCENT:
             state = "amber"
         else:
             state = "green"
 
-        retention = self._estimate_retention_days(stats)
+        retention = (
+            None
+            if state == "red" and storage_error
+            else self._estimate_retention_days(stats)
+        )
         detail = {
             "percent": round(percent, 1),
             "retention_days": retention,
             "free_gb": stats.get("free_gb", 0),
             "total_gb": stats.get("total_gb", 0),
+            "storage_health": storage_health,
+            "storage_error": storage_error,
         }
         return state, detail, "/settings#storage"
 
@@ -367,21 +384,29 @@ class SystemSummaryService:
         from pathlib import Path
 
         root = Path(rec_dir)
-        if not root.is_dir():
+        try:
+            if not root.is_dir():
+                return None
+        except OSError as exc:
+            log.warning("summary: retention root unavailable %s: %s", root, exc)
             return None
 
         cutoff = time.time() - RETENTION_SAMPLE_DAYS * 86400
         earliest = time.time()
         bytes_in_window = 0
-        for mp4 in root.rglob("*.mp4"):
-            try:
-                st = mp4.stat()
-            except OSError:
-                continue
-            if st.st_mtime >= cutoff:
-                bytes_in_window += st.st_size
-                if st.st_mtime < earliest:
-                    earliest = st.st_mtime
+        try:
+            for mp4 in root.rglob("*.mp4"):
+                try:
+                    st = mp4.stat()
+                except OSError:
+                    continue
+                if st.st_mtime >= cutoff:
+                    bytes_in_window += st.st_size
+                    if st.st_mtime < earliest:
+                        earliest = st.st_mtime
+        except OSError as exc:
+            log.warning("summary: retention scan failed for %s: %s", root, exc)
+            return None
 
         age_hours = (time.time() - earliest) / 3600
         if bytes_in_window <= 0 or age_hours < 24:

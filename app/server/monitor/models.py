@@ -263,6 +263,8 @@ class Settings:
     firmware_version: str = "1.0.0"
     # USB storage — set when user selects a USB device for recordings
     usb_device: str = ""  # e.g. /dev/sda1 (empty = internal)
+    usb_uuid: str = ""  # stable filesystem UUID for remount after /dev/sdX changes
+    usb_label: str = ""  # human label shown during storage recovery
     usb_recordings_dir: str = ""  # e.g. /mnt/recordings/home-monitor-recordings
     # Tailscale VPN configuration
     tailscale_enabled: bool = False  # enable/disable tailscaled daemon

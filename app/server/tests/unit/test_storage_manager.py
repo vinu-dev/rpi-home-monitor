@@ -280,6 +280,24 @@ class TestGetStorageStats:
             stats = mgr.get_storage_stats()
         assert stats["total_gb"] == 0
         assert stats["used_gb"] == 0
+        assert stats["storage_health"] == "unavailable"
+        assert "Recording storage cannot be read" in stats["storage_error"]
+
+    def test_directory_scan_oserror_returns_degraded_status(self, tmp_path):
+        mgr, rec_dir = _make_manager(tmp_path)
+        real_iterdir = type(rec_dir).iterdir
+
+        def broken_iterdir(path):
+            if path == rec_dir:
+                raise OSError(5, "Input/output error")
+            return real_iterdir(path)
+
+        with patch("pathlib.Path.iterdir", broken_iterdir):
+            stats = mgr.get_storage_stats()
+
+        assert stats["total_gb"] > 0
+        assert stats["storage_health"] == "unavailable"
+        assert "Input/output error" in stats["storage_error"]
 
     def test_is_usb_false_for_internal_path(self, tmp_path):
         mgr, _ = _make_manager(tmp_path)

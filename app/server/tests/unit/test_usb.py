@@ -428,10 +428,10 @@ def test_is_mounted_os_error(mock_run):
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_success(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_success(mock_makedirs, mock_run, mock_mounted, mock_fstype):
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1", "/mnt/usb")
 
@@ -440,19 +440,20 @@ def test_mount_device_success(mock_makedirs, mock_run, mock_is_mounted, mock_fst
     mock_makedirs.assert_called_once_with("/mnt/usb", exist_ok=True)
 
 
-@patch("monitor.services.usb.is_mounted", return_value=True)
+@patch("monitor.services.usb._same_block_device", return_value=True)
+@patch("monitor.services.usb.mounted_source", return_value="/dev/sda1")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_already_mounted(mock_makedirs, mock_is_mounted):
+def test_mount_device_already_mounted(mock_makedirs, mock_mounted, mock_same):
     ok, err = mount_device("/dev/sda1", "/mnt/usb")
     assert ok is True
     assert err == ""
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_failure(mock_makedirs, mock_run, mock_mounted, mock_fstype):
     mock_run.return_value = _make_run_result(
         returncode=1, stderr="mount: permission denied"
     )
@@ -463,11 +464,11 @@ def test_mount_device_failure(mock_makedirs, mock_run, mock_is_mounted, mock_fst
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
 def test_mount_device_failure_empty_stderr(
-    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+    mock_makedirs, mock_run, mock_mounted, mock_fstype
 ):
     """Empty stderr falls back to 'Mount failed'."""
     mock_run.return_value = _make_run_result(returncode=1, stderr="")
@@ -477,10 +478,10 @@ def test_mount_device_failure_empty_stderr(
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
-def test_mount_device_timeout(mock_makedirs, mock_run, mock_is_mounted, mock_fstype):
+def test_mount_device_timeout(mock_makedirs, mock_run, mock_mounted, mock_fstype):
     mock_run.side_effect = subprocess.TimeoutExpired(cmd="mount", timeout=30)
     ok, err = mount_device("/dev/sda1")
     assert ok is False
@@ -496,11 +497,11 @@ def test_mount_device_makedirs_os_error(mock_makedirs):
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
 def test_mount_device_default_mount_point(
-    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+    mock_makedirs, mock_run, mock_mounted, mock_fstype
 ):
     mock_run.return_value = _make_run_result(returncode=0)
     ok, err = mount_device("/dev/sda1")
@@ -509,11 +510,11 @@ def test_mount_device_default_mount_point(
 
 
 @patch("monitor.services.usb._get_fstype_blkid", return_value="exfat")
-@patch("monitor.services.usb.is_mounted", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="")
 @patch("monitor.services.usb.subprocess.run")
 @patch("monitor.services.usb.os.makedirs")
 def test_mount_device_exfat_uses_uid_gid(
-    mock_makedirs, mock_run, mock_is_mounted, mock_fstype
+    mock_makedirs, mock_run, mock_mounted, mock_fstype
 ):
     """exFAT mount includes uid/gid/umask options."""
     mock_run.return_value = _make_run_result(returncode=0)
@@ -525,6 +526,28 @@ def test_mount_device_exfat_uses_uid_gid(
     opts = call_args[call_args.index("-o") + 1]
     assert "uid=" in opts
     assert "umask=0002" in opts
+
+
+@patch("monitor.services.usb._get_fstype_blkid", return_value="ext4")
+@patch("monitor.services.usb.unmount_device", return_value=(True, ""))
+@patch("monitor.services.usb._same_block_device", return_value=False)
+@patch("monitor.services.usb.mounted_source", return_value="/dev/sda1")
+@patch("monitor.services.usb.subprocess.run")
+@patch("monitor.services.usb.os.makedirs")
+def test_mount_device_unmounts_stale_mount_before_new_device(
+    mock_makedirs,
+    mock_run,
+    mock_mounted,
+    mock_same,
+    mock_unmount,
+    mock_fstype,
+):
+    mock_run.return_value = _make_run_result(returncode=0)
+    ok, err = mount_device("/dev/sdb1", "/mnt/usb")
+
+    assert ok is True
+    assert err == ""
+    mock_unmount.assert_called_once_with("/mnt/usb")
 
 
 # ===========================================================================
