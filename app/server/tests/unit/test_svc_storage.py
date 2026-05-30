@@ -112,12 +112,23 @@ class TestSelectDevice:
     @patch(USB_PATCH)
     def test_unsupported_filesystem(self, mock_usb, svc):
         mock_usb.detect_devices.return_value = [
-            _make_device(fstype="ntfs", supported=False)
+            _make_device(fstype="btrfs", supported=False)
         ]
         result, err, status = svc.select_device("/dev/sda1")
         assert status == 400
         assert result["needs_format"] is True
-        assert result["fstype"] == "ntfs"
+        assert result["fstype"] == "btrfs"
+
+    @patch(USB_PATCH)
+    def test_unknown_filesystem_does_not_claim_format_is_required(self, mock_usb, svc):
+        mock_usb.detect_devices.return_value = [
+            _make_device(fstype="", supported=False)
+        ]
+        result, err, status = svc.select_device("/dev/sda1")
+        assert status == 409
+        assert result["needs_format"] is False
+        assert result["filesystem_status"] == "unknown"
+        assert "Rescan" in err
 
     @patch(USB_PATCH)
     def test_mount_failure(self, mock_usb, svc):

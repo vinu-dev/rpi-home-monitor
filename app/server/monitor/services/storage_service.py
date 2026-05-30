@@ -126,9 +126,24 @@ class StorageService:
 
         # Check filesystem
         if not device["supported"]:
+            if not device.get("fstype"):
+                return (
+                    {
+                        "needs_format": False,
+                        "filesystem_status": device.get("filesystem_status", "unknown"),
+                        "fstype": "",
+                    },
+                    (
+                        "Filesystem could not be identified. "
+                        "Rescan the USB device or unplug and reconnect it before "
+                        "selecting it for recordings."
+                    ),
+                    409,
+                )
             return (
                 {
                     "needs_format": True,
+                    "filesystem_status": device.get("filesystem_status", "unsupported"),
                     "fstype": device["fstype"],
                 },
                 (

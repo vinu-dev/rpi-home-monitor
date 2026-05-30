@@ -1420,9 +1420,10 @@
                             <div class="text-small text-muted">
                                 <span x-text="d.path"></span> &middot;
                                 <span x-text="d.size"></span> &middot;
-                                <span x-text="d.fstype || 'unformatted'"></span>
+                                <span x-text="d.fstype || 'unknown filesystem'"></span>
                                 <span x-show="d.supported" style="color:#4ade80;"> Compatible</span>
-                                <span x-show="!d.supported" style="color:#f87171;"> Needs format</span>
+                                <span x-show="!d.supported && d.fstype" style="color:#f87171;"> Needs format</span>
+                                <span x-show="!d.supported && !d.fstype" style="color:#f59e0b;"> Rescan or reconnect before use</span>
                                 <span x-show="d.configured_inactive"> &middot; not active right now</span>
                             </div>
                         </div>
@@ -1433,7 +1434,8 @@
                             <span x-show="d.in_use" class="text-small text-muted">Active</span>
                             <!-- Issue #107: Reformat available for all device states.
                                  In-use drives auto-eject first via showFormat(). -->
-                            <button x-show="!d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
+                            <button x-show="!d.supported && d.fstype" class="btn btn--secondary btn--small" @click="showFormat(d)">Format</button>
+                            <button x-show="!d.supported && !d.fstype" class="btn btn--secondary btn--small" @click="scanUsb()">Rescan</button>
                             <button x-show="d.supported" class="btn btn--secondary btn--small" @click="showFormat(d)">Reformat</button>
                         </div>
                     </div>
@@ -1454,7 +1456,7 @@
                 <p style="margin:12px 0;">
                     Device <strong x-text="storage.formatDevice.model || '--'"></strong>
                     (<span x-text="storage.formatDevice.path || '--'"></span>,
-                    <span x-text="storage.formatDevice.fstype || 'unformatted'"></span>).
+                    <span x-text="storage.formatDevice.fstype || 'unknown filesystem'"></span>).
                     Format to ext4?
                 </p>
                 <button class="btn btn--danger btn--small" @click="formatUsb()" :disabled="storage.formatting">
