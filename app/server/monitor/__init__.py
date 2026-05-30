@@ -345,6 +345,11 @@ def _init_services(app):
         recordings_dir=recordings_dir,
         clip_duration=app.config.get("CLIP_DURATION_SECONDS", 180),
         clip_stamp_queue=app.clip_stamp_queue,
+        storage_fault_handler=lambda recordings_dir, camera_id, error: (
+            app.storage_service.handle_recording_storage_fault(
+                recordings_dir, camera_id, error
+            )
+        ),
     )
 
     def _camera_status_fingerprint(camera_id: str) -> str:

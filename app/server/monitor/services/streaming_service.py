@@ -99,11 +99,13 @@ class StreamingService:
         recordings_dir,
         clip_duration=CLIP_DURATION,
         clip_stamp_queue=None,
+        storage_fault_handler=None,
     ):
         self._live_dir = Path(live_dir)
         self._recordings_dir = Path(recordings_dir)
         self._clip_duration = clip_duration
         self._clip_stamp_queue = clip_stamp_queue
+        self._storage_fault_handler = storage_fault_handler
         self._snap_procs: dict = {}  # cam_id -> Popen (long-lived snapshot ffmpeg)
         self._rec_procs: dict = {}  # cam_id -> Popen (recorder — owned here)
         self._snap_intent: dict = {}  # cam_id -> "wanted" | "stopped"
@@ -289,9 +291,10 @@ class StreamingService:
                 return False
             self._recorder_intent[cam_id] = "wanted"
 
-        cam_rec_dir = self._recordings_dir / cam_id
-        cam_rec_dir.mkdir(parents=True, exist_ok=True)
-        segments_log = cam_rec_dir / ".segments.log"
+        paths = self._prepare_recorder_paths(cam_id)
+        if paths is None:
+            return False
+        cam_rec_dir, segments_log = paths
 
         cmd = [
             "ffmpeg",
@@ -348,6 +351,45 @@ class StreamingService:
             log.info("Recorder started for %s (PID %d)", cam_id, proc.pid)
             return True
         return False
+
+    def _prepare_recorder_paths(self, cam_id):
+        """Return writable per-camera recording paths, failing over once."""
+        first_error = None
+        for attempt in range(2):
+            cam_rec_dir = self._recordings_dir / cam_id
+            try:
+                _assert_recording_dir_writable(cam_rec_dir)
+                return cam_rec_dir, cam_rec_dir / ".segments.log"
+            except OSError as exc:
+                first_error = exc
+                if attempt > 0 or self._storage_fault_handler is None:
+                    break
+                fallback_dir = self._handle_storage_fault(cam_id, exc)
+                if not fallback_dir:
+                    break
+                self._recordings_dir = Path(fallback_dir)
+
+        log.error(
+            "Recorder storage unavailable for %s at %s: %s",
+            cam_id,
+            self._recordings_dir,
+            first_error,
+        )
+        return None
+
+    def _handle_storage_fault(self, cam_id, exc):
+        try:
+            return self._storage_fault_handler(
+                str(self._recordings_dir), cam_id, str(exc)
+            )
+        except Exception as handler_exc:  # pragma: no cover - defensive boundary
+            log.warning(
+                "Storage fault handler failed for %s at %s: %s",
+                cam_id,
+                self._recordings_dir,
+                handler_exc,
+            )
+            return None
 
     # --- Recorder finalizer (rename .mp4.part → .mp4 on segment close) ----
 
@@ -563,3 +605,14 @@ def create_recording_dirs(recordings_dir, cam_id):
     path = Path(recordings_dir) / cam_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _assert_recording_dir_writable(path: Path) -> None:
+    """Create and fsync a small probe file in the recorder output directory."""
+    path.mkdir(parents=True, exist_ok=True)
+    probe = path / ".home-monitor-write-test"
+    with open(probe, "ab") as f:
+        f.write(b"ok\n")
+        f.flush()
+        os.fsync(f.fileno())
+    probe.unlink(missing_ok=True)
