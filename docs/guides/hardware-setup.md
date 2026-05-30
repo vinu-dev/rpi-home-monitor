@@ -216,6 +216,12 @@ ping rpi-divinu.local
 ip addr show eth0
 ```
 
+If Ethernet is not available, connect to the setup hotspot **HomeMonitor-Setup**
+using the factory setup password `homemonitor`, then open `http://10.42.0.1`.
+During setup, choose a new setup hotspot password. Authenticated factory reset
+from the web UI preserves that password so you can re-enter setup. Hardware
+GPIO reset removes it and returns the setup hotspot to the factory password.
+
 ### 4.3 SSH In (Dev Image Only)
 
 ```bash
@@ -284,7 +290,7 @@ https://rpi-divinu.local
 ```
 
 - **Accept the self-signed certificate warning** (the system generates its own CA on first boot).
-- **Production images** will prompt a first-boot setup wizard (create admin account, set timezone, set hostname).
+- **Production images** will prompt a first-boot setup wizard. Keep the server on Ethernet when possible; WiFi is optional for the server.
 - **Dev images** have a pre-configured admin account for testing.
 
 ---
@@ -302,7 +308,7 @@ https://rpi-divinu.local
 On first boot, the camera starts a WiFi hotspot for provisioning:
 
 1. Connect your phone to WiFi: **HomeCam-Setup** using the factory setup password `homecamera`
-2. During setup, choose a new setup hotspot password. The camera stores it in `/data/config/camera-hotspot.psk` and uses it if setup mode appears again after a reset or WiFi repair.
+2. During setup, choose a new setup hotspot password. The camera stores it in `/data/config/camera-hotspot.psk` and uses it if setup mode appears again for WiFi repair or authenticated factory reset. Hardware GPIO reset removes it and returns the setup hotspot to the factory password.
 3. The setup wizard opens automatically (captive portal). If not, go to `http://10.42.0.1`
 4. Enter your **home WiFi SSID** and **password**
 5. Enter the **server address** (default: `rpi-divinu.local`)

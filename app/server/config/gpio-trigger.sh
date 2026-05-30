@@ -73,6 +73,8 @@ wipe_data() {
               "${CONFIG_DIR}/users.json" \
               "${CONFIG_DIR}/settings.json" \
               "${CONFIG_DIR}/.secret_key" \
+              "${CONFIG_DIR}/setup-hotspot.psk" \
+              "${CONFIG_DIR}/camera-hotspot.psk" \
               "${CONFIG_DIR}/camera.conf" 2>/dev/null || true
     fi
 

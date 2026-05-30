@@ -463,6 +463,36 @@ class TestSetupConnectContract:
 
     @patch("camera_streamer.wifi.scan_networks", return_value=[])
     @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_save_failure_returns_json_error(
+        self, mock_hotspot, mock_scan, setup_config
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            with patch.object(
+                server,
+                "_save_setup_hotspot_password",
+                side_effect=OSError("read only"),
+            ):
+                data, status = _json_post(
+                    "/api/connect",
+                    {
+                        "ssid": "TestNet",
+                        "password": "pass123",
+                        "server_ip": "192.168.1.100",
+                        "admin_username": "admin",
+                        "admin_password": "testpass12345",
+                        "setup_hotspot_password": "CameraSetupPass123",
+                    },
+                )
+            assert status == 500
+            _assert_fields(data, {"error"})
+            assert "setup settings" in data["error"]
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
     def test_error_fields(self, mock_hotspot, mock_scan, setup_config):
         server = WifiSetupServer(setup_config)
         server.start()

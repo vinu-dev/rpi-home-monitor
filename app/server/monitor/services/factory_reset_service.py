@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import threading
 
+from monitor.services import privileged
 from monitor.services.backup_paths import build_backup_paths
 
 log = logging.getLogger("monitor.services.factory_reset")
@@ -59,9 +60,10 @@ class FactoryResetService:
         stamp = os.path.join(self._data_dir, ".setup-done")
         self._safe_remove(stamp, errors)
 
-        # 2. Clear config files shared with backup/import. Keep the
-        # config directory itself so first-boot code can recreate
-        # defaults in place.
+        # 2. Clear resettable config files. Keep the config directory itself
+        # so first-boot code can recreate defaults in place. The setup
+        # hotspot password is intentionally preserved for authenticated GUI
+        # reset so the device does not fall back to a public first-boot PSK.
         for target in self._paths.resettable_config_files:
             self._safe_remove(str(target), errors)
 
@@ -182,27 +184,92 @@ class FactoryResetService:
         return None
 
     def _schedule_restart(self):
-        """Reboot the system after a 2-second delay.
+        """Recover into first-boot setup after a 2-second delay.
 
         A full reboot (not just service restart) is required so that
         the monitor-hotspot.service ConditionPathExists check re-evaluates
         and starts the WiFi hotspot for first-boot setup.
         """
-
-        def _do_restart():
-            log.info("Rebooting system for factory reset...")
-            try:
-                subprocess.run(
-                    ["systemctl", "reboot"],
-                    capture_output=True,
-                    timeout=30,
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-                log.error("System reboot failed: %s", exc)
-
-        timer = threading.Timer(2.0, _do_restart)
+        timer = threading.Timer(2.0, self._run_post_reset_recovery)
         timer.daemon = True
         timer.start()
+
+    def _run_post_reset_recovery(self):
+        """Reboot after reset, or explicitly bring setup networking back."""
+        if self._attempt_reboot():
+            return
+        log.error("Factory reset reboot failed; starting setup hotspot fallback")
+        if not self._start_setup_hotspot():
+            log.critical(
+                "Factory reset could not reboot or start the setup hotspot; "
+                "operator intervention is required"
+            )
+
+    def _attempt_reboot(self) -> bool:
+        """Request a system reboot and return whether systemd accepted it."""
+        log.info("Rebooting system for factory reset...")
+        if privileged.should_use_helper():
+            try:
+                result = privileged.request("system.reboot", timeout=20)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("Privileged reboot request failed: %s", exc)
+                return False
+            return self._command_result_ok(result, "privileged reboot")
+
+        ok, error = self._run_system_command(["systemctl", "reboot"], timeout=30)
+        if not ok:
+            log.error("System reboot failed: %s", error)
+        return ok
+
+    def _start_setup_hotspot(self) -> bool:
+        """Restart the setup hotspot service if reboot is unavailable."""
+        if privileged.should_use_helper():
+            try:
+                result = privileged.request("hotspot.start", timeout=90)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("Privileged setup hotspot start failed: %s", exc)
+                return False
+            return self._command_result_ok(result, "privileged hotspot start")
+
+        ok, error = self._run_system_command(
+            ["systemctl", "restart", "monitor-hotspot.service"],
+            timeout=90,
+        )
+        if not ok:
+            log.error("Setup hotspot restart failed: %s", error)
+        return ok
+
+    @staticmethod
+    def _run_system_command(cmd: list[str], *, timeout: int) -> tuple[bool, str]:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            return False, str(exc)
+        return FactoryResetService._command_result_ok(result, " ".join(cmd)), (
+            (result.stderr or result.stdout or "").strip()
+        )
+
+    @staticmethod
+    def _command_result_ok(result, label: str) -> bool:
+        if isinstance(result, dict):
+            returncode = int(result.get("returncode", 0) or 0)
+            stderr = str(result.get("stderr", "") or "").strip()
+            stdout = str(result.get("stdout", "") or "").strip()
+        else:
+            returncode = getattr(result, "returncode", 1)
+            stderr = str(getattr(result, "stderr", "") or "").strip()
+            stdout = str(getattr(result, "stdout", "") or "").strip()
+        if returncode == 0:
+            return True
+        detail = stderr or stdout or f"exit {returncode}"
+        log.error("%s failed: %s", label, detail)
+        return False
 
     def _log_audit(self, event, requesting_user="", requesting_ip="", detail=""):
         """Write audit event, fail-silent."""

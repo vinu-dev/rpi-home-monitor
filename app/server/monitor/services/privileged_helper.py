@@ -220,6 +220,21 @@ def _op_hotspot_connect_wifi(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _op_hotspot_stop(payload: dict[str, Any]) -> dict[str, Any]:
+    return _run_command(
+        ["/opt/monitor/scripts/monitor-hotspot.sh", "stop"],
+        timeout=20,
+        nonzero_ok=True,
+    )
+
+
+def _op_hotspot_start(payload: dict[str, Any]) -> dict[str, Any]:
+    return _run_command(
+        ["systemctl", "restart", "monitor-hotspot.service"],
+        timeout=90,
+    )
+
+
 def _op_hostname_set(payload: dict[str, Any]) -> dict[str, Any]:
     hostname = _as_text(payload.get("hostname"), max_len=63)
     if not HOSTNAME_RE.fullmatch(hostname):
@@ -301,7 +316,7 @@ def _op_ota_install(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
-    return _run_command(["reboot"], timeout=15, nonzero_ok=True)
+    return _run_command(["systemctl", "reboot"], timeout=15)
 
 
 OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
@@ -314,6 +329,8 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "time.restart_timesyncd": _op_time_restart_timesyncd,
     "network.connect_wifi": _op_network_connect_wifi,
     "hotspot.connect_wifi": _op_hotspot_connect_wifi,
+    "hotspot.stop": _op_hotspot_stop,
+    "hotspot.start": _op_hotspot_start,
     "hostname.set": _op_hostname_set,
     "tailscale.up": _op_tailscale_up,
     "tailscale.down": _op_tailscale_down,

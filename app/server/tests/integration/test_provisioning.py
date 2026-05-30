@@ -273,6 +273,33 @@ class TestSetupComplete:
         assert "WiFi" in data["error"]
 
     @patch(f"{SUBPROCESS_PATCH}.run")
+    def test_ethernet_complete_does_not_require_wifi(self, mock_run, app, client):
+        """Wired setup can finish without WiFi credentials."""
+        app.provisioning_service._pending_wifi["ssid"] = ""
+        app.provisioning_service._pending_wifi["password"] = ""
+        _write_setup_hotspot_password(app)
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="eth0:ethernet:connected\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout="IP4.ADDRESS[1]:192.168.1.244/24\n",
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        response = client.post(
+            "/api/v1/setup/complete", json={"network_mode": "ethernet"}
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["network_mode"] == "ethernet"
+        assert data["ip"] == "192.168.1.244"
+        assert os.path.isfile(os.path.join(app.config["DATA_DIR"], ".setup-done"))
+
+    @patch(f"{SUBPROCESS_PATCH}.run")
     def test_full_flow_saves_then_completes(self, mock_run, app, client):
         """Full flow: save WiFi → save admin password → complete."""
         # Step 1: Save WiFi

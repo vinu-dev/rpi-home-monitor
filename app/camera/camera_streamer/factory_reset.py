@@ -1,13 +1,13 @@
 # REQ: SWR-018; RISK: RISK-006; SEC: SC-006; TEST: TC-015
 """
-Factory reset service for camera — wipes config and returns to first-boot state.
+Factory reset service for camera: wipes config and returns to first-boot state.
 
-Mirrors the server's FactoryResetService pattern (ADR-0013):
+Mirrors the server reset pattern:
 - Constructor injection (config, data_dir)
-- WiFi credentials wiped via hotspot script's 'wipe' command
-- System reboot after reset (systemd re-evaluates ConditionPathExists)
+- WiFi credentials wiped via the hotspot script or root helper
+- System reboot after reset so systemd re-evaluates setup-hotspot conditions
 
-After reset: camera-hotspot.service starts (no .setup-done) → setup wizard.
+After reset: camera-hotspot.service starts (no .setup-done) and serves setup.
 """
 
 import logging
@@ -15,6 +15,8 @@ import os
 import shutil
 import subprocess
 import threading
+
+from camera_streamer import privileged
 
 log = logging.getLogger("camera-streamer.factory-reset")
 
@@ -49,19 +51,24 @@ class FactoryResetService:
         config_path = os.path.join(self._data_dir, "config", "camera.conf")
         self._safe_remove(config_path, errors)
 
-        # 3. Remove certificates (pairing data)
+        # 3. Preserve the operator-chosen setup hotspot password. A GUI
+        # factory reset is an authenticated admin action; keeping this
+        # credential avoids falling back to a public first-boot default and
+        # lets the same operator re-enter setup after reboot.
+
+        # 4. Remove certificates (pairing data)
         certs_dir = os.path.join(self._data_dir, "certs")
         self._safe_rmtree(certs_dir, errors)
 
-        # 4. Remove logs
+        # 5. Remove logs
         logs_dir = os.path.join(self._data_dir, "logs")
         self._safe_rmtree(logs_dir, errors)
 
-        # 5. Remove OTA staging
+        # 6. Remove OTA staging
         ota_dir = os.path.join(self._data_dir, "ota")
         self._safe_rmtree(ota_dir, errors)
 
-        # 6. Clear WiFi credentials via hotspot script (ADR-0013)
+        # 7. Clear WiFi credentials via hotspot script/root helper.
         self._clear_wifi(errors)
 
         if errors:
@@ -95,14 +102,43 @@ class FactoryResetService:
             errors.append(f"{path}: {exc}")
 
     def _clear_wifi(self, errors: list):
-        """Clear WiFi credentials via hotspot script + direct cleanup.
+        """Clear WiFi credentials via hotspot script plus direct /data cleanup.
 
-        The hotspot script's 'wipe' command handles nmcli deletion and
-        file cleanup. We also directly clean /data/network/ as a safety
-        net — nm-persist.sh bind-mounts this over /etc/NetworkManager/
-        system-connections/ on every boot, so it must be wiped too.
+        The hotspot script's wipe command handles NetworkManager deletion.
+        Direct /data cleanup is retained as a safety net because nm-persist.sh
+        restores connections from /data/network/system-connections/ on boot.
         """
-        # 1. Run hotspot script wipe (handles nmcli + /etc cleanup)
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request("hotspot.wipe", timeout=35)
+            except privileged.PrivilegedHelperError as exc:
+                log.warning("Failed to wipe WiFi credentials via helper: %s", exc)
+                errors.append(f"wifi: {exc}")
+            else:
+                if int(data.get("returncode") or 0) != 0:
+                    output = str(data.get("stderr") or data.get("stdout") or "")
+                    output = output.strip()
+                    log.warning("WiFi wipe returned non-zero: %s", output)
+                    errors.append(f"wifi: {output}")
+                else:
+                    log.debug("WiFi credentials wiped via privileged helper")
+        else:
+            self._clear_wifi_without_helper(errors)
+
+        persist_dir = os.path.join(self._data_dir, "network", "system-connections")
+        self._wipe_dir_contents(persist_dir, "persistent WiFi", errors)
+
+        marker = os.path.join(self._data_dir, "network", ".wifi-wiped")
+        try:
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "w") as f:
+                f.write("1\n")
+            log.debug("WiFi wipe marker written: %s", marker)
+        except OSError as exc:
+            log.warning("Failed to write wifi wipe marker: %s", exc)
+            errors.append(f"wifi-marker: {exc}")
+
+    def _clear_wifi_without_helper(self, errors: list) -> None:
         try:
             if os.path.isfile(self._hotspot_script):
                 result = subprocess.run(
@@ -120,32 +156,15 @@ class FactoryResetService:
                     log.debug("WiFi credentials wiped via hotspot script")
             else:
                 log.debug(
-                    "Hotspot script not found at %s — skipping script wipe",
+                    "Hotspot script not found at %s; skipping script wipe",
                     self._hotspot_script,
                 )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
             log.warning("Failed to wipe WiFi credentials: %s", exc)
             errors.append(f"wifi: {exc}")
 
-        # 2. Always wipe /data/network/system-connections/ directly
-        #    (nm-persist.sh restores connections from here on every boot)
-        persist_dir = os.path.join(self._data_dir, "network", "system-connections")
-        self._wipe_dir_contents(persist_dir, "persistent WiFi", errors)
-
-        # 3. Write a marker so nm-persist.sh skips re-seeding from rootfs
-        #    (rootfs may have baked-in WiFi connections from dev builds)
-        marker = os.path.join(self._data_dir, "network", ".wifi-wiped")
-        try:
-            os.makedirs(os.path.dirname(marker), exist_ok=True)
-            with open(marker, "w") as f:
-                f.write("1\n")
-            log.debug("WiFi wipe marker written: %s", marker)
-        except OSError as exc:
-            log.warning("Failed to write wifi wipe marker: %s", exc)
-            errors.append(f"wifi-marker: {exc}")
-
     def _wipe_dir_contents(self, dirpath: str, label: str, errors: list):
-        """Remove all files in a directory (not the directory itself)."""
+        """Remove all files in a directory, not the directory itself."""
         if not os.path.isdir(dirpath):
             return
         for fname in os.listdir(dirpath):
@@ -159,24 +178,74 @@ class FactoryResetService:
                 errors.append(f"{label}: {exc}")
 
     def _schedule_reboot(self):
-        """Reboot the system after a 2-second delay.
-
-        A full reboot (not just service restart) is required so that
-        camera-hotspot.service ConditionPathExists re-evaluates
-        and starts the WiFi hotspot for first-boot setup.
-        """
-
-        def _do_reboot():
-            log.info("Rebooting system for factory reset...")
-            try:
-                subprocess.run(
-                    ["systemctl", "reboot"],
-                    capture_output=True,
-                    timeout=30,
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-                log.error("System reboot failed: %s", exc)
-
-        timer = threading.Timer(2.0, _do_reboot)
+        """Recover into first-boot setup after a 2-second delay."""
+        timer = threading.Timer(2.0, self._run_post_reset_recovery)
         timer.daemon = True
         timer.start()
+
+    def _run_post_reset_recovery(self):
+        """Reboot after reset, or explicitly bring setup networking back."""
+        if self._attempt_reboot():
+            return
+        log.error("Factory reset reboot failed; starting setup hotspot fallback")
+        if not self._start_setup_hotspot():
+            log.critical(
+                "Factory reset could not reboot or start the setup hotspot; "
+                "operator intervention is required"
+            )
+
+    def _attempt_reboot(self) -> bool:
+        log.info("Rebooting system for factory reset...")
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request("system.reboot", timeout=20)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("Privileged reboot failed: %s", exc)
+                return False
+            return self._command_result_ok(data, "system.reboot")
+        ok, error = self._run_system_command(["systemctl", "reboot"], timeout=30)
+        if not ok:
+            log.error("System reboot failed: %s", error)
+        return ok
+
+    def _start_setup_hotspot(self) -> bool:
+        if privileged.should_use_helper():
+            try:
+                data = privileged.request("hotspot.start", timeout=95)
+            except privileged.PrivilegedHelperError as exc:
+                log.error("Privileged setup hotspot start failed: %s", exc)
+                return False
+            return self._command_result_ok(data, "hotspot.start")
+        ok, error = self._run_system_command(
+            ["systemctl", "restart", "camera-hotspot.service"],
+            timeout=90,
+        )
+        if not ok:
+            log.error("Setup hotspot restart failed: %s", error)
+        return ok
+
+    @staticmethod
+    def _run_system_command(cmd: list[str], *, timeout: int) -> tuple[bool, str]:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            return False, str(exc)
+        detail = (result.stderr or result.stdout or "").strip()
+        if result.returncode == 0:
+            return True, detail
+        return False, detail or f"exit {result.returncode}"
+
+    @staticmethod
+    def _command_result_ok(data: dict, label: str) -> bool:
+        returncode = int(data.get("returncode") or 0)
+        if returncode == 0:
+            return True
+        detail = str(data.get("stderr") or data.get("stdout") or "").strip()
+        log.error("%s failed: %s", label, detail or f"exit {returncode}")
+        return False

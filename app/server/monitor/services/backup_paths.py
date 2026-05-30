@@ -2,9 +2,10 @@
 """
 Shared path catalogue for server-side mutable configuration.
 
-Config backup/import and factory reset both operate on the same set of
-server-owned files. Keeping the path inventory in one place prevents
-those flows from silently drifting apart.
+Config backup/import and factory reset share this catalogue so their path
+inventory is explicit. Factory reset intentionally keeps the operator-chosen
+setup hotspot password: the authenticated admin reset path must not fall back
+to the public first-boot default.
 """
 
 from dataclasses import dataclass
@@ -38,6 +39,10 @@ class BackupPaths:
     @property
     def session_secret_file(self) -> Path:
         return self.config_dir / ".secret_key"
+
+    @property
+    def setup_hotspot_password_file(self) -> Path:
+        return self.config_dir / "setup-hotspot.psk"
 
     @property
     def motion_events_file(self) -> Path:

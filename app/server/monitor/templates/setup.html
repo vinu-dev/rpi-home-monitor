@@ -129,6 +129,43 @@
             background: #133a6a;
         }
 
+        .network-mode-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .network-mode {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #2a3a5e;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            cursor: pointer;
+            text-align: left;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .network-mode strong,
+        .network-mode span {
+            display: block;
+        }
+        .network-mode span {
+            margin-top: 4px;
+            color: #8090b0;
+            font-size: 0.82rem;
+        }
+        .network-mode.selected {
+            border-color: #e94560;
+            background: #1e2440;
+        }
+        .network-setup-panel {
+            display: none;
+        }
+        .network-setup-panel.visible {
+            display: block;
+        }
+
         /* Inputs */
         .input-group {
             margin-bottom: 16px;
@@ -526,38 +563,55 @@
             </div>
             <div class="card">
                 <h1>Welcome to Home Monitor</h1>
-                <p>Your self-hosted security camera system. This wizard will help you connect your server to WiFi and secure your admin account.</p>
-                <p>You will need your WiFi network name and password.</p>
+                <p>Your self-hosted security camera system. This wizard will help you choose networking and secure your admin account.</p>
+                <p>Use wired Ethernet when available. WiFi setup is optional for the server.</p>
                 <button class="btn btn-primary" onclick="goToStep(1)">Get Started</button>
             </div>
         </div>
 
-        <!-- Step 1: WiFi (save only, don't connect) -->
+        <!-- Step 1: Network -->
         <div class="step" id="step-1">
             <div class="card">
                 <div class="step-label">Step 1 of 3</div>
-                <h2>Select WiFi Network</h2>
-                <p>Choose the WiFi network your server should connect to.</p>
+                <h2>Choose Network</h2>
+                <p>Keep the server wired, or connect it to WiFi.</p>
 
-                <div id="wifi-scan-loading" class="scan-loading">
-                    <div class="spinner"></div>
-                    <div>Scanning for networks...</div>
+                <div class="network-mode-grid">
+                    <button type="button" class="network-mode selected" id="mode-ethernet" onclick="chooseNetworkMode('ethernet')">
+                        <strong>Ethernet</strong>
+                        <span>Wired LAN</span>
+                    </button>
+                    <button type="button" class="network-mode" id="mode-wifi" onclick="chooseNetworkMode('wifi')">
+                        <strong>WiFi</strong>
+                        <span>Wireless LAN</span>
+                    </button>
                 </div>
 
-                <div id="wifi-network-list" class="network-list" style="display:none;"></div>
+                <div id="ethernet-section" class="network-setup-panel visible">
+                    <button class="btn btn-primary" onclick="useEthernet()">Next</button>
+                </div>
 
-                <div id="wifi-password-section" class="wifi-password-section">
-                    <div class="input-group">
-                        <label>Password for <strong id="wifi-selected-ssid"></strong></label>
-                        <input type="password" id="wifi-password" placeholder="Enter WiFi password"
-                               onkeydown="if(event.key==='Enter')saveWifi()">
+                <div id="wifi-section" class="network-setup-panel">
+                    <div id="wifi-scan-loading" class="scan-loading">
+                        <div class="spinner"></div>
+                        <div>Scanning for networks...</div>
                     </div>
-                    <button class="btn btn-primary" id="btn-wifi-save" onclick="saveWifi()">Next</button>
-                </div>
 
-                <button class="btn btn-secondary" onclick="scanWifi()" id="btn-rescan">
-                    Rescan Networks
-                </button>
+                    <div id="wifi-network-list" class="network-list" style="display:none;"></div>
+
+                    <div id="wifi-password-section" class="wifi-password-section">
+                        <div class="input-group">
+                            <label>Password for <strong id="wifi-selected-ssid"></strong></label>
+                            <input type="password" id="wifi-password" placeholder="Enter WiFi password"
+                                   onkeydown="if(event.key==='Enter')saveWifi()">
+                        </div>
+                        <button class="btn btn-primary" id="btn-wifi-save" onclick="saveWifi()">Next</button>
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="scanWifi()" id="btn-rescan">
+                        Rescan Networks
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -607,7 +661,7 @@
                     <h2>Review & Apply</h2>
 
                     <div class="review-item">
-                        <span class="review-label">WiFi Network</span>
+                        <span class="review-label">Network</span>
                         <span class="review-value" id="review-ssid"></span>
                     </div>
                     <div class="review-item">
@@ -623,7 +677,7 @@
                         <p style="color:#e94560;font-weight:600;">What happens when you tap Apply:</p>
                         <div class="warning-step">
                             <span class="warning-step-num">1.</span>
-                            Server connects to your home WiFi
+                            <span id="apply-step-network">Server keeps using Ethernet</span>
                         </div>
                         <div class="warning-step">
                             <span class="warning-step-num">2.</span>
@@ -631,12 +685,12 @@
                         </div>
                         <div class="warning-step">
                             <span class="warning-step-num">3.</span>
-                            Your phone will disconnect
+                            <span id="apply-step-phone">Your dashboard address is ready</span>
                         </div>
                         <p style="color:#fff;margin-top:12px;font-weight:500;">After that:</p>
                         <div class="warning-step">
                             <span class="warning-step-num">4.</span>
-                            Connect your phone back to your home WiFi
+                            <span id="apply-step-return">Stay on your LAN</span>
                         </div>
                         <div class="warning-step">
                             <span class="warning-step-num">5.</span>
@@ -648,7 +702,7 @@
                         Apply & Finish
                     </button>
                     <button class="btn btn-secondary" onclick="goToStep(1)">
-                        Back to WiFi
+                        Back to Network
                     </button>
                 </div>
             </div>
@@ -658,7 +712,7 @@
                 <div class="card">
                     <div class="done-icon">&#9989;</div>
                     <h1 style="text-align:center;">Setup Complete!</h1>
-                    <p style="text-align:center;">Your server is now on your home WiFi.</p>
+                    <p style="text-align:center;" id="done-network-text">Your server setup is complete.</p>
 
                     <div class="ip-display" id="done-ip-display" style="font-size:1.15rem;">
                         Connecting...
@@ -668,7 +722,7 @@
                     </div>
 
                     <p style="text-align:center;font-size:0.9rem;color:#fff;">
-                        Connect your phone to your home WiFi,<br>
+                        Open this from your LAN,<br>
                         then open the address above.
                     </p>
                     <p style="text-align:center;font-size:0.85rem;">
@@ -692,6 +746,8 @@
 
     <script>
         var currentStep = 0;
+        var networkMode = 'ethernet';
+        var wifiScanned = false;
         var selectedSSID = '';
         var savedSSID = '';
         var savedWifiPassword = '';
@@ -712,14 +768,41 @@
 
             currentStep = step;
 
-            if (step === 1) {
+            if (step === 1 && networkMode === 'wifi') {
                 scanWifi();
             }
             if (step === 3) {
                 document.getElementById('review-ssid').textContent = savedSSID;
+                updateReviewText();
                 document.getElementById('review-panel').style.display = 'block';
                 document.getElementById('done-panel').style.display = 'none';
             }
+        }
+
+        function chooseNetworkMode(mode) {
+            networkMode = mode === 'wifi' ? 'wifi' : 'ethernet';
+            document.getElementById('mode-ethernet').classList.toggle('selected', networkMode === 'ethernet');
+            document.getElementById('mode-wifi').classList.toggle('selected', networkMode === 'wifi');
+            document.getElementById('ethernet-section').classList.toggle('visible', networkMode === 'ethernet');
+            document.getElementById('wifi-section').classList.toggle('visible', networkMode === 'wifi');
+            if (networkMode === 'wifi' && !wifiScanned) {
+                scanWifi();
+            }
+        }
+
+        function useEthernet() {
+            networkMode = 'ethernet';
+            savedSSID = 'Ethernet';
+            savedWifiPassword = '';
+            goToStep(2);
+        }
+
+        function updateReviewText() {
+            var isWifi = networkMode === 'wifi';
+            document.getElementById('apply-step-network').textContent = isWifi ? 'Server connects to your home WiFi' : 'Server keeps using Ethernet';
+            document.getElementById('apply-step-phone').textContent = isWifi ? 'Your phone may disconnect' : 'Your dashboard address is ready';
+            document.getElementById('apply-step-return').textContent = isWifi ? 'Connect your phone back to your home WiFi' : 'Stay on your LAN';
+            document.getElementById('done-network-text').textContent = isWifi ? 'Your server is now on your home WiFi.' : 'Your server is ready on Ethernet.';
         }
 
         function showToast(message, type) {
@@ -766,6 +849,7 @@
             pwSection.classList.remove('visible');
             rescanBtn.disabled = true;
             selectedSSID = '';
+            wifiScanned = true;
 
             fetch(API_BASE + '/wifi/scan')
                 .then(function(res) { return res.json(); })
@@ -818,6 +902,7 @@
             el.classList.add('selected');
 
             selectedSSID = el.getAttribute('data-ssid');
+            networkMode = 'wifi';
             document.getElementById('wifi-selected-ssid').textContent = selectedSSID;
             document.getElementById('wifi-password').value = '';
 
@@ -855,6 +940,7 @@
             .then(function(res) {
                 setButtonLoading(btn, false, 'Next');
                 if (res.status === 200) {
+                    networkMode = 'wifi';
                     savedSSID = selectedSSID;
                     savedWifiPassword = password;
                     showToast('WiFi saved: ' + selectedSSID, 'success');
@@ -927,15 +1013,15 @@
         }
 
         function applySettings() {
-            /* The big moment: calls /complete which connects WiFi,
-               writes stamp, and schedules hotspot stop.
-               The phone WILL disconnect after this. */
+            /* Finish setup. WiFi mode switches networks; Ethernet mode keeps LAN. */
             var btn = document.getElementById('btn-apply');
-            setButtonLoading(btn, true, 'Connecting to WiFi...');
+            var loadingText = networkMode === 'wifi' ? 'Connecting to WiFi...' : 'Finishing setup...';
+            setButtonLoading(btn, true, loadingText);
 
             fetch(API_BASE + '/complete', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'}
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({network_mode: networkMode})
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {
@@ -944,6 +1030,8 @@
                        User may or may not see this (hotspot is dying). */
                     var ip = res.data.ip || '';
                     var hostname = res.data.hostname || '';
+                    networkMode = res.data.network_mode || networkMode;
+                    updateReviewText();
 
                     /* Show the mDNS hostname as primary address */
                     if (hostname) {
@@ -978,6 +1066,7 @@
                     document.getElementById('done-ip-display').textContent = 'https://' + SERVER_HOSTNAME + '/';
                     document.getElementById('done-cam-address').textContent = SERVER_HOSTNAME;
                 }
+                updateReviewText();
                 document.getElementById('review-panel').style.display = 'none';
                 document.getElementById('done-panel').style.display = 'block';
             });

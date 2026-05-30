@@ -38,6 +38,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 UNIT_FILE = REPO_ROOT / "app" / "camera" / "config" / "camera-streamer.service"
+DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-dev-app.sh"
 
 # --- The contract --------------------------------------------------
 #
@@ -121,6 +122,40 @@ def test_unit_file_exists():
         f"camera-streamer.service not found at {UNIT_FILE}; "
         "did the recipe layout change?"
     )
+
+
+def test_dev_deploy_uses_checked_in_unit_file():
+    """The hot-deploy path must not carry a stale inline unit override."""
+    text = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "app/camera/config/camera-streamer.service" in text
+    assert "cp '$CAMERA_STAGE/camera-streamer.service'" in text
+    assert "cat > /etc/systemd/system/camera-streamer.service" not in text
+    assert "ReadWritePaths=/data\n" not in text
+
+
+def test_dev_deploy_installs_gpio_trigger_service():
+    text = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "app/server/config/gpio-trigger.sh" in text
+    assert "app/server/config/gpio-trigger.service" in text
+    assert "/opt/scripts/gpio-trigger.sh" in text
+    assert "systemctl enable gpio-trigger.service" in text
+
+
+def test_dev_deploy_installs_camera_privileged_helper():
+    text = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "app/camera/config/camera-privileged-helper.service" in text
+    assert "cp '$CAMERA_STAGE/camera-privileged-helper.service'" in text
+    assert "systemctl restart camera-privileged-helper camera-streamer" in text
+
+
+def test_camera_streamer_uses_privileged_helper_socket():
+    text = UNIT_FILE.read_text(encoding="utf-8")
+
+    assert "camera-privileged-helper.service" in text
+    assert "CAMERA_PRIVILEGED_HELPER_SOCKET=/run/camera/privileged-helper.sock" in text
 
 
 @pytest.mark.parametrize(

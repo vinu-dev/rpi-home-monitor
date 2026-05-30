@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from monitor.services import privileged
 from monitor.services.factory_reset_service import FactoryResetService
 
 
@@ -29,6 +30,7 @@ def data_dir(tmp_path):
     (tmp_path / "config" / "users.json").write_text("[]")
     (tmp_path / "config" / "settings.json").write_text("{}")
     (tmp_path / "config" / ".secret_key").write_text("abc123")
+    (tmp_path / "config" / "setup-hotspot.psk").write_text("RotatedSetup123\n")
 
     # Stamp file
     (tmp_path / ".setup-done").write_text("setup completed\n")
@@ -86,6 +88,9 @@ class TestFactoryReset:
         assert not (data_dir / "config" / "users.json").exists()
         assert not (data_dir / "config" / "settings.json").exists()
         assert not (data_dir / "config" / ".secret_key").exists()
+        assert (data_dir / "config" / "setup-hotspot.psk").read_text() == (
+            "RotatedSetup123\n"
+        )
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
@@ -398,3 +403,89 @@ class TestErrorHandling:
         t.start()
         t.join(timeout=5)
         assert done.is_set()  # thread completed without raising
+
+
+class TestPostResetRecovery:
+    """Reset must not strand the device without setup networking."""
+
+    @patch(
+        "monitor.services.factory_reset_service.privileged.should_use_helper",
+        return_value=True,
+    )
+    @patch(
+        "monitor.services.factory_reset_service.privileged.request",
+        return_value={"returncode": 0},
+    )
+    def test_attempt_reboot_uses_privileged_helper(
+        self, mock_request, mock_should_use_helper, tmp_path
+    ):
+        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+
+        assert svc._attempt_reboot() is True
+
+        mock_request.assert_called_once_with("system.reboot", timeout=20)
+
+    @patch(
+        "monitor.services.factory_reset_service.privileged.should_use_helper",
+        return_value=True,
+    )
+    @patch(
+        "monitor.services.factory_reset_service.privileged.request",
+        side_effect=privileged.PrivilegedHelperError("helper denied reboot"),
+    )
+    def test_attempt_reboot_returns_false_when_helper_rejects(
+        self, mock_request, mock_should_use_helper, tmp_path
+    ):
+        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+
+        assert svc._attempt_reboot() is False
+
+    def test_post_reset_recovery_starts_hotspot_when_reboot_fails(self, tmp_path):
+        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+
+        with (
+            patch.object(svc, "_attempt_reboot", return_value=False) as reboot,
+            patch.object(svc, "_start_setup_hotspot", return_value=True) as hotspot,
+        ):
+            svc._run_post_reset_recovery()
+
+        reboot.assert_called_once()
+        hotspot.assert_called_once()
+
+    @patch(
+        "monitor.services.factory_reset_service.privileged.should_use_helper",
+        return_value=True,
+    )
+    @patch(
+        "monitor.services.factory_reset_service.privileged.request",
+        return_value={"returncode": 0},
+    )
+    def test_start_setup_hotspot_uses_privileged_helper(
+        self, mock_request, mock_should_use_helper, tmp_path
+    ):
+        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+
+        assert svc._start_setup_hotspot() is True
+
+        mock_request.assert_called_once_with("hotspot.start", timeout=90)
+
+    @patch(
+        "monitor.services.factory_reset_service.privileged.should_use_helper",
+        return_value=False,
+    )
+    @patch("monitor.services.factory_reset_service.subprocess.run")
+    def test_start_setup_hotspot_restarts_systemd_without_helper(
+        self, mock_run, mock_should_use_helper, tmp_path
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        svc = FactoryResetService(MagicMock(), MagicMock(), str(tmp_path))
+
+        assert svc._start_setup_hotspot() is True
+
+        mock_run.assert_called_once_with(
+            ["systemctl", "restart", "monitor-hotspot.service"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )

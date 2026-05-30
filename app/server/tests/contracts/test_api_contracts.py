@@ -504,7 +504,7 @@ class TestSetupCompleteContract:
         )
         resp = client.post("/api/v1/setup/complete")
         data = resp.get_json()
-        _assert_has_fields(data, {"ip", "hostname"})
+        _assert_has_fields(data, {"ip", "hostname", "network_mode"})
 
     def test_error_when_no_wifi(self, app, client):
         # Reset pending WiFi

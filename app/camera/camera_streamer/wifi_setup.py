@@ -27,7 +27,7 @@ import threading
 import time
 from pathlib import Path
 
-from camera_streamer import led, wifi
+from camera_streamer import led, privileged, wifi
 from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
 
 log = logging.getLogger("camera-streamer.wifi-setup")
@@ -38,6 +38,7 @@ CONNECT_DELAY = 3
 HOTSPOT_SCRIPT = "/opt/camera/scripts/camera-hotspot.sh"
 BLOCKED_SETUP_HOTSPOT_PASSWORDS = {"homecamera", "homemonitor"}
 MIN_SETUP_HOTSPOT_PASSWORD_LENGTH = 12
+MAX_SETUP_HOTSPOT_PASSWORD_LENGTH = 63
 
 # Template directory (adjacent to this module)
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -212,6 +213,16 @@ class WifiSetupServer:
         network. If connection fails, the script restarts the AP.
         Returns (success, error_message).
         """
+        if privileged.should_use_helper():
+            try:
+                privileged.request(
+                    "hotspot.connect",
+                    {"ssid": ssid, "password": password},
+                    timeout=90,
+                )
+                return True, ""
+            except privileged.PrivilegedHelperError as e:
+                return False, str(e)
         try:
             result = subprocess.run(
                 [self._hotspot_script, "connect", ssid, password],
@@ -243,6 +254,21 @@ class WifiSetupServer:
                 "Setup hotspot password must be at least "
                 f"{MIN_SETUP_HOTSPOT_PASSWORD_LENGTH} characters"
             )
+        if len(password) > MAX_SETUP_HOTSPOT_PASSWORD_LENGTH:
+            raise ValueError(
+                "Setup hotspot password must be no more than "
+                f"{MAX_SETUP_HOTSPOT_PASSWORD_LENGTH} characters"
+            )
+        if privileged.should_use_helper():
+            try:
+                privileged.request(
+                    "hotspot.set_password",
+                    {"password": password},
+                    timeout=20,
+                )
+                return
+            except privileged.PrivilegedHelperError as exc:
+                raise OSError(str(exc)) from exc
         path = os.path.join(self._config.data_dir, "config", "camera-hotspot.psk")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
@@ -285,28 +311,40 @@ class WifiSetupServer:
     def rescan(self):
         """Rescan by briefly dropping AP via hotspot script, scanning, then restarting."""
         log.info("Rescan requested — stopping hotspot briefly")
-        try:
-            subprocess.run(
-                [self._hotspot_script, "stop"],
-                capture_output=True,
-                timeout=10,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            wifi.stop_hotspot()
+        if privileged.should_use_helper():
+            try:
+                privileged.request("hotspot.stop", timeout=30)
+            except privileged.PrivilegedHelperError as e:
+                log.warning("Privileged hotspot stop failed during rescan: %s", e)
+        else:
+            try:
+                subprocess.run(
+                    [self._hotspot_script, "stop"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                wifi.stop_hotspot()
 
         time.sleep(2)
         self._cached_networks = wifi.scan_networks(self._wifi_interface)
         log.info("Rescan found %d networks", len(self._cached_networks))
         time.sleep(1)
 
-        try:
-            subprocess.run(
-                [self._hotspot_script, "start"],
-                capture_output=True,
-                timeout=30,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            wifi.start_hotspot(self._wifi_interface)
+        if privileged.should_use_helper():
+            try:
+                privileged.request("hotspot.start", timeout=90)
+            except privileged.PrivilegedHelperError as e:
+                log.warning("Privileged hotspot start failed during rescan: %s", e)
+        else:
+            try:
+                subprocess.run(
+                    [self._hotspot_script, "start"],
+                    capture_output=True,
+                    timeout=30,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                wifi.start_hotspot(self._wifi_interface)
 
         return self._cached_networks
 
@@ -443,16 +481,38 @@ def _make_handler(config, setup_server):
                             400,
                         )
                         return
+                    if (
+                        len(setup_hotspot_password.strip())
+                        > MAX_SETUP_HOTSPOT_PASSWORD_LENGTH
+                    ):
+                        self._json_response(
+                            {
+                                "error": "Setup hotspot password required "
+                                f"(max {MAX_SETUP_HOTSPOT_PASSWORD_LENGTH} characters)"
+                            },
+                            400,
+                        )
+                        return
 
-                    setup_server.save_and_connect(
-                        ssid,
-                        password,
-                        server_ip,
-                        server_port,
-                        admin_username=admin_username,
-                        admin_password=admin_password,
-                        setup_hotspot_password=setup_hotspot_password,
-                    )
+                    try:
+                        setup_server.save_and_connect(
+                            ssid,
+                            password,
+                            server_ip,
+                            server_port,
+                            admin_username=admin_username,
+                            admin_password=admin_password,
+                            setup_hotspot_password=setup_hotspot_password,
+                        )
+                    except ValueError as exc:
+                        self._json_response({"error": str(exc)}, 400)
+                        return
+                    except OSError as exc:
+                        log.warning("Failed to save setup settings: %s", exc)
+                        self._json_response(
+                            {"error": "Failed to save setup settings"}, 500
+                        )
+                        return
                     self._json_response(
                         {
                             "status": "connecting",
