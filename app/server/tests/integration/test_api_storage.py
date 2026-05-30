@@ -105,12 +105,15 @@ class TestSelectDevice:
 
         app.storage_service._storage_manager = MagicMock()
 
-        response = client.post(
-            "/api/v1/storage/select",
-            json={
-                "device_path": "/dev/sda1",
-            },
-        )
+        with patch.object(
+            app.storage_service, "verify_recordings_dir", return_value=(True, "")
+        ):
+            response = client.post(
+                "/api/v1/storage/select",
+                json={
+                    "device_path": "/dev/sda1",
+                },
+            )
         assert response.status_code == 200
         data = response.get_json()
         assert data["recordings_dir"] == "/mnt/usb/recordings"

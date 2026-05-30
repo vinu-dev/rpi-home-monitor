@@ -165,7 +165,10 @@ class TestSelectDevice:
         mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
 
-        result, err, status = svc.select_device("/dev/sda1", user="admin", ip="1.2.3.4")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            result, err, status = svc.select_device(
+                "/dev/sda1", user="admin", ip="1.2.3.4"
+            )
         assert status == 200
         assert err == ""
         assert result["recordings_dir"] == "/mnt/usb/recordings"
@@ -198,7 +201,8 @@ class TestSelectDevice:
         mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
 
-        svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            svc.select_device("/dev/sda1")
         store.get_settings.assert_called()
         settings = store.get_settings.return_value
         assert settings.usb_uuid == "usb-uuid"
@@ -285,7 +289,8 @@ class TestAuditFailSilent:
         mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
 
-        result, err, status = svc.select_device("/dev/sda1", user="admin")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            result, err, status = svc.select_device("/dev/sda1", user="admin")
         assert status == 200
 
     def test_no_audit_logger(self):

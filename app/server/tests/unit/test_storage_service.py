@@ -52,6 +52,7 @@ def _make_service(
             usb_label="",
             usb_recordings_dir="",
         )
+        store.get_cameras.return_value = []
     if storage_manager is None:
         storage_manager = MagicMock()
     return StorageService(
@@ -216,7 +217,8 @@ class TestSelectDeviceSuccess:
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
         svc = _make_service()
 
-        result, err, status = svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            result, err, status = svc.select_device("/dev/sda1")
 
         assert status == 200
         assert err == ""
@@ -234,9 +236,60 @@ class TestSelectDeviceSuccess:
         mgr = MagicMock()
         svc = _make_service(storage_manager=mgr)
 
-        svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            svc.select_device("/dev/sda1")
 
         mgr.set_recordings_dir.assert_called_once_with("/mnt/usb/recordings")
+
+    @patch(USB_PATCH)
+    def test_unwritable_usb_does_not_switch_storage_manager(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        mgr = MagicMock()
+        mgr.recordings_dir = "/data/recordings"
+        store = MagicMock()
+        settings = MagicMock(
+            usb_device="", usb_uuid="", usb_label="", usb_recordings_dir=""
+        )
+        store.get_settings.return_value = settings
+        store.get_cameras.return_value = []
+        audit = MagicMock()
+        svc = _make_service(storage_manager=mgr, store=store, audit=audit)
+
+        with patch.object(
+            svc, "verify_recordings_dir", return_value=(False, "Input/output error")
+        ):
+            result, err, status = svc.select_device(
+                "/dev/sda1", user="admin", ip="10.0.0.1"
+            )
+
+        assert status == 409
+        assert result["recordings_dir"] == "/data/recordings"
+        assert "internal storage" in err
+        mgr.set_recordings_dir.assert_not_called()
+        store.save_settings.assert_not_called()
+        audit.log_event.assert_called_once()
+        assert audit.log_event.call_args[0][0] == "USB_STORAGE_REJECTED"
+
+    @patch(USB_PATCH)
+    def test_select_device_verifies_usb_before_switching(self, mock_usb):
+        mock_usb.detect_devices.return_value = [_make_device()]
+        mock_usb.mount_device.return_value = (True, "")
+        mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
+        mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
+        svc = _make_service()
+
+        with patch.object(
+            svc, "verify_recordings_dir", return_value=(True, "")
+        ) as verify:
+            result, err, status = svc.select_device("/dev/sda1")
+
+        assert status == 200
+        assert err == ""
+        assert result["recordings_dir"] == "/mnt/usb/recordings"
+        verify.assert_called_once_with("/mnt/usb/recordings")
 
     @patch(USB_PATCH)
     def test_success_saves_config(self, mock_usb):
@@ -251,7 +304,8 @@ class TestSelectDeviceSuccess:
         store.get_settings.return_value = settings
         svc = _make_service(store=store)
 
-        svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            svc.select_device("/dev/sda1")
 
         assert settings.usb_device == "/dev/sda1"
         assert settings.usb_uuid == "usb-uuid"
@@ -268,7 +322,8 @@ class TestSelectDeviceSuccess:
         audit = MagicMock()
         svc = _make_service(audit=audit)
 
-        svc.select_device("/dev/sda1", user="admin", ip="10.0.0.1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            svc.select_device("/dev/sda1", user="admin", ip="10.0.0.1")
 
         audit.log_event.assert_called_once()
         call_args = audit.log_event.call_args
@@ -511,7 +566,8 @@ class TestAuditFailureResilience:
         audit.log_event.side_effect = RuntimeError("audit db locked")
         svc = _make_service(audit=audit)
 
-        result, err, status = svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            result, err, status = svc.select_device("/dev/sda1")
 
         assert status == 200
 
@@ -552,6 +608,7 @@ class TestConfigPersistenceFailure:
         store.get_settings.side_effect = OSError("disk full")
         svc = _make_service(store=store)
 
-        result, err, status = svc.select_device("/dev/sda1")
+        with patch.object(svc, "verify_recordings_dir", return_value=(True, "")):
+            result, err, status = svc.select_device("/dev/sda1")
 
         assert status == 200

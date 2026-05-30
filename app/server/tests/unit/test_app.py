@@ -1,6 +1,9 @@
 # REQ: SWR-045; RISK: RISK-021; SEC: SC-021; TEST: TC-042
 """Tests for the Flask application factory."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 
 class TestCreateApp:
     """Test the create_app factory function."""
@@ -75,6 +78,61 @@ class TestUsbConfigResolution:
         ]
 
         assert _resolve_configured_usb(devices, "/dev/sda1", "") is None
+
+
+class TestRecordingDirSync:
+    def _fake_app(self, active_dir="/data/recordings"):
+        return SimpleNamespace(
+            storage_manager=SimpleNamespace(recordings_dir=active_dir),
+            streaming=MagicMock(recordings_dir=active_dir),
+            motion_clip_correlator=MagicMock(),
+            loop_recorder=MagicMock(),
+            offsite_backup_service=MagicMock(),
+            timestamp_backfill_service=MagicMock(),
+        )
+
+    def test_dependents_use_effective_dir_after_reentrant_fallback(self):
+        from monitor import _apply_recording_dir_change
+
+        app = self._fake_app(active_dir="/mnt/recordings/home-monitor-recordings")
+
+        def update_recordings_dir(new_dir):
+            app.streaming.recordings_dir = new_dir
+            if new_dir == "/mnt/recordings/home-monitor-recordings":
+                app.storage_manager.recordings_dir = "/data/recordings"
+                app.streaming.recordings_dir = "/data/recordings"
+
+        app.streaming.update_recordings_dir.side_effect = update_recordings_dir
+
+        _apply_recording_dir_change(app, "/mnt/recordings/home-monitor-recordings")
+
+        app.motion_clip_correlator.set_recordings_dir.assert_called_once_with(
+            "/data/recordings"
+        )
+        app.loop_recorder.set_base_dir.assert_called_once_with("/data/recordings")
+        app.offsite_backup_service.set_recordings_dir.assert_called_once_with(
+            "/data/recordings"
+        )
+        app.timestamp_backfill_service.set_recordings_dir.assert_called_once_with(
+            "/data/recordings"
+        )
+
+    def test_dependents_use_requested_dir_when_no_fallback_occurs(self):
+        from monitor import _apply_recording_dir_change
+
+        app = self._fake_app(active_dir="/mnt/recordings/home-monitor-recordings")
+        app.streaming.update_recordings_dir.side_effect = lambda new_dir: setattr(
+            app.streaming, "recordings_dir", new_dir
+        )
+
+        _apply_recording_dir_change(app, "/mnt/recordings/home-monitor-recordings")
+
+        app.loop_recorder.set_base_dir.assert_called_once_with(
+            "/mnt/recordings/home-monitor-recordings"
+        )
+        app.timestamp_backfill_service.set_recordings_dir.assert_called_once_with(
+            "/mnt/recordings/home-monitor-recordings"
+        )
 
 
 class TestBlueprintRegistration:
