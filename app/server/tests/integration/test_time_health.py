@@ -32,6 +32,15 @@ class TestTimeHealthSummary:
             "rtc_time": "Sat 2026-05-04 12:00:00 UTC",
         }
         app.settings_service.get_timesync_status = lambda: {"last_sync_time": ""}
+        app.storage_manager.get_storage_stats = lambda: {
+            "percent": 10,
+            "free_gb": 90,
+            "total_gb": 100,
+            "retention_days": 7,
+            "recordings_dir": "/data/recordings",
+            "storage_health": "ok",
+            "storage_error": "",
+        }
 
         client = logged_in_client()
         response = client.get("/api/v1/system/summary")
