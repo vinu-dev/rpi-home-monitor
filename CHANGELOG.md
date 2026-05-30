@@ -6,6 +6,29 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.6.1] — 2026-05-30
+
+Patch release for reliability fixes found after the 1.6.0 release, with the
+production build fixes needed for signed server and camera artefacts.
+
+### Fixed
+- **Yocto production and development builds** now serialize the `wpa_supplicant`
+  and `lvm2` install steps that were racing while creating shared destination
+  directories on high-parallelism build hosts.
+- **USB storage recovery** now keeps recorder services and storage state in sync
+  after device reconnect failures, filesystem-detection edge cases, runtime
+  fallback, and storage-selection flow issues.
+- **First setup recovery** now handles factory-reset recovery paths more
+  predictably.
+- **OTA staging** no longer reuses stale staged update bundles.
+- **Camera local settings** now handle authenticated Wi-Fi scans, password
+  confirmation, and NTP status rendering correctly.
+- **Server session layout** now keeps the security-related session UI aligned
+  with the current control-panel templates.
+
+### Tests
+- Stabilized the server time-health summary integration coverage.
+
 ## [1.6.0] — 2026-05-12
 
 Feature and security release. Ships the rebuilt local control-panel UI for the
