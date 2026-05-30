@@ -34,7 +34,7 @@ def detect_devices() -> list[dict]:
                 "-J",
                 "-b",
                 "-o",
-                "NAME,PATH,SIZE,FSTYPE,MOUNTPOINT,MODEL,LABEL,TRAN,TYPE",
+                "NAME,PATH,SIZE,FSTYPE,MOUNTPOINT,MOUNTPOINTS,MODEL,LABEL,UUID,TRAN,TYPE",
             ],
             capture_output=True,
             text=True,
@@ -71,22 +71,30 @@ def _device_info(part, parent):
     """Build device info dict from lsblk JSON."""
     fstype = part.get("fstype") or ""
     device_path = part.get("path", f"/dev/{part.get('name', '')}")
+    label = part.get("label") or ""
+    uuid = part.get("uuid") or ""
 
     # lsblk may not report fstype for non-root users — fall back to blkid
-    if not fstype and device_path:
-        fstype = _get_fstype_blkid(device_path)
+    if device_path and (not fstype or not label or not uuid):
+        props = _get_blkid_properties(device_path)
+        fstype = fstype or props.get("TYPE", "")
+        label = label or props.get("LABEL", "")
+        uuid = uuid or props.get("UUID", "")
 
     size_bytes = int(part.get("size") or 0)
+    filesystem_status = _filesystem_status(fstype)
     return {
         "name": part.get("name", ""),
         "path": device_path,
         "size": _human_size(size_bytes),
         "size_bytes": size_bytes,
         "fstype": fstype,
-        "mountpoint": part.get("mountpoint") or "",
+        "mountpoint": _mountpoint(part),
         "model": (parent.get("model") or "USB Drive").strip(),
-        "label": part.get("label") or "",
-        "supported": fstype.lower() in SUPPORTED_FS,
+        "label": label,
+        "uuid": uuid,
+        "filesystem_status": filesystem_status,
+        "supported": filesystem_status == "supported",
     }
 
 
@@ -95,18 +103,59 @@ def _get_fstype_blkid(device_path):
 
     Falls back gracefully if blkid is unavailable or fails.
     """
-    try:
-        result = subprocess.run(
-            ["blkid", "-s", "TYPE", "-o", "value", device_path],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+    return _get_blkid_properties(device_path).get("TYPE", "")
+
+
+def _get_blkid_properties(device_path):
+    """Return blkid metadata for a device using cache and direct probing."""
+    for cmd in (
+        ["blkid", "-o", "export", device_path],
+        ["blkid", "-p", "-o", "export", device_path],
+    ):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
         if result.returncode == 0:
-            return result.stdout.strip()
-    except (subprocess.TimeoutExpired, OSError):
-        pass
+            props = _parse_blkid_export(result.stdout)
+            if props:
+                return props
+    return {}
+
+
+def _parse_blkid_export(output):
+    props = {}
+    for raw_line in output.splitlines():
+        if "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        props[key.strip()] = value.strip()
+    return props
+
+
+def _mountpoint(part):
+    mountpoint = part.get("mountpoint") or ""
+    mountpoints = part.get("mountpoints")
+    if mountpoint:
+        return mountpoint
+    if isinstance(mountpoints, list):
+        return next((mp for mp in mountpoints if mp), "")
+    if isinstance(mountpoints, str):
+        return mountpoints.strip()
     return ""
+
+
+def _filesystem_status(fstype):
+    if not fstype:
+        return "unknown"
+    if fstype.lower() in SUPPORTED_FS:
+        return "supported"
+    return "unsupported"
 
 
 def _human_size(nbytes):

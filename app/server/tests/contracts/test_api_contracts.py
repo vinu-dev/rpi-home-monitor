@@ -1688,6 +1688,7 @@ class TestStorageDevicesContract:
                 "model": "USB",
                 "size": "64G",
                 "fstype": "ext4",
+                "filesystem_status": "supported",
                 "supported": True,
             },
         ]
@@ -1699,7 +1700,14 @@ class TestStorageDevicesContract:
             dev = data["devices"][0]
             _assert_has_fields(
                 dev,
-                {"path", "model", "size", "fstype", "supported"},
+                {
+                    "path",
+                    "model",
+                    "size",
+                    "fstype",
+                    "filesystem_status",
+                    "supported",
+                },
             )
 
 

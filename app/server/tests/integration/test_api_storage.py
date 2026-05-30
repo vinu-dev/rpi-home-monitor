@@ -150,7 +150,7 @@ class TestSelectDevice:
     @patch(USB_PATCH)
     def test_unsupported_filesystem(self, mock_usb, logged_in_client):
         client = logged_in_client()
-        device = _make_device("/dev/sda1", fstype="ntfs", supported=False)
+        device = _make_device("/dev/sda1", fstype="btrfs", supported=False)
         mock_usb.detect_devices.return_value = [device]
 
         response = client.post(
@@ -162,7 +162,26 @@ class TestSelectDevice:
         assert response.status_code == 400
         data = response.get_json()
         assert data["needs_format"] is True
-        assert data["fstype"] == "ntfs"
+        assert data["fstype"] == "btrfs"
+
+    @patch(USB_PATCH)
+    def test_unknown_filesystem_asks_for_rescan_not_format(
+        self, mock_usb, logged_in_client
+    ):
+        client = logged_in_client()
+        device = _make_device("/dev/sda1", fstype="", supported=False)
+        mock_usb.detect_devices.return_value = [device]
+
+        response = client.post(
+            "/api/v1/storage/select",
+            json={
+                "device_path": "/dev/sda1",
+            },
+        )
+        assert response.status_code == 409
+        data = response.get_json()
+        assert data["needs_format"] is False
+        assert data["filesystem_status"] == "unknown"
 
     @patch(USB_PATCH)
     def test_mount_failure(self, mock_usb, logged_in_client):

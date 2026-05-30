@@ -276,10 +276,38 @@ def test_device_info_builds_dict():
     assert info["mountpoint"] == "/mnt/usb"
     assert info["model"] == "SanDisk"
     assert info["label"] == "DATA"
+    assert info["filesystem_status"] == "supported"
     assert info["supported"] is True
 
 
-def test_device_info_missing_fields():
+@patch("monitor.services.usb._get_blkid_properties")
+def test_device_info_uses_blkid_export_when_lsblk_metadata_is_missing(mock_blkid):
+    mock_blkid.return_value = {
+        "TYPE": "ext4",
+        "LABEL": "HomeMonitor",
+        "UUID": "e9a698af",
+    }
+    part = {
+        "name": "sda1",
+        "path": "/dev/sda1",
+        "size": 1073741824,
+        "fstype": "",
+        "mountpoint": "",
+        "label": "",
+    }
+    parent = {"model": "Storage Device"}
+
+    info = _device_info(part, parent)
+
+    assert info["fstype"] == "ext4"
+    assert info["label"] == "HomeMonitor"
+    assert info["uuid"] == "e9a698af"
+    assert info["filesystem_status"] == "supported"
+    assert info["supported"] is True
+
+
+@patch("monitor.services.usb._get_blkid_properties", return_value={})
+def test_device_info_missing_fields(mock_blkid):
     """Missing or None fields get safe defaults."""
     part = {"name": "sdb1"}
     parent = {}
@@ -292,10 +320,12 @@ def test_device_info_missing_fields():
     assert info["mountpoint"] == ""
     assert info["model"] == "USB Drive"
     assert info["label"] == ""
+    assert info["filesystem_status"] == "unknown"
     assert info["supported"] is False
 
 
-def test_device_info_null_mountpoint():
+@patch("monitor.services.usb._get_blkid_properties", return_value={})
+def test_device_info_null_mountpoint(mock_blkid):
     """None mountpoint converts to empty string."""
     part = {
         "name": "sda1",

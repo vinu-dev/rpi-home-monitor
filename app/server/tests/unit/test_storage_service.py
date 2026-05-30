@@ -136,7 +136,7 @@ class TestSelectDeviceValidation:
     @patch(USB_PATCH)
     def test_unsupported_filesystem_returns_400_with_needs_format(self, mock_usb):
         mock_usb.detect_devices.return_value = [
-            _make_device(fstype="ntfs", supported=False),
+            _make_device(fstype="btrfs", supported=False),
         ]
         svc = _make_service()
 
@@ -144,8 +144,22 @@ class TestSelectDeviceValidation:
 
         assert status == 400
         assert result["needs_format"] is True
-        assert result["fstype"] == "ntfs"
+        assert result["fstype"] == "btrfs"
         assert "not supported" in err
+
+    @patch(USB_PATCH)
+    def test_unknown_filesystem_returns_rescan_error_not_format_prompt(self, mock_usb):
+        mock_usb.detect_devices.return_value = [
+            _make_device(fstype="", supported=False),
+        ]
+        svc = _make_service()
+
+        result, err, status = svc.select_device("/dev/sda1")
+
+        assert status == 409
+        assert result["needs_format"] is False
+        assert result["filesystem_status"] == "unknown"
+        assert "Rescan" in err
 
     @patch(USB_PATCH)
     def test_mount_failure_returns_500(self, mock_usb):
