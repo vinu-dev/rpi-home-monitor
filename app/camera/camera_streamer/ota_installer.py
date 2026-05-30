@@ -39,6 +39,9 @@ import shutil
 import tempfile
 import time
 
+from camera_streamer import ota_policy
+from camera_streamer.release_version import release_version
+
 log = logging.getLogger("camera-streamer.ota-installer")
 
 SPOOL_DIR = "/var/lib/camera-ota"
@@ -325,6 +328,22 @@ def stage_bundle(src_fileobj, total_bytes, progress_cb=None):
         write_status(STATE_ERROR, error="Incomplete upload")
         return False, "Incomplete upload"
 
+    target_version = extract_bundle_version(tmp)
+    decision = ota_policy.classify_update(release_version(), target_version)
+    if decision.blocked:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        write_status(
+            STATE_ERROR,
+            error=decision.reason,
+            target_version=target_version,
+            current_version=decision.current_version,
+            update_relation=decision.relation,
+        )
+        return False, decision.reason
+
     try:
         os.replace(tmp, dst)
     except OSError as exc:
@@ -334,8 +353,13 @@ def stage_bundle(src_fileobj, total_bytes, progress_cb=None):
     # Surface the target version so the UI can render "1.0.0 → 1.1.0"
     # alongside the staged bundle. Empty string is acceptable — older
     # bundles without a version field still install.
-    target_version = extract_bundle_version(dst)
-    write_status(STATE_DOWNLOADING, progress=40, target_version=target_version)
+    write_status(
+        STATE_DOWNLOADING,
+        progress=40,
+        target_version=target_version,
+        current_version=decision.current_version,
+        update_relation=decision.relation,
+    )
     log.info(
         "Bundle staged at %s (%d bytes, version=%s)",
         dst,

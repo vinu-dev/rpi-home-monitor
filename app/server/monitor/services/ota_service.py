@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import threading
 
+from monitor import ota_policy
 from monitor.services import privileged
 
 log = logging.getLogger("monitor.ota-service")
@@ -115,7 +116,7 @@ class OTAService:
     def staging_dir(self):
         return os.path.join(self._data_dir, "ota", "staging")
 
-    def get_status(self, device_id="server"):
+    def get_status(self, device_id="server", current_version=""):
         """Get update status for a device.
 
         The in-memory status dict is transient — it vanishes on restart.
@@ -126,18 +127,27 @@ class OTAService:
         """
         with self._status_lock:
             status = self._status.get(device_id)
-            if status is not None:
-                return dict(status)
+            status_copy = dict(status) if status is not None else None
+        if status_copy is not None:
+            if device_id == "server":
+                return self._apply_staged_policy(status_copy, current_version)
+            return status_copy
 
         default = {"state": "idle", "version": "", "progress": 0, "error": ""}
         if device_id == "server":
             staged = self._find_staged_bundle()
             if staged:
+                staged_path = os.path.join(self.staging_dir, staged)
+                target_version = extract_bundle_version(staged_path)
+                decision = ota_policy.classify_update(current_version, target_version)
+                if decision.blocked:
+                    self._discard_staged_bundle(staged, decision.reason)
+                    default["error"] = decision.reason
+                    return default
                 default["state"] = "staged"
                 default["staged_filename"] = staged
-                default["target_version"] = extract_bundle_version(
-                    os.path.join(self.staging_dir, staged)
-                )
+                default["target_version"] = target_version
+                default["update_relation"] = decision.relation
         return default
 
     def is_busy(self, device_id="server"):
@@ -210,6 +220,39 @@ class OTAService:
         entries.sort(reverse=True)
         return entries[0][1]
 
+    def _apply_staged_policy(self, status, current_version=""):
+        """Apply persisted-staging safety to an in-memory status snapshot."""
+        if status.get("state") != "staged":
+            return status
+        filename = status.get("staged_filename") or self._find_staged_bundle()
+        if not filename:
+            return status
+        path = os.path.join(self.staging_dir, filename)
+        target_version = status.get("target_version") or extract_bundle_version(path)
+        decision = ota_policy.classify_update(current_version, target_version)
+        if decision.blocked:
+            self._discard_staged_bundle(filename, decision.reason)
+            self.set_status("server", "idle", error=decision.reason)
+            return {
+                "state": "idle",
+                "version": "",
+                "progress": 0,
+                "error": decision.reason,
+            }
+        status["target_version"] = target_version
+        status["update_relation"] = decision.relation
+        return status
+
+    def _discard_staged_bundle(self, filename, reason):
+        """Remove one staged server bundle that failed OTA policy."""
+        try:
+            os.unlink(os.path.join(self.staging_dir, filename))
+            log.warning("Discarded staged OTA bundle %s: %s", filename, reason)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            log.warning("Failed to discard staged OTA bundle %s: %s", filename, exc)
+
     def set_status(self, device_id, state, **kwargs):
         """Update status for a device."""
         with self._status_lock:
@@ -238,7 +281,7 @@ class OTAService:
         except OSError as e:
             return False, 0, str(e)
 
-    def stage_bundle(self, source_path, filename, user="", ip=""):
+    def stage_bundle(self, source_path, filename, user="", ip="", current_version=""):
         """Stage a .swu bundle for installation.
 
         Validates file extension and size, moves to staging directory.
@@ -276,6 +319,11 @@ class OTAService:
                 f"Insufficient disk space (free: {free}, need: {size + MIN_FREE_SPACE})",
             )
 
+        target_version = extract_bundle_version(source_path)
+        decision = ota_policy.classify_update(current_version, target_version)
+        if decision.blocked:
+            return None, decision.reason
+
         # Create staging directory
         os.makedirs(self.staging_dir, exist_ok=True)
         staged_path = os.path.join(self.staging_dir, filename)
@@ -299,7 +347,6 @@ class OTAService:
                 pass
             return None, f"Failed to stage file: {e}"
 
-        target_version = extract_bundle_version(staged_path)
         self.set_status(
             "server",
             "staged",
@@ -308,6 +355,7 @@ class OTAService:
             error="",
             staged_filename=filename,
             target_version=target_version,
+            update_relation=decision.relation,
         )
         self._log_audit(
             "OTA_STAGED",

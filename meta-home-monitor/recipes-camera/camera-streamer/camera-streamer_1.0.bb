@@ -19,6 +19,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/camera:${THISDIR}/../../../a
 SRC_URI = " \
     file://camera_streamer/ \
     file://release_version/release_version.py \
+    file://ota_policy/ota_policy.py \
     file://config/camera-streamer.service \
     file://config/camera-privileged-helper.service \
     file://config/camera-hotspot.service \
@@ -74,6 +75,12 @@ do_install() {
     # The file:// fetcher preserves the subdir name under WORKDIR.
     install -m 0644 ${WORKDIR}/release_version/release_version.py \
         ${D}/opt/camera/camera_streamer/release_version.py
+
+    # Shared OTA policy helper: downgrade/stale-bundle decisions must
+    # match monitor-server exactly so server-pushed and direct-camera
+    # updates fail closed the same way.
+    install -m 0644 ${WORKDIR}/ota_policy/ota_policy.py \
+        ${D}/opt/camera/camera_streamer/ota_policy.py
 
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default

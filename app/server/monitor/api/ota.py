@@ -25,7 +25,9 @@ import threading
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from monitor import ota_policy
 from monitor.auth import admin_required, csrf_protect, login_required
+from monitor.release_version import release_version
 from monitor.services import ota_service
 
 ota_bp = Blueprint("ota", __name__)
@@ -57,6 +59,15 @@ def _latest_camera_bundle(ota, camera_id):
     return entries[0].path, entries[0].name
 
 
+def _discard_camera_bundle(ota, camera_id, reason):
+    """Remove a staged camera bundle that failed OTA policy."""
+    try:
+        shutil.rmtree(_camera_inbox_dir(ota, camera_id), ignore_errors=True)
+    except OSError:
+        pass
+    ota.set_status(camera_id, "idle", progress=0, error=reason)
+
+
 @ota_bp.route("/status", methods=["GET"])
 @login_required
 def get_status():
@@ -67,11 +78,10 @@ def get_status():
     # Live read from /etc/os-release VERSION_ID, not the persisted
     # Settings.firmware_version (which is legacy plumbing — see
     # docs/architecture/versioning.md §C).
-    from monitor.release_version import release_version
-
+    current_server_version = release_version()
     server_status = {
-        "current_version": release_version(),
-        **ota.get_status("server"),
+        "current_version": current_server_version,
+        **ota.get_status("server", current_version=current_server_version),
     }
     server_status["verification"] = ota.get_verification_posture()
 
@@ -94,12 +104,23 @@ def get_status():
         # camera so the "Push" button can be enabled without the user
         # needing to re-upload after a page refresh.
         path, fn = _latest_camera_bundle(ota, cam.id)
+        target_version = ""
+        if path:
+            target_version = ota_service.extract_bundle_version(path)
+            decision = ota_policy.classify_update(cam.firmware_version, target_version)
+            if decision.blocked:
+                _discard_camera_bundle(ota, cam.id, decision.reason)
+                path = None
+                fn = ""
+                entry["error"] = decision.reason
+            else:
+                entry["update_relation"] = decision.relation
         entry["staged_filename"] = fn or ""
         # Read the target version off the staged bundle (if any). The
         # admin needs to see what they're about to push, not just the
         # filename — dev tagging isn't consistent enough to trust.
         if path and not entry.get("target_version"):
-            entry["target_version"] = ota_service.extract_bundle_version(path)
+            entry["target_version"] = target_version
         result["cameras"].append(entry)
 
     return jsonify(result), 200
@@ -139,7 +160,13 @@ def upload_server_image():
     except OSError as e:
         return jsonify({"error": f"Upload failed: {e}"}), 500
 
-    staged_path, err = ota.stage_bundle(tmp_path, file.filename, user=user, ip=ip)
+    staged_path, err = ota.stage_bundle(
+        tmp_path,
+        file.filename,
+        user=user,
+        ip=ip,
+        current_version=release_version(),
+    )
     if err:
         try:
             os.unlink(tmp_path)
@@ -202,9 +229,20 @@ def install_server_image():
         return jsonify({"error": "No staged update found"}), 404
     candidates.sort(reverse=True)
     bundle_path = os.path.join(staging, candidates[0][1])
+    target_version = ota_service.extract_bundle_version(bundle_path)
+    decision = ota_policy.classify_update(release_version(), target_version)
+    if decision.blocked:
+        try:
+            os.unlink(bundle_path)
+        except OSError:
+            pass
+        ota.set_status("server", "idle", progress=0, error=decision.reason)
+        return jsonify({"error": decision.reason}), 409
+
     ok, err = ota.install_bundle(bundle_path, user=user, ip=ip)
     if not ok:
         return jsonify({"error": err}), 500
+    ota.clean_staging()
 
     # The button says "Install & Reboot", so actually reboot. We flush
     # the HTTP response first (the client needs the 200 to transition
@@ -284,6 +322,14 @@ def upload_camera_image(camera_id):
         return jsonify({"error": "Uploaded file is empty"}), 400
 
     target_version = ota_service.extract_bundle_version(target_path)
+    decision = ota_policy.classify_update(camera.firmware_version, target_version)
+    if decision.blocked:
+        try:
+            os.unlink(target_path)
+        except OSError:
+            pass
+        return jsonify({"error": decision.reason}), 400
+
     ota.set_status(
         camera_id,
         "staged",
@@ -292,6 +338,7 @@ def upload_camera_image(camera_id):
         error="",
         filename=file.filename,
         target_version=target_version,
+        update_relation=decision.relation,
     )
     audit = getattr(current_app, "audit", None)
     if audit:
@@ -417,6 +464,12 @@ def push_camera_update(camera_id):
         return jsonify(
             {"error": "No bundle uploaded for this camera — upload a .swu first"}
         ), 409
+
+    target_version = ota_service.extract_bundle_version(bundle_path)
+    decision = ota_policy.classify_update(camera.firmware_version, target_version)
+    if decision.blocked:
+        _discard_camera_bundle(ota, camera_id, decision.reason)
+        return jsonify({"error": decision.reason}), 409
 
     status = ota.get_status(camera_id)
     if status.get("state") in {"uploading", "installing"}:
