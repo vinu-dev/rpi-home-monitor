@@ -401,6 +401,8 @@ p {
       <input type="text" id="in-admin-user" value="admin" placeholder="admin">
       <label>Password</label>
       <input type="password" id="in-admin-pw" placeholder="Password (min 12 characters)">
+      <label>Confirm password</label>
+      <input type="password" id="in-admin-pw-confirm" placeholder="Confirm camera password">
       <div class="hint">You'll use these credentials to access the camera's status page and change settings later.</div>
     </div>
 
@@ -859,6 +861,7 @@ function doConnect() {
   var port = $('in-port').value.trim() || '8554';
   var adminUser = $('in-admin-user').value.trim() || 'admin';
   var adminPw = $('in-admin-pw').value;
+  var adminPwConfirm = $('in-admin-pw-confirm').value;
   var hotspotPw = $('in-hotspot-pw').value;
   var hotspotPwConfirm = $('in-hotspot-pw-confirm').value;
 
@@ -871,6 +874,10 @@ function doConnect() {
   }
   if (!adminPw || adminPw.length < 12) {
     alert('Set a password (at least 12 characters)');
+    return;
+  }
+  if (adminPw !== adminPwConfirm) {
+    alert('Camera passwords do not match');
     return;
   }
   if (!hotspotPw || hotspotPw.length < 12) {
@@ -891,6 +898,7 @@ function doConnect() {
       ssid: ssid, password: pass,
       server_ip: server, server_port: port,
       admin_username: adminUser, admin_password: adminPw,
+      admin_password_confirm: adminPwConfirm,
       setup_hotspot_password: hotspotPw
     })
   })

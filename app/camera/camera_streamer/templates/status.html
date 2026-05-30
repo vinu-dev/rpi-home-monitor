@@ -1365,6 +1365,7 @@ details[open] summary {
     <div class="details-body">
       <div class="field"><label>Current password</label><input class="input" id="pw-cur" type="password"></div>
       <div class="field"><label>New password</label><input class="input" id="pw-new" type="password" placeholder="At least 12 characters"></div>
+      <div class="field"><label>Confirm new password</label><input class="input" id="pw-confirm" type="password" placeholder="Repeat new password"></div>
       <button class="btn btn--primary btn--full" id="btn-pw" onclick="doPassword()">Save password</button>
       <div id="pw-result"></div>
     </div>
@@ -1820,9 +1821,10 @@ function doWifi() {
 
 // ---- Password ----
 function doPassword() {
-    var cur = $("pw-cur").value, nw = $("pw-new").value;
+    var cur = $("pw-cur").value, nw = $("pw-new").value, confirmPw = $("pw-confirm").value;
     if (!cur) return setMsg("pw-result", "err", "Enter your current password.");
     if (!nw || nw.length < 12) return setMsg("pw-result", "err", "New password must be at least 12 characters.");
+    if (nw !== confirmPw) return setMsg("pw-result", "err", "New passwords do not match.");
     setBusy("btn-pw", true, "Saving…");
     setMsg("pw-result", "", "");
     fetch("/api/password", {
@@ -1834,7 +1836,7 @@ function doPassword() {
         if (d.error) setMsg("pw-result", "err", d.error);
         else {
             setMsg("pw-result", "ok", "Password changed.");
-            $("pw-cur").value = ""; $("pw-new").value = "";
+            $("pw-cur").value = ""; $("pw-new").value = ""; $("pw-confirm").value = "";
         }
     }).catch(function(){
         setBusy("btn-pw", false, "Save password");

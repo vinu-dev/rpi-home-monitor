@@ -30,16 +30,36 @@ def _trim_command_error(result, fallback: str) -> str:
     return text[:256] or fallback
 
 
-def _extract_last_sync_time(output: str) -> str:
-    """Best-effort parse of a timedatectl timesync-status timestamp line."""
+def _parse_timesync_status(output: str) -> dict:
+    """Best-effort parse of `timedatectl timesync-status` output."""
+    info = {
+        "last_sync_time": "",
+        "server": "",
+        "packet_count": None,
+        "has_sync_evidence": False,
+    }
     for raw_line in output.splitlines():
         line = raw_line.strip()
-        lowered = line.lower()
-        if lowered.startswith("last synchronized:") or lowered.startswith(
-            "last synchronization:"
-        ):
-            return line.split(":", 1)[1].strip()
-    return ""
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "server":
+            info["server"] = value
+        elif key == "packet count":
+            try:
+                info["packet_count"] = int(value)
+            except ValueError:
+                info["packet_count"] = None
+        elif key in {"last synchronized", "last synchronization"}:
+            info["last_sync_time"] = value
+
+    packet_count = info["packet_count"]
+    info["has_sync_evidence"] = bool(
+        info["last_sync_time"] or (info["server"] and (packet_count or 0) > 0)
+    )
+    return info
 
 
 def _live_firmware_version() -> str:
@@ -321,11 +341,20 @@ class SettingsService:
                     info["rtc_time"] = v
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("Failed to read time status: %s", e)
+        if info["ntp_active"] and not info["ntp_synchronized"]:
+            timesync = self.get_timesync_status()
+            if timesync.get("has_sync_evidence"):
+                info["ntp_synchronized"] = True
         return info
 
     def get_timesync_status(self) -> dict:
         """Return best-effort last-sync metadata from timedatectl."""
-        info = {"last_sync_time": ""}
+        info = {
+            "last_sync_time": "",
+            "server": "",
+            "packet_count": None,
+            "has_sync_evidence": False,
+        }
         try:
             result = subprocess.run(
                 ["timedatectl", "timesync-status", "--no-pager"],
@@ -334,7 +363,7 @@ class SettingsService:
                 timeout=5,
                 check=False,
             )
-            info["last_sync_time"] = _extract_last_sync_time(result.stdout or "")
+            info.update(_parse_timesync_status(result.stdout or ""))
         except (OSError, subprocess.SubprocessError) as e:
             log.info("Failed to read timesync status: %s", e)
         return info
