@@ -114,6 +114,8 @@ class StorageManager:
     def get_storage_stats(self) -> dict:
         """Get storage usage stats for the current recordings location."""
         rec_dir = self._recordings_dir
+        storage_health = "ok"
+        storage_error = ""
         try:
             usage = shutil.disk_usage(str(rec_dir))
             total_gb = round(usage.total / (1024**3), 2)
@@ -122,18 +124,24 @@ class StorageManager:
             percent = (
                 round(usage.used / usage.total * 100, 1) if usage.total > 0 else 0.0
             )
-        except OSError:
+        except OSError as exc:
             return {
                 "total_gb": 0,
                 "used_gb": 0,
                 "free_gb": 0,
                 "percent": 0.0,
+                "recordings_mb": 0,
                 "camera_count": 0,
                 "clip_count": 0,
+                "per_camera": {},
                 "recordings_dir": str(rec_dir),
                 "is_usb": self._is_usb_path(rec_dir),
+                "reserve_mb": self._reserve_mb,
+                "threshold_percent": self._threshold_percent,
                 "oldest_segment": None,
                 "newest_segment": None,
+                "storage_health": "unavailable",
+                "storage_error": _storage_error_message(exc),
             }
 
         # Count clips per camera; track oldest/newest mtime across all clips
@@ -143,10 +151,23 @@ class StorageManager:
         recordings_bytes = 0
         oldest_mtime: float | None = None
         newest_mtime: float | None = None
-        if rec_dir.is_dir():
-            for cam_dir in rec_dir.iterdir():
+        try:
+            cam_dirs = list(rec_dir.iterdir()) if rec_dir.is_dir() else []
+        except OSError as exc:
+            storage_health = "unavailable"
+            storage_error = _storage_error_message(exc)
+            cam_dirs = []
+
+        for cam_dir in cam_dirs:
+            try:
                 if not cam_dir.is_dir():
                     continue
+            except OSError as exc:
+                storage_health = "degraded"
+                storage_error = storage_error or _storage_error_message(exc)
+                continue
+
+            try:
                 count = 0
                 cam_bytes = 0
                 for mp4 in cam_dir.rglob("*.mp4"):
@@ -160,13 +181,19 @@ class StorageManager:
                         if newest_mtime is None or mtime > newest_mtime:
                             newest_mtime = mtime
                     except OSError:
+                        storage_health = "degraded"
                         pass
-                camera_stats[cam_dir.name] = {
-                    "clips": count,
-                    "size_mb": round(cam_bytes / (1024 * 1024), 1),
-                }
-                total_clips += count
-                recordings_bytes += cam_bytes
+            except OSError as exc:
+                storage_health = "degraded"
+                storage_error = storage_error or _storage_error_message(exc)
+                continue
+
+            camera_stats[cam_dir.name] = {
+                "clips": count,
+                "size_mb": round(cam_bytes / (1024 * 1024), 1),
+            }
+            total_clips += count
+            recordings_bytes += cam_bytes
 
         return {
             "total_gb": total_gb,
@@ -183,6 +210,8 @@ class StorageManager:
             "threshold_percent": self._threshold_percent,
             "oldest_segment": _epoch_to_iso(oldest_mtime),
             "newest_segment": _epoch_to_iso(newest_mtime),
+            "storage_health": storage_health,
+            "storage_error": storage_error,
         }
 
     def needs_cleanup(self) -> bool:
@@ -288,6 +317,14 @@ def _epoch_to_iso(epoch: float | None) -> str | None:
     if epoch is None:
         return None
     return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _storage_error_message(exc: OSError) -> str:
+    return (
+        "Recording storage cannot be read. "
+        "Eject the USB drive or reformat/replace it before trusting recordings. "
+        f"Detail: {exc}"
+    )
 
 
 def create_recording_dirs(recordings_dir, cam_id):

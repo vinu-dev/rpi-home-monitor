@@ -651,6 +651,7 @@ def _auto_mount_usb(app, default_recordings_dir):
     try:
         settings = app.store.get_settings()
         usb_device = getattr(settings, "usb_device", "")
+        usb_uuid = getattr(settings, "usb_uuid", "")
         usb_rec_dir = getattr(settings, "usb_recordings_dir", "")
 
         if not usb_device or not usb_rec_dir:
@@ -659,31 +660,56 @@ def _auto_mount_usb(app, default_recordings_dir):
         from monitor.services import usb
 
         devices = usb.detect_devices()
-        found = any(d["path"] == usb_device for d in devices)
-        if not found:
+        device = _resolve_configured_usb(devices, usb_device, usb_uuid)
+        if not device:
             log.warning(
                 "Configured USB device %s not found — using internal storage",
                 usb_device,
             )
             return default_recordings_dir
+        resolved_device = device["path"]
 
-        ok, err = usb.mount_device(usb_device)
+        ok, err = usb.mount_device(resolved_device)
         if not ok:
             log.error(
                 "Failed to auto-mount USB %s: %s — using internal storage",
-                usb_device,
+                resolved_device,
                 err,
             )
             return default_recordings_dir
 
         rec_dir = usb.prepare_recordings_dir()
         app.storage_manager.set_recordings_dir(rec_dir)
-        log.info("Auto-mounted USB storage: %s -> %s", usb_device, rec_dir)
+        if resolved_device != usb_device or getattr(settings, "usb_uuid", "") != (
+            device.get("uuid", "") or ""
+        ):
+            settings.usb_device = resolved_device
+            settings.usb_uuid = device.get("uuid", "") or ""
+            settings.usb_label = device.get("label", "") or ""
+            settings.usb_recordings_dir = rec_dir
+            app.store.save_settings(settings)
+        log.info("Auto-mounted USB storage: %s -> %s", resolved_device, rec_dir)
         return rec_dir
 
     except Exception as e:
         log.error("USB auto-mount failed: %s", e)
         return default_recordings_dir
+
+
+def _resolve_configured_usb(devices, configured_path: str, configured_uuid: str):
+    """Find a configured USB device even if /dev/sdX changed."""
+    if configured_uuid:
+        for device in devices:
+            if device.get("uuid") == configured_uuid:
+                return device
+    for device in devices:
+        if device.get("path") == configured_path:
+            return device
+    if configured_path and not configured_uuid and len(devices) == 1:
+        device = devices[0]
+        if device.get("supported"):
+            return device
+    return None
 
 
 def _start_staleness_checker(app):

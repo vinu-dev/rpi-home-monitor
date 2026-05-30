@@ -424,7 +424,11 @@ class OffsiteBackupService:
 
     def _discover_finalized_clips(self, settings: Settings) -> dict[str, dict]:
         root = Path(self._recordings_dir)
-        if not root.is_dir():
+        try:
+            if not root.is_dir():
+                return {}
+        except OSError as exc:
+            log.warning("Offsite backup storage unavailable: %s", exc)
             return {}
 
         prefix = settings.offsite_backup_prefix
@@ -437,37 +441,42 @@ class OffsiteBackupService:
             return {}
 
         for cam_dir in children:
-            if not cam_dir.is_dir() or not _CAMERA_ID_RE.match(cam_dir.name):
+            try:
+                if not cam_dir.is_dir() or not _CAMERA_ID_RE.match(cam_dir.name):
+                    continue
+                mp4s = cam_dir.rglob("*.mp4")
+                for mp4 in mp4s:
+                    try:
+                        stat = mp4.stat()
+                    except OSError:
+                        continue
+                    if now - stat.st_mtime < _ACTIVE_WRITE_SECONDS:
+                        continue
+                    clip_date, _start_time = _parse_clip_date_time(mp4)
+                    if not clip_date:
+                        continue
+                    clip_id = f"{cam_dir.name}/{clip_date}/{mp4.name}"
+                    discovered[clip_id] = {
+                        "clip_id": clip_id,
+                        "camera_id": cam_dir.name,
+                        "date": clip_date,
+                        "filename": mp4.name,
+                        "path": str(mp4),
+                        "size_bytes": stat.st_size,
+                        "object_key": self._build_object_key(
+                            prefix,
+                            cam_dir.name,
+                            clip_date,
+                            mp4.name,
+                        ),
+                        "enqueued_at": _iso_now(),
+                        "attempts": 0,
+                        "next_attempt_at": "",
+                        "last_error": "",
+                    }
+            except OSError as exc:
+                log.warning("Offsite backup skipped unreadable camera dir: %s", exc)
                 continue
-            for mp4 in cam_dir.rglob("*.mp4"):
-                try:
-                    stat = mp4.stat()
-                except OSError:
-                    continue
-                if now - stat.st_mtime < _ACTIVE_WRITE_SECONDS:
-                    continue
-                clip_date, _start_time = _parse_clip_date_time(mp4)
-                if not clip_date:
-                    continue
-                clip_id = f"{cam_dir.name}/{clip_date}/{mp4.name}"
-                discovered[clip_id] = {
-                    "clip_id": clip_id,
-                    "camera_id": cam_dir.name,
-                    "date": clip_date,
-                    "filename": mp4.name,
-                    "path": str(mp4),
-                    "size_bytes": stat.st_size,
-                    "object_key": self._build_object_key(
-                        prefix,
-                        cam_dir.name,
-                        clip_date,
-                        mp4.name,
-                    ),
-                    "enqueued_at": _iso_now(),
-                    "attempts": 0,
-                    "next_attempt_at": "",
-                    "last_error": "",
-                }
         return discovered
 
     def _drop_missing_entries(self, state: dict, discovered_ids: set[str]) -> None:
@@ -475,7 +484,16 @@ class OffsiteBackupService:
         for item in state["pending"]:
             clip_id = item.get("clip_id", "")
             path = item.get("path", "")
-            if clip_id in discovered_ids or (path and Path(path).exists()):
+            try:
+                path_exists = bool(path and Path(path).exists())
+            except OSError:
+                pending.append(item)
+                self._mark_error(
+                    state,
+                    f"Local storage unavailable while checking backup item: {clip_id}",
+                )
+                continue
+            if clip_id in discovered_ids or path_exists:
                 pending.append(item)
                 continue
             self._mark_error(
@@ -494,7 +512,12 @@ class OffsiteBackupService:
         for item in state["failed"]:
             clip_id = item.get("clip_id", "")
             path = item.get("path", "")
-            if clip_id in discovered_ids or (path and Path(path).exists()):
+            try:
+                path_exists = bool(path and Path(path).exists())
+            except OSError:
+                failed.append(item)
+                continue
+            if clip_id in discovered_ids or path_exists:
                 failed.append(item)
         state["failed"] = failed[-self.MAX_FAILED_ITEMS :]
 
@@ -552,7 +575,21 @@ class OffsiteBackupService:
             uploads_this_cycle += 1
             clip_id = item.get("clip_id", "")
             path = item.get("path", "")
-            if not path or not Path(path).is_file():
+            try:
+                local_file_ready = bool(path and Path(path).is_file())
+            except OSError as exc:
+                log.warning(
+                    "Offsite backup local clip check failed for %s: %s",
+                    clip_id,
+                    exc,
+                )
+                self._handle_upload_failure(
+                    state,
+                    item,
+                    "Local recordings storage is unavailable",
+                )
+                continue
+            if not local_file_ready:
                 state["pending"].remove(item)
                 self._mark_error(state, f"Local clip unavailable: {clip_id}")
                 self._log_audit(
@@ -573,7 +610,11 @@ class OffsiteBackupService:
                     settings.offsite_backup_bandwidth_cap_mbps,
                 )
             except Exception as exc:
-                friendly = _friendly_remote_error(exc)
+                friendly = (
+                    "Local recordings storage is unavailable"
+                    if isinstance(exc, OSError)
+                    else _friendly_remote_error(exc)
+                )
                 log.warning(
                     "Offsite backup upload failed for %s: %s",
                     clip_id,

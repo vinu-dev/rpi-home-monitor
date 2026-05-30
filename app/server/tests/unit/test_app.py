@@ -43,6 +43,40 @@ class TestCreateApp:
         assert app.config["CERTS_DIR"] == str(data_dir / "certs")
 
 
+class TestUsbConfigResolution:
+    def test_prefers_uuid_when_device_path_changes(self):
+        from monitor import _resolve_configured_usb
+
+        devices = [
+            {"path": "/dev/sdb1", "uuid": "same-usb", "supported": True},
+        ]
+
+        resolved = _resolve_configured_usb(devices, "/dev/sda1", "same-usb")
+
+        assert resolved == devices[0]
+
+    def test_legacy_path_only_config_uses_single_supported_device(self):
+        from monitor import _resolve_configured_usb
+
+        devices = [
+            {"path": "/dev/sdb1", "uuid": "new-uuid", "supported": True},
+        ]
+
+        resolved = _resolve_configured_usb(devices, "/dev/sda1", "")
+
+        assert resolved == devices[0]
+
+    def test_legacy_path_only_config_does_not_guess_multiple_devices(self):
+        from monitor import _resolve_configured_usb
+
+        devices = [
+            {"path": "/dev/sdb1", "uuid": "one", "supported": True},
+            {"path": "/dev/sdc1", "uuid": "two", "supported": True},
+        ]
+
+        assert _resolve_configured_usb(devices, "/dev/sda1", "") is None
+
+
 class TestBlueprintRegistration:
     """Test that all API blueprints are registered."""
 

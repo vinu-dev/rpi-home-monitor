@@ -17,6 +17,8 @@ def _make_device(
     fstype="ext4",
     supported=True,
     mountpoint="",
+    uuid="usb-uuid",
+    label="HomeMonitor",
 ):
     return {
         "path": path,
@@ -25,6 +27,8 @@ def _make_device(
         "fstype": fstype,
         "supported": supported,
         "mountpoint": mountpoint,
+        "uuid": uuid,
+        "label": label,
     }
 
 
@@ -94,6 +98,21 @@ class TestListDevices:
         assert result[0]["configured"] is True
         assert result[0]["configured_inactive"] is False
         assert result[0]["in_use"] is True
+
+    @patch(USB_PATCH)
+    def test_marks_configured_usb_when_device_path_changes(self, mock_usb, svc, deps):
+        sm, store, _ = deps
+        sm.recordings_dir = "/data/recordings"
+        store.get_settings.return_value.usb_device = "/dev/sda1"
+        store.get_settings.return_value.usb_uuid = "same-usb"
+        mock_usb.detect_devices.return_value = [
+            _make_device(path="/dev/sdb1", uuid="same-usb")
+        ]
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_path_changed"] is True
 
 
 class TestSelectDevice:
@@ -181,6 +200,9 @@ class TestSelectDevice:
 
         svc.select_device("/dev/sda1")
         store.get_settings.assert_called()
+        settings = store.get_settings.return_value
+        assert settings.usb_uuid == "usb-uuid"
+        assert settings.usb_label == "HomeMonitor"
         store.save_settings.assert_called()
 
 
@@ -246,6 +268,8 @@ class TestEject:
         svc.eject()
         settings = store.get_settings.return_value
         assert settings.usb_device == ""
+        assert settings.usb_uuid == ""
+        assert settings.usb_label == ""
         assert settings.usb_recordings_dir == ""
         store.save_settings.assert_called()
 

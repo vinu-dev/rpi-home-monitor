@@ -20,7 +20,13 @@ USB_PATCH = "monitor.services.storage_service.usb"
 
 
 def _make_device(
-    path="/dev/sda1", model="USB Stick", size="32G", fstype="ext4", supported=True
+    path="/dev/sda1",
+    model="USB Stick",
+    size="32G",
+    fstype="ext4",
+    supported=True,
+    uuid="usb-uuid",
+    label="HomeMonitor",
 ):
     """Build a fake USB device dict matching usb.detect_devices() output."""
     return {
@@ -29,6 +35,8 @@ def _make_device(
         "size": size,
         "fstype": fstype,
         "supported": supported,
+        "uuid": uuid,
+        "label": label,
     }
 
 
@@ -40,6 +48,8 @@ def _make_service(
         store = MagicMock()
         store.get_settings.return_value = MagicMock(
             usb_device="",
+            usb_uuid="",
+            usb_label="",
             usb_recordings_dir="",
         )
     if storage_manager is None:
@@ -105,6 +115,23 @@ class TestListDevices:
         svc = _make_service()
 
         assert svc.list_devices() == []
+
+    @patch(USB_PATCH)
+    def test_marks_configured_by_uuid_after_device_path_changes(self, mock_usb):
+        device = _make_device(path="/dev/sdb1", uuid="same-usb")
+        mock_usb.detect_devices.return_value = [device]
+        store = MagicMock()
+        store.get_settings.return_value = MagicMock(
+            usb_device="/dev/sda1",
+            usb_uuid="same-usb",
+            usb_recordings_dir="/mnt/recordings/home-monitor-recordings",
+        )
+        svc = _make_service(store=store)
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_path_changed"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -218,13 +245,17 @@ class TestSelectDeviceSuccess:
         mock_usb.prepare_recordings_dir.return_value = "/mnt/usb/recordings"
         mock_usb.DEFAULT_MOUNT_POINT = "/mnt/usb"
         store = MagicMock()
-        settings = MagicMock(usb_device="", usb_recordings_dir="")
+        settings = MagicMock(
+            usb_device="", usb_uuid="", usb_label="", usb_recordings_dir=""
+        )
         store.get_settings.return_value = settings
         svc = _make_service(store=store)
 
         svc.select_device("/dev/sda1")
 
         assert settings.usb_device == "/dev/sda1"
+        assert settings.usb_uuid == "usb-uuid"
+        assert settings.usb_label == "HomeMonitor"
         assert settings.usb_recordings_dir == "/mnt/usb/recordings"
         store.save_settings.assert_called_once_with(settings)
 
@@ -357,13 +388,20 @@ class TestEject:
     def test_eject_clears_usb_config(self, mock_usb):
         mock_usb.unmount_device.return_value = (True, "")
         store = MagicMock()
-        settings = MagicMock(usb_device="/dev/sda1", usb_recordings_dir="/mnt/usb/rec")
+        settings = MagicMock(
+            usb_device="/dev/sda1",
+            usb_uuid="usb-uuid",
+            usb_label="HomeMonitor",
+            usb_recordings_dir="/mnt/usb/rec",
+        )
         store.get_settings.return_value = settings
         svc = _make_service(store=store)
 
         svc.eject()
 
         assert settings.usb_device == ""
+        assert settings.usb_uuid == ""
+        assert settings.usb_label == ""
         assert settings.usb_recordings_dir == ""
         store.save_settings.assert_called_once()
 

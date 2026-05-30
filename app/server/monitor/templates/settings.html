@@ -1336,9 +1336,12 @@
             </div>
             <div class="info-row" style="border-bottom:none;">
                 <span class="info-row__label">Loop Recording</span>
-                <span class="info-row__value" style="color:#4ade80;">Active (FIFO)</span>
+                <span class="info-row__value"
+                      :style="{ color: storage.health === 'ok' ? '#4ade80' : '#f59e0b' }"
+                      x-text="storage.health === 'ok' ? 'Active (FIFO)' : 'Storage fault'"></span>
             </div>
         </div>
+        <div class="msg msg--warn" x-show="storage.error" style="margin-top:12px;" x-text="storage.error"></div>
 
         <div class="card mt-16">
             <div class="flex-between" style="margin-bottom:12px;">
@@ -1379,7 +1382,12 @@
                 <span class="info-row__label">Started</span>
                 <span class="info-row__value" x-text="formatLocalTime(storage.timestamps.startedAt)"></span>
             </div>
-            <div class="msg msg--warn" x-show="!storage.timestamps.ffmpegAvailable" style="margin-top:12px;">
+            <div class="msg msg--warn" x-show="storage.timestamps.statusError || storage.timestamps.storageError" style="margin-top:12px;">
+                <span x-text="storage.timestamps.storageError || storage.timestamps.statusError"></span>
+            </div>
+            <div class="msg msg--warn"
+                 x-show="!storage.timestamps.statusError && !storage.timestamps.storageError && !storage.timestamps.ffmpegAvailable"
+                 style="margin-top:12px;">
                 ffmpeg/ffprobe are not available on this host. New clips remain downloadable, but embedded timestamps cannot be added until the image is fixed.
             </div>
             <div style="margin-top:12px;" x-show="storage.timestamps.cameras.length > 0">
@@ -1423,6 +1431,7 @@
                                 <span x-show="!d.supported && d.fstype" style="color:#f87171;"> Needs format</span>
                                 <span x-show="!d.supported && !d.fstype" style="color:#f59e0b;"> Rescan or reconnect before use</span>
                                 <span x-show="d.configured_inactive"> &middot; not active right now</span>
+                                <span x-show="d.configured_path_changed"> &middot; device path changed</span>
                             </div>
                         </div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
@@ -2384,6 +2393,8 @@ function settingsPage() {
             space: '',
             clips: '',
             isUsb: false,
+            health: 'ok',
+            error: '',
             devices: [],
             scanned: false,
             scanning: false,
@@ -2407,6 +2418,8 @@ function settingsPage() {
                 stamped: 0,
                 unstamped: 0,
                 cameras: [],
+                storageError: '',
+                statusError: '',
                 busy: false,
                 pollTimer: null
             }
@@ -3757,6 +3770,8 @@ function settingsPage() {
                 this.storage.space = (data.total_gb || 0) + ' GB / ' + (data.free_gb || 0) + ' GB free';
                 this.storage.clips = (data.clip_count || 0) + ' clips across ' + (data.camera_count || 0) + ' cameras';
                 this.storage.isUsb = data.is_usb;
+                this.storage.health = data.storage_health || (data.storage_error ? 'degraded' : 'ok');
+                this.storage.error = data.storage_error || '';
                 // ADR-0017 fields — tolerate older servers that don't send them.
                 this.storage.mountPath = data.mount_path || data.recordings_path || '';
                 var used = (data.used_gb !== undefined) ? data.used_gb : ((data.total_gb || 0) - (data.free_gb || 0));
@@ -3787,12 +3802,14 @@ function settingsPage() {
                 this.storage.timestamps.total = data.total || 0;
                 this.storage.timestamps.currentCamera = data.current_camera || '';
                 this.storage.timestamps.startedAt = data.started_at || '';
+                this.storage.timestamps.storageError = data.storage_error || (data.summary && data.summary.storage_error) || '';
+                this.storage.timestamps.statusError = '';
                 var summary = data.summary || {};
                 this.storage.timestamps.stamped = summary.stamped || 0;
                 this.storage.timestamps.unstamped = summary.unstamped || 0;
                 this.storage.timestamps.cameras = summary.cameras || [];
             } catch(e) {
-                this.storage.timestamps.ffmpegAvailable = false;
+                this.storage.timestamps.statusError = e.message || 'Timestamp status is unavailable.';
             }
             if (this.storage.timestamps.pollTimer) {
                 clearTimeout(this.storage.timestamps.pollTimer);

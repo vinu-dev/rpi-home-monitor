@@ -198,6 +198,22 @@ class TestStorageStateTransitions:
         assert out["state"] == "red"
         assert out["deep_link"].startswith("/settings")
 
+    def test_storage_unavailable_is_red(self):
+        svc = _build(
+            stats={
+                "percent": 0,
+                "free_gb": 0,
+                "total_gb": 0,
+                "recordings_dir": "/mnt/recordings/home-monitor-recordings",
+                "storage_health": "unavailable",
+                "storage_error": "Storage directory is unavailable",
+            }
+        )
+        out = svc.compute_summary()
+        assert out["state"] == "red"
+        assert out["details"]["storage"]["storage_health"] == "unavailable"
+        assert "unavailable" in out["details"]["storage"]["storage_error"]
+
 
 # ---------------------------------------------------------------------------
 # Camera thresholds
