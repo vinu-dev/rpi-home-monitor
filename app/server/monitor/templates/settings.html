@@ -938,30 +938,28 @@
      ACCOUNT TAB (all users)
      ═══════════════════════════════════════════════════════════ -->
 <div x-show="tab === 'security'" x-cloak>
-    <div class="settings-section">
-        <div class="flex-between" style="align-items:flex-start; gap:var(--space-3); flex-wrap:wrap;">
-            <div>
-                <div class="settings-section__title" style="margin-bottom:0; border-bottom:none; padding-bottom:0;">Active Sessions</div>
-                <div class="text-small text-muted" style="margin-top:6px;">
-                    Review every browser currently signed in to this account and revoke any device that should no longer have access.
-                </div>
-            </div>
-            <label x-show="isAdmin" class="text-small" style="display:inline-flex; gap:8px; align-items:center; cursor:pointer; margin-top:4px;">
-                <input type="checkbox" x-model="sessions.includeAll" @change="loadSessions()">
-                <span>All users (admin)</span>
-            </label>
-        </div>
+    <div class="settings-section settings-section--sessions">
+        <div class="settings-section__title">Active Sessions</div>
+        <div class="settings-section__body">
+            <p class="settings-section__intro">
+                Review every browser currently signed in to this account and revoke any device that should no longer have access.
+            </p>
 
-        <div class="card mt-16">
-            <div style="display:flex; justify-content:space-between; gap:var(--space-3); align-items:center; flex-wrap:wrap; margin-bottom:var(--space-3);">
-                <div class="text-small text-muted">
+            <div class="session-toolbar">
+                <div class="session-toolbar__copy text-small text-muted">
                     Source IPs are visible to admins when the all-users view is enabled. Current-session detection is server-side, not IP-based.
                 </div>
-                <button class="btn btn--secondary btn--small"
-                        :disabled="sessions.loading || sessions.busy || sessionOtherCount() === 0"
-                        @click="revokeOtherSessions()">
-                    Sign out other devices
-                </button>
+                <div class="session-toolbar__controls">
+                    <label x-show="isAdmin" class="checkbox-row session-scope-toggle">
+                        <input type="checkbox" x-model="sessions.includeAll" @change="loadSessions()">
+                        <span>All users (admin)</span>
+                    </label>
+                    <button class="btn btn--secondary btn--small"
+                            :disabled="sessions.loading || sessions.busy || sessionOtherCount() === 0"
+                            @click="revokeOtherSessions()">
+                        Sign out other devices
+                    </button>
+                </div>
             </div>
 
             <template x-if="sessions.loading">
