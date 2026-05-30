@@ -736,6 +736,16 @@ class TestStatusServerNoPasswordAuthContract:
 class TestStatusServerNetworksContract:
     """GET /api/networks on status server."""
 
+    def test_requires_auth(self, configured_config):
+        server = CameraStatusServer(configured_config)
+        server.start()
+        try:
+            data, status = _json_get("/api/networks", scheme="https")
+            assert status == 401
+            _assert_fields(data, {"error"})
+        finally:
+            server.stop()
+
     @patch("camera_streamer.status_server.wifi.scan_networks")
     def test_fields(self, mock_scan, configured_config):
         mock_scan.return_value = [
@@ -749,6 +759,20 @@ class TestStatusServerNetworksContract:
             )
             _assert_fields(data, {"networks"})
             assert isinstance(data["networks"], list)
+        finally:
+            server.stop()
+
+    def test_status_page_scan_distinguishes_auth_error_from_empty_scan(
+        self, configured_config
+    ):
+        server = CameraStatusServer(configured_config)
+        server.start()
+        try:
+            html, status = _html_get("/", scheme="https", headers=_auth_headers())
+            assert status == 200
+            assert 'fetch("/api/networks", { credentials: "same-origin" })' in html
+            assert "r.status === 401" in html
+            assert "No networks found. Type the WiFi name manually." in html
         finally:
             server.stop()
 

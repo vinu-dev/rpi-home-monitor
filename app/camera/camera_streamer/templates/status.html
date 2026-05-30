@@ -1768,12 +1768,22 @@ function doUnpair() {
 // ---- WiFi ----
 function scanNetworks() {
     var btn = $("btn-scan");
+    var list = $("netlist");
     btn.disabled = true; btn.textContent = "Scanning…";
-    fetch("/api/networks").then(function(r){ return r.json(); }).then(function(d){
+    fetch("/api/networks", { credentials: "same-origin" }).then(function(r){
+        if (r.status === 401) {
+            window.location.href = "/login";
+            return null;
+        }
+        return r.json().then(function(d){
+            if (!r.ok) throw new Error((d && d.error) || "Scan failed.");
+            return d;
+        });
+    }).then(function(d){
+        if (!d) return;
         var nets = (d.networks || []).slice().sort(function(a,b){ return (b.signal||0) - (a.signal||0); });
-        var list = $("netlist");
         if (!nets.length) {
-            list.innerHTML = '<div style="padding:10px;color:var(--muted);text-align:center">No networks found</div>';
+            list.innerHTML = '<div style="padding:10px;color:var(--muted);text-align:center">No networks found. Type the WiFi name manually.</div>';
         } else {
             list.innerHTML = nets.map(function(n){
                 return '<div class="net" data-ssid="' + esc(n.ssid) + '">' +
@@ -1790,9 +1800,10 @@ function scanNetworks() {
         }
         list.hidden = false;
         btn.disabled = false; btn.textContent = "Scan for networks";
-    }).catch(function(){
+    }).catch(function(err){
         btn.disabled = false; btn.textContent = "Scan for networks";
-        setMsg("wifi-result", "err", "Scan failed.");
+        list.hidden = true;
+        setMsg("wifi-result", "err", err.message || "Scan failed.");
     });
 }
 function doWifi() {
