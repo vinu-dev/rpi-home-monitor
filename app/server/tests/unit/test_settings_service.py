@@ -800,6 +800,29 @@ class TestTimeHelpers:
         assert info["ntp_synchronized"] is True
         assert "2026-04-18" in info["system_time"]
 
+    def test_get_time_status_uses_timesync_evidence_when_boolean_lags(self):
+        svc, _ = _make_service()
+        show = (
+            "Timezone=Europe/Dublin\n"
+            "NTP=yes\n"
+            "NTPSynchronized=no\n"
+            "TimeUSec=Sat 2026-05-30 10:20:32 IST\n"
+            "RTCTimeUSec=\n"
+        )
+        timesync = (
+            "Server: 216.239.35.8 (time.google.com)\n"
+            "Packet count: 7\n"
+            "Offset: +14.200ms\n"
+        )
+        with patch("monitor.services.settings_service.subprocess.run") as run:
+            run.side_effect = [
+                SimpleNamespace(returncode=0, stdout=show, stderr=""),
+                SimpleNamespace(returncode=0, stdout=timesync, stderr=""),
+            ]
+            info = svc.get_time_status()
+        assert info["ntp_active"] is True
+        assert info["ntp_synchronized"] is True
+
     def test_get_timesync_status_parses_last_sync_line(self):
         svc, _ = _make_service()
         fake = (
@@ -809,6 +832,8 @@ class TestTimeHelpers:
             run.return_value = SimpleNamespace(returncode=0, stdout=fake, stderr="")
             info = svc.get_timesync_status()
         assert info["last_sync_time"] == "Sat 2026-04-18 10:00:00 UTC"
+        assert info["server"] == "ntp.example.net"
+        assert info["has_sync_evidence"] is True
 
     def test_restart_timesyncd_invokes_systemctl(self):
         svc, _ = _make_service()

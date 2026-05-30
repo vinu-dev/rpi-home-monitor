@@ -361,6 +361,7 @@ class TestSetupStatusContract:
             assert status == 200
             assert "Reach this camera" in html
             assert "/static/qrcode.min.js" in html
+            assert 'id="in-admin-pw-confirm"' in html
         finally:
             server.stop()
 
@@ -382,6 +383,7 @@ class TestSetupConnectContract:
                     "server_ip": "192.168.1.100",
                     "admin_username": "admin",
                     "admin_password": "testpass12345",
+                    "admin_password_confirm": "testpass12345",
                     "setup_hotspot_password": "CameraSetupPass123",
                 },
             )
@@ -409,6 +411,32 @@ class TestSetupConnectContract:
             assert status == 400
             _assert_fields(data, {"error"})
             assert "12" in data["error"]
+        finally:
+            server.stop()
+
+    @patch("camera_streamer.wifi.scan_networks", return_value=[])
+    @patch("camera_streamer.wifi.start_hotspot", return_value=True)
+    def test_rejects_mismatched_admin_password_confirm(
+        self, mock_hotspot, mock_scan, setup_config
+    ):
+        server = WifiSetupServer(setup_config)
+        server.start()
+        try:
+            data, status = _json_post(
+                "/api/connect",
+                {
+                    "ssid": "TestNet",
+                    "password": "pass123",
+                    "server_ip": "192.168.1.100",
+                    "admin_username": "admin",
+                    "admin_password": "testpass12345",
+                    "admin_password_confirm": "different12345",
+                    "setup_hotspot_password": "CameraSetupPass123",
+                },
+            )
+            assert status == 400
+            _assert_fields(data, {"error"})
+            assert "do not match" in data["error"]
         finally:
             server.stop()
 
@@ -643,6 +671,7 @@ class TestStatusServerApiStatusContract:
                 'id="btn-scan"',
                 'id="wifi-ssid"',
                 'id="btn-wifi"',
+                'id="pw-confirm"',
                 'id="btn-pw"',
                 'id="btn-stream-edit"',
                 'id="se-res"',

@@ -432,6 +432,7 @@ def _make_handler(config, setup_server):
                     server_port = data.get("server_port", "8554").strip()
                     admin_username = data.get("admin_username", "admin").strip()
                     admin_password = data.get("admin_password", "")
+                    admin_password_confirm = data.get("admin_password_confirm")
                     setup_hotspot_password = data.get("setup_hotspot_password", "")
 
                     if not ssid:
@@ -457,6 +458,15 @@ def _make_handler(config, setup_server):
                                 "error": "Password required "
                                 f"(min {MIN_ADMIN_PASSWORD_LENGTH} characters)"
                             },
+                            400,
+                        )
+                        return
+                    if (
+                        admin_password_confirm is not None
+                        and admin_password != admin_password_confirm
+                    ):
+                        self._json_response(
+                            {"error": "Camera passwords do not match"},
                             400,
                         )
                         return
