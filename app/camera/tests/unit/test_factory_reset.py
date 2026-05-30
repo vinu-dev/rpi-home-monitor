@@ -18,6 +18,7 @@ def data_dir(tmp_path):
 
     # Config file
     (tmp_path / "config" / "camera.conf").write_text("[camera]\nid=cam-001\n")
+    (tmp_path / "config" / "camera-hotspot.psk").write_text("CameraSetupPass123\n")
 
     # Stamp file
     (tmp_path / ".setup-done").write_text("1\n")
@@ -56,6 +57,13 @@ class TestCameraFactoryReset:
     def test_reset_removes_config(self, mock_reboot, svc, data_dir):
         svc.execute_reset()
         assert not (data_dir / "config" / "camera.conf").exists()
+
+    @patch("camera_streamer.factory_reset.FactoryResetService._schedule_reboot")
+    def test_reset_preserves_setup_hotspot_password(self, mock_reboot, svc, data_dir):
+        svc.execute_reset()
+        assert (data_dir / "config" / "camera-hotspot.psk").read_text() == (
+            "CameraSetupPass123\n"
+        )
 
     @patch("camera_streamer.factory_reset.FactoryResetService._schedule_reboot")
     def test_reset_removes_certs(self, mock_reboot, svc, data_dir):
@@ -140,3 +148,94 @@ class TestWifiWipeDelegation:
         svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
         msg, status = svc.execute_reset()
         assert status == 200
+
+
+class TestPostResetRecovery:
+    """Camera reset must not strand first-boot setup if reboot fails."""
+
+    @patch("camera_streamer.factory_reset.subprocess.run")
+    def test_attempt_reboot_checks_return_code(self, mock_run, config, tmp_path):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="denied")
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+
+        assert svc._attempt_reboot() is False
+
+        mock_run.assert_called_once_with(
+            ["systemctl", "reboot"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    @patch("camera_streamer.factory_reset.privileged.request")
+    @patch("camera_streamer.factory_reset.privileged.should_use_helper")
+    def test_attempt_reboot_uses_privileged_helper(
+        self, mock_should_use_helper, mock_request, config, tmp_path
+    ):
+        mock_should_use_helper.return_value = True
+        mock_request.return_value = {"returncode": 0, "stdout": "", "stderr": ""}
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+
+        assert svc._attempt_reboot() is True
+
+        mock_request.assert_called_once_with("system.reboot", timeout=20)
+
+    def test_post_reset_recovery_starts_hotspot_when_reboot_fails(
+        self, config, tmp_path
+    ):
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+
+        with (
+            patch.object(svc, "_attempt_reboot", return_value=False) as reboot,
+            patch.object(svc, "_start_setup_hotspot", return_value=True) as hotspot,
+        ):
+            svc._run_post_reset_recovery()
+
+        reboot.assert_called_once()
+        hotspot.assert_called_once()
+
+    @patch("camera_streamer.factory_reset.subprocess.run")
+    def test_start_setup_hotspot_restarts_systemd(self, mock_run, config, tmp_path):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+
+        assert svc._start_setup_hotspot() is True
+
+        mock_run.assert_called_once_with(
+            ["systemctl", "restart", "camera-hotspot.service"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+
+    @patch("camera_streamer.factory_reset.privileged.request")
+    @patch("camera_streamer.factory_reset.privileged.should_use_helper")
+    def test_start_setup_hotspot_uses_privileged_helper(
+        self, mock_should_use_helper, mock_request, config, tmp_path
+    ):
+        mock_should_use_helper.return_value = True
+        mock_request.return_value = {"returncode": 0, "stdout": "", "stderr": ""}
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+
+        assert svc._start_setup_hotspot() is True
+
+        mock_request.assert_called_once_with("hotspot.start", timeout=95)
+
+
+class TestPrivilegedWifiWipe:
+    @patch("camera_streamer.factory_reset.privileged.request")
+    @patch("camera_streamer.factory_reset.privileged.should_use_helper")
+    def test_clear_wifi_uses_privileged_helper(
+        self, mock_should_use_helper, mock_request, config, tmp_path
+    ):
+        mock_should_use_helper.return_value = True
+        mock_request.return_value = {"returncode": 0, "stdout": "", "stderr": ""}
+        svc = FactoryResetService(config, str(tmp_path), hotspot_script="/nonexistent")
+        errors = []
+
+        svc._clear_wifi(errors)
+
+        mock_request.assert_called_once_with("hotspot.wipe", timeout=35)
+        assert errors == []

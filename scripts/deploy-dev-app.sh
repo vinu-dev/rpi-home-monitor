@@ -172,6 +172,10 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -200,8 +204,16 @@ deploy_server() {
         id -u monitor >/dev/null 2>&1 || useradd -r -d /opt/monitor -s /bin/false -U monitor
         mkdir -p /data/config /data/recordings /data/live /data/logs /data/certs
         chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs /data/certs
+        mkdir -p /opt/scripts
+        mkdir -p /opt/monitor/scripts
+        cp '$SERVER_STAGE/monitor-hotspot.sh' /opt/monitor/scripts/monitor-hotspot.sh
+        chmod 0755 /opt/monitor/scripts/monitor-hotspot.sh
+        cp '$SERVER_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
+        chmod 0755 /opt/scripts/gpio-trigger.sh
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
+        cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
+        cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
     "
 
     log "Applying boot optimisation overrides"
@@ -218,7 +230,7 @@ deploy_server() {
         # Mask systemd-networkd-wait-online: always times out on eth0 no-carrier
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable gpio-trigger.service monitor-hotspot.service monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
@@ -247,6 +259,12 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/camera/setup.py" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/camera/requirements.txt" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/camera/config/camera.conf.default" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-streamer.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-privileged-helper.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-hotspot.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-hotspot.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$CAMERA_STAGE"
 
     log "Installing camera app into /opt/camera"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -268,45 +286,23 @@ deploy_camera() {
         # Pre-compile bytecode so first-request import is instant
         python3 -m compileall -q /opt/camera/camera_streamer
         chown -R camera:camera /opt/camera/camera_streamer/__pycache__ 2>/dev/null || true
+        mkdir -p /opt/scripts
+        mkdir -p /opt/camera/scripts
+        cp '$CAMERA_STAGE/camera-hotspot.sh' /opt/camera/scripts/camera-hotspot.sh
+        chmod 0755 /opt/camera/scripts/camera-hotspot.sh
+        cp '$CAMERA_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
+        chmod 0755 /opt/scripts/gpio-trigger.sh
+        cp '$CAMERA_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
     "
 
     log "Applying boot optimisation overrides"
     ssh "${SSH_OPTS[@]}" "$host" "
-        # Full unit file override — removes network-online.target.
-        # In hotspot/AP mode nm-online waits full 60s timeout; camera-hotspot.service
-        # completes in ~6s (or skips instantly when setup-done), which is enough.
-        cat > /etc/systemd/system/camera-streamer.service << 'SVCEOF'
-[Unit]
-Description=Camera RTSP Streamer
-After=avahi-daemon.service local-fs.target NetworkManager.service camera-hotspot.service sys-subsystem-net-devices-wlan0.device
-Wants=NetworkManager.service
-
-[Service]
-Type=simple
-User=camera
-Group=camera
-WorkingDirectory=/opt/camera
-ExecStartPre=+/bin/sh -c 'chmod 0666 /sys/class/leds/ACT/trigger /sys/class/leds/ACT/brightness /sys/class/leds/ACT/delay_on /sys/class/leds/ACT/delay_off 2>/dev/null || true'
-ExecStart=/usr/bin/python3 -m camera_streamer.main
-Restart=always
-RestartSec=5
-TimeoutStopSec=20
-KillMode=control-group
-Environment=PYTHONPATH=/opt/camera
-Environment=CAMERA_DATA_DIR=/data
-Environment=CAMERA_CONFIG_DIR=/data/config
-Environment=CAMERA_CERTS_DIR=/data/certs
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/data
-PrivateTmp=true
-SupplementaryGroups=video
-AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
+        # Full unit file override from the repo. Keep this in sync with
+        # app/camera/config/camera-streamer.service so hardening exceptions
+        # such as /var/lib/camera-ota cannot drift in the deploy path.
+        cp '$CAMERA_STAGE/camera-streamer.service' /etc/systemd/system/camera-streamer.service
+        cp '$CAMERA_STAGE/camera-privileged-helper.service' /etc/systemd/system/camera-privileged-helper.service
+        cp '$CAMERA_STAGE/camera-hotspot.service' /etc/systemd/system/camera-hotspot.service
         # journald limits — prevent /run from filling up under active streaming.
         # Without explicit RuntimeMaxUse, journald's implicit cap (~7MB on a 70MB
         # /run) is not enforced tightly enough under the ~6 entries/sec picamera2
@@ -335,17 +331,18 @@ ConditionFileNotEmpty=/data/tailscale/tailscaled.state
 EOF
         fi
         systemctl daemon-reload
+        systemctl enable gpio-trigger.service camera-privileged-helper.service camera-hotspot.service camera-streamer.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
         log "Restarting camera service"
-        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart camera-streamer && systemctl is-active camera-streamer >/dev/null"
+        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart camera-privileged-helper camera-streamer && systemctl is-active camera-privileged-helper camera-streamer >/dev/null"
     fi
 
     log "Validating camera health"
     wait_for_http_status "https://${CAMERA_IP}/" "302" "200" "45"
     wait_for_http_status "https://${CAMERA_IP}/login" "200" "" "20"
-    ssh "${SSH_OPTS[@]}" "$host" "systemctl is-active camera-streamer avahi-daemon"
+    ssh "${SSH_OPTS[@]}" "$host" "systemctl is-active camera-privileged-helper camera-streamer avahi-daemon"
 
     log "Cleaning camera staging area"
     ssh "${SSH_OPTS[@]}" "$host" "rm -rf '$CAMERA_STAGE'"

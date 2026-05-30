@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from camera_streamer import wifi
+from camera_streamer import privileged, wifi
 from camera_streamer.status_server import (
     SESSION_TIMEOUT,
     CameraStatusServer,
@@ -161,6 +161,34 @@ class TestWifiSetupServer:
         with pytest.raises(ValueError, match="new setup hotspot"):
             server._save_setup_hotspot_password("homecamera")
 
+    @patch("camera_streamer.wifi_setup.privileged.request")
+    @patch("camera_streamer.wifi_setup.privileged.should_use_helper", return_value=True)
+    def test_setup_hotspot_password_uses_privileged_helper(
+        self, mock_should_use_helper, mock_request, unconfigured_config
+    ):
+        server = WifiSetupServer(unconfigured_config)
+
+        server._save_setup_hotspot_password("CameraSetupPass123")
+
+        mock_request.assert_called_once_with(
+            "hotspot.set_password",
+            {"password": "CameraSetupPass123"},
+            timeout=20,
+        )
+
+    @patch(
+        "camera_streamer.wifi_setup.privileged.request",
+        side_effect=privileged.PrivilegedHelperError("helper denied"),
+    )
+    @patch("camera_streamer.wifi_setup.privileged.should_use_helper", return_value=True)
+    def test_setup_hotspot_password_reports_privileged_helper_error(
+        self, mock_should_use_helper, mock_request, unconfigured_config
+    ):
+        server = WifiSetupServer(unconfigured_config)
+
+        with pytest.raises(OSError, match="helper denied"):
+            server._save_setup_hotspot_password("CameraSetupPass123")
+
 
 class TestScanWifi:
     """Test WiFi scanning via wifi module."""
@@ -303,6 +331,38 @@ class TestSaveAndConnect:
         assert mgr.server_ip == "10.0.0.5"
         assert mgr.server_port == 9999
 
+    @patch("camera_streamer.wifi_setup.privileged.request")
+    @patch("camera_streamer.wifi_setup.privileged.should_use_helper", return_value=True)
+    def test_hotspot_connect_uses_privileged_helper(
+        self, mock_should_use_helper, mock_request, unconfigured_config
+    ):
+        server = WifiSetupServer(unconfigured_config)
+
+        ok, err = server._hotspot_connect("TestNet", "pass123")
+
+        assert ok is True
+        assert err == ""
+        mock_request.assert_called_once_with(
+            "hotspot.connect",
+            {"ssid": "TestNet", "password": "pass123"},
+            timeout=90,
+        )
+
+    @patch(
+        "camera_streamer.wifi_setup.privileged.request",
+        side_effect=privileged.PrivilegedHelperError("helper denied"),
+    )
+    @patch("camera_streamer.wifi_setup.privileged.should_use_helper", return_value=True)
+    def test_hotspot_connect_reports_privileged_helper_error(
+        self, mock_should_use_helper, mock_request, unconfigured_config
+    ):
+        server = WifiSetupServer(unconfigured_config)
+
+        ok, err = server._hotspot_connect("TestNet", "pass123")
+
+        assert ok is False
+        assert "helper denied" in err
+
 
 class TestRescan:
     """Test the rescan flow (drops AP briefly)."""
@@ -327,6 +387,27 @@ class TestRescan:
         assert networks[0]["ssid"] == "NewNet"
         # Cached networks should be updated
         assert server.get_cached_networks()[0]["ssid"] == "NewNet"
+
+    @patch("camera_streamer.wifi_setup.privileged.request")
+    @patch("camera_streamer.wifi_setup.privileged.should_use_helper", return_value=True)
+    @patch("camera_streamer.wifi.time.sleep")
+    @patch("camera_streamer.wifi.scan_networks")
+    def test_rescan_uses_privileged_helper_for_hotspot_lifecycle(
+        self,
+        mock_scan,
+        mock_sleep,
+        mock_should_use_helper,
+        mock_request,
+        unconfigured_config,
+    ):
+        mock_scan.return_value = [{"ssid": "NewNet", "signal": 75, "security": "WPA2"}]
+        server = WifiSetupServer(unconfigured_config)
+
+        networks = server.rescan()
+
+        assert networks == [{"ssid": "NewNet", "signal": 75, "security": "WPA2"}]
+        mock_request.assert_any_call("hotspot.stop", timeout=30)
+        mock_request.assert_any_call("hotspot.start", timeout=90)
 
 
 class TestWaitForWifi:

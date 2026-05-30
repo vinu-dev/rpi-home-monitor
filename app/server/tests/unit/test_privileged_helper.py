@@ -261,6 +261,8 @@ def test_wifi_operations_build_allowlisted_commands():
             b'{"operation":"hotspot.connect_wifi","payload":'
             b'{"ssid":"MysticNet","password":"passphrase"}}'
         )
+        helper.handle_request(b'{"operation":"hotspot.stop","payload":{}}')
+        helper.handle_request(b'{"operation":"hotspot.start","payload":{}}')
 
     assert run.call_args_list[0].args[0] == [
         "nmcli",
@@ -278,6 +280,15 @@ def test_wifi_operations_build_allowlisted_commands():
         "connect",
         "MysticNet",
         "passphrase",
+    ]
+    assert run.call_args_list[2].args[0] == [
+        "/opt/monitor/scripts/monitor-hotspot.sh",
+        "stop",
+    ]
+    assert run.call_args_list[3].args[0] == [
+        "systemctl",
+        "restart",
+        "monitor-hotspot.service",
     ]
 
 
@@ -315,7 +326,7 @@ def test_tailscale_up_rejects_bad_authkey():
         ("tailscale.down", ["tailscale", "down"]),
         ("tailscale.enable", ["systemctl", "enable", "--now", "tailscaled"]),
         ("tailscale.disable", ["systemctl", "disable", "--now", "tailscaled"]),
-        ("system.reboot", ["reboot"]),
+        ("system.reboot", ["systemctl", "reboot"]),
     ],
 )
 def test_simple_operations_build_allowlisted_commands(operation, expected):

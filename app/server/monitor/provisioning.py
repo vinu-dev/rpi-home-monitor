@@ -9,7 +9,7 @@ Security notes:
 - Sensitive endpoints (wifi/save, admin, complete) are blocked once setup is done.
   This prevents a LAN attacker from calling /setup/admin to take over the device
   after the owner has completed initial setup.
-- Rate limiting (5 requests per IP per 60s) prevents automated probing during
+- Rate limiting (30 requests per IP per 60s) prevents automated probing during
   the brief first-boot window when setup is incomplete.
 """
 
@@ -39,7 +39,7 @@ provisioning_bp = Blueprint("provisioning", __name__)
 # gets its own fresh counters — prevents test state bleed.
 # Separate from the login rate limiter in auth.py.
 _SETUP_RATE_WINDOW = 60  # seconds
-_SETUP_RATE_MAX = 5  # max attempts per window per IP
+_SETUP_RATE_MAX = 30  # max attempts per window per IP
 
 
 def _get_setup_attempts() -> dict:
@@ -141,7 +141,10 @@ def set_admin_password():
 @_require_setup_incomplete
 def setup_complete():
     """Apply all settings and finish setup."""
-    result, err, status = current_app.provisioning_service.complete_setup()
+    data = request.get_json(silent=True) or {}
+    result, err, status = current_app.provisioning_service.complete_setup(
+        network_mode=data.get("network_mode", "wifi")
+    )
     if err:
         return jsonify({"error": err}), status
     return jsonify(result), status

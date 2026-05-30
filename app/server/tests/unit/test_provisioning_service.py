@@ -42,6 +42,7 @@ class FakeUser:
     username: str = "admin"
     password_hash: str = "oldhash"
     role: str = "admin"
+    must_change_password: bool = True
 
 
 @pytest.fixture()
@@ -321,6 +322,7 @@ class TestSetAdminPassword:
         mh.assert_called_once_with("securepassword")
         saved_user = store.save_user.call_args[0][0]
         assert saved_user.password_hash == "newhash"
+        assert saved_user.must_change_password is False
 
     def test_requires_setup_hotspot_password(self, svc):
         msg, code = svc.set_admin_password("securepassword", "")
@@ -646,3 +648,60 @@ class TestCompleteSetup:
         result, err, code = svc.complete_setup()
         assert code == 200
         assert result["ip"] == ""
+
+    @patch(SUBPROCESS_PATCH)
+    @patch("monitor.services.provisioning_service.socket")
+    def test_ethernet_mode_completes_without_wifi(
+        self, mock_socket, mock_sub, svc, tmp_path
+    ):
+        """Wired server setup should not require WiFi credentials."""
+        _fix(mock_sub)
+        _write_setup_hotspot_password(tmp_path)
+        mock_socket.gethostname.return_value = "rpi-divinu"
+        mock_sub.run.side_effect = [
+            MagicMock(returncode=0, stdout="eth0:ethernet:connected\n"),
+            MagicMock(returncode=0, stdout="IP4.ADDRESS[1]:192.168.1.244/24\n"),
+            MagicMock(returncode=0),
+        ]
+
+        result, err, code = svc.complete_setup(network_mode="ethernet")
+
+        assert code == 200
+        assert err == ""
+        assert result["network_mode"] == "ethernet"
+        assert result["ip"] == "192.168.1.244"
+        assert (tmp_path / ".setup-done").exists()
+        commands = [call.args[0] for call in mock_sub.run.call_args_list]
+        assert ["/opt/monitor/scripts/monitor-hotspot.sh", "stop"] in commands
+        assert not any(
+            cmd[:2] == ["/opt/monitor/scripts/monitor-hotspot.sh", "connect"]
+            for cmd in commands
+        )
+
+    @patch(SUBPROCESS_PATCH)
+    @patch("monitor.services.provisioning_service.socket")
+    def test_ethernet_mode_requires_connected_ip(
+        self, mock_socket, mock_sub, svc, tmp_path
+    ):
+        _fix(mock_sub)
+        _write_setup_hotspot_password(tmp_path)
+        mock_socket.gethostname.return_value = "rpi-divinu"
+        mock_sub.run.side_effect = [
+            MagicMock(returncode=0, stdout=""),
+        ]
+
+        result, err, code = svc.complete_setup(network_mode="ethernet")
+
+        assert code == 400
+        assert result is None
+        assert "Ethernet" in err
+        assert not (tmp_path / ".setup-done").exists()
+
+    def test_invalid_network_mode_returns_400(self, svc, tmp_path):
+        _write_setup_hotspot_password(tmp_path)
+
+        result, err, code = svc.complete_setup(network_mode="cellular")
+
+        assert code == 400
+        assert result is None
+        assert "Network mode" in err

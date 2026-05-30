@@ -16,6 +16,7 @@ RDEPENDS:${PN} = " \
     tzdata \
     tailscale \
     nm-persist \
+    gpio-trigger \
     htop \
     nano \
     curl \

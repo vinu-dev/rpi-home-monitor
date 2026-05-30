@@ -45,7 +45,10 @@ get_hotspot_pass() {
 LED_PATH="/sys/class/leds/ACT"
 
 led_write() {
-    echo "$2" > "${LED_PATH}/$1" 2>/dev/null || true
+    TARGET="${LED_PATH}/$1"
+    if [ -w "$TARGET" ]; then
+        printf "%s\n" "$2" > "$TARGET" 2>/dev/null || true
+    fi
 }
 
 led_setup_mode() {
@@ -106,6 +109,9 @@ start_hotspot() {
         wifi.mode ap \
         wifi.band bg \
         wifi-sec.key-mgmt wpa-psk \
+        wifi-sec.proto rsn \
+        wifi-sec.pairwise ccmp \
+        wifi-sec.group ccmp \
         wifi-sec.psk "${HOTSPOT_PASS_VALUE}" \
         ipv4.method shared
 
@@ -211,8 +217,9 @@ wipe_wifi() {
     if [ -d "$NM_DIR" ]; then
         for CONN_FILE in "${NM_DIR}"/*; do
             if [ -f "$CONN_FILE" ]; then
-                rm -f "$CONN_FILE"
-                echo "  Removed file: $(basename "$CONN_FILE")"
+                rm -f "$CONN_FILE" 2>/dev/null \
+                    && echo "  Removed file: $(basename "$CONN_FILE")" \
+                    || echo "  Skipped read-only file: $(basename "$CONN_FILE")"
             fi
         done
     fi
@@ -232,13 +239,15 @@ wipe_wifi() {
 
     # Reset wpa_supplicant.conf to empty state
     WPA_CONF="/etc/wpa_supplicant.conf"
-    if [ -f "$WPA_CONF" ]; then
+    if [ -w "$WPA_CONF" ]; then
         cat > "$WPA_CONF" <<'WPAEOF'
 ctrl_interface=/var/run/wpa_supplicant
 ctrl_interface_group=0
 update_config=1
 WPAEOF
         echo "  Reset wpa_supplicant.conf"
+    elif [ -f "$WPA_CONF" ]; then
+        echo "  Skipped read-only wpa_supplicant.conf"
     fi
 
     echo "WiFi credentials wiped"

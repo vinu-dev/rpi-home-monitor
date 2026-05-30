@@ -20,6 +20,7 @@ SRC_URI = " \
     file://camera_streamer/ \
     file://release_version/release_version.py \
     file://config/camera-streamer.service \
+    file://config/camera-privileged-helper.service \
     file://config/camera-hotspot.service \
     file://config/camera-hotspot.sh \
     file://config/nftables-camera.conf \
@@ -53,7 +54,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "camera-streamer.service camera-hotspot.service ensure-camera-overlay.service camera-ota-installer.path camera-ota-reboot.path"
+SYSTEMD_SERVICE:${PN} = "camera-privileged-helper.service camera-streamer.service camera-hotspot.service ensure-camera-overlay.service camera-ota-installer.path camera-ota-reboot.path"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create camera system user/group
@@ -89,6 +90,7 @@ do_install() {
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/camera-streamer.service ${D}${systemd_system_unitdir}/camera-streamer.service
+    install -m 0644 ${WORKDIR}/config/camera-privileged-helper.service ${D}${systemd_system_unitdir}/camera-privileged-helper.service
     install -m 0644 ${WORKDIR}/config/camera-hotspot.service ${D}${systemd_system_unitdir}/camera-hotspot.service
     install -m 0644 ${WORKDIR}/config/ensure-camera-overlay.service ${D}${systemd_system_unitdir}/ensure-camera-overlay.service
     install -m 0644 ${WORKDIR}/config/camera-ota-installer.service ${D}${systemd_system_unitdir}/camera-ota-installer.service
@@ -116,6 +118,7 @@ do_install() {
 FILES:${PN} = " \
     /opt/camera \
     ${bindir}/camera-ota-installer \
+    ${systemd_system_unitdir}/camera-privileged-helper.service \
     ${systemd_system_unitdir}/camera-streamer.service \
     ${systemd_system_unitdir}/camera-hotspot.service \
     ${systemd_system_unitdir}/ensure-camera-overlay.service \
