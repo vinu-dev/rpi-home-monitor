@@ -513,15 +513,7 @@ def _init_services(app):
     # quietly fail against a stale /data/recordings path after the operator
     # selects a USB device.
     def _on_recording_dir_change(new_dir):
-        app.streaming.update_recordings_dir(new_dir)
-        if getattr(app, "motion_clip_correlator", None) is not None:
-            app.motion_clip_correlator.set_recordings_dir(new_dir)
-        if getattr(app, "loop_recorder", None) is not None:
-            app.loop_recorder.set_base_dir(new_dir)
-        if getattr(app, "offsite_backup_service", None) is not None:
-            app.offsite_backup_service.set_recordings_dir(new_dir)
-        if getattr(app, "timestamp_backfill_service", None) is not None:
-            app.timestamp_backfill_service.set_recordings_dir(new_dir)
+        _apply_recording_dir_change(app, new_dir)
 
     app.storage_manager.set_dir_change_callback(_on_recording_dir_change)
 
@@ -559,6 +551,54 @@ def _init_services(app):
         time_health=app.time_health_service,
     )
     app.watchdog_notifier = WatchdogNotifier(probe_url=app.config["WATCHDOG_PROBE_URL"])
+
+
+def _apply_recording_dir_change(app, requested_dir):
+    """Apply a recordings-dir change and settle dependents on the final path.
+
+    Starting or restarting recorders can detect a bad USB path and ask
+    StorageService to fall back to internal storage. That fallback is re-entrant:
+    it changes StorageManager again while the original callback is still running.
+    Every dependent service must therefore sync to the effective StorageManager
+    path after StreamingService has had a chance to trigger fallback.
+    """
+    app.streaming.update_recordings_dir(requested_dir)
+    _sync_recording_dir_dependents(app, requested_dir)
+
+
+def _sync_recording_dir_dependents(app, requested_dir):
+    effective_dir = _effective_recordings_dir(app, requested_dir)
+    if _normalized_path(effective_dir) != _normalized_path(requested_dir):
+        log.info(
+            "Recordings dir settled on %s after requested %s",
+            effective_dir,
+            requested_dir,
+        )
+
+    if getattr(app.streaming, "recordings_dir", effective_dir) != effective_dir:
+        app.streaming.update_recordings_dir(effective_dir)
+    if getattr(app, "motion_clip_correlator", None) is not None:
+        app.motion_clip_correlator.set_recordings_dir(effective_dir)
+    if getattr(app, "loop_recorder", None) is not None:
+        app.loop_recorder.set_base_dir(effective_dir)
+    if getattr(app, "offsite_backup_service", None) is not None:
+        app.offsite_backup_service.set_recordings_dir(effective_dir)
+    if getattr(app, "timestamp_backfill_service", None) is not None:
+        app.timestamp_backfill_service.set_recordings_dir(effective_dir)
+
+
+def _effective_recordings_dir(app, fallback_dir):
+    storage_manager = getattr(app, "storage_manager", None)
+    effective_dir = getattr(storage_manager, "recordings_dir", "")
+    return (
+        effective_dir
+        if isinstance(effective_dir, str) and effective_dir
+        else fallback_dir
+    )
+
+
+def _normalized_path(path):
+    return os.path.normpath(str(path or ""))
 
 
 def _restore_hostname(data_dir: str):
@@ -602,10 +642,7 @@ def _startup(app):
     # searches the right tree.
     recordings_dir = _auto_mount_usb(app, app.config["RECORDINGS_DIR"])
     if recordings_dir != app.config["RECORDINGS_DIR"]:
-        app.streaming.update_recordings_dir(recordings_dir)
-        if getattr(app, "motion_clip_correlator", None) is not None:
-            app.motion_clip_correlator.set_recordings_dir(recordings_dir)
-        app.loop_recorder.set_base_dir(recordings_dir)
+        _sync_recording_dir_dependents(app, recordings_dir)
 
     app.streaming.start()
     # NOTE: app.storage_manager is NOT started. LoopRecorder (ADR-0017)
@@ -684,6 +721,15 @@ def _auto_mount_usb(app, default_recordings_dir):
             return default_recordings_dir
 
         rec_dir = usb.prepare_recordings_dir()
+        ok, probe_error = app.storage_service.verify_recordings_dir(rec_dir)
+        if not ok:
+            log.warning(
+                "Configured USB storage %s failed write check: %s - using internal storage",
+                resolved_device,
+                probe_error,
+            )
+            return default_recordings_dir
+
         app.storage_manager.set_recordings_dir(rec_dir)
         if resolved_device != usb_device or getattr(settings, "usb_uuid", "") != (
             device.get("uuid", "") or ""

@@ -221,6 +221,29 @@ class StorageService:
                 500,
             )
 
+        ok, probe_error = self.verify_recordings_dir(rec_dir)
+        if not ok:
+            active_dir = self._active_recordings_dir() or self._default_dir
+            self._log_audit(
+                "USB_STORAGE_REJECTED",
+                user,
+                ip,
+                f"device={device_path}, path={rec_dir}, error={probe_error}",
+            )
+            return (
+                {
+                    "recordings_dir": active_dir,
+                    "filesystem_status": device.get("filesystem_status", "unknown"),
+                },
+                (
+                    "USB mounted, but the recordings folder failed a write test. "
+                    "Recording remains on internal storage. Eject the USB drive "
+                    "or reformat/replace it before using it for recordings. "
+                    f"Detail: {probe_error}"
+                ),
+                409,
+            )
+
         # Switch storage manager
         if self._storage_manager:
             self._storage_manager.set_recordings_dir(rec_dir)
@@ -323,6 +346,20 @@ class StorageService:
             200,
         )
 
+    def verify_recordings_dir(self, recordings_dir: str) -> tuple[bool, str]:
+        """Return whether a candidate recordings root can safely accept clips."""
+        self._try_repair_recordings_dir(recordings_dir, "")
+        ok, error = self._probe_recording_path(recordings_dir)
+        if not ok:
+            return False, error
+
+        for camera_id in self._known_camera_ids():
+            self._try_repair_recordings_dir(recordings_dir, camera_id)
+            ok, error = self._probe_recording_path(recordings_dir, camera_id)
+            if not ok:
+                return False, f"{camera_id}: {error}"
+        return True, ""
+
     def handle_recording_storage_fault(
         self, recordings_dir: str, camera_id: str = "", error: str = ""
     ) -> str:
@@ -386,6 +423,18 @@ class StorageService:
         except privileged.PrivilegedHelperError as exc:
             log.warning("USB recording permission repair failed: %s", exc)
             return False
+
+    def _known_camera_ids(self) -> list[str]:
+        try:
+            cameras = self._store.get_cameras()
+        except Exception:
+            return []
+        ids: list[str] = []
+        for camera in cameras:
+            camera_id = getattr(camera, "id", "")
+            if isinstance(camera_id, str) and camera_id:
+                ids.append(camera_id)
+        return ids
 
     @staticmethod
     def _probe_recording_path(
