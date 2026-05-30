@@ -9,6 +9,38 @@ import pytest
 from camera_streamer import ota_installer
 
 
+def _newc_entry(name: str, data: bytes) -> bytes:
+    name_bytes = name.encode("utf-8") + b"\0"
+    fields = [
+        "070701",
+        f"{1:08x}",
+        f"{0o100644:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{1:08x}",
+        f"{0:08x}",
+        f"{len(data):08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{len(name_bytes):08x}",
+        f"{0:08x}",
+    ]
+    out = "".join(fields).encode("ascii") + name_bytes
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    out += data
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    return out
+
+
+def _swu_bytes(version: str) -> bytes:
+    manifest = (
+        'software = { version = "' + version + '"; home-monitor-camera = {}; };\n'
+    ).encode("utf-8")
+    return _newc_entry("sw-description", manifest)
+
+
 @pytest.fixture
 def spool(tmp_path, monkeypatch):
     spool_dir = tmp_path / "spool"
@@ -122,6 +154,33 @@ class TestStageBundle:
         )
         assert calls, "progress_cb should fire"
         assert calls[-1] == (len(data), len(data))
+
+    def test_rejects_older_bundle(self, spool, monkeypatch):
+        monkeypatch.setattr(
+            "camera_streamer.ota_installer.release_version", lambda: "1.6.0"
+        )
+        data = _swu_bytes("1.4.1-dev")
+
+        ok, msg = ota_installer.stage_bundle(io.BytesIO(data), len(data))
+
+        assert ok is False
+        assert "Rejected older update" in msg
+        assert not os.path.exists(ota_installer.bundle_path())
+        assert ota_installer.read_status()["state"] == "error"
+
+    def test_allows_newer_bundle(self, spool, monkeypatch):
+        monkeypatch.setattr(
+            "camera_streamer.ota_installer.release_version", lambda: "1.6.0"
+        )
+        data = _swu_bytes("1.7.0")
+
+        ok, path = ota_installer.stage_bundle(io.BytesIO(data), len(data))
+
+        assert ok is True
+        assert path == ota_installer.bundle_path()
+        status = ota_installer.read_status()
+        assert status["target_version"] == "1.7.0"
+        assert status["update_relation"] == "upgrade"
 
 
 class TestTriggerInstall:

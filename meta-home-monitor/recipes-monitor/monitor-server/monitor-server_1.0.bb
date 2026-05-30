@@ -19,6 +19,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/../../../app/server:${THISDIR}/../../../a
 SRC_URI = " \
     file://monitor/ \
     file://release_version/release_version.py \
+    file://ota_policy/ota_policy.py \
     file://config/monitor.service \
     file://config/monitor-privileged-helper.service \
     file://config/monitor-avahi-pin.service \
@@ -76,6 +77,11 @@ do_install() {
     # The file:// fetcher preserves the subdir name under WORKDIR.
     install -m 0644 ${WORKDIR}/release_version/release_version.py \
         ${D}/opt/monitor/monitor/release_version.py
+
+    # Shared OTA policy helper: server-side staging and camera-side
+    # receiver code must make the same downgrade/stale-bundle decision.
+    install -m 0644 ${WORKDIR}/ota_policy/ota_policy.py \
+        ${D}/opt/monitor/monitor/ota_policy.py
 
     # Create data directories (will be on /data partition in production)
     install -d ${D}/opt/monitor/data/recordings

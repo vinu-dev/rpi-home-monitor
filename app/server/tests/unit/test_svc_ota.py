@@ -9,6 +9,39 @@ import pytest
 from monitor.services.ota_service import MAX_BUNDLE_SIZE, OTAService
 
 
+def _newc_entry(name: str, data: bytes) -> bytes:
+    name_bytes = name.encode("utf-8") + b"\0"
+    fields = [
+        "070701",
+        f"{1:08x}",
+        f"{0o100644:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{1:08x}",
+        f"{0:08x}",
+        f"{len(data):08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{len(name_bytes):08x}",
+        f"{0:08x}",
+    ]
+    out = "".join(fields).encode("ascii") + name_bytes
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    out += data
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    return out
+
+
+def _write_swu(path: str, version: str) -> None:
+    manifest = (
+        'software = { version = "' + version + '"; raspberrypi4-64 = {}; };\n'
+    ).encode("utf-8")
+    with open(path, "wb") as f:
+        f.write(_newc_entry("sw-description", manifest))
+
+
 @pytest.fixture
 def data_dir(tmp_path):
     """Create temp data directory structure."""
@@ -57,6 +90,26 @@ class TestGetSetStatus:
         svc.set_status("cam-001", "pending")
         assert svc.get_status("server")["state"] == "installing"
         assert svc.get_status("cam-001")["state"] == "pending"
+
+    def test_discards_stale_staged_server_bundle_from_disk(self, svc, data_dir):
+        staged = os.path.join(data_dir, "ota", "staging", "old.swu")
+        _write_swu(staged, "1.4.1-dev")
+
+        status = svc.get_status("server", current_version="1.6.0")
+
+        assert status["state"] == "idle"
+        assert "Rejected older update" in status["error"]
+        assert not os.path.exists(staged)
+
+    def test_keeps_current_staged_server_bundle_from_disk(self, svc, data_dir):
+        staged = os.path.join(data_dir, "ota", "staging", "same.swu")
+        _write_swu(staged, "1.6.0")
+
+        status = svc.get_status("server", current_version="1.6.0")
+
+        assert status["state"] == "staged"
+        assert status["staged_filename"] == "same.swu"
+        assert status["update_relation"] == "same"
 
 
 class TestCheckSpace:
@@ -135,6 +188,27 @@ class TestStageBundle:
             f.write(b"x" * 100)
         svc.stage_bundle(src, "update.swu")
         assert svc.get_status("server")["state"] == "staged"
+
+    def test_rejects_older_version_when_current_is_known(self, svc, data_dir):
+        src = os.path.join(data_dir, "ota", "inbox", "old.swu")
+        _write_swu(src, "1.4.1-dev")
+
+        path, err = svc.stage_bundle(src, "old.swu", current_version="1.6.0")
+
+        assert path is None
+        assert "Rejected older update" in err
+        assert not os.path.exists(os.path.join(data_dir, "ota", "staging", "old.swu"))
+
+    def test_allows_newer_version_when_current_is_known(self, svc, data_dir):
+        src = os.path.join(data_dir, "ota", "inbox", "new.swu")
+        _write_swu(src, "1.7.0")
+
+        path, err = svc.stage_bundle(src, "new.swu", current_version="1.6.0")
+
+        assert err == ""
+        assert path is not None
+        status = svc.get_status("server", current_version="1.6.0")
+        assert status["update_relation"] == "upgrade"
 
 
 class TestVerifyBundle:

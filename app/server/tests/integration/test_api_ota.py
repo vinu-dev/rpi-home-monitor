@@ -2,15 +2,53 @@
 """Tests for the OTA update API."""
 
 import io
+import os
 
 from monitor.models import Camera
 
 
-def _add_camera(app, camera_id="cam-001", status="online"):
+def _add_camera(app, camera_id="cam-001", status="online", firmware_version=""):
     """Helper: add camera."""
     app.store.save_camera(
-        Camera(id=camera_id, name="Test", status=status, ip="192.168.1.50")
+        Camera(
+            id=camera_id,
+            name="Test",
+            status=status,
+            ip="192.168.1.50",
+            firmware_version=firmware_version,
+        )
     )
+
+
+def _newc_entry(name: str, data: bytes) -> bytes:
+    name_bytes = name.encode("utf-8") + b"\0"
+    fields = [
+        "070701",
+        f"{1:08x}",
+        f"{0o100644:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{1:08x}",
+        f"{0:08x}",
+        f"{len(data):08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{0:08x}",
+        f"{len(name_bytes):08x}",
+        f"{0:08x}",
+    ]
+    out = "".join(fields).encode("ascii") + name_bytes
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    out += data
+    out += b"\0" * ((4 - len(out) % 4) % 4)
+    return out
+
+
+def _swu_bytes(version: str, target: str = "server") -> bytes:
+    selector = "raspberrypi4-64" if target == "server" else "home-monitor-camera"
+    manifest = f'software = {{ version = "{version}"; {selector} = {{}}; }};\n'
+    return _newc_entry("sw-description", manifest.encode("utf-8"))
 
 
 class TestOTAStatus:
@@ -71,6 +109,21 @@ class TestOTAStatus:
         data = client.get("/api/v1/ota/status").get_json()
         assert len(data["cameras"]) == 0
 
+    def test_status_discards_stale_camera_bundle(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+        inbox = os.path.join(app.ota_service.inbox_dir, "camera-cam-001")
+        os.makedirs(inbox, exist_ok=True)
+        with open(os.path.join(inbox, "old.swu"), "wb") as f:
+            f.write(_swu_bytes("1.4.1-dev", target="camera"))
+
+        data = client.get("/api/v1/ota/status").get_json()
+
+        cam = next(c for c in data["cameras"] if c["id"] == "cam-001")
+        assert cam["staged_filename"] == ""
+        assert "Rejected older update" in cam["error"]
+        assert not os.path.exists(inbox)
+
 
 class TestServerUpload:
     """Test POST /api/v1/ota/server/upload."""
@@ -111,6 +164,18 @@ class TestServerUpload:
         )
         status = app.ota_service.get_status("server")
         assert status["state"] == "staged"
+
+    def test_rejects_older_server_bundle(self, monkeypatch, logged_in_client):
+        monkeypatch.setattr("monitor.api.ota.release_version", lambda: "1.6.0")
+        client = logged_in_client()
+        data = {"file": (io.BytesIO(_swu_bytes("1.4.1-dev")), "old.swu")}
+
+        response = client.post(
+            "/api/v1/ota/server/upload", data=data, content_type="multipart/form-data"
+        )
+
+        assert response.status_code == 400
+        assert "Rejected older update" in response.get_json()["error"]
 
 
 class TestCameraPush:
@@ -261,6 +326,19 @@ class TestCameraUpload:
         cam = next(c for c in status["cameras"] if c["id"] == "cam-001")
         assert cam["staged_filename"] == "new.swu"
 
+    def test_rejects_older_camera_bundle(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+
+        resp = client.post(
+            "/api/v1/ota/camera/cam-001/upload",
+            data={"file": (io.BytesIO(_swu_bytes("1.4.1-dev", "camera")), "old.swu")},
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 400
+        assert "Rejected older update" in resp.get_json()["error"]
+
 
 class TestCameraLiveStatus:
     """Test GET /api/v1/ota/camera/<id>/live-status."""
@@ -359,7 +437,7 @@ class TestServerUploadEdgeCases:
         import os
         import tempfile
 
-        def _fake_stage(source_path, filename, user="", ip=""):
+        def _fake_stage(source_path, filename, user="", ip="", current_version=""):
             fd, p = tempfile.mkstemp(suffix=".swu")
             os.write(fd, b"fake")
             os.close(fd)
@@ -385,7 +463,7 @@ class TestServerUploadEdgeCases:
         import os
         import tempfile
 
-        def _fake_stage(source_path, filename, user="", ip=""):
+        def _fake_stage(source_path, filename, user="", ip="", current_version=""):
             fd, p = tempfile.mkstemp(suffix=".swu")
             os.write(fd, b"fake")
             os.close(fd)
@@ -477,6 +555,26 @@ class TestServerInstall:
         resp = client.post("/api/v1/ota/server/install")
         assert resp.status_code == 200
         assert "reboot" in resp.get_json()["message"].lower()
+        assert os.path.isdir(staging)
+        assert not [p for p in os.listdir(staging) if p.endswith(".swu")]
+
+    def test_rejects_stale_bundle_at_install_time(
+        self, monkeypatch, app, logged_in_client
+    ):
+        client = logged_in_client()
+        monkeypatch.setattr("monitor.api.ota.release_version", lambda: "1.6.0")
+
+        staging = app.ota_service.staging_dir
+        os.makedirs(staging, exist_ok=True)
+        bundle = os.path.join(staging, "old.swu")
+        with open(bundle, "wb") as fh:
+            fh.write(_swu_bytes("1.4.1-dev"))
+
+        resp = client.post("/api/v1/ota/server/install")
+
+        assert resp.status_code == 409
+        assert "Rejected older update" in resp.get_json()["error"]
+        assert not os.path.exists(bundle)
 
 
 class TestCameraUploadEdgeCases:

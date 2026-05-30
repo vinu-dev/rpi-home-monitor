@@ -1264,7 +1264,8 @@ def _make_status_handler(
 
             ok, msg = ota_installer.stage_bundle(self.rfile, content_len)
             if not ok:
-                self._json_response({"error": msg}, 500)
+                code = 400 if msg.startswith("Rejected older update") else 500
+                self._json_response({"error": msg}, code)
                 return
 
             ok, msg = ota_installer.trigger_install(msg)

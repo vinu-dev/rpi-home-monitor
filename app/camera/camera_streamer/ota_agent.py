@@ -162,7 +162,8 @@ class OTAAgent:
 
         ok, msg = ota_installer.stage_bundle(handler.rfile, content_length)
         if not ok:
-            self._send_json(handler, 500, {"error": msg})
+            code = 400 if msg.startswith("Rejected older update") else 500
+            self._send_json(handler, code, {"error": msg})
             return
 
         ok, trigger_msg = ota_installer.trigger_install(msg)

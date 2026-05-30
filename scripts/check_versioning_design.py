@@ -125,6 +125,41 @@ def check_release_version_helper_canonical() -> list[str]:
     return failures
 
 
+def check_ota_policy_helper_canonical() -> list[str]:
+    """The OTA downgrade/stale-bundle policy must be identical in
+    server, camera, and the canonical shared source.
+    """
+    failures: list[str] = []
+    canonical = REPO_ROOT / "app" / "shared" / "ota_policy" / "ota_policy.py"
+    camera_copy = REPO_ROOT / "app" / "camera" / "camera_streamer" / "ota_policy.py"
+    server_copy = REPO_ROOT / "app" / "server" / "monitor" / "ota_policy.py"
+    for p in (canonical, camera_copy, server_copy):
+        if not p.is_file():
+            failures.append(f"missing ota_policy helper: {p}")
+    if failures:
+        return failures
+    h_canonical = _sha256(canonical)
+    h_camera = _sha256(camera_copy)
+    h_server = _sha256(server_copy)
+    if h_camera != h_canonical:
+        failures.append(
+            f"ota_policy drift: camera copy diverged from canonical\n"
+            f"  canonical: {canonical}  sha256={h_canonical}\n"
+            f"  camera:    {camera_copy}  sha256={h_camera}\n"
+            "Re-copy from canonical: cp app/shared/ota_policy/ota_policy.py "
+            "app/camera/camera_streamer/ota_policy.py"
+        )
+    if h_server != h_canonical:
+        failures.append(
+            f"ota_policy drift: server copy diverged from canonical\n"
+            f"  canonical: {canonical}  sha256={h_canonical}\n"
+            f"  server:    {server_copy}  sha256={h_server}\n"
+            "Re-copy from canonical: cp app/shared/ota_policy/ota_policy.py "
+            "app/server/monitor/ota_policy.py"
+        )
+    return failures
+
+
 # --- Check 3 — no app code reads /etc/sw-versions ------------------
 
 
@@ -320,6 +355,10 @@ CHECKS = [
     (
         "release_version helper byte-identical in 3 places",
         check_release_version_helper_canonical,
+    ),
+    (
+        "ota_policy helper byte-identical in 3 places",
+        check_ota_policy_helper_canonical,
     ),
     ("no app code reads /etc/sw-versions", check_no_app_reads_sw_versions),
     (
