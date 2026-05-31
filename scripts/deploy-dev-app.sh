@@ -180,6 +180,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$SERVER_STAGE"
 
@@ -229,6 +231,10 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
         cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
         cp '$SERVER_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
+        cp '$SERVER_STAGE/mediamtx.service' /etc/systemd/system/mediamtx.service
+        if command -v tailscaled >/dev/null 2>&1; then
+            cp '$SERVER_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
+        fi
     "
 
     log "Applying boot optimisation overrides"
@@ -240,10 +246,13 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         # mediamtx: same — only listens on local RTSP port, no internet needed
-        sed 's|After=network-online.target|After=network.target|;s|Wants=network-online.target||' \
-            /usr/lib/systemd/system/mediamtx.service > /etc/systemd/system/mediamtx.service
+        cp '$SERVER_STAGE/mediamtx.service' /etc/systemd/system/mediamtx.service
+        if command -v tailscaled >/dev/null 2>&1; then
+            cp '$SERVER_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
+        fi
         # Mask systemd-networkd-wait-online: always times out on eth0 no-carrier
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+        systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
         systemctl enable home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
     "
@@ -288,6 +297,7 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$CAMERA_STAGE"
 
@@ -330,6 +340,9 @@ deploy_camera() {
         cp '$CAMERA_STAGE/camera-ota-installer.sh' /usr/bin/camera-ota-installer
         chmod 0755 /usr/bin/camera-ota-installer
         cp '$CAMERA_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
+        if command -v tailscaled >/dev/null 2>&1; then
+            cp '$CAMERA_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
+        fi
     "
 
     log "Applying boot optimisation overrides"
@@ -343,6 +356,11 @@ deploy_camera() {
         cp '$CAMERA_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
         cp '$CAMERA_STAGE/camera-ota-installer.service' /etc/systemd/system/camera-ota-installer.service
         cp '$CAMERA_STAGE/camera-ota-installer.path' /etc/systemd/system/camera-ota-installer.path
+        if command -v tailscaled >/dev/null 2>&1; then
+            cp '$CAMERA_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
+        fi
+        systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
+        systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl disable --now camera-ota-reboot.path camera-ota-reboot.service >/dev/null 2>&1 || true
         rm -f /etc/systemd/system/camera-ota-reboot.path /etc/systemd/system/camera-ota-reboot.service
         cp '$CAMERA_STAGE/camera-ota-tmpfiles.conf' /etc/tmpfiles.d/camera-ota.conf

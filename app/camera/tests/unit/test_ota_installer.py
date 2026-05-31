@@ -2,6 +2,7 @@
 """Unit tests for camera-side OTA installer client."""
 
 import io
+import json
 import os
 
 import pytest
@@ -119,6 +120,51 @@ class TestIsBusy:
     def test_installed_state_is_not_busy(self, spool):
         ota_installer.write_status("installed", progress=100)
         assert ota_installer.is_busy() is False
+
+    def test_stale_rebooting_state_is_not_busy(self, spool, monkeypatch):
+        monkeypatch.setattr(ota_installer, "_PROCESS_STARTED_AT", 1000)
+        monkeypatch.setattr(ota_installer.time, "time", lambda: 1000)
+        monkeypatch.setattr(ota_installer.status_led, "read_activation", lambda _: {})
+        with open(ota_installer.STATUS_PATH, "w") as f:
+            json.dump(
+                {"state": "rebooting", "progress": 100, "updated_at": 900},
+                f,
+            )
+
+        status = ota_installer.read_status()
+
+        assert status["state"] == "idle"
+        assert status["stale_state_cleared"] is True
+        assert ota_installer.is_busy() is False
+
+    def test_recent_rebooting_state_stays_busy(self, spool, monkeypatch):
+        monkeypatch.setattr(ota_installer, "_PROCESS_STARTED_AT", 1000)
+        monkeypatch.setattr(ota_installer.time, "time", lambda: 1000)
+        monkeypatch.setattr(ota_installer.status_led, "read_activation", lambda _: {})
+        with open(ota_installer.STATUS_PATH, "w") as f:
+            json.dump(
+                {"state": "rebooting", "progress": 100, "updated_at": 995},
+                f,
+            )
+
+        assert ota_installer.read_status()["state"] == "rebooting"
+        assert ota_installer.is_busy() is True
+
+    def test_reconcile_after_boot_persists_idle_status(self, spool, monkeypatch):
+        monkeypatch.setattr(ota_installer, "_PROCESS_STARTED_AT", 1000)
+        monkeypatch.setattr(ota_installer.time, "time", lambda: 1000)
+        monkeypatch.setattr(ota_installer.status_led, "read_activation", lambda _: {})
+        with open(ota_installer.STATUS_PATH, "w") as f:
+            json.dump(
+                {"state": "validating", "progress": 95, "updated_at": 900},
+                f,
+            )
+
+        assert ota_installer.reconcile_after_boot() is True
+        with open(ota_installer.STATUS_PATH) as f:
+            raw = json.load(f)
+        assert raw["state"] == "idle"
+        assert raw["previous_state"] == "validating"
 
 
 class TestStageBundle:

@@ -2,8 +2,9 @@
 [Unit]
 Description=Tailscale node agent
 Documentation=https://tailscale.com/kb/
-Wants=network-online.target
-After=network-online.target NetworkManager-wait-online.service
+Wants=NetworkManager.service
+After=NetworkManager.service network.target local-fs.target
+RequiresMountsFor=/data
 
 [Service]
 ExecStartPre=/bin/mkdir -p /data/tailscale
