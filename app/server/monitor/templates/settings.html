@@ -3996,6 +3996,13 @@ function settingsPage() {
             );
         },
 
+        _serverRestartingError(e) {
+            var message = ((e && e.message) || '').toLowerCase();
+            return message.indexOf('server is restarting') !== -1 ||
+                message.indexOf('home monitor is restarting') !== -1 ||
+                message.indexOf('server is unreachable') !== -1;
+        },
+
         otaVerificationLabel(v) {
             if (!v) return 'unknown';
             if (v.install_blocked) return 'blocked';
@@ -4043,7 +4050,14 @@ function settingsPage() {
                     return Object.assign({ progress: 0, error: '', state: 'idle' }, c);
                 });
                 this._scheduleOtaPoll();
-            } catch(e) { /* keep last state */ }
+            } catch(e) {
+                // During a server self-update the browser may hit nginx while
+                // Flask is still down. Keep the visible rebooting/installing
+                // state and continue polling instead of freezing the card.
+                if (this._serverBusy(this.ota.server && this.ota.server.state)) {
+                    this._scheduleOtaPoll();
+                }
+            }
         },
 
         _scheduleOtaPoll() {
@@ -4226,10 +4240,18 @@ function settingsPage() {
                 this.ota.server.busy = true;
                 window.HM.toast(data.message || 'Rebooting…', 'success');
             } catch(e) {
-                this.ota.server.state = 'error';
-                this.ota.server.error = e.message || 'Install failed';
-                this.ota.server.busy = false;
-                window.HM.toast(this.ota.server.error, 'error');
+                if (this._serverRestartingError(e)) {
+                    this.ota.server.state = 'rebooting';
+                    this.ota.server.progress = 100;
+                    this.ota.server.busy = true;
+                    this.ota.server.error = '';
+                    window.HM.toast('Server is restarting; waiting for it to return.', 'info');
+                } else {
+                    this.ota.server.state = 'error';
+                    this.ota.server.error = e.message || 'Install failed';
+                    this.ota.server.busy = false;
+                    window.HM.toast(this.ota.server.error, 'error');
+                }
             }
             this.loadOtaStatus();
         },

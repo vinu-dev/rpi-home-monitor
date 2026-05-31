@@ -1,4 +1,4 @@
-// REQ: SWR-022, SWR-032, SWR-056; RISK: RISK-010, RISK-015, RISK-017, RISK-020, RISK-021; SEC: SC-010, SC-020, SC-021; TEST: TC-021, TC-029, TC-042, TC-048
+// REQ: SWR-010, SWR-022, SWR-032, SWR-056; RISK: RISK-004, RISK-010, RISK-015, RISK-017, RISK-020, RISK-021; SEC: SC-003, SC-010, SC-020, SC-021; TEST: TC-013, TC-021, TC-029, TC-042, TC-048
 /**
  * Home Monitor OS — Dashboard JavaScript
  *
@@ -50,7 +50,9 @@
             opts.headers['X-CSRF-Token'] = _csrfToken;
         }
 
-        return fetch(url, opts).then(function(resp) {
+        return fetch(url, opts).catch(function() {
+            return Promise.reject(new Error('Server is unreachable; it may be restarting.'));
+        }).then(function(resp) {
             if (resp.status === 401) {
                 // Session expired — redirect to login
                 var path = window.location.pathname;
@@ -78,15 +80,34 @@
             });
         }
         return resp.text().then(function(text) {
-            var message = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-            if (!message) {
-                message = resp.statusText || 'Request failed';
-            }
-            if (message.length > 180) {
-                message = message.slice(0, 177) + '...';
-            }
+            var message = _messageFromNonJsonResponse(resp, text);
             return { error: message };
         });
+    }
+
+    function _messageFromNonJsonResponse(resp, text) {
+        var raw = text || '';
+        var head = raw.slice(0, 512).toLowerCase();
+        var looksLikeHtml = /^\s*<!doctype\s+html/.test(head) ||
+            /^\s*<html\b/.test(head) ||
+            head.indexOf('<body') !== -1 ||
+            head.indexOf('<style') !== -1;
+
+        if (looksLikeHtml) {
+            if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+                return 'Server is restarting; try again in a moment.';
+            }
+            return 'Server returned an HTML page instead of API data.';
+        }
+
+        var message = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!message) {
+            message = resp.statusText || 'Request failed';
+        }
+        if (message.length > 180) {
+            message = message.slice(0, 177) + '...';
+        }
+        return message;
     }
 
     /* ============================================================
