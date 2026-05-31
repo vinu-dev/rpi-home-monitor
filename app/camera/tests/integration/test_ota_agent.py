@@ -30,7 +30,7 @@ def config(tmp_path):
 @pytest.fixture
 def spool(tmp_path, monkeypatch):
     """Redirect the installer spool to a tmp dir so tests don't touch
-    /var/lib/camera-ota."""
+    the production /data OTA spool."""
     spool_dir = tmp_path / "spool"
     staging = spool_dir / "staging"
     staging.mkdir(parents=True)

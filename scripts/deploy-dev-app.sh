@@ -179,6 +179,9 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/shared/status_led/status_led.py" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -211,6 +214,10 @@ deploy_server() {
         mkdir -p /opt/monitor/scripts
         cp '$SERVER_STAGE/monitor-hotspot.sh' /opt/monitor/scripts/monitor-hotspot.sh
         chmod 0755 /opt/monitor/scripts/monitor-hotspot.sh
+        cp '$SERVER_STAGE/swupdate-check.sh' /opt/monitor/scripts/swupdate-check.sh
+        cp '$SERVER_STAGE/first-boot-setup.sh' /opt/monitor/scripts/first-boot-setup.sh
+        cp '$SERVER_STAGE/luks-first-boot.sh' /opt/monitor/scripts/luks-first-boot.sh
+        chmod 0755 /opt/monitor/scripts/swupdate-check.sh /opt/monitor/scripts/first-boot-setup.sh /opt/monitor/scripts/luks-first-boot.sh
         cp '$SERVER_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
         chmod 0755 /opt/scripts/gpio-trigger.sh
         cp '$SERVER_STAGE/status_led.py' /opt/monitor/monitor/status_led.py
@@ -280,6 +287,9 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/shared/status_led/status_led.py" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$CAMERA_STAGE"
 
     log "Installing camera app into /opt/camera"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -303,6 +313,11 @@ deploy_camera() {
         chown -R camera:camera /opt/camera/camera_streamer/__pycache__ 2>/dev/null || true
         mkdir -p /opt/scripts
         mkdir -p /opt/camera/scripts
+        mkdir -p /opt/monitor/scripts
+        cp '$CAMERA_STAGE/swupdate-check.sh' /opt/monitor/scripts/swupdate-check.sh
+        cp '$CAMERA_STAGE/first-boot-setup.sh' /opt/monitor/scripts/first-boot-setup.sh
+        cp '$CAMERA_STAGE/luks-first-boot.sh' /opt/monitor/scripts/luks-first-boot.sh
+        chmod 0755 /opt/monitor/scripts/swupdate-check.sh /opt/monitor/scripts/first-boot-setup.sh /opt/monitor/scripts/luks-first-boot.sh
         cp '$CAMERA_STAGE/camera-hotspot.sh' /opt/camera/scripts/camera-hotspot.sh
         chmod 0755 /opt/camera/scripts/camera-hotspot.sh
         cp '$CAMERA_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
@@ -321,7 +336,7 @@ deploy_camera() {
     ssh "${SSH_OPTS[@]}" "$host" "
         # Full unit file override from the repo. Keep this in sync with
         # app/camera/config/camera-streamer.service so hardening exceptions
-        # such as /var/lib/camera-ota cannot drift in the deploy path.
+        # and the /data-backed camera OTA spool cannot drift in deploys.
         cp '$CAMERA_STAGE/camera-streamer.service' /etc/systemd/system/camera-streamer.service
         cp '$CAMERA_STAGE/camera-privileged-helper.service' /etc/systemd/system/camera-privileged-helper.service
         cp '$CAMERA_STAGE/camera-hotspot.service' /etc/systemd/system/camera-hotspot.service
@@ -361,6 +376,8 @@ EOF
         fi
         systemctl daemon-reload
         systemctl enable home-monitor-led-init.service gpio-trigger.service camera-privileged-helper.service camera-hotspot.service camera-streamer.service camera-ota-installer.path >/dev/null 2>&1 || true
+        systemctl reset-failed camera-ota-installer.service >/dev/null 2>&1 || true
+        systemctl restart camera-ota-installer.path >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then

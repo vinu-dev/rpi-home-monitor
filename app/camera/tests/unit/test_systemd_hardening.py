@@ -3,20 +3,19 @@
 
 Filed in response to a 1.4.0 → 1.4.1 OTA blocker on three cameras
 stuck on 1.3.0. Their `camera-streamer.service` shipped with
-``ProtectSystem=strict`` and ``ReadWritePaths=/data`` only — no
-``/var/lib/camera-ota`` — which made the systemd namespace see the
-OTA spool directory as read-only even though the underlying
-filesystem was rw. The dashboard's `/api/ota/upload` handler then
-failed every upload with::
+``ProtectSystem=strict`` and a writable-path list that did not match
+the OTA spool, which made the systemd namespace see the spool
+directory as read-only even though the underlying filesystem was rw.
+The dashboard's `/api/ota/upload` handler then failed every upload with::
 
     {"error": "Write failed: [Errno 30] Read-only file system:
-              '/var/lib/camera-ota/staging/update.swu.partial'"}
+              '/data/ota/camera-spool/staging/update.swu.partial'"}
 
 The fix is one line in the unit. The CHALLENGE is preventing the
-class of regression from coming back: a future PR could quietly
-remove ``/var/lib/camera-ota`` from ``ReadWritePaths``, or move the
-spool dir, and the only surface that would catch it is hardware
-verification — which is too late.
+class of regression from coming back: a future PR could quietly move
+the spool dir outside ``/data`` while leaving ``ReadWritePaths`` behind,
+and the only surface that would catch it is hardware verification —
+which is too late.
 
 This test parses ``app/camera/config/camera-streamer.service`` at
 build time and asserts the hardening directives MATCH the set of
@@ -62,12 +61,6 @@ REQUIRED_WRITABLE_PATHS: dict[str, str] = {
         "camera_streamer.factory_reset, recordings, certs, motion log, "
         "wifi profiles. Persists across A/B OTA. The most fundamental "
         "writable path; without this nothing works."
-    ),
-    "/var/lib/camera-ota": (
-        "USED BY: camera_streamer.ota_installer, status_server's "
-        "/api/ota/upload handler, camera-ota-installer.service spool. "
-        "Hosts the trigger file, staged bundle, install status JSON. "
-        "Missing this → 1.3.0 OTA-stuck regression — see CHANGELOG 1.4.2."
     ),
 }
 

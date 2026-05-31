@@ -209,11 +209,10 @@ service unit:
    "Sensitive-Area Rules" section above: trust boundaries shifting (which
    is what a systemd namespace is) require explicit review.
 
-Why this matters: 1.4.0 cameras stuck on a 1.3.0 hardening regression
-(`ReadWritePaths=/data` only, omitting `/var/lib/camera-ota`) couldn't OTA
-out via the user-facing path — every upload failed with EROFS even though
-`/var/lib/camera-ota` was writable on the underlying ext4. Recovery
-required a manual systemd drop-in over SSH followed by an unsigned
-migration SWU build, all because a single-line miss in a `ReadWritePaths=`
-escaped review and the build pipeline. The static test in 1.4.2 prevents
-that class of regression. See CHANGELOG `[1.4.2]`.
+Why this matters: 1.4.0 cameras stuck on a 1.3.0 hardening regression where
+the OTA spool and `ReadWritePaths=` disagreed. Every upload failed with
+EROFS even though the underlying storage was writable. Recovery required a
+manual systemd drop-in over SSH followed by an unsigned migration SWU build,
+all because a single-line miss in a `ReadWritePaths=` escaped review and
+the build pipeline. The static test in 1.4.2 prevents that class of
+regression. See CHANGELOG `[1.4.2]`.

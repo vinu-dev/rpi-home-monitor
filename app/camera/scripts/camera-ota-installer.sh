@@ -12,11 +12,11 @@
 # This script is the privileged half of the OTA pipeline:
 #
 #   1. camera-streamer (user=camera) stages the bundle at
-#      /var/lib/camera-ota/staging/update.swu
-#   2. camera-streamer writes /var/lib/camera-ota/trigger
+#      /data/ota/camera-spool/staging/update.swu
+#   2. camera-streamer writes /data/ota/camera-spool/trigger
 #   3. camera-ota-installer.path detects the trigger
 #   4. camera-ota-installer.service runs THIS script as root
-#   5. Progress is reported back via /var/lib/camera-ota/status.json
+#   5. Progress is reported back via /data/ota/camera-spool/status.json
 #
 # State file format (status.json):
 #   {"state": "idle|verifying|installing|installed|error",
@@ -33,8 +33,9 @@ set -eu
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-SPOOL=/var/lib/camera-ota
+SPOOL=${CAMERA_OTA_SPOOL_DIR:-/data/ota/camera-spool}
 STAGING="$SPOOL/staging"
+OTA_TMP="$SPOOL/tmp"
 TRIGGER="$SPOOL/trigger"
 STATUS="$SPOOL/status.json"
 LOG="$SPOOL/install.log"
@@ -44,7 +45,7 @@ LEDCTL=/usr/bin/home-monitor-ledctl
 AUTO_REBOOT=0
 
 log() {
-    printf '%s %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG"
+    printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" | tee -a "$LOG"
 }
 
 set_led() {
@@ -117,6 +118,13 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+
+# Ensure the persistent /data-backed spool exists even on older images
+# whose tmpfiles rules created the legacy /var/lib path.
+mkdir -p "$STAGING" "$OTA_TMP"
+chown camera:camera "$SPOOL" "$STAGING" "$OTA_TMP" 2>/dev/null || true
+chmod 2775 "$SPOOL" "$STAGING" "$OTA_TMP" 2>/dev/null || true
+export TMPDIR="$OTA_TMP"
 
 # Path unit fires on trigger creation. If trigger is missing (race
 # with a previous run), nothing to do.
@@ -192,7 +200,7 @@ fi
 # Zeroing the superblock guarantees the post-swupdate mount is of
 # the NEW filesystem, not the ghost of a broken one.
 log "Zeroing standby partition superblock to clear any stale FS"
-dd if=/dev/zero of="$STANDBY" bs=1M count=16 status=none 2>&1 | tee -a "$LOG" || true
+dd if=/dev/zero of="$STANDBY" bs=1048576 count=16 2>&1 | tee -a "$LOG" || true
 sync
 
 # Phase 1: verify signature (if a key is available).

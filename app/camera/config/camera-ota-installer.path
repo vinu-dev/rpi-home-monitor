@@ -3,9 +3,9 @@ Description=Watch for camera OTA install triggers
 
 [Path]
 # Fires when the trigger file is created/modified. The unprivileged
-# camera-streamer process writes this file after staging a bundle,
+# camera-streamer process writes this file after staging a bundle on /data,
 # which activates camera-ota-installer.service (runs as root).
-PathModified=/var/lib/camera-ota/trigger
+PathModified=/data/ota/camera-spool/trigger
 Unit=camera-ota-installer.service
 
 [Install]

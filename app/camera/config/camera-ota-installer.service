@@ -1,17 +1,19 @@
 # REQ: SWR-038, SWR-050; RISK: RISK-004, RISK-018; SEC: SC-003, SC-019; TEST: TC-036, TC-044
 [Unit]
 Description=Camera OTA Installer (root-privileged swupdate wrapper)
-# Must run after /data is mounted (bundle lives under /var/lib which
-# may be bind-mounted from /data in future) and after local-fs so
-# /dev is populated for fw_setenv + partition access.
+# Must run after /data is mounted because the staged bundle and SWUpdate
+# TMPDIR live there; local-fs also guarantees /dev exists for fw_setenv
+# and partition access.
 After=local-fs.target
-ConditionPathExists=/var/lib/camera-ota/trigger
+RequiresMountsFor=/data
+ConditionPathExists=/data/ota/camera-spool/trigger
 
 [Service]
 Type=oneshot
 User=root
 Group=root
 ExecStart=/usr/bin/camera-ota-installer
+Environment=CAMERA_OTA_SPOOL_DIR=/data/ota/camera-spool
 # swupdate itself is the install — this service finishes when it
 # does, and the path unit re-arms for the next trigger.
 TimeoutStartSec=900

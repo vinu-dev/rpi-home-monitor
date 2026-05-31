@@ -11,6 +11,50 @@ set -e
 
 STAMP="/data/.first-boot-done"
 
+mount_source() {
+    target="$1"
+    if command -v findmnt >/dev/null 2>&1; then
+        found=$(findmnt -n -o SOURCE "$target" 2>/dev/null || true)
+        if [ -n "$found" ]; then
+            echo "$found"
+            return 0
+        fi
+    fi
+    awk -v target="$target" '$2 == target { print $1; exit }' /proc/mounts
+}
+
+split_partition_device() {
+    PART_DISK=""
+    PART_NUM=""
+    dev="$1"
+    case "$dev" in
+        /dev/mmcblk*p[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/p[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*p//')
+            ;;
+        /dev/[sv]d*[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*[^0-9]//')
+            ;;
+    esac
+}
+
+grow_partition_to_end() {
+    disk="$1"
+    partnum="$2"
+    if [ -z "$disk" ] || [ -z "$partnum" ]; then
+        return 0
+    fi
+    if command -v growpart >/dev/null 2>&1; then
+        growpart "$disk" "$partnum" || true
+    elif command -v parted >/dev/null 2>&1; then
+        # GNU parted asks for confirmation when resizing mounted partitions.
+        printf 'Yes\n' | parted ---pretend-input-tty "$disk" resizepart "$partnum" 100% || true
+    fi
+    partprobe "$disk" 2>/dev/null || true
+    blockdev --rereadpt "$disk" 2>/dev/null || true
+}
+
 if [ -f "$STAMP" ]; then
     echo "First boot setup already completed."
     exit 0
@@ -34,29 +78,32 @@ else
 fi
 
 # --- Expand data partition to fill SD card ---
-DATA_DEV=$(findmnt -n -o SOURCE /data 2>/dev/null || true)
+DATA_DEV=$(mount_source /data 2>/dev/null || true)
 if [ -n "$DATA_DEV" ]; then
-    # Get the disk and partition number (e.g., /dev/mmcblk0p4 -> /dev/mmcblk0, 4)
-    DISK=$(echo "$DATA_DEV" | sed 's/p[0-9]*$//')
-    PARTNUM=$(echo "$DATA_DEV" | grep -o '[0-9]*$')
+    GROW_DEV="$DATA_DEV"
+    RESIZE_DEV="$DATA_DEV"
+    if echo "$DATA_DEV" | grep -q '^/dev/mapper/' && command -v cryptsetup >/dev/null 2>&1; then
+        MAP_NAME=$(basename "$DATA_DEV")
+        BACKING_DEV=$(cryptsetup status "$MAP_NAME" 2>/dev/null | awk '/device:/ { print $2; exit }')
+        if [ -n "$BACKING_DEV" ]; then
+            GROW_DEV="$BACKING_DEV"
+        fi
+    fi
 
-    if [ -n "$DISK" ] && [ -n "$PARTNUM" ]; then
-        echo "Expanding data partition ${DATA_DEV} (${DISK} part ${PARTNUM})..."
+    split_partition_device "$GROW_DEV"
+    if [ -n "$PART_DISK" ] && [ -n "$PART_NUM" ]; then
+        echo "Expanding data partition ${GROW_DEV} (${PART_DISK} part ${PART_NUM})..."
 
-        # Grow partition to fill remaining disk space
-        if command -v growpart >/dev/null 2>&1; then
-            growpart "$DISK" "$PARTNUM" || true
-        elif command -v parted >/dev/null 2>&1; then
-            # parted -s won't auto-confirm on mounted partitions;
-            # pipe Yes to ---pretend-input-tty to handle the prompt.
-            echo Yes | parted ---pretend-input-tty "$DISK" resizepart "$PARTNUM" 100% || true
-            partprobe "$DISK" 2>/dev/null || true
+        grow_partition_to_end "$PART_DISK" "$PART_NUM"
+
+        if echo "$DATA_DEV" | grep -q '^/dev/mapper/' && command -v cryptsetup >/dev/null 2>&1; then
+            cryptsetup resize "$MAP_NAME" 2>/dev/null || true
         fi
 
         # Resize filesystem to match partition
         if command -v resize2fs >/dev/null 2>&1; then
-            resize2fs "$DATA_DEV" 2>/dev/null || true
-            NEW_SIZE=$(df -h "$DATA_DEV" 2>/dev/null | tail -1 | awk '{print $2}')
+            resize2fs "$RESIZE_DEV" 2>/dev/null || true
+            NEW_SIZE=$(df -h /data 2>/dev/null | tail -1 | awk '{print $2}')
             echo "Data partition expanded to ${NEW_SIZE}"
         fi
     fi

@@ -28,16 +28,14 @@ Environment=CAMERA_DATA_DIR=/data
 Environment=CAMERA_CONFIG_DIR=/data/config
 Environment=CAMERA_CERTS_DIR=/data/certs
 Environment=CAMERA_PRIVILEGED_HELPER_SOCKET=/run/camera/privileged-helper.sock
+Environment=CAMERA_OTA_SPOOL_DIR=/data/ota/camera-spool
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-# /data — persistent config, certs, logs (normal use).
-# /var/lib/camera-ota — OTA spool dir, shared with the privileged
-# camera-ota-installer.service via the trigger-file protocol. Without
-# this exemption ProtectSystem=strict rejects writes with EROFS.
-ReadWritePaths=/data /var/lib/camera-ota
+# /data — persistent config, certs, logs, and OTA spool.
+ReadWritePaths=/data
 PrivateTmp=true
 # Camera device access
 SupplementaryGroups=video

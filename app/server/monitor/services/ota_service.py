@@ -178,8 +178,18 @@ class OTAService:
         return os.path.join(self.ota_dir, "staging")
 
     @property
+    def swupdate_tmp_dir(self):
+        return os.path.join(self.ota_dir, "tmp")
+
+    @property
     def camera_staging_dir(self):
         return os.path.join(self.ota_dir, "camera-library")
+
+    def _swupdate_env(self):
+        os.makedirs(self.swupdate_tmp_dir, exist_ok=True)
+        env = os.environ.copy()
+        env["TMPDIR"] = self.swupdate_tmp_dir
+        return env
 
     def ensure_storage(self):
         """Create and repair OTA storage directories.
@@ -214,13 +224,19 @@ class OTAService:
         try:
             os.makedirs(self.inbox_dir, exist_ok=True)
             os.makedirs(self.staging_dir, exist_ok=True)
+            os.makedirs(self.swupdate_tmp_dir, exist_ok=True)
             os.makedirs(self.camera_staging_dir, exist_ok=True)
             return ""
         except OSError as exc:
             return str(exc)
 
     def _probe_storage_writable(self):
-        for directory in (self.inbox_dir, self.staging_dir, self.camera_staging_dir):
+        for directory in (
+            self.inbox_dir,
+            self.staging_dir,
+            self.swupdate_tmp_dir,
+            self.camera_staging_dir,
+        ):
             err = self._probe_directory_writable(directory)
             if err:
                 return err
@@ -568,6 +584,7 @@ class OTAService:
                     capture_output=True,
                     text=True,
                     timeout=60,
+                    env=self._swupdate_env(),
                 )
                 returncode = result.returncode
                 stderr = result.stderr
@@ -659,6 +676,7 @@ class OTAService:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    env=self._swupdate_env(),
                 )
                 try:
                     _stdout, stderr = proc.communicate(timeout=600)

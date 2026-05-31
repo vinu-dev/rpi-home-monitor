@@ -175,7 +175,7 @@ $ ./scripts/release.sh build 1.5.0     # on the build host
 
 ### OTA install (on-device)
 
-The existing `/var/lib/camera-ota/post-update.sh` (server side) and equivalent on camera get a tiny extension:
+The existing SWUpdate post-update script (server side) and equivalent on camera get a tiny extension:
 
 ```sh
 # After successful slot write, before reboot, write the new version

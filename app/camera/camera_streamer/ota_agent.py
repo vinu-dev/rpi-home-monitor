@@ -8,7 +8,7 @@ directly — it is unprivileged and NoNewPrivileges=true).
 
 Flow:
     POST /ota/upload
-      1. Stream body to /var/lib/camera-ota/staging/update.swu.partial
+      1. Stream body to /data/ota/camera-spool/staging/update.swu.partial
       2. Atomic rename to update.swu on complete
       3. Write trigger → systemd .path fires camera-ota-installer.service
          (root, runs `swupdate -c -i` then `swupdate -i`)

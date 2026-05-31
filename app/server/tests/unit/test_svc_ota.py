@@ -404,6 +404,9 @@ class TestVerifyBundle:
         valid, err = svc.verify_bundle(bundle)
         assert valid is False
         assert "bad signature" in err
+        assert mock_run.call_args.kwargs["env"]["TMPDIR"] == os.path.join(
+            data_dir, "ota", "tmp"
+        )
 
     @patch("monitor.services.ota_service.subprocess.run")
     def test_swupdate_not_found(self, mock_run, svc, data_dir):
@@ -535,6 +538,9 @@ class TestInstallBundle:
             "-k",
             key,
         ]
+        assert mock_popen.call_args.kwargs["env"]["TMPDIR"] == os.path.join(
+            data_dir, "ota", "tmp"
+        )
 
     @patch("monitor.services.ota_service.subprocess.Popen")
     def test_install_failure(self, mock_popen, svc, data_dir):
@@ -556,6 +562,9 @@ class TestInstallBundle:
             "-k",
             key,
         ]
+        assert mock_popen.call_args.kwargs["env"]["TMPDIR"] == os.path.join(
+            data_dir, "ota", "tmp"
+        )
 
     @patch("monitor.services.ota_service.subprocess.Popen")
     def test_install_without_key_uses_plain_command(self, mock_popen, svc, data_dir):
@@ -568,6 +577,9 @@ class TestInstallBundle:
         assert ok is True
         assert err == ""
         assert mock_popen.call_args[0][0] == ["swupdate", "-i", bundle]
+        assert mock_popen.call_args.kwargs["env"]["TMPDIR"] == os.path.join(
+            data_dir, "ota", "tmp"
+        )
 
     @patch("monitor.services.ota_service.subprocess.Popen")
     def test_install_swupdate_not_found(self, mock_popen, svc, data_dir):
