@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 
-from camera_streamer import led
+from camera_streamer import led, ota_installer
 from camera_streamer.capture import CaptureManager
 from camera_streamer.control import (
     DEFAULT_STREAM_STATE_PATH,
@@ -732,6 +732,7 @@ class CameraLifecycle:
         self._health.start()
 
         led.connected()
+        ota_installer.reconcile_after_boot()
         if self._notifier is not None:
             self._notifier.mark_ready()
         log.info("Camera streamer running (camera=%s)", self._config.camera_id)

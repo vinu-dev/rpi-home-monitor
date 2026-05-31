@@ -159,6 +159,72 @@ class TestPushBundle:
         assert ok is False
         assert "connection refused" in msg.lower()
 
+    def test_preflight_busy_status_returns_meaningful_error(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+
+        with (
+            patch.object(
+                client,
+                "get_status",
+                return_value=(
+                    {
+                        "state": "rebooting",
+                        "progress": 100,
+                        "current_version": "1.6.4",
+                        "target_version": "1.6.5-dev",
+                    },
+                    "",
+                ),
+            ),
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection"
+            ) as conn_cls,
+        ):
+            ok, msg = client.push_bundle(
+                "10.0.0.1",
+                str(p),
+                expected_version="1.6.5-dev",
+            )
+
+        assert ok is False
+        assert "Camera OTA is already in progress (rebooting, 100%)" in msg
+        assert "current=1.6.4, target=1.6.5-dev" in msg
+        conn_cls.assert_not_called()
+
+    def test_preflight_skips_when_runtime_matches_build_profile_target(
+        self, client, tmp_path
+    ):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+
+        with (
+            patch.object(
+                client,
+                "get_status",
+                return_value=(
+                    {
+                        "state": "idle",
+                        "progress": 0,
+                        "current_version": "1.6.5",
+                    },
+                    "",
+                ),
+            ),
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection"
+            ) as conn_cls,
+        ):
+            ok, msg = client.push_bundle(
+                "10.0.0.1",
+                str(p),
+                expected_version="v1.6.5-dev",
+            )
+
+        assert ok is True
+        assert msg == "Installed"
+        conn_cls.assert_not_called()
+
     def test_tls_setup_failure_returns_error(self, client, tmp_path):
         p = tmp_path / "bundle.swu"
         p.write_bytes(b"data")
@@ -220,6 +286,10 @@ class TestPushBundle:
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = upload_resp
         status_sequence = [
+            (
+                {"state": "idle", "progress": 0, "current_version": "1.6.0"},
+                "",
+            ),
             (
                 {
                     "state": "installing",
@@ -323,6 +393,10 @@ class TestPushBundle:
         fake_conn = MagicMock()
         fake_conn.getresponse.return_value = upload_resp
         status_sequence = [
+            (
+                {"state": "idle", "progress": 0, "current_version": "1.6.0"},
+                "",
+            ),
             (
                 {"state": "validating", "progress": 95, "current_version": "1.6.1-dev"},
                 "",
@@ -428,4 +502,8 @@ class TestGetStatus:
 
 def test_version_matches_accepts_equivalent_v_prefix_and_rejects_empty_expected():
     assert _version_matches("v1.6.1-dev", "1.6.1-dev") is True
+    assert _version_matches("1.6.5", "v1.6.5-dev") is True
+    assert _version_matches("1.6.5", "1.6.5-prod") is True
+    assert _version_matches("1.6.5-dev.20260531", "1.6.5") is False
+    assert _version_matches("1.6.4", "v1.6.5-dev") is False
     assert _version_matches("1.6.1", "") is False

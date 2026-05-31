@@ -80,6 +80,14 @@ OTA_PROTOCOL_VERSION = 2
 # isn't enabled or spool dir permissions are broken.
 TRIGGER_START_TIMEOUT = 30  # seconds
 
+# `rebooting` is intentionally persisted before systemctl reboot so the
+# server can show the correct state while the camera disappears. Once a
+# new camera-streamer process is running after that point, the old status
+# must no longer block future uploads.
+_PROCESS_STARTED_AT = int(time.time())
+POST_BOOT_BUSY_GRACE_SECONDS = 15
+STALE_BUSY_STATUS_SECONDS = 10 * 60
+
 
 def bundle_path():
     """Canonical absolute path of the staged bundle."""
@@ -205,6 +213,52 @@ def extract_bundle_version(swu_path):
     return m.group(1) if m else ""
 
 
+def _int_or_zero(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_stale_post_boot_busy_status(data, activation):
+    state = data.get("state", STATE_IDLE)
+    if state not in (STATE_REBOOTING, STATE_VALIDATING):
+        return False
+    if activation:
+        return False
+    if os.path.exists(TRIGGER_PATH):
+        return False
+
+    updated_at = _int_or_zero(data.get("updated_at"))
+    if updated_at <= 0:
+        return True
+
+    # If this process started after the status was written, the camera
+    # has already come back from the reboot window that wrote it.
+    if updated_at < (_PROCESS_STARTED_AT - POST_BOOT_BUSY_GRACE_SECONDS):
+        return True
+
+    # Also keep self-healing if camera-streamer is restarted without a
+    # board reboot while an old status file is still present.
+    return (time.time() - updated_at) > STALE_BUSY_STATUS_SECONDS
+
+
+def _normalize_status(data, activation):
+    data.setdefault("state", STATE_IDLE)
+    data.setdefault("progress", 0)
+    data.setdefault("error", "")
+
+    if _is_stale_post_boot_busy_status(data, activation):
+        previous_state = data.get("state", "")
+        data["state"] = STATE_IDLE
+        data["progress"] = 0
+        data["error"] = ""
+        data["stale_state_cleared"] = True
+        data["previous_state"] = previous_state
+
+    return data
+
+
 def read_status():
     """Read the installer's status JSON. Returns a dict with defaults
     if the file is missing/unreadable.
@@ -214,12 +268,10 @@ def read_status():
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("status.json is not an object")
-        data.setdefault("state", STATE_IDLE)
-        data.setdefault("progress", 0)
-        data.setdefault("error", "")
+        activation = status_led.read_activation("camera")
+        data = _normalize_status(data, activation)
         data["protocol_version"] = OTA_PROTOCOL_VERSION
         data["current_version"] = release_version()
-        activation = status_led.read_activation("camera")
         if activation:
             data["activation"] = activation
             if data.get("state") == STATE_IDLE:
@@ -240,6 +292,31 @@ def read_status():
             "activation": activation,
             "verification": verification_posture(),
         }
+
+
+def reconcile_after_boot():
+    """Persist cleanup of stale reboot/validation state after boot.
+
+    `read_status()` already treats stale post-boot states as idle for
+    callers. This helper makes that cleanup durable so the status file
+    no longer surprises older tools or shell diagnostics.
+    """
+    status = read_status()
+    previous_state = (
+        status.get("previous_state") if status.get("stale_state_cleared") else ""
+    )
+    if not previous_state:
+        return False
+
+    write_status(
+        STATE_IDLE,
+        progress=0,
+        error="",
+        previous_state=previous_state,
+        current_version=release_version(),
+    )
+    log.info("Cleared stale OTA %s state after boot", previous_state)
+    return True
 
 
 def write_status(state, progress=0, error="", **extra):

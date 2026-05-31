@@ -26,6 +26,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import ssl
 import time
 
@@ -58,6 +59,26 @@ STATUS_TIMEOUT = 10
 # Pi Zero 2W can take ~3 min — we cap at 15 min with a 5 s poll.
 INSTALL_POLL_INTERVAL = 5
 INSTALL_POLL_TIMEOUT = 900
+BUSY_STATES = {"downloading", "verifying", "installing", "rebooting", "validating"}
+_BUILD_PROFILE_VERSION_RE = re.compile(
+    r"^(?P<base>v?\d+\.\d+\.\d+)-(?P<profile>dev|prod)$"
+)
+
+
+def _strip_build_profile_suffix(version: str) -> str:
+    """Remove a dev/prod build-profile suffix from a plain release version.
+
+    Runtime firmware reports /etc/os-release VERSION_ID (for example,
+    ``1.6.5``). Some staged bundles still carry the build profile in
+    their target label (``v1.6.5-dev``). For activation confirmation,
+    those represent the same running image; real prereleases such as
+    ``1.6.5-dev.20260531`` are left untouched.
+    """
+
+    match = _BUILD_PROFILE_VERSION_RE.match((version or "").strip())
+    if not match:
+        return version
+    return match.group("base")
 
 
 def _version_matches(actual, expected):
@@ -65,10 +86,35 @@ def _version_matches(actual, expected):
     expected = str(expected or "")
     if not expected:
         return False
-    if actual == expected:
-        return True
-    ordering = ota_policy.compare_versions(actual, expected)
-    return ordering == 0
+    candidates = (
+        (actual, expected),
+        (_strip_build_profile_suffix(actual), _strip_build_profile_suffix(expected)),
+    )
+    for actual_candidate, expected_candidate in candidates:
+        if actual_candidate == expected_candidate:
+            return True
+        ordering = ota_policy.compare_versions(actual_candidate, expected_candidate)
+        if ordering == 0:
+            return True
+    return False
+
+
+def _busy_status_message(status):
+    state = str(status.get("state") or "unknown")
+    progress = status.get("progress", 0)
+    current = str(status.get("current_version") or "")
+    target = str(status.get("target_version") or "")
+    detail = f"Camera OTA is already in progress ({state}"
+    try:
+        detail += f", {int(progress)}%"
+    except (TypeError, ValueError):
+        pass
+    detail += ")"
+    if current or target:
+        detail += f"; current={current or 'unknown'}"
+        if target:
+            detail += f", target={target}"
+    return detail
 
 
 class CameraOTAClient:
@@ -158,6 +204,20 @@ class CameraOTAClient:
         if total <= 0:
             return False, "Bundle is empty"
 
+        if expected_version:
+            preflight_status, _preflight_err = self.get_status(camera_ip)
+            if preflight_status is not None:
+                current_version = str(preflight_status.get("current_version") or "")
+                if _version_matches(current_version, expected_version):
+                    log.info(
+                        "OTA push to %s skipped: camera already reports %s",
+                        camera_ip,
+                        current_version,
+                    )
+                    return True, "Installed"
+                if preflight_status.get("state") in BUSY_STATES:
+                    return False, _busy_status_message(preflight_status)
+
         try:
             ctx = self._ssl_context()
         except (FileNotFoundError, ssl.SSLError, OSError) as exc:
@@ -213,6 +273,9 @@ class CameraOTAClient:
             log.warning("OTA push to %s TLS error: %s", camera_ip, exc)
             return False, f"TLS error: {exc}"
         except OSError as exc:
+            status, _status_err = self.get_status(camera_ip)
+            if status is not None and status.get("state") in BUSY_STATES:
+                return False, _busy_status_message(status)
             log.warning("OTA push to %s I/O error: %s", camera_ip, exc)
             return False, f"I/O error: {exc}"
         except http.client.HTTPException as exc:
