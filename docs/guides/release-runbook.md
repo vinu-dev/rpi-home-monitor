@@ -67,8 +67,10 @@ Bridge-phase note:
 - Production builds are intended to require signed OTA bundles.
 - Self-hosted operators are expected to generate and own their own OTA signing keypair.
 - Signed `.swu` bundle creation is validated on the build VM.
-- Production OTA install/reboot/rollback is **not yet fully validated on real hardware**.
-- Do not describe production OTA as field-proven until the reboot/rollback path is validated on devices.
+- Production OTA install/reboot/rollback requires release-specific hardware
+  evidence before that release is described as OTA-ready.
+- Do not describe a production artifact as field-proven until its signed
+  reboot/rollback path has been validated on devices.
 
 Supporting status documents:
 

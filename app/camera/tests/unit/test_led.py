@@ -17,7 +17,7 @@ class TestLedControllerWrite:
         ctrl = LedController("/sys/class/leds/ACT")
         ctrl._write("trigger", "timer")
         open.assert_called_once_with(
-            os.path.join("/sys/class/leds/ACT", "trigger"), "w"
+            os.path.join("/sys/class/leds/ACT", "trigger"), "w", encoding="utf-8"
         )
 
     @patch("builtins.open", side_effect=OSError("Permission denied"))
@@ -47,6 +47,14 @@ class TestLedControllerPatterns:
         mock_write.assert_any_call("delay_off", "1000")
 
     @patch.object(LedController, "_write")
+    def test_boot_alias(self, mock_write):
+        """boot should map to the booting blink used by the init unit."""
+        self.ctrl.set_state("boot")
+        mock_write.assert_any_call("trigger", "timer")
+        mock_write.assert_any_call("delay_on", "500")
+        mock_write.assert_any_call("delay_off", "500")
+
+    @patch.object(LedController, "_write")
     def test_connecting(self, mock_write):
         """connecting should set fast blink."""
         self.ctrl.connecting()
@@ -67,7 +75,15 @@ class TestLedControllerPatterns:
         self.ctrl.error()
         mock_write.assert_any_call("trigger", "timer")
         mock_write.assert_any_call("delay_on", "100")
-        mock_write.assert_any_call("delay_off", "100")
+        mock_write.assert_any_call("delay_off", "900")
+
+    @patch.object(LedController, "_write")
+    def test_ota_rebooting(self, mock_write):
+        """ota_rebooting should set a fast attention blink."""
+        self.ctrl.ota_rebooting()
+        mock_write.assert_any_call("trigger", "timer")
+        mock_write.assert_any_call("delay_on", "150")
+        mock_write.assert_any_call("delay_off", "150")
 
     @patch.object(LedController, "_write")
     def test_off(self, mock_write):

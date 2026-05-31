@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from monitor.services import privileged
 from monitor.services.ota_service import MAX_BUNDLE_SIZE, OTAService
 
 
@@ -101,15 +102,14 @@ class TestGetSetStatus:
         assert "Rejected older update" in status["error"]
         assert not os.path.exists(staged)
 
-    def test_keeps_current_staged_server_bundle_from_disk(self, svc, data_dir):
+    def test_discards_current_staged_server_bundle_from_disk(self, svc, data_dir):
         staged = os.path.join(data_dir, "ota", "staging", "same.swu")
         _write_swu(staged, "1.6.0")
 
         status = svc.get_status("server", current_version="1.6.0")
 
-        assert status["state"] == "staged"
-        assert status["staged_filename"] == "same.swu"
-        assert status["update_relation"] == "same"
+        assert status["state"] == "idle"
+        assert not os.path.exists(staged)
 
 
 class TestCheckSpace:
@@ -130,6 +130,122 @@ class TestCheckSpace:
         # Request an absurdly large amount
         has_space, _, _ = svc.check_space(10**18)
         assert has_space is False
+
+    def test_check_space_reports_disk_usage_error(self, svc):
+        with patch(
+            "monitor.services.ota_service.shutil.disk_usage",
+            side_effect=OSError("denied"),
+        ):
+            has_space, free, err = svc.check_space()
+
+        assert has_space is False
+        assert free == 0
+        assert "denied" in err
+
+
+class TestStorageAndLed:
+    def test_ensure_storage_repairs_with_privileged_helper(self, svc):
+        with (
+            patch.object(
+                svc,
+                "_create_storage_dirs",
+                side_effect=["permission denied", ""],
+            ),
+            patch.object(svc, "_probe_storage_writable", side_effect=["", ""]),
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                return_value={},
+            ) as request,
+        ):
+            ok, err = svc.ensure_storage()
+
+        assert ok is True
+        assert err == ""
+        request.assert_called_once_with("ota.repair_storage", timeout=20)
+
+    def test_ensure_storage_reports_failed_privileged_repair(self, svc):
+        with (
+            patch.object(svc, "_create_storage_dirs", return_value="root-owned"),
+            patch.object(svc, "_probe_storage_writable", return_value="probe denied"),
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                side_effect=privileged.PrivilegedHelperError("helper down"),
+            ),
+        ):
+            ok, err = svc.ensure_storage()
+
+        assert ok is False
+        assert "not writable" in err
+
+    def test_probe_directory_writable_cleans_failed_probe(self, svc, tmp_path):
+        probe = tmp_path / ".write-test"
+        probe.write_text("left behind", encoding="utf-8")
+
+        with (
+            patch(
+                "monitor.services.ota_service.uuid.uuid4",
+                return_value=MagicMock(hex="fixed"),
+            ),
+            patch("monitor.services.ota_service.os.getpid", return_value=123),
+            patch("monitor.services.ota_service.os.open", side_effect=OSError("full")),
+            patch("monitor.services.ota_service.os.path.exists", return_value=True),
+            patch("monitor.services.ota_service.os.unlink") as unlink,
+        ):
+            err = svc._probe_directory_writable(str(tmp_path))
+
+        assert "full" in err
+        unlink.assert_called_once_with(
+            os.path.join(str(tmp_path), ".write-test-123-fixed")
+        )
+
+    def test_status_led_uses_helper_when_available(self, svc):
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                return_value={},
+            ) as request,
+        ):
+            svc._set_status_led("healthy")
+
+        request.assert_called_once_with(
+            "led.set",
+            {"state": "healthy", "role": "server", "force": True},
+            timeout=10,
+        )
+
+    def test_status_led_falls_back_to_local_controller(self, svc):
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=False,
+            ),
+            patch("monitor.services.ota_service.status_led.set_state") as set_state,
+        ):
+            svc._set_status_led("healthy")
+
+        set_state.assert_called_once_with("healthy", role="server", force=True)
+
+    def test_prepare_reboot_activation_marks_next_boot(self, svc):
+        with (
+            patch.object(svc, "_mark_activation") as mark,
+            patch.object(svc, "_set_status_led") as set_led,
+        ):
+            svc.prepare_reboot_activation("1.6.2")
+
+        mark.assert_called_once_with("1.6.2")
+        set_led.assert_called_once_with("ota-rebooting")
 
 
 class TestStageBundle:
@@ -328,6 +444,57 @@ class TestVerifyBundle:
         assert valid is False
         assert "swupdate is not installed" in err
 
+    def test_verify_uses_privileged_helper_when_available(self, svc, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
+
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                return_value={"returncode": 0, "stderr": ""},
+            ) as request,
+        ):
+            valid, err = svc.verify_bundle(bundle)
+
+        assert valid is True
+        assert err == ""
+        request.assert_called_once_with(
+            "ota.verify",
+            {"bundle_path": bundle, "public_key_path": key},
+            timeout=60,
+        )
+
+    def test_verify_helper_failure_returns_stderr(self, svc, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
+
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                return_value={"returncode": 1, "stderr": "bad signature"},
+            ),
+        ):
+            valid, err = svc.verify_bundle(bundle)
+
+        assert valid is False
+        assert err == "bad signature"
+
 
 class TestInstallBundle:
     """Test bundle installation via swupdate."""
@@ -447,6 +614,55 @@ class TestInstallBundle:
         calls = [str(c) for c in svc._audit.log_event.call_args_list]
         assert any("OTA_INSTALL_START" in c for c in calls)
         assert any("OTA_INSTALL_COMPLETE" in c for c in calls)
+
+    def test_install_uses_privileged_helper(self, svc, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+        key = os.path.join(data_dir, "certs", "swupdate-public.crt")
+        with open(key, "w") as f:
+            f.write("PUBLIC KEY")
+
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                return_value={"returncode": 0, "stderr": ""},
+            ) as request,
+        ):
+            ok, err = svc.install_bundle(bundle)
+
+        assert ok is True
+        assert err == ""
+        request.assert_any_call(
+            "ota.install",
+            {"bundle_path": bundle, "public_key_path": key},
+            timeout=600,
+        )
+
+    def test_install_privileged_helper_error_sets_error_status(self, svc, data_dir):
+        bundle = os.path.join(data_dir, "test.swu")
+        with open(bundle, "wb") as f:
+            f.write(b"test")
+
+        with (
+            patch(
+                "monitor.services.ota_service.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.ota_service.privileged.request",
+                side_effect=privileged.PrivilegedHelperError("helper denied"),
+            ),
+        ):
+            ok, err = svc.install_bundle(bundle)
+
+        assert ok is False
+        assert err == "helper denied"
+        assert svc.get_status("server")["state"] == "error"
 
 
 class TestCleanStaging:
@@ -622,6 +838,62 @@ class TestImportFromUsb:
         svc.import_from_usb(usb_file, user="admin", ip="1.2.3.4")
         calls = [str(c) for c in svc._audit.log_event.call_args_list]
         assert any("OTA_USB_IMPORT" in c for c in calls)
+
+    def test_import_reports_unreadable_size(self, svc, data_dir):
+        usb_file = os.path.join(data_dir, "usb8", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x")
+
+        with patch(
+            "monitor.services.ota_service.os.path.getsize", side_effect=OSError("gone")
+        ):
+            staged, err = svc.import_from_usb(usb_file)
+
+        assert staged is None
+        assert "Cannot read file" in err
+
+    def test_import_reports_insufficient_space(self, svc, data_dir):
+        usb_file = os.path.join(data_dir, "usb9", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x")
+
+        with patch.object(svc, "check_space", return_value=(False, 12, "full")):
+            staged, err = svc.import_from_usb(usb_file)
+
+        assert staged is None
+        assert "Insufficient disk space" in err
+
+    def test_import_reports_copy_failure(self, svc, data_dir):
+        usb_file = os.path.join(data_dir, "usb10", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x")
+
+        with patch(
+            "monitor.services.ota_service.shutil.copy2", side_effect=OSError("denied")
+        ):
+            staged, err = svc.import_from_usb(usb_file)
+
+        assert staged is None
+        assert "Failed to copy from USB" in err
+
+    def test_import_removes_inbox_copy_when_stage_fails(self, svc, data_dir):
+        usb_file = os.path.join(data_dir, "usb11", "update.swu")
+        os.makedirs(os.path.dirname(usb_file))
+        with open(usb_file, "wb") as f:
+            f.write(b"x")
+
+        with (
+            patch.object(svc, "stage_bundle", return_value=(None, "bad version")),
+            patch("monitor.services.ota_service.os.unlink") as unlink,
+        ):
+            staged, err = svc.import_from_usb(usb_file)
+
+        assert staged is None
+        assert err == "bad version"
+        unlink.assert_called_once()
 
 
 class TestAuditResilience:

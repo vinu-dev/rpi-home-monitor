@@ -76,7 +76,6 @@ STATUS_ROUTE_MATRIX = {
     "POST": frozenset(
         {
             "/api/ota/upload",
-            "/api/ota/reboot",
             "/login",
             "/pair",
             "/api/pair",
@@ -771,12 +770,6 @@ def _make_status_handler(
                     return
                 self._handle_ota_upload()
                 return
-            if self.path == "/api/ota/reboot":
-                if not self._require_auth():
-                    return
-                self._handle_ota_reboot()
-                return
-
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len) if content_len > 0 else b""
 
@@ -1276,46 +1269,6 @@ def _make_status_handler(
             self._json_response(
                 {"message": "Install triggered", "bundle_bytes": content_len}
             )
-
-        def _handle_ota_reboot(self):
-            """Reboot the camera after a successful install.
-
-            We only honour reboot when status.json is in the 'installed'
-            terminal state — rebooting mid-install would brick the
-            standby slot. HTTP response is flushed before reboot runs
-            so the browser sees the 200 before the network drops.
-            """
-            status = ota_installer.read_status()
-            state = status.get("state")
-            if state != ota_installer.STATE_INSTALLED:
-                self._json_response(
-                    {
-                        "error": (
-                            f"No installed update to apply (current state: {state})"
-                        )
-                    },
-                    400,
-                )
-                return
-
-            self._json_response({"message": "Rebooting"})
-
-            def _reboot():
-                # Give the response a beat to flush before the trigger
-                # fires the root-privileged reboot service.
-                time.sleep(1.0)
-                ok, msg = ota_installer.trigger_reboot()
-                if not ok:
-                    # Camera-streamer runs as User=camera; if the
-                    # trigger write fails (spool dir gone, full disk),
-                    # the reboot won't happen. Log it; the dashboard
-                    # already received the 200 so we can't escalate
-                    # cleanly from here, but the next status poll will
-                    # show the camera still on the old slot and the
-                    # operator can retry.
-                    log.error("reboot trigger failed: %s", msg)
-
-            threading.Thread(target=_reboot, daemon=True, name="ota-reboot").start()
 
         def _handle_factory_reset(self):
             """Wipe camera config, certs, and restart in setup mode.

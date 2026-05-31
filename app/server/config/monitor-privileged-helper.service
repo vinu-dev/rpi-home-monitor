@@ -19,17 +19,17 @@ RuntimeDirectory=monitor
 RuntimeDirectoryMode=0750
 
 # This helper is intentionally root, but its socket accepts only allowlisted
-# JSON operations from the monitor group. Do not enable filesystem namespacing
-# here: USB mounts must occur in the host mount namespace so nginx and the
-# unprivileged Flask process see the selected recording disk. ProtectHome and
-# PrivateMounts would make the helper report success for mounts that the app
-# cannot see.
+# JSON operations from the monitor group. Do not enable filesystem/mount
+# namespacing here: USB mounts must occur in the host mount namespace so nginx
+# and the unprivileged Flask process see the selected recording disk. systemd's
+# ProtectKernel* filesystem protections also create a namespace on this image,
+# which makes the helper report success for mounts that the app cannot see.
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SYS_TIME CAP_SYS_BOOT CAP_NET_ADMIN CAP_NET_RAW
 ProtectHome=false
 PrivateMounts=false
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=false
 LockPersonality=true
 RestrictSUIDSGID=true
 SystemCallArchitectures=native

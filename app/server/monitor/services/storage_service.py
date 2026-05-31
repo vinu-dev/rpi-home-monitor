@@ -70,7 +70,19 @@ class StorageService:
         rec_dir = self._active_recordings_dir()
         configured_device = self._configured_usb_device()
         configured_uuid = self._configured_usb_uuid()
+        configured_label = self._configured_usb_label()
         configured_present = any(d.get("path") == configured_device for d in devices)
+        configured_identity_present = configured_present or (
+            bool(configured_uuid)
+            and any(d.get("uuid") == configured_uuid for d in devices)
+        )
+        label_candidates = [
+            d
+            for d in devices
+            if bool(configured_label)
+            and d.get("label") == configured_label
+            and bool(d.get("supported"))
+        ]
         legacy_single_candidate = (
             bool(configured_device)
             and not configured_uuid
@@ -80,10 +92,16 @@ class StorageService:
         )
         for d in devices:
             is_active = bool(rec_dir) and self._device_backs_dir(d, rec_dir)
+            is_label_candidate = (
+                not configured_identity_present
+                and len(label_candidates) == 1
+                and d is label_candidates[0]
+            )
             is_configured = (
                 (bool(configured_device) and d.get("path") == configured_device)
                 or (bool(configured_uuid) and d.get("uuid") == configured_uuid)
                 or legacy_single_candidate
+                or is_label_candidate
             )
             d["in_use"] = is_active
             d["configured"] = is_configured
@@ -138,6 +156,14 @@ class StorageService:
         except Exception:
             return ""
         value = getattr(settings, "usb_uuid", "")
+        return value if isinstance(value, str) else ""
+
+    def _configured_usb_label(self) -> str:
+        try:
+            settings = self._store.get_settings()
+        except Exception:
+            return ""
+        value = getattr(settings, "usb_label", "")
         return value if isinstance(value, str) else ""
 
     @staticmethod

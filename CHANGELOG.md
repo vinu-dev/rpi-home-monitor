@@ -4,7 +4,22 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
-(Nothing yet — next release will land here.)
+### Fixed
+- **Camera OTA activation** now uses one behavior for server-pushed and
+  camera-local uploads: the camera writes the inactive slot, reports
+  `rebooting`, removes its temporary staged bundle, reboots itself, and only
+  counts as successful after it reports the expected running version. The older
+  manual camera `/api/ota/reboot` trigger path is removed.
+- **OTA bundle cleanup** now discards server self-update bundles after the
+  running version matches them while keeping reusable camera bundles in the
+  server library for cameras that still need that version.
+- **Server and camera LEDs** now share one product status policy for boot,
+  setup, pairing, WiFi connect, healthy runtime, OTA install/reboot/validation,
+  reset, error, and service-off states.
+- **USB recording storage recovery** now asks the privileged helper for
+  authoritative block-device metadata and keeps USB mounts host-visible so the
+  unprivileged recorder can use the selected drive after reconnects or
+  UUID/path changes.
 
 ## [1.6.1] — 2026-05-30
 

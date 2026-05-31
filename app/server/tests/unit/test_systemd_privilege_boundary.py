@@ -47,6 +47,9 @@ def test_helper_unit_is_the_only_root_service_in_boundary():
     assert "CAP_SYS_ADMIN" in data["CapabilityBoundingSet"][0]
     assert data["ProtectHome"] == ["false"]
     assert data["PrivateMounts"] == ["false"]
+    assert data["ProtectKernelTunables"] == ["false"]
+    assert data["ProtectKernelModules"] == ["false"]
+    assert data["ProtectControlGroups"] == ["false"]
 
 
 def test_yocoto_recipe_installs_helper_unit():

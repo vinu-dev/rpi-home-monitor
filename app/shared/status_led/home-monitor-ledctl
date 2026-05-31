@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# REQ: SWR-042, SWR-050; RISK: RISK-018, RISK-022; SEC: SC-019; TEST: TC-039, TC-044
+"""Command-line wrapper for the shared Home Monitor LED policy."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import os
+import sys
+
+MODULE_CANDIDATES = (
+    "/opt/monitor/monitor/status_led.py",
+    "/opt/camera/camera_streamer/status_led.py",
+)
+
+
+def _load_status_led():
+    for path in MODULE_CANDIDATES:
+        if not os.path.isfile(path):
+            continue
+        spec = importlib.util.spec_from_file_location("_hm_status_led", path)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            return module
+    try:
+        from monitor import status_led
+
+        return status_led
+    except Exception:
+        pass
+    try:
+        from camera_streamer import status_led
+
+        return status_led
+    except Exception:
+        return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Set Home Monitor status LED")
+    parser.add_argument(
+        "state",
+        help=(
+            "LED state: boot, healthy, setup, pairing, connecting, "
+            "ota-installing, ota-rebooting, ota-validating, reset, error, off"
+        ),
+    )
+    parser.add_argument("--role", choices=("auto", "server", "camera"), default="auto")
+    parser.add_argument("--led-path", default="")
+    parser.add_argument("--data-dir", default="/data")
+    parser.add_argument("--init", action="store_true", help="Quiet extra LEDs first")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Best-effort chmod of LED sysfs controls before writing",
+    )
+    parser.add_argument(
+        "--clear-activation",
+        action="store_true",
+        help="Clear the OTA activation marker before setting the state",
+    )
+    parser.add_argument(
+        "--mark-activation",
+        action="store_true",
+        help="Write an OTA activation marker before setting the state",
+    )
+    parser.add_argument("--target-version", default="")
+    args = parser.parse_args(argv)
+    role = args.role
+    if role == "auto":
+        role = "camera" if os.path.isfile(MODULE_CANDIDATES[1]) else "server"
+
+    status_led = _load_status_led()
+    if status_led is None:
+        return 0
+
+    try:
+        if args.mark_activation:
+            status_led.mark_activation(
+                role,
+                args.target_version,
+                data_dir=args.data_dir,
+            )
+        status_led.set_state(
+            args.state,
+            role=role,
+            led_path=args.led_path or None,
+            data_dir=args.data_dir,
+            init=args.init,
+            force=args.force,
+            clear_marker=args.clear_activation,
+        )
+    except Exception:
+        # LED feedback must never block boot, setup, reset, or OTA.
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -537,7 +537,7 @@ class CameraLifecycle:
             return True
 
         log.info("Camera not paired — starting status server for /pair endpoint")
-        led.setup_mode()
+        led.pairing()
 
         # Start status server so /pair endpoint is accessible
         self._status_server = CameraStatusServer(
@@ -575,6 +575,7 @@ class CameraLifecycle:
         """Wait for WiFi connectivity and resolve server address."""
         # Restore hostname on every boot (transient — lost on reboot)
         self._restore_hostname()
+        led.connecting()
 
         if not self._wait_for_wifi():
             log.error(

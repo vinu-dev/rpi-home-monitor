@@ -266,20 +266,23 @@ nmcli connection show
 
 If you connected a USB SSD for recording storage:
 
-```bash
-# Find the SSD
-lsblk
-# Should appear as /dev/sda
+1. Open the server dashboard, then go to **Settings > Storage**.
+2. Click **Scan**. The UI lists removable drives discovered by the privileged
+   helper using root-side filesystem metadata.
+3. If the drive is empty or not compatible, use **Format** from the UI. The
+   system formats the selected removable partition as ext4 with the
+   `HomeMonitor` label; do not format disks manually unless you are recovering
+   a device from a shell.
+4. Click **Use for recordings** or **Reconnect**. The server mounts the drive at
+   `/mnt/recordings` and stores clips under
+   `/mnt/recordings/home-monitor-recordings`.
+5. If the USB drive is unavailable, recording falls back to internal
+   `/data/recordings` and the storage page shows the degraded state instead of
+   silently pointing at a dead mount.
 
-# The system auto-formats and mounts the /data partition on first boot.
-# If it doesn't, manually set up:
-mkfs.ext4 -L data /dev/sda1
-mount /dev/sda1 /data
-
-# Verify
-ls /data/
-# Should contain: recordings/ config/ certs/ logs/ live/
-```
+The saved USB selection records device path, UUID, and label. Reconnects are
+allowed when the path or UUID changes but the single attached compatible drive
+still has the saved `HomeMonitor` label.
 
 ### 4.7 Access the Web Dashboard
 
@@ -314,7 +317,9 @@ On first boot, the camera starts a WiFi hotspot for provisioning:
 5. Enter the **server address** (default: `rpi-divinu.local`)
 6. Set **camera login credentials** — username (default: `admin`) and password (min 12 characters). These protect the camera's status page and admin actions.
 7. Click **Save & Connect**
-8. The camera LED changes: fast blink (connecting) → solid (connected)
+8. The camera LED changes through the shared product states: boot blink, slow
+   setup blink, fast connecting blink, then solid when connected. OTA, reset,
+   and errors use their own blink cadences.
 9. On success, the wizard shows the camera's `.local` URL (e.g., `https://rpi-divinu-cam-d8ee.local`) and a QR fallback that opens `https://<camera-ip>:443` after you reconnect your phone to home WiFi
 
 ### 5.3 Verify Camera Hardware
@@ -493,13 +498,14 @@ MicroSD cards degrade with writes. Signs of failure:
 - Slow boot times
 
 **Mitigation:**
-- Use a USB SSD for `/data` (recordings) — this is where 99% of writes go.
+- Use a USB SSD for recordings through Settings > Storage. The server mounts it
+  at `/mnt/recordings` and keeps `/data/recordings` as the internal fallback.
 - Use a high-endurance SD card (Samsung PRO Endurance, SanDisk MAX Endurance).
 - The OS uses read-only rootfs with A/B partitions — minimal SD writes.
 
 ### 8.3 Firmware Updates (OTA)
 
-> **Current status:** dev builds are the primary tested update path right now. Production signing and full production OTA validation are not yet fully proven on real hardware. See [update-roadmap.md](../history/planning/update-roadmap.md).
+> **Current status:** dev/lab OTA success paths have been exercised on real hardware. Production releases still need signed install/reboot/rollback evidence for the specific artifacts being released. See [update-roadmap.md](../history/planning/update-roadmap.md).
 
 ```bash
 # Production build: sign the update

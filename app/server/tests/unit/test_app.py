@@ -79,6 +79,27 @@ class TestUsbConfigResolution:
 
         assert _resolve_configured_usb(devices, "/dev/sda1", "") is None
 
+    def test_label_match_recovers_after_format_uuid_changes(self):
+        from monitor import _resolve_configured_usb
+
+        devices = [
+            {
+                "path": "/dev/sda1",
+                "uuid": "new-uuid-after-format",
+                "label": "HomeMonitor",
+                "supported": True,
+            },
+        ]
+
+        resolved = _resolve_configured_usb(
+            devices,
+            "/dev/sdb1",
+            "old-uuid-before-format",
+            "HomeMonitor",
+        )
+
+        assert resolved == devices[0]
+
 
 class TestRecordingDirSync:
     def _fake_app(self, active_dir="/data/recordings"):

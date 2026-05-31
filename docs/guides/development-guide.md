@@ -574,7 +574,7 @@ When changing one, check if the others need updating:
 - **Self-hosted operators generate and own their own OTA signing keypair.**
 - **The signing private key is never committed to git.** It lives in `~/.monitor-keys/` on the build machine only.
 - **Rollback:** If a new rootfs fails to boot 3 times, the device automatically rolls back. Never disable this.
-- **Current limitation:** the production signing/update path is designed but not yet fully validated on real hardware. See `docs/history/planning/update-roadmap.md`.
+- **Current limitation:** production releases need release-specific signed install/reboot/rollback hardware evidence before claiming OTA readiness. See `docs/history/planning/update-roadmap.md`.
 - **OTA key backup/recovery:** use [`docs/guides/ota-key-management.md`](ota-key-management.md) and the `backup-ota-keys.sh` / `restore-ota-keys.sh` scripts.
 - **Release/recovery operator flow:** use [`docs/guides/release-runbook.md`](release-runbook.md) for normal release, new VM recovery, and lost-key recovery paths.
 

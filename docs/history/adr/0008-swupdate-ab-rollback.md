@@ -4,7 +4,7 @@
 Accepted (implementation in progress)
 
 ## Context
-The partition layout (WKS files) provisions A/B root partitions on both server and camera. Since this ADR was first drafted, parts of the OTA stack have been implemented, but the full production-grade update path is still incomplete and not yet fully validated on real hardware. The repo uses this ADR as the target architecture; see `docs/history/planning/update-roadmap.md` for current status.
+The partition layout (WKS files) provisions A/B root partitions on both server and camera. Since this ADR was first drafted, the OTA transport and activation stack has been implemented and lab-validated on real hardware. Production releases still need release-specific signed install/reboot/rollback evidence; see `docs/history/planning/update-roadmap.md` for current status.
 
 ### Hardware (measured 2026-04-11)
 
@@ -426,6 +426,13 @@ The `OTAAgent` class in `camera_streamer/ota_agent.py`:
 - Same verification pipeline as all other delivery modes
 - Memory-safe: streams upload to disk, never loads full bundle into RAM
 - Audit events: `OTA_STARTED`, `OTA_COMPLETED`, `OTA_FAILED`, `OTA_ROLLBACK`
+
+Post-implementation note (2026-05-31): ADR-0020 supersedes the manual camera
+activation details here. Camera-local and server-pushed camera updates now
+share one staging protocol; after a successful slot write, the camera reports
+`rebooting`, removes its temporary staged bundle, reboots itself, and the server
+confirms success only after the camera heartbeat reports the expected target
+version.
 
 ---
 

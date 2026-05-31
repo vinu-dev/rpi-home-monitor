@@ -1480,7 +1480,6 @@ details[open] summary {
     <div id="ota-verification" class="msg msg--warn" hidden></div>
     <div class="actions">
       <button class="btn btn--primary" id="btn-ota-upload" onclick="uploadOta()">Upload &amp; install</button>
-      <button class="btn btn--outline" id="btn-ota-reboot" hidden onclick="rebootCamera()">Reboot to apply</button>
     </div>
     <div id="ota-result"></div>
   </div>
@@ -1946,7 +1945,9 @@ var OTA_TEXT = {
     downloading:"Receiving on the camera",
     verifying:  "Verifying the update",
     installing: "Installing to the standby slot",
-    installed:  "Install complete — reboot to apply",
+    rebooting:  "Restarting the camera",
+    validating: "Validating the new software",
+    installed:  "Install complete",
     error:      "Install failed"
 };
 function renderOtaVerification(posture) {
@@ -1973,7 +1974,7 @@ function renderOta(s) {
     var state = (s && s.state) || "idle";
     var progress = (s && typeof s.progress === "number") ? s.progress : 0;
     var err = (s && s.error) || "";
-    var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing";
+    var busy = state === "downloading" || state === "uploading" || state === "verifying" || state === "installing" || state === "rebooting" || state === "validating";
     if (s && s.verification) renderOtaVerification(s.verification);
     $("btn-ota-upload").disabled = busy || otaInstallBlocked();
     // Also lock the file input while busy so a mid-upload click doesn't
@@ -1981,8 +1982,6 @@ function renderOta(s) {
     // select a different (or the same) file and race the upload that's
     // already in flight.
     $("ota-file").disabled = busy || otaInstallBlocked();
-    $("btn-ota-reboot").hidden = (state !== "installed");
-
     // Version diff row. Show it once the bundle has been staged —
     // during the download the target version isn't known yet.
     var target = (s && s.target_version) || "";
@@ -2008,10 +2007,13 @@ function renderOta(s) {
 function pollOta() {
     fetch("/api/ota/status").then(function(r){ return r.json(); }).then(function(s){
         renderOta(s);
-        if (s.state === "downloading" || s.state === "verifying" || s.state === "installing") {
+        if (s.state === "downloading" || s.state === "verifying" || s.state === "installing" || s.state === "rebooting" || s.state === "validating") {
             _otaPoll = setTimeout(pollOta, 2000);
         }
-    }).catch(function(){});
+    }).catch(function(){
+        setMsg("ota-result", "warn", "Camera is restarting. This page will reconnect shortly.");
+        _otaPoll = setTimeout(pollOta, 5000);
+    });
 }
 // Parse the head of a .swu (CPIO newc) and return
 //   { ok, signed, target, version }
@@ -2129,7 +2131,7 @@ async function uploadOta() {
     };
     xhr.onload = function(){
         if (xhr.status === 200) {
-            setMsg("ota-result", "warn", "Upload complete — installing…");
+            setMsg("ota-result", "warn", "Upload complete. Installing, then the camera will restart automatically.");
             pollOta();
         } else {
             var msg = "Upload failed (" + xhr.status + ")";
@@ -2139,23 +2141,12 @@ async function uploadOta() {
         }
     };
     xhr.onerror = function(){
-        setMsg("ota-result", "err", "Network error during upload.");
-        renderOta({ state: "idle" });
+        setMsg("ota-result", "warn", "Camera connection changed. It may be restarting after the update.");
+        renderOta({ state: "rebooting", progress: 95 });
+        pollOta();
     };
     xhr.send(file);
 }
-function rebootCamera() {
-    if (!confirm("Reboot the camera now to apply the update?")) return;
-    $("btn-ota-reboot").disabled = true;
-    fetch("/api/ota/reboot", { method: "POST" })
-        .then(function(r){ return r.json(); }).then(function(){
-            setMsg("ota-result", "warn", "Rebooting — reconnect in about a minute.");
-        }).catch(function(){
-            $("btn-ota-reboot").disabled = false;
-            setMsg("ota-result", "err", "Reboot request failed — try SSH or power-cycle.");
-        });
-}
-
 // ---- Small helpers ----
 function setBusy(id, busy, label) {
     var b = $(id);
@@ -2183,7 +2174,6 @@ window.checkResetConfirm = checkResetConfirm;
 window.doReset = doReset;
 window.uploadOta = uploadOta;
 window.onOtaFileSelected = onOtaFileSelected;
-window.rebootCamera = rebootCamera;
 
 // Kickoff
 loadStatus();

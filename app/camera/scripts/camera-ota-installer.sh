@@ -40,9 +40,52 @@ STATUS="$SPOOL/status.json"
 LOG="$SPOOL/install.log"
 PUBKEY_SYSTEM=/etc/swupdate-public.crt
 PUBKEY_DATA=/data/certs/swupdate-public.crt
+LEDCTL=/usr/bin/home-monitor-ledctl
+AUTO_REBOOT=0
 
 log() {
     printf '%s %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG"
+}
+
+set_led() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" "$1" --role camera --force >/dev/null 2>&1 || true
+    fi
+}
+
+status_extra_json() {
+    python3 - "$STATUS" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+
+extra = {}
+for key in ("target_version", "current_version", "update_relation"):
+    value = data.get(key)
+    if value:
+        extra[key] = value
+if extra:
+    print("," + ",".join(json.dumps(k) + ":" + json.dumps(v) for k, v in extra.items()))
+PY
+}
+
+status_value() {
+    python3 - "$STATUS" "$1" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+print(data.get(sys.argv[2], ""))
+PY
 }
 
 write_status() {
@@ -51,9 +94,10 @@ write_status() {
     now=$(date +%s)
     # Escape quotes and backslashes in error string for JSON safety.
     error_escaped=$(printf '%s' "$error" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    extra_json=$(status_extra_json)
     tmp="$STATUS.tmp"
     cat > "$tmp" <<EOF
-{"state":"$state","progress":$progress,"error":"$error_escaped","updated_at":$now}
+{"state":"$state","progress":$progress,"error":"$error_escaped","updated_at":$now$extra_json}
 EOF
     mv -f "$tmp" "$STATUS"
     chmod 0664 "$STATUS" 2>/dev/null || true
@@ -67,7 +111,7 @@ cleanup() {
     rm -f "$TRIGGER" 2>/dev/null || true
     # Restart camera-streamer if we stopped it for the install. Variable
     # may be unset if we exit before phase 2 starts.
-    if [ "${STREAMER_WAS_ACTIVE:-0}" = "1" ]; then
+    if [ "${STREAMER_WAS_ACTIVE:-0}" = "1" ] && [ "${AUTO_REBOOT:-0}" != "1" ]; then
         log "Restarting camera-streamer"
         systemctl start camera-streamer.service 2>/dev/null || true
     fi
@@ -92,6 +136,7 @@ if [ ! -f "$BUNDLE" ]; then
 fi
 
 log "Install requested for $BUNDLE"
+set_led ota-installing
 
 # Ensure /dev/monitor_standby is pointing at the STANDBY partition
 # regardless of what monitor-standby-symlink.service did at boot.
@@ -156,6 +201,7 @@ if [ -n "$PUBKEY" ]; then
     log "Verifying signature with $PUBKEY"
     if ! swupdate -c -i "$BUNDLE" -k "$PUBKEY" >> "$LOG" 2>&1; then
         write_status "error" 10 "Signature verification failed"
+        set_led error
         log "FAIL: signature check"
         exit 1
     fi
@@ -213,13 +259,33 @@ if ! wait "$SWU_PID"; then
     err=$(tail -n 5 "$LOG" 2>/dev/null | grep -iE 'error|fail' | tail -n 1 || true)
     [ -z "$err" ] && err="swupdate returned non-zero"
     write_status "error" 90 "$err"
+    set_led error
     log "FAIL: install exit non-zero"
     exit 1
 fi
 
-write_status "installed" 100 ""
-log "Install complete — reboot required to activate"
+TARGET_VERSION=$(status_value target_version)
+AUTO_REBOOT=1
+if [ -x "$LEDCTL" ]; then
+    "$LEDCTL" ota-rebooting --role camera --force --mark-activation \
+        --target-version "$TARGET_VERSION" >/dev/null 2>&1 || true
+fi
+write_status "rebooting" 100 ""
+log "Install complete — rebooting to activate"
 
 # Bundle cleanup: keep only the log (rotated by installer on next run).
 rm -f "$BUNDLE" 2>/dev/null || true
+
+# Remove the trigger before reboot so a failed boot does not loop installs.
+rm -f "$TRIGGER" 2>/dev/null || true
+
+# Give the GUI/server a brief chance to observe "rebooting" through the normal
+# camera status endpoints. The server still handles the network-drop case.
+if [ "${STREAMER_WAS_ACTIVE:-0}" = "1" ]; then
+    log "Restarting camera-streamer briefly to publish rebooting state"
+    systemctl start camera-streamer.service 2>/dev/null || true
+    STREAMER_WAS_ACTIVE=0
+fi
+sleep 3
+systemctl reboot
 exit 0

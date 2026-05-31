@@ -694,6 +694,7 @@ def _auto_mount_usb(app, default_recordings_dir):
         settings = app.store.get_settings()
         usb_device = getattr(settings, "usb_device", "")
         usb_uuid = getattr(settings, "usb_uuid", "")
+        usb_label = getattr(settings, "usb_label", "")
         usb_rec_dir = getattr(settings, "usb_recordings_dir", "")
 
         if not usb_device or not usb_rec_dir:
@@ -702,7 +703,7 @@ def _auto_mount_usb(app, default_recordings_dir):
         from monitor.services import usb
 
         devices = usb.detect_devices()
-        device = _resolve_configured_usb(devices, usb_device, usb_uuid)
+        device = _resolve_configured_usb(devices, usb_device, usb_uuid, usb_label)
         if not device:
             log.warning(
                 "Configured USB device %s not found — using internal storage",
@@ -747,7 +748,12 @@ def _auto_mount_usb(app, default_recordings_dir):
         return default_recordings_dir
 
 
-def _resolve_configured_usb(devices, configured_path: str, configured_uuid: str):
+def _resolve_configured_usb(
+    devices,
+    configured_path: str,
+    configured_uuid: str,
+    configured_label: str = "",
+):
     """Find a configured USB device even if /dev/sdX changed."""
     if configured_uuid:
         for device in devices:
@@ -760,6 +766,14 @@ def _resolve_configured_usb(devices, configured_path: str, configured_uuid: str)
         device = devices[0]
         if device.get("supported"):
             return device
+    if configured_label:
+        label_matches = [
+            device
+            for device in devices
+            if device.get("label") == configured_label and device.get("supported")
+        ]
+        if len(label_matches) == 1:
+            return label_matches[0]
     return None
 
 

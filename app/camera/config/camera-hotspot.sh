@@ -43,6 +43,7 @@ get_hotspot_pass() {
 
 # --- LED control (ACT LED on RPi) ---
 LED_PATH="/sys/class/leds/ACT"
+LEDCTL="/usr/bin/home-monitor-ledctl"
 
 led_write() {
     TARGET="${LED_PATH}/$1"
@@ -52,6 +53,10 @@ led_write() {
 }
 
 led_setup_mode() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" setup --role camera --force >/dev/null 2>&1 || true
+        return
+    fi
     # Slow blink — waiting for setup
     chmod 0666 ${LED_PATH}/trigger ${LED_PATH}/brightness ${LED_PATH}/delay_on ${LED_PATH}/delay_off 2>/dev/null || true
     led_write trigger timer
@@ -60,14 +65,32 @@ led_setup_mode() {
 }
 
 led_connected() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" healthy --role camera --force --clear-activation >/dev/null 2>&1 || true
+        return
+    fi
     # Solid on — running normally
     led_write trigger none
     led_write brightness 1
 }
 
 led_off() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" off --role camera --force >/dev/null 2>&1 || true
+        return
+    fi
     led_write trigger none
     led_write brightness 0
+}
+
+led_connecting() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" connecting --role camera --force >/dev/null 2>&1 || true
+        return
+    fi
+    led_write trigger timer
+    led_write delay_on 200
+    led_write delay_off 200
 }
 
 wait_for_wifi() {
@@ -177,6 +200,7 @@ connect_wifi() {
     fi
 
     echo "Connecting to WiFi: SSID=${WIFI_SSID}"
+    led_connecting
 
     # Stop hotspot first (can't be AP and client simultaneously)
     stop_hotspot 2>/dev/null || true

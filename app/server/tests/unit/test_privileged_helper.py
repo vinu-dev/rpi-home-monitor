@@ -84,6 +84,15 @@ def test_usb_mount_delegates_to_usb_module():
     ensure_writable.assert_called_once_with(helper.usb.DEFAULT_MOUNT_POINT)
 
 
+def test_usb_detect_delegates_to_usb_module():
+    devices = [{"path": "/dev/sda1", "fstype": "ext4", "supported": True}]
+    with patch.object(helper.usb, "detect_devices", return_value=devices) as detect:
+        assert helper.handle_request(b'{"operation":"usb.detect","payload":{}}') == {
+            "devices": devices
+        }
+    detect.assert_called_once_with()
+
+
 def test_usb_mount_fails_when_helper_cannot_make_mount_writable():
     with (
         patch.object(
@@ -498,6 +507,125 @@ def test_ota_install_accepts_production_public_key():
         timeout=600,
         nonzero_ok=True,
     )
+
+
+def test_ota_repair_storage_repairs_allowlisted_tree(monkeypatch):
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+    monkeypatch.setattr(helper, "pwd", fake_pwd)
+    monkeypatch.setattr(helper, "grp", fake_grp)
+    monkeypatch.setattr(helper, "OTA_DIR", "/data/ota")
+
+    with (
+        patch.object(helper.os, "makedirs") as makedirs,
+        patch.object(
+            helper.os,
+            "walk",
+            return_value=[
+                ("/data/ota", ["inbox", "linked"], ["server.swu", "linked.swu"]),
+                ("/data/ota/inbox", [], ["camera.swu"]),
+            ],
+        ),
+        patch.object(
+            helper.os.path,
+            "islink",
+            side_effect=lambda path: (
+                str(path).endswith("linked") or str(path).endswith("linked.swu")
+            ),
+        ),
+        patch.object(helper.os, "chown", create=True) as chown,
+        patch.object(helper.os, "chmod") as chmod,
+    ):
+        data = helper.handle_request(b'{"operation":"ota.repair_storage","payload":{}}')
+
+    assert data == {"path": "/data/ota"}
+    makedirs.assert_any_call("/data/ota/inbox", exist_ok=True)
+    makedirs.assert_any_call("/data/ota/staging", exist_ok=True)
+    makedirs.assert_any_call("/data/ota/camera-library", exist_ok=True)
+    chown.assert_any_call("/data/ota", 996, 994)
+    chown.assert_any_call("/data/ota/inbox/camera.swu", 996, 994)
+    chmod.assert_any_call("/data/ota", 0o755)
+    chmod.assert_any_call("/data/ota/server.swu", 0o644)
+
+
+def test_ota_repair_storage_rejects_walk_escape(monkeypatch):
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+    monkeypatch.setattr(helper, "pwd", fake_pwd)
+    monkeypatch.setattr(helper, "grp", fake_grp)
+    monkeypatch.setattr(helper, "OTA_DIR", "/data/ota")
+
+    with (
+        patch.object(helper.os, "makedirs"),
+        patch.object(helper.os, "walk", return_value=[("/etc", [], [])]),
+        pytest.raises(helper.HelperRequestError, match="escaped allowlist"),
+    ):
+        helper.handle_request(b'{"operation":"ota.repair_storage","payload":{}}')
+
+
+def test_ota_repair_storage_reports_user_lookup_failure(monkeypatch):
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.side_effect = KeyError("monitor")
+    fake_grp = MagicMock()
+    monkeypatch.setattr(helper, "pwd", fake_pwd)
+    monkeypatch.setattr(helper, "grp", fake_grp)
+
+    with pytest.raises(helper.HelperRequestError, match="permission repair failed"):
+        helper.handle_request(b'{"operation":"ota.repair_storage","payload":{}}')
+
+
+def test_led_set_builds_allowlisted_command_with_flags():
+    with patch.object(helper, "_run_command", return_value={"returncode": 0}) as run:
+        data = helper.handle_request(
+            b'{"operation":"led.set","payload":'
+            b'{"state":"ota_installing","role":"camera",'
+            b'"force":true,"init":true,"clear_activation":true}}'
+        )
+
+    assert data == {"returncode": 0}
+    run.assert_called_once_with(
+        [
+            helper.LEDCTL,
+            "ota-installing",
+            "--role",
+            "camera",
+            "--force",
+            "--init",
+            "--clear-activation",
+        ],
+        timeout=10,
+        nonzero_ok=True,
+    )
+
+
+def test_led_set_rejects_unlisted_state_and_role():
+    with pytest.raises(helper.HelperRequestError, match="LED state"):
+        helper.handle_request(
+            b'{"operation":"led.set","payload":{"state":"blink-root"}}'
+        )
+    with pytest.raises(helper.HelperRequestError, match="LED role"):
+        helper.handle_request(
+            b'{"operation":"led.set","payload":{"state":"healthy","role":"root"}}'
+        )
+
+
+def test_set_socket_permissions_tolerates_missing_monitor_group():
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.side_effect = KeyError("monitor")
+
+    with (
+        patch.object(helper, "grp", fake_grp),
+        patch.object(helper.os, "chmod") as chmod,
+        patch.object(helper.os, "chown", create=True) as chown,
+    ):
+        helper._set_socket_permissions("/run/monitor/helper.sock")
+
+    chmod.assert_called_once_with("/run/monitor/helper.sock", 0o660)
+    chown.assert_not_called()
 
 
 def test_run_command_error_paths():

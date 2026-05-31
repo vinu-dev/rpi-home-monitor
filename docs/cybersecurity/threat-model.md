@@ -11,11 +11,11 @@ Method: STRIDE-style review of local-first system boundaries.
 | Browser to server | Operator browser crosses into authenticated server UI/API. | ARCH-001, SWA-002 |
 | Camera to server | Paired camera uses signed heartbeats, mTLS/control paths, RTSPS streams. | ARCH-001, SWA-003 |
 | Server to storage | Application writes recordings, config, audit, certs, OTA staging. | ARCH-003, SWA-005 |
-| Admin to OTA | Admin upload/install crosses into privileged update execution. | ARCH-004, SWA-006 |
+| Admin to OTA | Admin upload/install crosses into privileged update execution, reusable camera bundle storage, and camera-owned activation. | ARCH-004, SWA-006 |
 | LAN and optional VPN | Local network and optional operator-managed remote access expose services. | HWA-003, SWA-010 |
 | First-run setup | Pre-auth setup and default identity cross into authenticated runtime state. | ARCH-007, SWA-011 |
 | User administration | Authenticated admin actions cross into password, role, and session trust state. | ARCH-008, SWA-013 |
-| Removable media | Operator USB devices and media requests cross into filesystem operations. | ARCH-009, SWA-015, SWA-016 |
+| Removable media | Operator USB devices and media requests cross into root-side metadata, host-visible mounts, and filesystem operations. | ARCH-009, SWA-015, SWA-016 |
 | Live transport proxy | Browser WHEP/HLS/snapshot requests cross into local upstream stream services. | ARCH-010, SWA-017 |
 | Public share links | Admin-issued links cross from authenticated share management into unauthenticated, token-scoped recipient media access. | ARCH-016, SWA-026 |
 | Build/release pipeline | Maintainer/build host actions cross into signed deployable artifacts. | ARCH-013, SWA-024 |
@@ -26,7 +26,7 @@ Method: STRIDE-style review of local-first system boundaries.
 |---|---|---|---|---|---|---|---|---|
 | THREAT-001 | Spoofing/Elevation | Attacker authenticates as an operator or reuses a session. | Login, cookies, API, CSRF. | Unauthorized video/control access. | SC-001, SC-006, SC-008 | SYS-004, SWR-001, SWR-002 | TC-004, TC-011 | Draft |
 | THREAT-002 | Spoofing/Tampering | Rogue device impersonates a camera or machine client. | Pairing, heartbeat, control, stream. | Fake status/video or unauthorized commands. | SC-002 (including pinned camera control cert verification) | SYS-005, SWR-003, SWR-004 | TC-008, TC-012 | Draft |
-| THREAT-003 | Tampering/Elevation | Malicious or corrupted update bundle is installed. | OTA upload, staging, install. | Persistent compromise or bricked device. | SC-003 | SYS-009, SWR-010 | TC-009, TC-013 | Draft |
+| THREAT-003 | Tampering/Elevation | Malicious or corrupted update bundle is installed, or activation success is misreported. | OTA upload, staging/library, install, camera reboot/validation. | Persistent compromise or bricked device. | SC-003 | SYS-009, SWR-010, SWR-038 | TC-009, TC-013, TC-036 | Draft |
 | THREAT-004 | Information disclosure | LAN attacker or compromised device scans open ports, observes traffic, or tries to stand in for the camera control endpoint. | HTTPS/RTSPS/mDNS/firewall/control channel. | Video/config exposure or forged control acceptance. | SC-004, SC-002 | SYS-001, SYS-004, SWR-020 | TC-006, TC-010, TC-016 | Draft |
 | THREAT-005 | Information disclosure | Device theft exposes recordings, WiFi, certs, and settings. | SD card, USB storage, `/data`. | Privacy and credential loss. | SC-005, SC-006, SC-101 | SYS-008, SYS-101, HWR-004, HWR-006 | TC-015, TC-018, TC-101-AC-1, TC-101-AC-5, TC-101-AC-10 | Draft |
 | THREAT-006 | Repudiation | Security or admin action is not logged. | Auth, user management, OTA, pairing. | Incident investigation gaps. | SC-008 | SYS-010, SWR-009 | TC-017 | Draft |
@@ -35,7 +35,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | THREAT-009 | Spoofing/Elevation | Default credentials, incomplete setup state, or personal default identity is exposed. | First-run setup, provisioning defaults, mDNS hostname. | Unauthorized first-use access or privacy disclosure. | SC-010, SC-019 | SYS-013, SYS-024, SWR-021, SWR-054 | TC-021, TC-044 | Draft |
 | THREAT-010 | Elevation/Tampering | User-management API allows privilege escalation, weak passwords, or last-admin deletion. | Users API, user store, password-change routes. | Lockout or unauthorized admin control. | SC-011, SC-001, SC-008 | SYS-014, SWR-023 | TC-022, TC-011 | Draft |
 | THREAT-011 | Tampering/Information disclosure | Time, timezone, WiFi, hostname, or network settings are manipulated or leaked. | Settings API, camera WiFi setup, logs. | Broken evidence, connectivity failure, credential disclosure. | SC-012, SC-020 | SYS-015, SWR-024, SWR-035, SWR-036 | TC-023, TC-033, TC-034, TC-041 | Draft |
-| THREAT-012 | Tampering/Denial | Removable storage operation targets wrong media or silently falls back. | USB scan/mount/format/eject/select. | Recording loss or unrelated media damage. | SC-013, SC-005 | SYS-016, SWR-027, SWR-028 | TC-024, TC-025 | Draft |
+| THREAT-012 | Tampering/Denial | Removable storage operation targets wrong media, loses the host-visible mount, or silently falls back. | USB scan/mount/format/eject/select. | Recording loss or unrelated media damage. | SC-013, SC-005 | SYS-016, SWR-027, SWR-028 | TC-024, TC-025 | Draft |
 | THREAT-013 | Information disclosure/Tampering | Media file routes allow path traversal or overbroad deletion. | Recording delete, live playlist/segment/snapshot routes. | Sensitive file disclosure or data loss. | SC-014, SC-008 | SYS-026, SWR-029, SWR-030 | TC-026, TC-027 | Draft |
 | THREAT-014 | Information disclosure | Rich motion notification includes excessive media or retains it too long. | Motion events, alert center, notification attachments. | Privacy disclosure. | SC-015, SC-020 | SYS-018, SWR-033, SWR-041 | TC-031, TC-038 | Draft |
 | THREAT-015 | Tampering/Elevation | WebRTC/WHEP proxy reaches unintended upstream or bypasses auth/method limits. | WebRTC proxy, HLS fallback, optional VPN. | SSRF, unauthorized stream access, or control path exposure. | SC-016, SC-004 | SYS-019, SYS-029, SWR-031, SWR-052 | TC-028, TC-010, TC-044 | Draft |

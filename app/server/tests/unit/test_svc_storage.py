@@ -114,6 +114,23 @@ class TestListDevices:
         assert result[0]["configured"] is True
         assert result[0]["configured_path_changed"] is True
 
+    @patch(USB_PATCH)
+    def test_marks_single_same_label_drive_when_uuid_changes(self, mock_usb, svc, deps):
+        sm, store, _ = deps
+        sm.recordings_dir = "/data/recordings"
+        store.get_settings.return_value.usb_device = "/dev/sdb1"
+        store.get_settings.return_value.usb_uuid = "old-usb"
+        store.get_settings.return_value.usb_label = "HomeMonitor"
+        mock_usb.detect_devices.return_value = [
+            _make_device(path="/dev/sda1", uuid="new-usb", label="HomeMonitor")
+        ]
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_inactive"] is True
+        assert result[0]["configured_path_changed"] is True
+
 
 class TestSelectDevice:
     def test_missing_device_path(self, svc):

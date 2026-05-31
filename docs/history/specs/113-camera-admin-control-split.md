@@ -16,7 +16,7 @@ one listener:
 
 - browser-driven admin pages (`/`, `/login`, `/api/wifi`,
   `/api/password`, `/api/factory-reset`, `/api/unpair`,
-  `/api/ota/upload`, `/api/ota/reboot`, `/api/stream-config`, `/pair`)
+  `/api/ota/upload`, `/api/stream-config`, `/pair`)
   authenticated by a session cookie or, for `/pair`, a 6-digit PIN
 - server-driven control endpoints (`/api/v1/control/config`,
   `/.../capabilities`, `/.../status`, `/.../restart-stream`,
@@ -29,6 +29,11 @@ inside the same handler. Both are working today, but they share a
 listener for compatibility, not by design — every future control-plane
 or auth-hardening change has to re-prove that browser ergonomics
 haven't loosened the machine path, and vice versa.
+
+Post-implementation note: the old browser-facing `/api/ota/reboot` path was
+removed when camera OTA activation became camera-owned. A successful camera OTA
+upload now stages the bundle, triggers the privileged installer, reports
+`rebooting`, and lets the camera reboot itself.
 
 This spec gives each surface its own listener, its own TLS context, and
 its own URL space, so:

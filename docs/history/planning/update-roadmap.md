@@ -46,21 +46,21 @@ The intended trust model is:
 
 | Area | Status | Notes |
 |---|---|---|
-| OTA API surface | Partial | Server API endpoints exist, but not every documented flow is proven end-to-end on hardware |
+| OTA API surface | Implemented | Server self-update, server-pushed camera update, and camera-direct upload are wired through the GUI/API and covered by tests |
 | App-only hot deploy for development | Working | We use direct app sync in the lab today; this is practical but not the final signed OTA path |
-| Full-system SWUpdate flow | Partial | Design is strong; signed bundle creation is validated in the clean VM, but live install/reboot validation is still blocked because both test devices did not return on the network after update |
-| A/B rollback with U-Boot | Partial | Planned and partially wired in Yocto/docs; not yet fully validated across real upgrade/rollback cycles |
-| USB update flow | Partial | Inbox/import model is designed; must be validated end-to-end on hardware |
-| Camera OTA push via server | Partial | Agent/service pieces exist; needs stronger end-to-end validation and release hardening |
-| Production signing flow | Partial / not field-validated | Signing design exists, but production-signing workflow is not yet fully tested on real hardware |
+| Full-system SWUpdate flow | Implemented / lab-validated | Dev hardware has exercised server and camera install/reboot success paths; production release validation still owns signed-artifact and rollback evidence |
+| A/B rollback with U-Boot | Implemented / validation continuing | Bootlimit and health-confirmation wiring exist; release validation must continue to capture forced-failure rollback evidence |
+| USB update flow | Implemented | USB import/storage flows use the same OTA staging/library model and root-helper storage boundary |
+| Camera OTA push via server | Implemented / lab-validated | Server relays bundles over mTLS, camera owns activation reboot, and server confirms the reported target version after boot |
+| Production signing flow | Implemented / release-gated | Signing design and artifact generation exist; each production release still needs signed install/reboot/rollback validation evidence |
 
 ### 3.2 Delivery Mode Status
 
 | Delivery mode | Intended use | Status |
 |---|---|---|
-| Dashboard upload | Server/admin driven updates | Partial |
-| USB import | Offline/field updates | Partial |
-| Server push to camera | Production camera updates | Partial |
+| Dashboard upload | Server/admin driven updates | Implemented |
+| USB import | Offline/field updates | Implemented |
+| Server push to camera | Production camera updates | Implemented |
 | SCP to inbox | Dev/lab only | Working for development workflow |
 | Repository polling (Suricatta) | Future managed updates | Planned, not implemented |
 
@@ -68,7 +68,7 @@ The intended trust model is:
 
 | Artifact type | Status | Notes |
 |---|---|---|
-| `.swu` full-system bundle | Partial | Intended final production path |
+| `.swu` full-system bundle | Implemented | Intended production path; release validation records signed install/reboot/rollback evidence |
 | `.tar.zst` app-only bundle | Partial | Design exists; repo still uses lab hot-deploy for day-to-day iteration |
 
 ---
@@ -98,25 +98,29 @@ Production builds are intended to be stricter:
 
 ### 4.3 Important Current Limitation
 
-Production OTA signing and the full production update pipeline are **not yet fully tested on real hardware**.
-The clean VM proves signed `.swu` generation works, but install/reboot/rollback still need device validation and the current live reboot attempt left both devices unreachable on the LAN.
+The OTA implementation is no longer blocked on missing transport or activation
+behavior. The remaining release gate is evidence quality: every production
+release that claims OTA readiness must still run signed install/reboot checks
+and capture rollback evidence for that artifact set.
 
 That means:
-- the design exists
-- some implementation exists
-- the repo should not claim the production OTA/signing path is fully validated today
+- the implementation exists
+- dev/lab success paths have been exercised on real devices
+- production release notes should distinguish signed artifact generation from
+  the specific signed install/reboot/rollback evidence captured for that release
 
 ---
 
 ## 5. Current Working Rules
 
-Until the production OTA path is fully validated:
+Until a production release has current signed OTA evidence:
 
 1. Use dev builds for software iteration and hardware debugging
 2. Use direct app hot-deploy only for lab/dev devices
 3. Do not describe unsigned dev OTA as production-ready
 4. Do not describe production signing as field-proven yet
-5. Treat USB/import/server-push flows as release work that still requires dedicated validation
+5. Treat USB/import/server-push flows as implemented paths that still require
+   release-specific validation evidence
 
 ---
 
@@ -125,7 +129,7 @@ Until the production OTA path is fully validated:
 ### Phase 1: Truth and Documentation
 
 - Align README, requirements, architecture, and development guide with actual status
-- Mark production OTA/signing as not yet fully hardware-validated
+- Mark production OTA/signing as release-gated by current hardware evidence
 - Keep dev-signing bypass explicit and intentional
 
 ### Phase 2: Stabilize App-Only Update Path

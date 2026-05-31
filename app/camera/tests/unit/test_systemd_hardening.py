@@ -140,7 +140,7 @@ def test_dev_deploy_installs_gpio_trigger_service():
     assert "app/server/config/gpio-trigger.sh" in text
     assert "app/server/config/gpio-trigger.service" in text
     assert "/opt/scripts/gpio-trigger.sh" in text
-    assert "systemctl enable gpio-trigger.service" in text
+    assert "systemctl enable home-monitor-led-init.service gpio-trigger.service" in text
 
 
 def test_dev_deploy_installs_camera_privileged_helper():
