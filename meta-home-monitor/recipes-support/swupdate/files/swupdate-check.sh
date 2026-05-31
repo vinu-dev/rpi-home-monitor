@@ -5,9 +5,9 @@
 #
 # Runs after every boot. If an upgrade is pending (upgrade_available=1),
 # validates that critical services are healthy. On success, confirms
-# the update by clearing upgrade_available. On failure, does nothing —
-# U-Boot will increment boot_count on next reboot and eventually
-# rollback after bootlimit (3) failed attempts.
+# the update by clearing upgrade_available. On failure, requests another
+# reboot so U-Boot can increment boot_count and roll back after bootlimit
+# (3) failed attempts.
 #
 # Also runs resize2fs on the active rootfs partition to expand it
 # to fill the 8 GB slot after a fresh OTA write.
@@ -20,6 +20,17 @@ UPGRADE_AVAILABLE=$(fw_printenv -n upgrade_available 2>/dev/null || echo "0")
 log() {
     logger -t "$LOG_TAG" "$1"
     echo "$LOG_TAG: $1"
+}
+
+request_retry_reboot() {
+    log "Requesting reboot so U-Boot can retry or roll back the failed OTA"
+    sync || true
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl --no-block reboot; then
+            return 0
+        fi
+    fi
+    reboot || true
 }
 
 # --- Always expand rootfs to fill partition (idempotent) ---
@@ -177,6 +188,7 @@ else
     BOOT_COUNT=$(fw_printenv -n boot_count 2>/dev/null || echo "?")
     BOOTLIMIT=$(fw_printenv -n bootlimit 2>/dev/null || echo "3")
     log "Health checks FAILED — NOT confirming update (boot_count=${BOOT_COUNT}/${BOOTLIMIT})"
-    log "System will rollback after ${BOOTLIMIT} failed boot attempts"
+    log "System will reboot and rollback after ${BOOTLIMIT} failed boot attempts"
+    request_retry_reboot
     exit 1
 fi

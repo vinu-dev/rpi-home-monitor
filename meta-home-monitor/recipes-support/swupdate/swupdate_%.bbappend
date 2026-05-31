@@ -56,7 +56,9 @@ After=network.target monitor.service camera-streamer.service
 Type=oneshot
 ExecStart=/opt/monitor/scripts/swupdate-check.sh
 RemainAfterExit=yes
-TimeoutStartSec=180
+# Keep this above swupdate-check.sh's own 240s validation deadline so the
+# script can log the failure and request the next rollback boot itself.
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

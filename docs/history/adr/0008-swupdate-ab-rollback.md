@@ -331,7 +331,11 @@ Designed into the pipeline from day one. Implementation deferred.
     - resize2fs /dev/mmcblk0p<N> (expand rootfs to fill 8 GB)
     - Archive result to /data/update/history/
     - Audit log: OTA_COMPLETED
-11. On FAILURE (or boot_count reaches 3):
+11. On FAILURE:
+    - `swupdate-check.sh` leaves `upgrade_available=1` intact
+    - `swupdate-check.sh` requests a reboot so U-Boot gets the next attempt
+    - U-Boot increments `boot_count` on each retry
+12. When `boot_count` reaches `bootlimit`:
     - U-Boot runs altbootcmd → boots previous slot
     - Audit log: OTA_ROLLBACK (on next successful boot)
 ```
@@ -484,7 +488,7 @@ With ~47 GB on `/data`, space is generous. Policies exist as safety nets.
 |----------------|---------|
 | `recipes-bsp/u-boot/` | U-Boot for RPi 4B + Zero 2W, A/B boot script, env setup, `bootdelay=0` |
 | `recipes-support/swupdate/swupdate_%.bbappend` | SWUpdate with CMS certificate verification, U-Boot handler (`CONFIG_UBOOT=y`) |
-| `recipes-support/swupdate/swupdate-check.service` | Post-boot health check, resize2fs, `fw_setenv upgrade_available 0` |
+| `recipes-support/swupdate/swupdate-check.service` | Post-boot health check, resize2fs, `fw_setenv upgrade_available 0`, and reboot-on-failed-validation so U-Boot can retry/rollback |
 | `classes/swupdate-image.bbclass` | Generates `.swu` from built rootfs (compact image + signed sw-description) |
 | `u-boot-fw-utils` in IMAGE_INSTALL | `fw_printenv`/`fw_setenv` userspace tools |
 | Kernel config fragment | `CONFIG_CRYPTO_ADIANTUM=y` (for ADR-0010 LUKS) |
