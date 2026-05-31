@@ -68,6 +68,38 @@ log() {
     echo "luks-first-boot: $1"
 }
 
+split_partition_device() {
+    PART_DISK=""
+    PART_NUM=""
+    dev="$1"
+    case "$dev" in
+        /dev/mmcblk*p[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/p[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*p//')
+            ;;
+        /dev/[sv]d*[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*[^0-9]//')
+            ;;
+    esac
+}
+
+grow_raw_data_partition() {
+    split_partition_device "$DATA_DEV"
+    if [ -z "$PART_DISK" ] || [ -z "$PART_NUM" ]; then
+        log "Could not parse data partition device $DATA_DEV; leaving size unchanged"
+        return 0
+    fi
+    log "Expanding raw data partition $DATA_DEV (${PART_DISK} part ${PART_NUM})"
+    if command -v growpart >/dev/null 2>&1; then
+        growpart "$PART_DISK" "$PART_NUM" || true
+    elif command -v parted >/dev/null 2>&1; then
+        printf 'Yes\n' | parted ---pretend-input-tty "$PART_DISK" resizepart "$PART_NUM" 100% || true
+    fi
+    partprobe "$PART_DISK" 2>/dev/null || true
+    blockdev --rereadpt "$PART_DISK" 2>/dev/null || true
+}
+
 # --- Detect device type ---
 is_server() {
     # Server has monitor-server package installed
@@ -79,6 +111,8 @@ is_camera() {
     [ -f /opt/camera/camera_streamer/__init__.py ] || \
     systemctl list-unit-files camera-streamer.service >/dev/null 2>&1
 }
+
+grow_raw_data_partition
 
 # --- Check if already LUKS-formatted ---
 if cryptsetup isLuks "$DATA_DEV" 2>/dev/null; then
@@ -101,6 +135,8 @@ if cryptsetup isLuks "$DATA_DEV" 2>/dev/null; then
         mount /dev/mapper/"$DM_NAME" "$MOUNT_POINT"
         log "Mounted encrypted /data"
     fi
+    cryptsetup resize "$DM_NAME" 2>/dev/null || true
+    resize2fs /dev/mapper/"$DM_NAME" 2>/dev/null || true
     led_off
     exit 0
 fi

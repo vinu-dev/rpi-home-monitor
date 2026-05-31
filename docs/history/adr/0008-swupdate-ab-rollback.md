@@ -30,9 +30,9 @@ Both devices use 64 GB SD cards with the following layout:
 | boot | 512 MB | vfat | U-Boot, kernel, DTBs, config.txt, U-Boot env |
 | rootfsA | 8 GB | ext4 | Active root filesystem |
 | rootfsB | 8 GB | ext4 | Standby (OTA target) |
-| data | ~47 GB (`--grow`) | ext4 (LUKS in prod) | Recordings, config, certs, logs, updates |
+| data | ~47 GB (`--grow`) | ext4 (LUKS in prod) | Recordings, config, certs, logs, OTA staging/tmp |
 
-Rootfs images are built at content size (~600 MB server, ~400 MB camera) and expanded via `resize2fs` on first boot. OTA `.swu` bundles contain the compact image, not the full 8 GB.
+Rootfs images are built at content size (~600 MB server, ~400 MB camera) and expanded via `resize2fs` on first boot and after OTA activation. OTA `.swu` bundles contain the compact image, not the full 8 GB. Rootfs artifacts are marked `installed-directly = true` so SWUpdate streams them into the inactive slot instead of first extracting them into `/tmp`; this is mandatory on the camera because `/tmp` is RAM-backed and much smaller than the SD card.
 
 ### Design goals
 1. An update engine that writes to the inactive partition without touching the running system.
@@ -118,7 +118,7 @@ hm-server-pi4-full-2.1.0.swu
 
 Camera: `hm-camera-zero2w-full-0.9.0.swu` (~80-100 MB compressed).
 
-The rootfs image is built at content size. After SWUpdate writes it to the inactive slot, a first-boot service runs `resize2fs` to fill the 8 GB partition.
+The rootfs image is built at content size. SWUpdate streams the compressed rootfs directly to the inactive slot. After the updated slot boots, `swupdate-check.service` runs `resize2fs` to fill the 8 GB partition.
 
 #### 2b. App-only bundle (`.tar.zst` + detached signature)
 
@@ -198,7 +198,7 @@ All delivery modes feed into the same directory structure:
 
 **Server and camera:**
 ```
-/data/update/
+/data/ota/
 ├── inbox/      # untrusted — raw uploads, USB copies, SCP drops, downloads
 ├── staging/    # verified — signature valid, metadata checked, installable
 └── history/    # audit trail — manifests, results, logs, rollback refs
@@ -226,7 +226,7 @@ For offline updates, field service, lab use.
 2. Server detects mount (udev rule)
 3. Scans one predictable path: /media/<label>/updates/manifest.json
 4. Dashboard shows available updates from manifest
-5. Admin selects → copy to /data/update/inbox/
+5. Admin selects → copy to /data/ota/inbox/
 6. Verification pipeline runs
 7. Never auto-installs on insert
 ```
@@ -254,7 +254,7 @@ Existing `POST /api/v1/ota/server/upload` enhanced:
 
 ```
 1. Admin uploads bundle via dashboard
-2. File saved to /data/update/inbox/
+2. File saved to /data/ota/inbox/
 3. Verification: signature → metadata → compatibility → space check
 4. Valid → moved to staging, dashboard shows "ready to install"
 5. Admin confirms → install begins
@@ -265,7 +265,7 @@ Existing `POST /api/v1/ota/server/upload` enhanced:
 ```
 1. Admin triggers from dashboard: POST /api/v1/ota/camera/<id>/push
 2. Server pushes bundle to camera OTA agent over mTLS (ADR-0009, port 8080)
-3. Camera saves to /data/update/inbox/ (47 GB available — plenty of room)
+3. Camera saves to `/data/ota/camera-spool/staging/update.swu`
 4. Camera verifies: signature, metadata, compatibility
 5. Moves to staging, installs from staging
 6. Reboot, U-Boot boots updated slot
@@ -276,7 +276,7 @@ Existing `POST /api/v1/ota/server/upload` enhanced:
 #### 6d. SSH/SCP developer push (dev builds only)
 
 ```
-1. Developer: scp bundle root@device:/data/update/inbox/
+1. Developer: scp bundle root@device:/data/ota/inbox/
 2. Update agent detects new file in inbox (inotify or polled)
 3. Same verification pipeline — no shortcuts
 4. Dev mode: can auto-trigger install after verification
@@ -303,7 +303,7 @@ Designed into the pipeline from day one. Implementation deferred.
 
 **Server self-update:**
 ```
- 1. Bundle arrives in /data/update/inbox/ (via any delivery mode)
+ 1. Bundle arrives in /data/ota/inbox/ (via any delivery mode)
  2. Verification:
     a. CMS signature on sw-description
     b. Metadata: target_device == server-pi4
@@ -311,9 +311,9 @@ Designed into the pipeline from day one. Implementation deferred.
     d. version > current AND version >= min_base_version
     e. channel matches device config
     f. Space check: /data free > 2 GB after staging
- 3. Move to /data/update/staging/
+ 3. Move to /data/ota/staging/
  4. Admin confirms install (auto in dev mode)
- 5. swupdate -i /data/update/staging/<bundle>.swu -e stable,<inactive-slot>
+ 5. swupdate -i /data/ota/staging/<bundle>.swu -e stable,<inactive-slot>
     - SWUpdate verifies hashes, streams rootfs image to inactive partition
     - No intermediate unpack — handler writes directly to block device
  6. fw_setenv upgrade_available 1
@@ -329,7 +329,7 @@ Designed into the pipeline from day one. Implementation deferred.
     - fw_setenv upgrade_available 0
     - fw_setenv boot_count 0
     - resize2fs /dev/mmcblk0p<N> (expand rootfs to fill 8 GB)
-    - Archive result to /data/update/history/
+    - Archive result to /data/ota/history/
     - Audit log: OTA_COMPLETED
 11. On FAILURE:
     - `swupdate-check.sh` leaves `upgrade_available=1` intact
@@ -344,9 +344,9 @@ Designed into the pipeline from day one. Implementation deferred.
 ```
  1. Admin triggers: POST /api/v1/ota/camera/<id>/push
  2. Server sends .swu to camera OTA agent over mTLS (port 8080)
- 3. Camera saves to /data/update/inbox/
+ 3. Camera saves to /data/ota/camera-spool/staging/update.swu
  4. Camera verifies: signature, metadata, compatibility
- 5. Moves to /data/update/staging/
+ 5. Installs from /data/ota/camera-spool/staging/
  6. swupdate writes rootfs to inactive slot
  7. fw_setenv upgrade_available 1, boot_count 0
  8. Reboot
@@ -425,7 +425,7 @@ No reboot. Rollback is instant (symlink swap + service restart).
 The `OTAAgent` class in `camera_streamer/ota_agent.py`:
 - HTTP server on port 8080 (nftables: server IP only)
 - Requires mTLS — verifies server cert against CA (ADR-0009)
-- `POST /update`: receives bundle, saves to `/data/update/inbox/`
+- `POST /update`: receives bundle, saves to `/data/ota/camera-spool/staging/update.swu`
 - `GET /update/status`: returns install state and progress
 - Same verification pipeline as all other delivery modes
 - Memory-safe: streams upload to disk, never loads full bundle into RAM

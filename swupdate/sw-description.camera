@@ -9,6 +9,7 @@ software =
                 type = "raw";
                 device = "/dev/monitor_standby";
                 compressed = "zlib";
+                installed-directly = true;
                 sha256 = "@@ROOTFS_SHA256@@";
             }
         );

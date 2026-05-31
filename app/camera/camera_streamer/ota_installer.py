@@ -9,8 +9,8 @@ standby slot, and fw_setenv.
 
 This module implements the client half of the split:
 
-    camera-streamer  ──write bundle──▶  /var/lib/camera-ota/staging/update.swu
-                    ──write trigger──▶  /var/lib/camera-ota/trigger
+    camera-streamer  ──write bundle──▶  /data/ota/camera-spool/staging/update.swu
+                    ──write trigger──▶  /data/ota/camera-spool/trigger
                                             │
                              (systemd .path unit fires)
                                             ▼
@@ -19,7 +19,7 @@ This module implements the client half of the split:
                                             ▼
                                 swupdate -c -i / swupdate -i
                                             │
-                    ◀── poll status.json ── /var/lib/camera-ota/status.json
+                    ◀── poll status.json ── /data/ota/camera-spool/status.json
 
 Both OTA entry points (server-push via OTAAgent on :8080 and camera
 GUI upload on :443) stage the bundle and trigger through this module
@@ -44,7 +44,7 @@ from camera_streamer.release_version import release_version
 
 log = logging.getLogger("camera-streamer.ota-installer")
 
-SPOOL_DIR = "/var/lib/camera-ota"
+SPOOL_DIR = os.environ.get("CAMERA_OTA_SPOOL_DIR", "/data/ota/camera-spool")
 STAGING_DIR = os.path.join(SPOOL_DIR, "staging")
 TRIGGER_PATH = os.path.join(SPOOL_DIR, "trigger")
 STATUS_PATH = os.path.join(SPOOL_DIR, "status.json")

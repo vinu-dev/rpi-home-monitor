@@ -120,12 +120,12 @@ as the `camera` user with `NoNewPrivileges=true`. SWUpdate needs root
 (`/dev/monitor_standby` symlink refresh, ext4 mount of the standby
 slot, `fw_setenv`), so `camera-streamer` cannot exec it directly.
 Implemented as a file-IPC protocol: camera-streamer stages the bundle
-at `/var/lib/camera-ota/staging/update.swu` and writes
-`/var/lib/camera-ota/trigger`. A systemd `.path` unit
+at `/data/ota/camera-spool/staging/update.swu` and writes
+`/data/ota/camera-spool/trigger`. A systemd `.path` unit
 (`camera-ota-installer.path`) watches the trigger and fires the
 root-owned `camera-ota-installer.service` oneshot, which is the only
 place `swupdate -i` runs on the camera. Status and progress flow back
-through `status.json` in the same spool. Alternative A from the
+through `status.json` in the same `/data`-backed spool. Alternative A from the
 original ADR (camera-direct upload on :443) also uses this protocol —
 the upload handler stages and triggers, then returns immediately.
 

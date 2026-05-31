@@ -22,6 +22,60 @@ log() {
     echo "$LOG_TAG: $1"
 }
 
+mount_source() {
+    target="$1"
+    if command -v findmnt >/dev/null 2>&1; then
+        found=$(findmnt -n -o SOURCE "$target" 2>/dev/null || true)
+        if [ -n "$found" ]; then
+            echo "$found"
+            return 0
+        fi
+    fi
+    awk -v target="$target" '$2 == target { print $1; exit }' /proc/mounts
+}
+
+cmdline_root_device() {
+    for arg in $(cat /proc/cmdline 2>/dev/null); do
+        case "$arg" in
+            root=/dev/*)
+                echo "${arg#root=}"
+                return 0
+                ;;
+        esac
+    done
+}
+
+split_partition_device() {
+    PART_DISK=""
+    PART_NUM=""
+    dev="$1"
+    case "$dev" in
+        /dev/mmcblk*p[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/p[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*p//')
+            ;;
+        /dev/[sv]d*[0-9]*)
+            PART_DISK=$(echo "$dev" | sed 's/[0-9][0-9]*$//')
+            PART_NUM=$(echo "$dev" | sed 's/^.*[^0-9]//')
+            ;;
+    esac
+}
+
+grow_partition_to_end() {
+    disk="$1"
+    partnum="$2"
+    if [ -z "$disk" ] || [ -z "$partnum" ]; then
+        return 0
+    fi
+    if command -v growpart >/dev/null 2>&1; then
+        growpart "$disk" "$partnum" || true
+    elif command -v parted >/dev/null 2>&1; then
+        printf 'Yes\n' | parted ---pretend-input-tty "$disk" resizepart "$partnum" 100% || true
+    fi
+    partprobe "$disk" 2>/dev/null || true
+    blockdev --rereadpt "$disk" 2>/dev/null || true
+}
+
 request_retry_reboot() {
     log "Requesting reboot so U-Boot can retry or roll back the failed OTA"
     sync || true
@@ -35,10 +89,47 @@ request_retry_reboot() {
 
 # --- Always expand rootfs to fill partition (idempotent) ---
 expand_rootfs() {
-    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    ROOT_DEV=$(mount_source / 2>/dev/null || true)
+    if [ "$ROOT_DEV" = "/dev/root" ] || [ -z "$ROOT_DEV" ]; then
+        CMDLINE_ROOT=$(cmdline_root_device 2>/dev/null || true)
+        if [ -n "$CMDLINE_ROOT" ]; then
+            ROOT_DEV="$CMDLINE_ROOT"
+        fi
+    fi
     if [ -n "$ROOT_DEV" ]; then
         # resize2fs is a no-op if already at full size
         resize2fs "$ROOT_DEV" 2>/dev/null || true
+    fi
+}
+
+# --- Always expand /data to fill the SD card tail (idempotent) ---
+expand_data() {
+    DATA_DEV=$(mount_source /data 2>/dev/null || true)
+    if [ -z "$DATA_DEV" ]; then
+        return 0
+    fi
+
+    GROW_DEV="$DATA_DEV"
+    RESIZE_DEV="$DATA_DEV"
+    if echo "$DATA_DEV" | grep -q '^/dev/mapper/' && command -v cryptsetup >/dev/null 2>&1; then
+        MAP_NAME=$(basename "$DATA_DEV")
+        BACKING_DEV=$(cryptsetup status "$MAP_NAME" 2>/dev/null | awk '/device:/ { print $2; exit }')
+        if [ -n "$BACKING_DEV" ]; then
+            GROW_DEV="$BACKING_DEV"
+        fi
+    fi
+
+    split_partition_device "$GROW_DEV"
+    if [ -n "$PART_DISK" ] && [ -n "$PART_NUM" ]; then
+        grow_partition_to_end "$PART_DISK" "$PART_NUM"
+    fi
+
+    if echo "$DATA_DEV" | grep -q '^/dev/mapper/' && command -v cryptsetup >/dev/null 2>&1; then
+        cryptsetup resize "$MAP_NAME" 2>/dev/null || true
+    fi
+
+    if command -v resize2fs >/dev/null 2>&1; then
+        resize2fs "$RESIZE_DEV" 2>/dev/null || true
     fi
 }
 
@@ -137,6 +228,7 @@ log "Starting post-boot check (upgrade_available=${UPGRADE_AVAILABLE})"
 
 # Always expand rootfs
 expand_rootfs
+expand_data
 
 if [ "$UPGRADE_AVAILABLE" != "1" ]; then
     log "No pending upgrade — nothing to confirm"

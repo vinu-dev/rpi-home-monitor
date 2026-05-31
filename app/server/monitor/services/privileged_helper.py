@@ -98,6 +98,7 @@ def _run_command(
     *,
     timeout: int = 30,
     nonzero_ok: bool = False,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     try:
         result = subprocess.run(
@@ -106,6 +107,7 @@ def _run_command(
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise HelperRequestError(f"{cmd[0]} not found") from exc
@@ -374,7 +376,7 @@ def _op_ota_verify(payload: dict[str, Any]) -> dict[str, Any]:
     public_key = _validate_ota_public_key_path(payload.get("public_key_path"))
     if public_key:
         cmd.extend(["-k", public_key])
-    return _run_command(cmd, timeout=60, nonzero_ok=True)
+    return _run_command(cmd, timeout=60, nonzero_ok=True, env=_swupdate_env())
 
 
 def _op_ota_install(payload: dict[str, Any]) -> dict[str, Any]:
@@ -382,7 +384,29 @@ def _op_ota_install(payload: dict[str, Any]) -> dict[str, Any]:
     public_key = _validate_ota_public_key_path(payload.get("public_key_path"))
     if public_key:
         cmd.extend(["-k", public_key])
-    return _run_command(cmd, timeout=600, nonzero_ok=True)
+    return _run_command(cmd, timeout=600, nonzero_ok=True, env=_swupdate_env())
+
+
+def _swupdate_env() -> dict[str, str]:
+    tmpdir = posixpath.join(OTA_DIR, "tmp")
+    _ensure_monitor_owned_dir(OTA_DIR)
+    _ensure_monitor_owned_dir(tmpdir)
+    env = os.environ.copy()
+    env["TMPDIR"] = tmpdir
+    return env
+
+
+def _ensure_monitor_owned_dir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+    if pwd is None or grp is None:
+        return
+    try:
+        uid = pwd.getpwnam("monitor").pw_uid
+        gid = grp.getgrnam("monitor").gr_gid
+        os.chown(path, uid, gid)
+        os.chmod(path, 0o755)
+    except (KeyError, PermissionError, OSError) as exc:
+        raise HelperRequestError(f"OTA temp directory repair failed: {exc}") from exc
 
 
 def _op_ota_repair_storage(payload: dict[str, Any]) -> dict[str, Any]:
@@ -397,6 +421,7 @@ def _op_ota_repair_storage(payload: dict[str, Any]) -> dict[str, Any]:
         gid = grp.getgrnam("monitor").gr_gid
         os.makedirs(posixpath.join(OTA_DIR, "inbox"), exist_ok=True)
         os.makedirs(posixpath.join(OTA_DIR, "staging"), exist_ok=True)
+        os.makedirs(posixpath.join(OTA_DIR, "tmp"), exist_ok=True)
         os.makedirs(posixpath.join(OTA_DIR, "camera-library"), exist_ok=True)
 
         for root, dirs, files in os.walk(

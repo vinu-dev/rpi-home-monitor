@@ -451,7 +451,10 @@ def test_ota_verify_without_public_key_omits_key_argument():
     request = (
         b'{"operation":"ota.verify","payload":{"bundle_path":"/data/ota/update.swu"}}'
     )
-    with patch.object(helper, "_run_command", return_value={"returncode": 0}) as run:
+    with (
+        patch.object(helper, "_swupdate_env", return_value={"TMPDIR": "/data/ota/tmp"}),
+        patch.object(helper, "_run_command", return_value={"returncode": 0}) as run,
+    ):
         data = helper.handle_request(request)
 
     assert data == {"returncode": 0}
@@ -459,6 +462,7 @@ def test_ota_verify_without_public_key_omits_key_argument():
         ["swupdate", "-c", "-i", "/data/ota/update.swu"],
         timeout=60,
         nonzero_ok=True,
+        env={"TMPDIR": "/data/ota/tmp"},
     )
 
 
@@ -468,7 +472,10 @@ def test_ota_verify_accepts_production_public_key():
         b'{"bundle_path":"/data/ota/update.swu",'
         b'"public_key_path":"/etc/swupdate-public.crt"}}'
     )
-    with patch.object(helper, "_run_command", return_value={"returncode": 0}) as run:
+    with (
+        patch.object(helper, "_swupdate_env", return_value={"TMPDIR": "/data/ota/tmp"}),
+        patch.object(helper, "_run_command", return_value={"returncode": 0}) as run,
+    ):
         data = helper.handle_request(request)
 
     assert data == {"returncode": 0}
@@ -483,6 +490,7 @@ def test_ota_verify_accepts_production_public_key():
         ],
         timeout=60,
         nonzero_ok=True,
+        env={"TMPDIR": "/data/ota/tmp"},
     )
 
 
@@ -492,7 +500,10 @@ def test_ota_install_accepts_production_public_key():
         b'{"bundle_path":"/data/ota/update.swu",'
         b'"public_key_path":"/etc/swupdate-public.crt"}}'
     )
-    with patch.object(helper, "_run_command", return_value={"returncode": 0}) as run:
+    with (
+        patch.object(helper, "_swupdate_env", return_value={"TMPDIR": "/data/ota/tmp"}),
+        patch.object(helper, "_run_command", return_value={"returncode": 0}) as run,
+    ):
         data = helper.handle_request(request)
 
     assert data == {"returncode": 0}
@@ -506,7 +517,33 @@ def test_ota_install_accepts_production_public_key():
         ],
         timeout=600,
         nonzero_ok=True,
+        env={"TMPDIR": "/data/ota/tmp"},
     )
+
+
+def test_swupdate_env_keeps_root_created_tmp_writable_by_monitor(monkeypatch):
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+    monkeypatch.setattr(helper, "pwd", fake_pwd)
+    monkeypatch.setattr(helper, "grp", fake_grp)
+    monkeypatch.setattr(helper, "OTA_DIR", "/data/ota")
+
+    with (
+        patch.object(helper.os, "makedirs") as makedirs,
+        patch.object(helper.os, "chown", create=True) as chown,
+        patch.object(helper.os, "chmod") as chmod,
+    ):
+        env = helper._swupdate_env()
+
+    assert env["TMPDIR"] == "/data/ota/tmp"
+    makedirs.assert_any_call("/data/ota", exist_ok=True)
+    makedirs.assert_any_call("/data/ota/tmp", exist_ok=True)
+    chown.assert_any_call("/data/ota", 996, 994)
+    chown.assert_any_call("/data/ota/tmp", 996, 994)
+    chmod.assert_any_call("/data/ota", 0o755)
+    chmod.assert_any_call("/data/ota/tmp", 0o755)
 
 
 def test_ota_repair_storage_repairs_allowlisted_tree(monkeypatch):
@@ -543,6 +580,7 @@ def test_ota_repair_storage_repairs_allowlisted_tree(monkeypatch):
     assert data == {"path": "/data/ota"}
     makedirs.assert_any_call("/data/ota/inbox", exist_ok=True)
     makedirs.assert_any_call("/data/ota/staging", exist_ok=True)
+    makedirs.assert_any_call("/data/ota/tmp", exist_ok=True)
     makedirs.assert_any_call("/data/ota/camera-library", exist_ok=True)
     chown.assert_any_call("/data/ota", 996, 994)
     chown.assert_any_call("/data/ota/inbox/camera.swu", 996, 994)

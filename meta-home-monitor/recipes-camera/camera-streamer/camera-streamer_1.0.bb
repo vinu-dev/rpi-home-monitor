@@ -109,7 +109,7 @@ do_install() {
     install -m 0644 ${WORKDIR}/config/camera-ota-installer.path ${D}${systemd_system_unitdir}/camera-ota-installer.path
     install -m 0644 ${WORKDIR}/status_led/home-monitor-led-init.service ${D}${systemd_system_unitdir}/home-monitor-led-init.service
 
-    # tmpfiles.d rule that creates the /var/lib/camera-ota spool
+    # tmpfiles.d rule that creates the /data-backed camera OTA spool
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${WORKDIR}/config/camera-ota-tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/camera-ota.conf
 

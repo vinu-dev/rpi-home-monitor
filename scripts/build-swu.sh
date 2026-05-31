@@ -167,6 +167,12 @@ if grep -q '@@[A-Za-z0-9_]*@@' "$WORK_DIR/sw-description"; then
     grep -n '@@[A-Za-z0-9_]*@@' "$WORK_DIR/sw-description" >&2
     exit 1
 fi
+if ! grep -q 'installed-directly[[:space:]]*=[[:space:]]*true;' "$WORK_DIR/sw-description"; then
+    echo ""
+    echo "ABORT: rootfs image must declare installed-directly = true." >&2
+    echo "       Otherwise SWUpdate extracts rootfs.ext4.gz into /tmp before flashing." >&2
+    exit 1
+fi
 
 # 3. Sign sw-description if requested (CMS/PKCS7 for SWUpdate)
 if [ "$SIGN" = true ]; then

@@ -78,7 +78,7 @@ Existing code this change builds on, not replaces.
   (`MOTION_PREROLL_ENABLED`, `MOTION_PREROLL_SECONDS`). Same
   `DEFAULTS` pattern as every other camera config knob.
 - `app/camera/config/camera-streamer.service:39` —
-  `ReadWritePaths=/data /var/lib/camera-ota`. The merged clip
+  `ReadWritePaths=/data`. The merged clip
   writes under `/data` (camera-local recordings staging dir), so
   no new path needs to be added. The existing systemd-hardening
   unit test (`app/camera/tests/unit/test_systemd_hardening.py`)

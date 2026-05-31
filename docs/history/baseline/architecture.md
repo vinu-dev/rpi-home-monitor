@@ -669,23 +669,25 @@ unprivileged user with `NoNewPrivileges=true`, so it cannot exec
 
 ```
 camera-streamer (user=camera)
-  ├─ writes bundle → /var/lib/camera-ota/staging/update.swu
-  └─ writes trigger → /var/lib/camera-ota/trigger
+  ├─ writes bundle → /data/ota/camera-spool/staging/update.swu
+  └─ writes trigger → /data/ota/camera-spool/trigger
                               │
           systemd camera-ota-installer.path fires
                               ▼
 camera-ota-installer.service (root, oneshot)
   ├─ refreshes /dev/monitor_standby from fw_printenv boot_slot
   ├─ swupdate -c (signature verify) + swupdate -i (install)
-  └─ writes progress → /var/lib/camera-ota/status.json
+  └─ writes progress → /data/ota/camera-spool/status.json
                               │
                               ▼
 camera-streamer proxies status.json back to browser / to server poll.
 ```
 
-The spool directory is `2775 root:camera` (setgid on group `camera`) so
-the unprivileged streamer can stage bundles and write triggers without
-privilege escalation.
+The spool directory is `2775 camera:camera` (setgid on group `camera`) under
+`/data` so the unprivileged streamer can stage bundles and write triggers
+without privilege escalation while avoiding rootfs and RAM-backed `/tmp`
+pressure. The root installer treats the staged bundle as untrusted and verifies
+the SWUpdate signature before writing either A/B slot.
 
 **Upload handshake is async on both camera paths.** Path B and Path C
 both return HTTP 202 as soon as the trigger file is written — they do
