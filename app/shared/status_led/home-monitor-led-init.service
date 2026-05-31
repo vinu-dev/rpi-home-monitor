@@ -1,0 +1,14 @@
+# REQ: SWR-042, SWR-050; RISK: RISK-018, RISK-022; SEC: SC-019; TEST: TC-039, TC-044
+[Unit]
+Description=Home Monitor status LED initialization
+DefaultDependencies=no
+After=local-fs.target
+Before=monitor-hotspot.service camera-hotspot.service monitor.service camera-streamer.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/home-monitor-ledctl boot --init --force
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

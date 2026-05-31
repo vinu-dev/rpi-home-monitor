@@ -701,7 +701,6 @@ class TestStatusServerNoPasswordAuthContract:
             ("GET", "/api/ota/status", None),
             ("PUT", "/api/stream-config", {"fps": 20}),
             ("POST", "/api/ota/upload", {"bundle": "x"}),
-            ("POST", "/api/ota/reboot", {}),
             ("POST", "/api/wifi", {"ssid": "NewNet", "password": "pass123"}),
             ("POST", "/api/factory-reset", {}),
             ("POST", "/api/unpair", {}),

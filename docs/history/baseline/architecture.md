@@ -632,15 +632,16 @@ Server browses:
 │    browser → POST /api/v1/ota/server/install → SWUpdate → reboot    │
 │                                                                     │
 │  Path B — Camera update via server (admin GUI, relayed):            │
-│    browser → POST /api/v1/ota/camera/<id>/upload → server inbox     │
+│    browser → POST /api/v1/ota/camera/<id>/upload → camera library   │
 │    browser → POST /api/v1/ota/camera/<id>/push   → mTLS stream to   │
 │                    https://<camera-ip>:8080/ota/upload              │
 │                    (returns 202 Accepted; server polls camera's     │
-│                     /ota/status until installed/error)              │
+│                     /ota/status and heartbeat until target version) │
 │                                                                     │
 │  Path C — Camera direct upload (admin GUI, camera status page):     │
 │    browser → POST https://<camera>:443/api/ota/upload → stage       │
-│    browser → POST https://<camera>:443/api/ota/reboot               │
+│    camera installer writes inactive slot, reports rebooting,        │
+│    removes its temporary bundle, and reboots itself                 │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                                    ↓

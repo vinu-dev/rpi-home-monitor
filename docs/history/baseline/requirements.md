@@ -348,7 +348,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-CAM-06: OTA Update Support
 
-> **Status: Partially implemented.** Camera OTA agent and supporting code exist, but the full production update path is not yet fully validated on real hardware. Dev builds intentionally allow signing bypass. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Implemented / release-gated.** Camera OTA agent, camera-local upload, server push, camera-owned reboot, and version confirmation are implemented and lab-validated on real hardware. Dev builds intentionally allow signing bypass; production releases still need release-specific signed install/reboot/rollback evidence. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - Accept update images pushed from server over HTTPS (mTLS authenticated, ADR-0009)
@@ -449,7 +449,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-SRV-10: OTA Update Management
 
-> **Status: Partially implemented.** Server OTA service and API exist, but the production-grade end-to-end path (signed full-system update, rollback, USB/import validation) is not yet fully proven on real hardware. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Implemented / release-gated.** Server OTA service, dashboard upload, USB import/staging, reusable camera bundle library, and server-pushed camera updates are implemented. Production releases still need release-specific signed install/reboot/rollback evidence. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):
@@ -697,7 +697,7 @@ All endpoints require authentication. Prefix: `/api/v1/`
 
 #### SR-SEC-09: Signed OTA Updates
 
-> **Status: Partially implemented.** The signing design exists, but dev builds may bypass signing and the full production signing path is not yet fully hardware-validated. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Implemented / release-gated.** The signing design and signed bundle generation exist, dev builds may bypass signing, and each production release must capture signed install/reboot/rollback hardware evidence before claiming OTA readiness. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Production target: all artifacts signed through the configured OTA signing trust chain (`.swu` via CMS certificate flow, app bundles via detached signatures)
 - Build machine holds private signing key (never on devices)

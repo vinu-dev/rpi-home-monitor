@@ -251,6 +251,38 @@ def test_detect_devices_unsupported_fs(mock_run):
     assert devices[0]["supported"] is False
 
 
+def test_detect_devices_prefers_authoritative_helper_metadata():
+    """Unprivileged scans use the root helper when block metadata is hidden."""
+    local_devices = [
+        {
+            "path": "/dev/sda1",
+            "fstype": "",
+            "supported": False,
+            "filesystem_status": "unknown",
+        }
+    ]
+    helper_devices = [
+        {
+            "path": "/dev/sda1",
+            "fstype": "ext4",
+            "supported": True,
+            "filesystem_status": "supported",
+        }
+    ]
+    with (
+        patch("monitor.services.usb._detect_devices_local", return_value=local_devices),
+        patch("monitor.services.usb.privileged.should_use_helper", return_value=True),
+        patch(
+            "monitor.services.usb.privileged.request",
+            return_value={"devices": helper_devices},
+        ) as request,
+    ):
+        devices = detect_devices()
+
+    assert devices == helper_devices
+    request.assert_called_once_with("usb.detect", {}, timeout=15)
+
+
 # ===========================================================================
 # _device_info
 # ===========================================================================

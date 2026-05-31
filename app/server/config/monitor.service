@@ -19,6 +19,7 @@ User=monitor
 Group=monitor
 WorkingDirectory=/opt/monitor
 ExecStart=/usr/bin/python3 -m flask --app monitor run --host=127.0.0.1 --port=5000
+ExecStartPost=+/usr/bin/home-monitor-ledctl healthy --role server --force --clear-activation
 Restart=always
 RestartSec=5
 WatchdogSec=60

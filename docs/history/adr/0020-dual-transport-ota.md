@@ -30,10 +30,10 @@ The user's practical ask is "I should be able to update both boxes from one scre
 │                                                                     │
 │  Server:  browser → POST /api/v1/ota/server/upload → /data/ota/…   │
 │  Camera:  browser → POST /api/v1/ota/camera/<id>/upload →          │
-│             server /data/ota/inbox/camera-<id>/… →                  │
+│             server /data/ota/camera-library/… →                     │
 │             POST /api/v1/ota/camera/<id>/push →                     │
 │             mTLS stream to https://<camera-ip>:8080/ota/upload     │
-│  USB:     scan mounted USB → import → server inbox → (above)       │
+│  USB:     scan mounted USB → import → server slot or camera library│
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                                  ↓
@@ -72,9 +72,9 @@ The user's practical ask is "I should be able to update both boxes from one scre
 A new **Updates** tab in Settings, admin-only. One card for the server, one card per paired camera. Each card:
 
 - Current firmware version.
-- File picker (`accept=".swu"`). Chosen file uploads immediately to its device-specific inbox.
-- **Install & Reboot** (server) or **Push & Install** (camera) button — enabled only when a bundle is staged and (camera only) the camera is online.
-- Progress bar driven by the polled status, fed from the server-side shadow status during upload and from `/live-status` during verify/install.
+- File picker (`accept=".swu"`). Server bundles are staged in the server slot. Camera bundles are stored once in the server's reusable camera bundle library, then offered to any online camera that is behind that bundle version.
+- **Install & Reboot** (server) or **Push & Install** (camera) button — enabled only when a bundle is staged and (camera only) the camera is online. Camera installs automatically reboot themselves after a successful slot write; there is no second camera reboot button.
+- Progress bar driven by the polled status, fed from the server-side shadow status during upload and from `/live-status` during verify/install/reboot validation.
 
 No separate "choose a camera" step — the card **is** the device, matching the existing Settings pattern for Recording and Storage.
 
@@ -90,12 +90,12 @@ No separate "choose a camera" step — the card **is** the device, matching the 
 **Negative**
 
 - The push is only as reliable as the WiFi link between server and camera. A dropped TCP connection mid-stream fails the whole push; the admin must retry. (Industry pattern — SWUpdate on the camera is transactional via A/B so a half-arrived bundle is safely discarded.)
-- Server disk carries a per-camera inbox under `/data/ota/inbox/camera-<id>/`. At ~150 MB per bundle times N cameras this is bounded by how many cameras an admin is staging simultaneously; inbox is cleared on successful push and on subsequent re-upload.
-- The server briefly holds a second copy of the bundle (own staged server bundle + camera inbox bundle) during simultaneous server+camera updates. Acceptable on the 128 GB class hardware we target.
+- Server disk carries a reusable camera bundle library under `/data/ota/camera-library`. This intentionally keeps one validated camera `.swu` so newly paired or currently offline cameras can be updated later without re-uploading from the admin laptop. The UI does not offer that bundle to cameras already on the same or newer version.
+- Server and camera self-update slots are cleaned after activation: a server bundle matching the running version is discarded, and the camera removes its local staged copy before rebooting into the updated slot.
 
 ## Alternatives considered
 
-**A. Add a file-upload form to the camera's own login page (:443).** Would give per-device direct upload without going through the server. Rejected for now: (i) camera's status_server is `BaseHTTPRequestHandler`, adding streamed multipart + session-auth + CSRF is non-trivial surgery; (ii) admin UX is worse — you'd have to navigate to each camera's IP separately; (iii) bundles from the server side are already signed and staged, relaying them over the existing mTLS channel is cheaper than re-uploading from the admin's laptop for every camera. We can add this later if a camera is ever orphaned from its server.
+**A. Add a file-upload form to the camera's own login page (:443).** Would give per-device direct upload without going through the server. Rejected in the original design: (i) camera's status_server is `BaseHTTPRequestHandler`, adding streamed multipart + session-auth + CSRF looked like non-trivial surgery; (ii) admin UX is worse — you'd have to navigate to each camera's IP separately; (iii) bundles from the server side are already signed and staged, relaying them over the existing mTLS channel is cheaper than re-uploading from the admin's laptop for every camera. This was later superseded by amendment 3 once the camera installer staging protocol made the direct path small and safe enough to ship.
 
 **B. Extract a shared `ota-core` Python package used by both server and camera.** Attractive on paper. Rejected: server and camera have different runtime constraints (Flask+sqlite vs pure-stdlib on 512 MB), and the actually-shared logic is three subprocess invocations (`swupdate -c`, `swupdate -i`, optional disk-space check). Sharing a package would add packaging and release coupling for ~60 lines of real overlap. The bundle contract is the right abstraction boundary.
 
@@ -107,6 +107,7 @@ No separate "choose a camera" step — the card **is** the device, matching the 
 - The push thread pattern mirrors how existing long-running jobs are handled. No task queue (celery, rq) — those would be overkill for 1–2 concurrent OTAs on a single-user home system.
 - Status is stored in `OTAService._status` keyed by device id. The camera has its own authoritative OTA state in `status.json` under the spool; `GET /live-status` proxies it for the verify/install phases where only the camera knows what's happening.
 - Audit events: `OTA_CAMERA_UPLOAD`, `OTA_CAMERA_PUSH`, `OTA_CAMERA_INSTALL_COMPLETE`, `OTA_CAMERA_INSTALL_FAILED` are added alongside the existing server events.
+- A shared status LED policy maps boot/setup/pairing/connecting/healthy/error/reset/OTA states onto the single product ACT LED. Extra non-product LEDs are quieted where Linux LED sysfs exposes them, while the hardware power LED is left alone.
 
 ## Post-implementation amendments (2026-04-18)
 
@@ -146,9 +147,9 @@ progress into the second half of its status bar.
 original ADR rejected this on UX and complexity grounds. We shipped it
 anyway because it turned out to be cheaper than expected once
 `ota_installer.py` existed as a shared module — the :443 status
-server just gets three new routes (`POST /api/ota/upload`,
-`GET /api/ota/status`, `POST /api/ota/reboot`) that delegate to the
-same stage/trigger/poll primitives. It covers a real failure mode:
+server gets direct upload/status routes (`POST /api/ota/upload`,
+`GET /api/ota/status`) that delegate to the same stage/trigger/poll
+primitives. It covers a real failure mode:
 an orphaned camera whose server has been factory-reset can still be
 updated by an admin on the LAN with the camera's password.
 
@@ -169,3 +170,29 @@ swupdate-check auto-confirmation, server→camera push without OOM
 trigger protocol firing the privileged installer. Pairing, heartbeat,
 and streaming survived every reboot. See the CHANGELOG `Fixed`
 entries for the seven bugs found during this validation.
+
+## Post-implementation amendments (2026-05-31)
+
+**5. Reusable camera bundle library instead of per-camera inbox.** A
+camera bundle uploaded through the server is now validated once, stored
+under `/data/ota/camera-library`, and offered to any camera whose
+running version is older than the bundle. This matches the operator
+model: server bundles are one-shot self-updates, but camera bundles are
+fleet artifacts that remain useful when another camera comes online
+later. Legacy per-camera inbox directories are ignored and cleaned.
+
+**6. Camera-owned reboot and version confirmation.** The camera
+installer now writes `rebooting` status, marks the OTA activation
+window, removes its local staged bundle, briefly republishes status, and
+then reboots itself. The server no longer treats "SWUpdate finished" as
+success when a target version is known; it waits for the camera to come
+back and report the expected running version.
+The previous manual `/api/ota/reboot` trigger path was removed so
+there is only one camera activation controller.
+
+**7. Product LED state machine.** Server and camera now share one
+stdlib-only LED module used by boot scripts, privileged helpers, OTA,
+pairing/setup, WiFi connect, reset, and normal runtime. The ACT LED
+shows the product state consistently across both devices, and
+non-product LEDs are quieted only on a best-effort basis so LED feedback
+can never block boot or recovery.

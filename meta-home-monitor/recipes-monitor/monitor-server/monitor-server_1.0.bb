@@ -20,6 +20,9 @@ SRC_URI = " \
     file://monitor/ \
     file://release_version/release_version.py \
     file://ota_policy/ota_policy.py \
+    file://status_led/status_led.py \
+    file://status_led/home-monitor-ledctl \
+    file://status_led/home-monitor-led-init.service \
     file://config/monitor.service \
     file://config/monitor-privileged-helper.service \
     file://config/monitor-avahi-pin.service \
@@ -56,7 +59,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "monitor-avahi-pin.service monitor-privileged-helper.service monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "home-monitor-led-init.service monitor-avahi-pin.service monitor-privileged-helper.service monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -83,6 +86,9 @@ do_install() {
     install -m 0644 ${WORKDIR}/ota_policy/ota_policy.py \
         ${D}/opt/monitor/monitor/ota_policy.py
 
+    install -m 0644 ${WORKDIR}/status_led/status_led.py \
+        ${D}/opt/monitor/monitor/status_led.py
+
     # Create data directories (will be on /data partition in production)
     install -d ${D}/opt/monitor/data/recordings
     install -d ${D}/opt/monitor/data/live
@@ -93,6 +99,8 @@ do_install() {
     # Hotspot setup script
     install -d ${D}/opt/monitor/scripts
     install -m 0755 ${WORKDIR}/config/monitor-hotspot.sh ${D}/opt/monitor/scripts/monitor-hotspot.sh
+    install -d ${D}${bindir}
+    install -m 0755 ${WORKDIR}/status_led/home-monitor-ledctl ${D}${bindir}/home-monitor-ledctl
 
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
@@ -100,6 +108,7 @@ do_install() {
     install -m 0644 ${WORKDIR}/config/monitor-privileged-helper.service ${D}${systemd_system_unitdir}/monitor-privileged-helper.service
     install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.service ${D}${systemd_system_unitdir}/monitor-avahi-pin.service
     install -m 0644 ${WORKDIR}/config/monitor-hotspot.service ${D}${systemd_system_unitdir}/monitor-hotspot.service
+    install -m 0644 ${WORKDIR}/status_led/home-monitor-led-init.service ${D}${systemd_system_unitdir}/home-monitor-led-init.service
 
     # Nginx config
     install -d ${D}${sysconfdir}/nginx/sites-enabled
@@ -126,6 +135,8 @@ do_install() {
 
 FILES:${PN} = " \
     /opt/monitor \
+    ${bindir}/home-monitor-ledctl \
+    ${systemd_system_unitdir}/home-monitor-led-init.service \
     ${systemd_system_unitdir}/monitor.service \
     ${systemd_system_unitdir}/monitor-privileged-helper.service \
     ${systemd_system_unitdir}/monitor-avahi-pin.service \

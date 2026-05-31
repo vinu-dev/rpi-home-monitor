@@ -20,6 +20,9 @@ SRC_URI = " \
     file://camera_streamer/ \
     file://release_version/release_version.py \
     file://ota_policy/ota_policy.py \
+    file://status_led/status_led.py \
+    file://status_led/home-monitor-ledctl \
+    file://status_led/home-monitor-led-init.service \
     file://config/camera-streamer.service \
     file://config/camera-privileged-helper.service \
     file://config/camera-hotspot.service \
@@ -32,8 +35,6 @@ SRC_URI = " \
     file://config/timesyncd-camera.conf \
     file://config/camera-ota-installer.service \
     file://config/camera-ota-installer.path \
-    file://config/camera-ota-reboot.service \
-    file://config/camera-ota-reboot.path \
     file://config/camera-ota-tmpfiles.conf \
     file://scripts/camera-ota-installer.sh \
     file://setup.py \
@@ -55,7 +56,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "camera-privileged-helper.service camera-streamer.service camera-hotspot.service ensure-camera-overlay.service camera-ota-installer.path camera-ota-reboot.path"
+SYSTEMD_SERVICE:${PN} = "home-monitor-led-init.service camera-privileged-helper.service camera-streamer.service camera-hotspot.service ensure-camera-overlay.service camera-ota-installer.path"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create camera system user/group
@@ -82,6 +83,9 @@ do_install() {
     install -m 0644 ${WORKDIR}/ota_policy/ota_policy.py \
         ${D}/opt/camera/camera_streamer/ota_policy.py
 
+    install -m 0644 ${WORKDIR}/status_led/status_led.py \
+        ${D}/opt/camera/camera_streamer/status_led.py
+
     # Default config (copied to /data on first boot)
     install -m 0644 ${WORKDIR}/config/camera.conf.default ${D}/opt/camera/camera.conf.default
 
@@ -93,6 +97,7 @@ do_install() {
     # Privileged OTA installer (runs as root via path-activated service)
     install -d ${D}${bindir}
     install -m 0755 ${WORKDIR}/scripts/camera-ota-installer.sh ${D}${bindir}/camera-ota-installer
+    install -m 0755 ${WORKDIR}/status_led/home-monitor-ledctl ${D}${bindir}/home-monitor-ledctl
 
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
@@ -102,8 +107,7 @@ do_install() {
     install -m 0644 ${WORKDIR}/config/ensure-camera-overlay.service ${D}${systemd_system_unitdir}/ensure-camera-overlay.service
     install -m 0644 ${WORKDIR}/config/camera-ota-installer.service ${D}${systemd_system_unitdir}/camera-ota-installer.service
     install -m 0644 ${WORKDIR}/config/camera-ota-installer.path ${D}${systemd_system_unitdir}/camera-ota-installer.path
-    install -m 0644 ${WORKDIR}/config/camera-ota-reboot.service ${D}${systemd_system_unitdir}/camera-ota-reboot.service
-    install -m 0644 ${WORKDIR}/config/camera-ota-reboot.path ${D}${systemd_system_unitdir}/camera-ota-reboot.path
+    install -m 0644 ${WORKDIR}/status_led/home-monitor-led-init.service ${D}${systemd_system_unitdir}/home-monitor-led-init.service
 
     # tmpfiles.d rule that creates the /var/lib/camera-ota spool
     install -d ${D}${sysconfdir}/tmpfiles.d
@@ -124,15 +128,15 @@ do_install() {
 
 FILES:${PN} = " \
     /opt/camera \
+    ${bindir}/home-monitor-ledctl \
     ${bindir}/camera-ota-installer \
+    ${systemd_system_unitdir}/home-monitor-led-init.service \
     ${systemd_system_unitdir}/camera-privileged-helper.service \
     ${systemd_system_unitdir}/camera-streamer.service \
     ${systemd_system_unitdir}/camera-hotspot.service \
     ${systemd_system_unitdir}/ensure-camera-overlay.service \
     ${systemd_system_unitdir}/camera-ota-installer.service \
     ${systemd_system_unitdir}/camera-ota-installer.path \
-    ${systemd_system_unitdir}/camera-ota-reboot.service \
-    ${systemd_system_unitdir}/camera-ota-reboot.path \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
     ${sysconfdir}/systemd/timesyncd.conf.d/10-home-camera.conf \

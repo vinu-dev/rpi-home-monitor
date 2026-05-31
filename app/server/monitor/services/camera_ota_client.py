@@ -29,6 +29,8 @@ import os
 import ssl
 import time
 
+from monitor import ota_policy
+
 log = logging.getLogger("monitor.camera_ota_client")
 
 OTA_PORT = 8080
@@ -56,6 +58,17 @@ STATUS_TIMEOUT = 10
 # Pi Zero 2W can take ~3 min — we cap at 15 min with a 5 s poll.
 INSTALL_POLL_INTERVAL = 5
 INSTALL_POLL_TIMEOUT = 900
+
+
+def _version_matches(actual, expected):
+    actual = str(actual or "")
+    expected = str(expected or "")
+    if not expected:
+        return False
+    if actual == expected:
+        return True
+    ordering = ota_policy.compare_versions(actual, expected)
+    return ordering == 0
 
 
 class CameraOTAClient:
@@ -91,7 +104,14 @@ class CameraOTAClient:
         ctx.load_cert_chain(cert_path, key_path)
         return ctx
 
-    def push_bundle(self, camera_ip, bundle_path, progress_cb=None, status_cb=None):
+    def push_bundle(
+        self,
+        camera_ip,
+        bundle_path,
+        progress_cb=None,
+        status_cb=None,
+        expected_version="",
+    ):
         """Stream a .swu bundle to a camera's OTA agent.
 
         Args:
@@ -107,6 +127,9 @@ class CameraOTAClient:
                 "rebooting — waiting for camera" during the window when
                 the camera has dropped off the network mid-install and
                 before it comes back to confirm.
+            expected_version: Optional target version. When supplied,
+                success is confirmed only after the camera comes back
+                reporting this version.
 
         Returns:
             (ok: bool, message_or_error: str). On success the message
@@ -252,6 +275,15 @@ class CameraOTAClient:
             saw_reachable = True
             state = status.get("state", "")
             progress = status.get("progress", 0)
+            current_version = str(status.get("current_version") or "")
+            if _version_matches(current_version, expected_version):
+                log.info(
+                    "OTA push to %s confirmed version %s",
+                    camera_ip,
+                    current_version,
+                )
+                _emit("installed", 100)
+                return True, "Installed"
             if progress != last_progress:
                 if progress_cb is not None:
                     try:
@@ -271,9 +303,16 @@ class CameraOTAClient:
                 _emit("installing", overall)
                 announced_rebooting = False
             if state == "installed":
-                log.info("OTA push to %s installed (polled)", camera_ip)
-                _emit("installed", 100)
-                return True, "Installed"
+                if expected_version:
+                    _emit("rebooting", 95)
+                    announced_rebooting = True
+                else:
+                    log.info("OTA push to %s installed (legacy polled)", camera_ip)
+                    _emit("installed", 100)
+                    return True, "Installed"
+            if state in ("rebooting", "validating"):
+                _emit("rebooting", 95)
+                announced_rebooting = True
             if state == "error":
                 err = status.get("error") or "install failed"
                 log.warning("OTA push to %s install error: %s", camera_ip, err)

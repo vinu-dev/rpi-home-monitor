@@ -176,6 +176,9 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/status_led.py" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$SERVER_STAGE"
 
     log "Installing server app into /opt/monitor"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -210,10 +213,15 @@ deploy_server() {
         chmod 0755 /opt/monitor/scripts/monitor-hotspot.sh
         cp '$SERVER_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
         chmod 0755 /opt/scripts/gpio-trigger.sh
+        cp '$SERVER_STAGE/status_led.py' /opt/monitor/monitor/status_led.py
+        chmod 0644 /opt/monitor/monitor/status_led.py
+        cp '$SERVER_STAGE/home-monitor-ledctl' /usr/bin/home-monitor-ledctl
+        chmod 0755 /usr/bin/home-monitor-ledctl
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
         cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
+        cp '$SERVER_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
     "
 
     log "Applying boot optimisation overrides"
@@ -230,7 +238,7 @@ deploy_server() {
         # Mask systemd-networkd-wait-online: always times out on eth0 no-carrier
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable gpio-trigger.service monitor-hotspot.service monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
@@ -265,6 +273,13 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/camera/config/camera-hotspot.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-ota-installer.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-ota-installer.path" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-ota-tmpfiles.conf" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/scripts/camera-ota-installer.sh" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/status_led.py" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$CAMERA_STAGE"
 
     log "Installing camera app into /opt/camera"
     ssh "${SSH_OPTS[@]}" "$host" "
@@ -292,6 +307,13 @@ deploy_camera() {
         chmod 0755 /opt/camera/scripts/camera-hotspot.sh
         cp '$CAMERA_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
         chmod 0755 /opt/scripts/gpio-trigger.sh
+        cp '$CAMERA_STAGE/status_led.py' /opt/camera/camera_streamer/status_led.py
+        chown camera:camera /opt/camera/camera_streamer/status_led.py
+        chmod 0644 /opt/camera/camera_streamer/status_led.py
+        cp '$CAMERA_STAGE/home-monitor-ledctl' /usr/bin/home-monitor-ledctl
+        chmod 0755 /usr/bin/home-monitor-ledctl
+        cp '$CAMERA_STAGE/camera-ota-installer.sh' /usr/bin/camera-ota-installer
+        chmod 0755 /usr/bin/camera-ota-installer
         cp '$CAMERA_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
     "
 
@@ -303,6 +325,13 @@ deploy_camera() {
         cp '$CAMERA_STAGE/camera-streamer.service' /etc/systemd/system/camera-streamer.service
         cp '$CAMERA_STAGE/camera-privileged-helper.service' /etc/systemd/system/camera-privileged-helper.service
         cp '$CAMERA_STAGE/camera-hotspot.service' /etc/systemd/system/camera-hotspot.service
+        cp '$CAMERA_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
+        cp '$CAMERA_STAGE/camera-ota-installer.service' /etc/systemd/system/camera-ota-installer.service
+        cp '$CAMERA_STAGE/camera-ota-installer.path' /etc/systemd/system/camera-ota-installer.path
+        systemctl disable --now camera-ota-reboot.path camera-ota-reboot.service >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/camera-ota-reboot.path /etc/systemd/system/camera-ota-reboot.service
+        cp '$CAMERA_STAGE/camera-ota-tmpfiles.conf' /etc/tmpfiles.d/camera-ota.conf
+        systemd-tmpfiles --create /etc/tmpfiles.d/camera-ota.conf 2>/dev/null || true
         # journald limits — prevent /run from filling up under active streaming.
         # Without explicit RuntimeMaxUse, journald's implicit cap (~7MB on a 70MB
         # /run) is not enforced tightly enough under the ~6 entries/sec picamera2
@@ -331,7 +360,7 @@ ConditionFileNotEmpty=/data/tailscale/tailscaled.state
 EOF
         fi
         systemctl daemon-reload
-        systemctl enable gpio-trigger.service camera-privileged-helper.service camera-hotspot.service camera-streamer.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-led-init.service gpio-trigger.service camera-privileged-helper.service camera-hotspot.service camera-streamer.service camera-ota-installer.path >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then

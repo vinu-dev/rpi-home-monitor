@@ -32,6 +32,20 @@ SETUP_HOTSPOT_PASSWORD_FILE = "/data/config/camera-hotspot.psk"
 BLOCKED_SETUP_HOTSPOT_PASSWORDS = {"homecamera", "homemonitor"}
 MIN_SETUP_HOTSPOT_PASSWORD_LENGTH = 12
 MAX_SETUP_HOTSPOT_PASSWORD_LENGTH = 63
+LEDCTL = "/usr/bin/home-monitor-ledctl"
+LED_STATES = {
+    "boot",
+    "healthy",
+    "setup",
+    "pairing",
+    "connecting",
+    "ota-installing",
+    "ota-rebooting",
+    "ota-validating",
+    "reset",
+    "error",
+    "off",
+}
 
 
 class HelperRequestError(ValueError):
@@ -160,6 +174,23 @@ def _op_hotspot_set_password(payload: dict[str, Any]) -> dict[str, Any]:
     return {"returncode": 0, "path": target}
 
 
+def _op_led_set(payload: dict[str, Any]) -> dict[str, Any]:
+    state = str(payload.get("state") or "").strip().replace("_", "-")
+    if state not in LED_STATES:
+        raise HelperRequestError("LED state is not allowed")
+    role = str(payload.get("role") or "camera").strip()
+    if role not in {"server", "camera"}:
+        raise HelperRequestError("LED role is invalid")
+    cmd = [LEDCTL, state, "--role", role]
+    if bool(payload.get("force")):
+        cmd.append("--force")
+    if bool(payload.get("init")):
+        cmd.append("--init")
+    if bool(payload.get("clear_activation")):
+        cmd.append("--clear-activation")
+    return _run_command(cmd, timeout=10, nonzero_ok=True)
+
+
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(["systemctl", "reboot"], timeout=15)
 
@@ -170,6 +201,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "hotspot.wipe": _op_hotspot_wipe,
     "hotspot.start": _op_hotspot_start,
     "hotspot.stop": _op_hotspot_stop,
+    "led.set": _op_led_set,
     "system.reboot": _op_system_reboot,
 }
 

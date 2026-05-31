@@ -29,6 +29,7 @@ RESET_PIN="${GPIO_RESET_PIN:-27}"
 
 SETUP_STAMP="/data/.setup-done"
 GPIO_BASE="/sys/class/gpio"
+LEDCTL="/usr/bin/home-monitor-ledctl"
 
 # --- Helper functions ---
 
@@ -60,6 +61,12 @@ gpio_unexport() {
     PIN="$1"
     if [ -d "${GPIO_BASE}/gpio${PIN}" ]; then
         echo "$PIN" > "${GPIO_BASE}/unexport" 2>/dev/null || true
+    fi
+}
+
+set_led() {
+    if [ -x "$LEDCTL" ]; then
+        "$LEDCTL" "$1" --force >/dev/null 2>&1 || true
     fi
 }
 
@@ -114,6 +121,7 @@ gpio_unexport "$RESET_PIN"
 # Factory reset takes priority over provisioning-only
 if [ "$RESET_VAL" = "0" ]; then
     echo "GPIO trigger: Factory reset jumper DETECTED (GPIO${RESET_PIN} LOW)"
+    set_led reset
     wipe_data
 
     # Wipe WiFi credentials via hotspot script if available
@@ -129,6 +137,7 @@ if [ "$RESET_VAL" = "0" ]; then
 
 elif [ "$PROVISION_VAL" = "0" ]; then
     echo "GPIO trigger: Provisioning jumper DETECTED (GPIO${PROVISION_PIN} LOW)"
+    set_led setup
     # Only remove the stamp — data is preserved
     if [ -f "$SETUP_STAMP" ]; then
         rm -f "$SETUP_STAMP"

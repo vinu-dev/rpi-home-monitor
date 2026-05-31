@@ -44,6 +44,21 @@ ISO_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 LABEL_RE = re.compile(r"^[A-Za-z0-9_. -]{1,32}$")
 CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 OTA_PUBLIC_KEY = "/etc/swupdate-public.crt"
+OTA_DIR = "/data/ota"
+LEDCTL = "/usr/bin/home-monitor-ledctl"
+LED_STATES = {
+    "boot",
+    "healthy",
+    "setup",
+    "pairing",
+    "connecting",
+    "ota-installing",
+    "ota-rebooting",
+    "ota-validating",
+    "reset",
+    "error",
+    "off",
+}
 
 
 class HelperRequestError(ValueError):
@@ -119,6 +134,11 @@ def _op_usb_mount(payload: dict[str, Any]) -> dict[str, Any]:
         raise HelperRequestError(err or "mount failed")
     _ensure_monitor_can_write_mount(mount_point)
     return {}
+
+
+def _op_usb_detect(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return read-only USB metadata from the root namespace."""
+    return {"devices": usb.detect_devices()}
 
 
 def _ensure_monitor_can_write_mount(mount_point: str) -> None:
@@ -365,11 +385,75 @@ def _op_ota_install(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(cmd, timeout=600, nonzero_ok=True)
 
 
+def _op_ota_repair_storage(payload: dict[str, Any]) -> dict[str, Any]:
+    if pwd is None or grp is None:
+        raise HelperRequestError("user/group lookup unavailable")
+
+    def _raise_walk_error(exc: OSError) -> None:
+        raise exc
+
+    try:
+        uid = pwd.getpwnam("monitor").pw_uid
+        gid = grp.getgrnam("monitor").gr_gid
+        os.makedirs(posixpath.join(OTA_DIR, "inbox"), exist_ok=True)
+        os.makedirs(posixpath.join(OTA_DIR, "staging"), exist_ok=True)
+        os.makedirs(posixpath.join(OTA_DIR, "camera-library"), exist_ok=True)
+
+        for root, dirs, files in os.walk(
+            OTA_DIR,
+            topdown=True,
+            onerror=_raise_walk_error,
+            followlinks=False,
+        ):
+            if not root == OTA_DIR and not root.startswith(f"{OTA_DIR}/"):
+                raise HelperRequestError("OTA storage path escaped allowlist")
+            if os.path.islink(root):
+                dirs[:] = []
+                continue
+            os.chown(root, uid, gid)
+            os.chmod(root, 0o755)
+
+            dirs[:] = [
+                dirname
+                for dirname in dirs
+                if not os.path.islink(posixpath.join(root, dirname))
+            ]
+            for filename in files:
+                path = posixpath.join(root, filename)
+                if os.path.islink(path):
+                    continue
+                os.chown(path, uid, gid)
+                os.chmod(path, 0o644)
+    except (KeyError, PermissionError, OSError) as exc:
+        raise HelperRequestError(
+            f"OTA storage permission repair failed: {exc}"
+        ) from exc
+    return {"path": OTA_DIR}
+
+
+def _op_led_set(payload: dict[str, Any]) -> dict[str, Any]:
+    state = _as_text(payload.get("state"), max_len=32).replace("_", "-")
+    if state not in LED_STATES:
+        raise HelperRequestError("LED state is not allowlisted")
+    role = str(payload.get("role") or "server").strip()
+    if role not in {"server", "camera"}:
+        raise HelperRequestError("LED role is invalid")
+    cmd = [LEDCTL, state, "--role", role]
+    if bool(payload.get("force")):
+        cmd.append("--force")
+    if bool(payload.get("init")):
+        cmd.append("--init")
+    if bool(payload.get("clear_activation")):
+        cmd.append("--clear-activation")
+    return _run_command(cmd, timeout=10, nonzero_ok=True)
+
+
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(["systemctl", "reboot"], timeout=15)
 
 
 OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "usb.detect": _op_usb_detect,
     "usb.mount": _op_usb_mount,
     "usb.unmount": _op_usb_unmount,
     "usb.format": _op_usb_format,
@@ -389,6 +473,8 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "tailscale.disable": _op_tailscale_disable,
     "ota.verify": _op_ota_verify,
     "ota.install": _op_ota_install,
+    "ota.repair_storage": _op_ota_repair_storage,
+    "led.set": _op_led_set,
     "system.reboot": _op_system_reboot,
 }
 

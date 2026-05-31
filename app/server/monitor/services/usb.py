@@ -27,6 +27,36 @@ def detect_devices() -> list[dict]:
     Returns list of dicts: {name, path, size, size_bytes, fstype,
     mountpoint, model, label, supported}.
     """
+    devices = _detect_devices_local()
+    if privileged.should_use_helper():
+        helper_devices = _detect_devices_via_helper()
+        if helper_devices is not None:
+            return helper_devices
+    return devices
+
+
+def _detect_devices_via_helper() -> list[dict] | None:
+    """Return authoritative root-side USB metadata when available.
+
+    On the Raspberry Pi image the Flask app runs as ``monitor``. That user can
+    enumerate block devices, but Linux may hide filesystem metadata from
+    unprivileged ``lsblk``/raw ``blkid`` probes while the root helper can still
+    read it. Treat detection as a read-only privileged operation so the UI does
+    not incorrectly call an ext4 drive "unknown".
+    """
+    try:
+        data = privileged.request("usb.detect", {}, timeout=15)
+    except privileged.PrivilegedHelperError as exc:
+        log.warning("privileged USB detection unavailable: %s", exc)
+        return None
+    devices = data.get("devices")
+    if not isinstance(devices, list):
+        return None
+    return [d for d in devices if isinstance(d, dict)]
+
+
+def _detect_devices_local() -> list[dict]:
+    """Detect USB block devices from the current process namespace."""
     try:
         result = subprocess.run(
             [

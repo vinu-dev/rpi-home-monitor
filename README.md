@@ -46,10 +46,10 @@ RPi Home Monitor runs **Home Monitor OS**, a custom Linux distribution built wit
 
 ## First Boot Setup
 
-Both the server and camera use a **captive portal** for zero-config WiFi provisioning. Cameras also have **LED status feedback**. Full step-by-step instructions are in [CHANGELOG.md](CHANGELOG.md#setup-guide).
+Both the server and camera use a **captive portal** for zero-config WiFi provisioning. Both devices share the same product **LED status feedback** policy. Full step-by-step instructions are in [CHANGELOG.md](CHANGELOG.md#setup-guide).
 
 **Quick version:**
-1. **Power on** — Camera LED starts slow blinking = setup mode
+1. **Power on** — the device LED blinks while booting, then slow-blinks in setup mode
 2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`) using the factory setup password (`homemonitor` for server, `homecamera` for camera). The setup wizard then requires a new setup hotspot password for future setup/reset mode.
 3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address + camera login (camera)
 4. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
@@ -59,9 +59,13 @@ Both the server and camera use a **captive portal** for zero-config WiFi provisi
 
 | LED Pattern | Meaning |
 |-------------|---------|
+| **Boot blink** (500ms on / 500ms off) | Booting or validating a newly installed slot |
+| **Paired blink** (400ms on / 1200ms off) | Camera pairing or trust handoff is active |
+| **Long-on blink** (1800ms on / 200ms off) | OTA image is being written |
+| **Very fast blink** (150ms or 100ms cadence) | OTA reboot, reset, or urgent recovery action |
+| **Error blink** (100ms on / 900ms off) | Error: connection failed or recovery path active |
 | **Slow blink** (1s on / 1s off) | Setup mode — waiting for WiFi configuration |
 | **Fast blink** (200ms on / 200ms off) | Connecting — attempting to join WiFi network |
-| **Very fast blink** (100ms on / 100ms off) | Error — WiFi connection failed, hotspot restarting |
 | **Solid on** | Running normally — connected and operational |
 | **Off** | Service stopped |
 
@@ -81,7 +85,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Role-Based Access | Admin (full control) and Viewer (read-only) roles |
 | System Health | CPU temp, memory, disk usage, uptime monitoring |
 | Storage Management | Automatic cleanup of oldest clips when disk is full |
-| OTA Updates | End-to-end validated on real hardware — three install paths: server GUI upload+install, server→camera push, and camera-direct GUI upload. A/B rollback with bootlimit, post-boot health check auto-confirms new slot |
+| OTA Updates | End-to-end validated on real hardware — server GUI upload+install, server→camera push, and camera-direct GUI upload. Camera installs automatically reboot themselves, the server confirms the reported target version after boot, and A/B rollback with bootlimit protects failed slots |
 | Audit Logging | All admin actions logged (append-only) |
 | Encrypted Storage | LUKS-encrypted /data partition for recordings and config |
 | Firewall | nftables — cameras can only talk to server, minimal open ports |
@@ -101,7 +105,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
 | Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
-| OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger (ADR-0020). See `docs/history/planning/update-roadmap.md` |
+| OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger and owns reboot/activation (ADR-0020). See `docs/history/planning/update-roadmap.md` |
 
 ## Quick Start
 

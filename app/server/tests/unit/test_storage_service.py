@@ -134,6 +134,31 @@ class TestListDevices:
         assert result[0]["configured"] is True
         assert result[0]["configured_path_changed"] is True
 
+    @patch(USB_PATCH)
+    def test_marks_single_same_label_drive_configured_after_uuid_changes(
+        self, mock_usb
+    ):
+        device = _make_device(
+            path="/dev/sda1",
+            uuid="new-uuid-after-format",
+            label="HomeMonitor",
+        )
+        mock_usb.detect_devices.return_value = [device]
+        store = MagicMock()
+        store.get_settings.return_value = MagicMock(
+            usb_device="/dev/sdb1",
+            usb_uuid="old-uuid-before-format",
+            usb_label="HomeMonitor",
+            usb_recordings_dir="/mnt/recordings/home-monitor-recordings",
+        )
+        svc = _make_service(store=store)
+
+        result = svc.list_devices()
+
+        assert result[0]["configured"] is True
+        assert result[0]["configured_inactive"] is True
+        assert result[0]["configured_path_changed"] is True
+
 
 # ---------------------------------------------------------------------------
 # 3. select_device — validation

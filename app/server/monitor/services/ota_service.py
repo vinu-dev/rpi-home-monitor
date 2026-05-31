@@ -20,8 +20,9 @@ import re
 import shutil
 import subprocess
 import threading
+import uuid
 
-from monitor import ota_policy
+from monitor import ota_policy, status_led
 from monitor.services import privileged
 
 log = logging.getLogger("monitor.ota-service")
@@ -52,11 +53,8 @@ _CPIO_NEWC_MAGICS = (b"070701", b"070702")
 _CPIO_HEADER_LEN = 110  # magic (6) + 13 x 8 hex fields (104)
 
 
-def extract_bundle_version(swu_path):
-    """Return the version string declared inside the bundle's
-    sw-description, or '' if unreadable. Caller handles the empty
-    case — older bundles without a version field exist in the wild
-    and shouldn't block an install."""
+def _read_swu_description(swu_path):
+    """Return the bundle's sw-description text, or '' if unreadable."""
     try:
         with open(swu_path, "rb") as f:
             magic = f.read(6)
@@ -73,11 +71,44 @@ def extract_bundle_version(swu_path):
             data = f.read(file_size)
             if name.rstrip(b"\0") != b"sw-description":
                 return ""
-            text = data.decode("utf-8", "replace")
-            m = re.search(r'version\s*=\s*"([^"]+)"', text)
-            return m.group(1) if m else ""
+            return data.decode("utf-8", "replace")
     except (OSError, ValueError, UnicodeDecodeError):
         return ""
+
+
+def extract_bundle_version(swu_path):
+    """Return the version string declared inside the bundle's
+    sw-description, or '' if unreadable. Caller handles the empty
+    case — older bundles without a version field exist in the wild
+    and shouldn't block an install."""
+    text = _read_swu_description(swu_path)
+    m = re.search(r'version\s*=\s*"([^"]+)"', text)
+    return m.group(1) if m else ""
+
+
+def extract_bundle_target(swu_path):
+    """Return the intended OTA target: 'server', 'camera', or ''.
+
+    SWUpdate selects hardware sections from sw-description. We use the same
+    section names to keep the server UI from presenting a server image as a
+    camera image when an old or manually-copied file is left in the camera
+    inbox.
+    """
+    text = _read_swu_description(swu_path)
+    if re.search(r"\bhome-monitor-camera\s*=", text):
+        return "camera"
+    if re.search(r"\braspberrypi4-64\s*=", text):
+        return "server"
+    return ""
+
+
+def sanitize_bundle_filename(filename):
+    """Return a safe local filename for an uploaded .swu, or ''."""
+    filename = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    filename = re.sub(r"[^A-Za-z0-9_.-]+", "-", filename).strip(".-")
+    if not filename or not filename.lower().endswith(".swu"):
+        return ""
+    return filename
 
 
 class OTAService:
@@ -108,13 +139,107 @@ class OTAService:
         self._status = {}
         self._status_lock = threading.Lock()
 
+    def _set_status_led(self, state):
+        try:
+            if privileged.should_use_helper():
+                privileged.request(
+                    "led.set",
+                    {"state": state, "role": "server", "force": True},
+                    timeout=10,
+                )
+            else:
+                status_led.set_state(state, role="server", force=True)
+        except Exception as exc:
+            log.debug("status LED update failed: %s", exc)
+
+    def _mark_activation(self, target_version):
+        try:
+            status_led.mark_activation(
+                "server", target_version, data_dir=self._data_dir
+            )
+        except Exception as exc:
+            log.debug("activation marker write failed: %s", exc)
+
+    def prepare_reboot_activation(self, target_version):
+        """Mark the next boot as an OTA activation window."""
+        self._mark_activation(target_version)
+        self._set_status_led("ota-rebooting")
+
+    @property
+    def ota_dir(self):
+        return os.path.join(self._data_dir, "ota")
+
     @property
     def inbox_dir(self):
-        return os.path.join(self._data_dir, "ota", "inbox")
+        return os.path.join(self.ota_dir, "inbox")
 
     @property
     def staging_dir(self):
-        return os.path.join(self._data_dir, "ota", "staging")
+        return os.path.join(self.ota_dir, "staging")
+
+    @property
+    def camera_staging_dir(self):
+        return os.path.join(self.ota_dir, "camera-library")
+
+    def ensure_storage(self):
+        """Create and repair OTA storage directories.
+
+        OTA storage lives under /data and must be writable by the unprivileged
+        monitor process. Factory reset, older images, or a root-run recovery
+        can leave /data/ota owned by root; when that happens we ask the
+        allowlisted privileged helper to repair only this subtree.
+        """
+        err = self._create_storage_dirs()
+        probe_err = self._probe_storage_writable()
+        if not err and not probe_err:
+            return True, ""
+
+        if privileged.should_use_helper():
+            try:
+                privileged.request("ota.repair_storage", timeout=20)
+            except privileged.PrivilegedHelperError as exc:
+                details = probe_err or err or str(exc)
+                return (
+                    False,
+                    f"OTA storage is not writable and repair failed: {details}",
+                )
+            err = self._create_storage_dirs()
+            probe_err = self._probe_storage_writable()
+            if not err and not probe_err:
+                return True, ""
+
+        return False, f"OTA storage is not writable: {probe_err or err}"
+
+    def _create_storage_dirs(self):
+        try:
+            os.makedirs(self.inbox_dir, exist_ok=True)
+            os.makedirs(self.staging_dir, exist_ok=True)
+            os.makedirs(self.camera_staging_dir, exist_ok=True)
+            return ""
+        except OSError as exc:
+            return str(exc)
+
+    def _probe_storage_writable(self):
+        for directory in (self.inbox_dir, self.staging_dir, self.camera_staging_dir):
+            err = self._probe_directory_writable(directory)
+            if err:
+                return err
+        return ""
+
+    def _probe_directory_writable(self, directory):
+        probe = os.path.join(directory, f".write-test-{os.getpid()}-{uuid.uuid4().hex}")
+        try:
+            fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(fd)
+            os.unlink(probe)
+            return ""
+        except OSError as exc:
+            try:
+                if os.path.exists(probe):
+                    os.unlink(probe)
+            except OSError:
+                pass
+            return f"{directory}: {exc}"
 
     def get_status(self, device_id="server", current_version=""):
         """Get update status for a device.
@@ -140,8 +265,9 @@ class OTAService:
                 staged_path = os.path.join(self.staging_dir, staged)
                 target_version = extract_bundle_version(staged_path)
                 decision = ota_policy.classify_update(current_version, target_version)
-                if decision.blocked:
-                    self._discard_staged_bundle(staged, decision.reason)
+                if decision.blocked or decision.relation == "same":
+                    reason = decision.reason or "Discarded already-installed update."
+                    self._discard_staged_bundle(staged, reason)
                     default["error"] = decision.reason
                     return default
                 default["state"] = "staged"
@@ -230,8 +356,9 @@ class OTAService:
         path = os.path.join(self.staging_dir, filename)
         target_version = status.get("target_version") or extract_bundle_version(path)
         decision = ota_policy.classify_update(current_version, target_version)
-        if decision.blocked:
-            self._discard_staged_bundle(filename, decision.reason)
+        if decision.blocked or decision.relation == "same":
+            reason = decision.reason or "Discarded already-installed update."
+            self._discard_staged_bundle(filename, reason)
             self.set_status("server", "idle", error=decision.reason)
             return {
                 "state": "idle",
@@ -298,6 +425,10 @@ class OTAService:
         # Validate extension
         if not filename.lower().endswith(".swu"):
             return None, "Only .swu files are accepted"
+
+        ok, storage_err = self.ensure_storage()
+        if not ok:
+            return None, storage_err
 
         # Check file exists and size
         try:
@@ -488,6 +619,7 @@ class OTAService:
         if not os.path.isfile(bundle_path):
             return False, "Bundle file not found"
 
+        self._set_status_led("ota-installing")
         self.set_status("server", "installing", progress=5, error="")
         self._log_audit("OTA_INSTALL_START", user, ip, f"Installing: {bundle_path}")
 
@@ -536,6 +668,7 @@ class OTAService:
                     proc.communicate()
                     err = "Installation timed out (10 min)"
                     self.set_status("server", "error", error=err)
+                    self._set_status_led("error")
                     return False, err
 
             if rc == 0:
@@ -547,18 +680,22 @@ class OTAService:
                 return True, ""
             error = (stderr or "").strip() or "Installation failed"
             self.set_status("server", "error", error=error)
+            self._set_status_led("error")
             self._log_audit("OTA_INSTALL_FAILED", user, ip, f"Install failed: {error}")
             return False, error
 
         except FileNotFoundError:
             err = "swupdate not installed"
             self.set_status("server", "error", error=err)
+            self._set_status_led("error")
             return False, err
         except privileged.PrivilegedHelperError as e:
             self.set_status("server", "error", error=str(e))
+            self._set_status_led("error")
             return False, str(e)
         except OSError as e:
             self.set_status("server", "error", error=str(e))
+            self._set_status_led("error")
             return False, str(e)
         finally:
             stop_ticker.set()

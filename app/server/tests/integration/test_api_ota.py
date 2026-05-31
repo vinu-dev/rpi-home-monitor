@@ -121,7 +121,6 @@ class TestOTAStatus:
 
         cam = next(c for c in data["cameras"] if c["id"] == "cam-001")
         assert cam["staged_filename"] == ""
-        assert "Rejected older update" in cam["error"]
         assert not os.path.exists(inbox)
 
 
@@ -218,7 +217,7 @@ class TestCameraPush:
         # Stub the background push so the test doesn't hit network.
         calls = []
 
-        def _fake_push(ip, path, progress_cb=None, status_cb=None):
+        def _fake_push(ip, path, progress_cb=None, status_cb=None, **kwargs):
             calls.append((ip, path))
             if progress_cb:
                 progress_cb(1, 1)
@@ -256,7 +255,7 @@ class TestCameraPush:
         monkeypatch.setattr(
             app.camera_ota_client,
             "push_bundle",
-            lambda ip, path, progress_cb=None: (True, "ok"),
+            lambda ip, path, progress_cb=None, **kwargs: (True, "ok"),
         )
         client.post("/api/v1/ota/camera/cam-001/push")
         events = app.audit.get_events(event_type="OTA_CAMERA_PUSH")

@@ -1,6 +1,7 @@
 # REQ: SWR-038; RISK: RISK-004; SEC: SC-003; TEST: TC-036
 """Unit tests for CameraOTAClient (ADR-0020)."""
 
+import http.client
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from monitor.services.camera_ota_client import (
     STATUS_PATH,
     UPLOAD_PATH,
     CameraOTAClient,
+    _version_matches,
 )
 
 
@@ -157,6 +159,194 @@ class TestPushBundle:
         assert ok is False
         assert "connection refused" in msg.lower()
 
+    def test_tls_setup_failure_returns_error(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+
+        with patch.object(client, "_ssl_context", side_effect=OSError("bad cert")):
+            ok, msg = client.push_bundle("10.0.0.1", str(p))
+
+        assert ok is False
+        assert "TLS setup failed" in msg
+
+    def test_http_exception_returns_error_and_closes_connection(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+        fake_conn = MagicMock()
+        fake_conn.getresponse.side_effect = http.client.HTTPException("bad response")
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
+            ok, msg = client.push_bundle("10.0.0.1", str(p))
+
+        assert ok is False
+        assert "HTTP error" in msg
+        fake_conn.close.assert_called_once()
+
+    def test_http_error_uses_raw_body_when_json_decode_fails(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+        fake_resp = MagicMock()
+        fake_resp.status = 500
+        fake_resp.read.return_value = b"plain failure"
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = fake_resp
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
+            ok, msg = client.push_bundle("10.0.0.1", str(p))
+
+        assert ok is False
+        assert msg == "plain failure"
+
+    def test_polling_surfaces_install_reboot_and_final_version(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+        statuses = []
+        progress = []
+        upload_resp = MagicMock()
+        upload_resp.status = 202
+        upload_resp.read.return_value = b"{}"
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = upload_resp
+        status_sequence = [
+            (
+                {
+                    "state": "installing",
+                    "progress": 40,
+                    "protocol_version": 999,
+                    "current_version": "1.6.0",
+                },
+                "",
+            ),
+            (None, "rebooting"),
+            (
+                {
+                    "state": "installed",
+                    "progress": 100,
+                    "current_version": "1.6.0",
+                },
+                "",
+            ),
+            (
+                {
+                    "state": "validating",
+                    "progress": 95,
+                    "current_version": "v1.6.1-dev",
+                },
+                "",
+            ),
+        ]
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+            patch.object(client, "get_status", side_effect=status_sequence),
+            patch("monitor.services.camera_ota_client.time.sleep"),
+        ):
+            ok, msg = client.push_bundle(
+                "10.0.0.1",
+                str(p),
+                expected_version="1.6.1-dev",
+                status_cb=lambda state, pct, err="": statuses.append((state, pct, err)),
+                progress_cb=lambda sent, total: progress.append((sent, total)),
+            )
+
+        assert ok is True
+        assert msg == "Installed"
+        assert ("installing", 68, "") in statuses
+        assert ("rebooting", 90, "") in statuses
+        assert ("rebooting", 95, "") in statuses
+        assert statuses[-1] == ("installed", 100, "")
+        assert progress
+
+    def test_polling_returns_camera_error_and_ignores_callback_errors(
+        self, client, tmp_path
+    ):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+        upload_resp = MagicMock()
+        upload_resp.status = 202
+        upload_resp.read.return_value = b"{}"
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = upload_resp
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+            patch.object(
+                client,
+                "get_status",
+                return_value=(
+                    {"state": "error", "progress": 77, "error": "bad install"},
+                    "",
+                ),
+            ),
+            patch("monitor.services.camera_ota_client.time.sleep"),
+        ):
+            ok, msg = client.push_bundle(
+                "10.0.0.1",
+                str(p),
+                progress_cb=lambda _sent, _total: (_ for _ in ()).throw(
+                    RuntimeError("progress boom")
+                ),
+                status_cb=lambda _state, _pct, _err="": (_ for _ in ()).throw(
+                    RuntimeError("status boom")
+                ),
+            )
+
+        assert ok is False
+        assert msg == "bad install"
+
+    def test_confirms_expected_version_with_optional_v_prefix(self, client, tmp_path):
+        p = tmp_path / "bundle.swu"
+        p.write_bytes(b"data")
+        upload_resp = MagicMock()
+        upload_resp.status = 202
+        upload_resp.read.return_value = b'{"message":"Install triggered"}'
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = upload_resp
+        status_sequence = [
+            (
+                {"state": "validating", "progress": 95, "current_version": "1.6.1-dev"},
+                "",
+            ),
+        ]
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+            patch.object(client, "get_status", side_effect=status_sequence),
+            patch("monitor.services.camera_ota_client.time.sleep"),
+        ):
+            ok, msg = client.push_bundle(
+                "10.0.0.1",
+                str(p),
+                expected_version="v1.6.1-dev",
+            )
+
+        assert ok is True
+        assert msg == "Installed"
+
 
 class TestGetStatus:
     def test_returns_camera_status(self, client):
@@ -188,3 +378,54 @@ class TestGetStatus:
             status, err = client.get_status("10.0.0.1")
         assert status is None
         assert "refused" in err.lower()
+
+    def test_tls_setup_failure(self, client):
+        with patch.object(client, "_ssl_context", side_effect=OSError("bad cert")):
+            status, err = client.get_status("10.0.0.1")
+
+        assert status is None
+        assert "TLS setup failed" in err
+
+    def test_non_success_response(self, client):
+        fake_resp = MagicMock()
+        fake_resp.status = 503
+        fake_resp.read.return_value = b"busy"
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = fake_resp
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
+            status, err = client.get_status("10.0.0.1")
+
+        assert status is None
+        assert err == "HTTP 503"
+        fake_conn.close.assert_called_once()
+
+    def test_invalid_json_response(self, client):
+        fake_resp = MagicMock()
+        fake_resp.status = 200
+        fake_resp.read.return_value = b"{bad"
+        fake_conn = MagicMock()
+        fake_conn.getresponse.return_value = fake_resp
+
+        with (
+            patch(
+                "monitor.services.camera_ota_client.http.client.HTTPSConnection",
+                return_value=fake_conn,
+            ),
+            patch.object(client, "_ssl_context"),
+        ):
+            status, err = client.get_status("10.0.0.1")
+
+        assert status is None
+        assert "Invalid JSON" in err
+
+
+def test_version_matches_accepts_equivalent_v_prefix_and_rejects_empty_expected():
+    assert _version_matches("v1.6.1-dev", "1.6.1-dev") is True
+    assert _version_matches("1.6.1", "") is False
