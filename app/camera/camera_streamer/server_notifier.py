@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
+from camera_streamer.restart_schedule_model import normalise_restart_schedule
 from camera_streamer.server_tls import paired_server_context
 
 log = logging.getLogger("camera-streamer.server-notifier")
@@ -71,7 +72,11 @@ def notify_config_change(config, pairing_manager):
         "rotation": config.rotation,
         "hflip": config.hflip,
         "vflip": config.vflip,
-        "restart_schedule": config.restart_schedule,
+        "restart_schedule": normalise_restart_schedule(
+            getattr(config, "restart_schedule", {}),
+            source="camera",
+            stamp=False,
+        ),
     }
 
     body = json.dumps(stream_config).encode()

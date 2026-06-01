@@ -104,7 +104,8 @@ class TestSettings:
         # 11 base + 5 tailscale + 2 ADR-0017 watermarks + 1 ADR-0019 ntp_mode
         # + 1 motion post-roll + 1 TOTP 2FA policy + 8 offsite-backup fields
         # + 2 outbound webhook settings + 1 backup snapshot-retention setting
-        assert len(d) == 32
+        # + 1 server restart schedule
+        assert len(d) == 33
         assert d["ntp_mode"] == "auto"
         assert d["loop_low_watermark_percent"] == 10
         assert d["loop_hysteresis_percent"] == 5
