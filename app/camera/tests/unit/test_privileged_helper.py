@@ -146,7 +146,7 @@ def test_hostname_set_validates_and_updates_kernel_and_avahi(tmp_path):
 
 @pytest.mark.parametrize(
     "bad_hostname",
-    ["", "-bad", "bad-", "bad_name", "BadName", "a" * 64],
+    ["", "-bad", "bad-", "bad_name", "bad.name", "a" * 64],
 )
 def test_hostname_set_rejects_invalid_hostnames(bad_hostname):
     with pytest.raises(privileged_helper.HelperRequestError, match="hostname"):
@@ -163,6 +163,7 @@ def test_hostname_set_restarts_avahi_when_dbus_update_fails(tmp_path):
 
     with (
         patch.object(privileged_helper, "CAMERA_HOSTNAME_FILE", str(target)),
+        patch.object(privileged_helper, "_camera_identity", return_value=None),
         patch("camera_streamer.privileged_helper.subprocess.run") as mock_run,
     ):
         mock_run.side_effect = results
@@ -192,6 +193,7 @@ def test_hostname_set_treats_avahi_redundant_as_success(tmp_path):
 
     with (
         patch.object(privileged_helper, "CAMERA_HOSTNAME_FILE", str(target)),
+        patch.object(privileged_helper, "_camera_identity", return_value=None),
         patch("camera_streamer.privileged_helper.subprocess.run") as mock_run,
     ):
         mock_run.side_effect = results
