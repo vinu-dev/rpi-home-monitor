@@ -297,18 +297,26 @@ class DiscoveryService:
             self._mdns_browser = None
             log.info("mDNS browser stopped")
 
-    def trigger_scan(self):
+    def trigger_scan(self) -> tuple[bool, str]:
         """Request an immediate mDNS PTR query (for manual Scan button).
 
         The background ServiceBrowser already runs continuously and discovers
         cameras as they appear. This method sends an extra PTR query so that
         newly powered-on cameras are detected faster when the user clicks Scan.
 
-        Fails silently — the background browser is always the primary path.
+        Returns (ok, message). Manual scan is only meaningful when the
+        zeroconf browser is running; otherwise the caller should surface a
+        visible operator error instead of showing an empty list as if a scan
+        really happened.
         """
         if self._zeroconf is None:
-            log.debug("mDNS browser not running — scan request ignored")
-            return
+            message = (
+                "Camera auto-discovery is unavailable because the mDNS browser "
+                "is not running. Check python-zeroconf packaging and monitor "
+                "startup logs."
+            )
+            log.warning("mDNS browser not running — scan request ignored")
+            return False, message
 
         # Reprocess services already known to zeroconf before sending the fresh
         # PTR query. When an admin deletes a camera, the service can remain in
@@ -334,6 +342,7 @@ class DiscoveryService:
         except Exception as exc:
             # Non-fatal: background browser already handles discovery
             log.debug("Manual mDNS PTR query failed (non-fatal): %s", exc)
+        return True, ""
 
     # -------------------------------------------------------------------------
     # Internal mDNS callbacks

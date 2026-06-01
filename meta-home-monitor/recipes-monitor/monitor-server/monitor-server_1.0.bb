@@ -48,6 +48,7 @@ RDEPENDS:${PN} = " \
     python3-cryptography \
     python3-pyotp \
     python3-boto3 \
+    python3-zeroconf \
     ffmpeg \
     util-linux \
     e2fsprogs-mke2fs \

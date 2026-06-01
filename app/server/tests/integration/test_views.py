@@ -945,5 +945,10 @@ class TestCompleteGuiRedesignCoverage:
             ".settings-section table tbody tr:nth-child(even) td",
             ".camera-card__faults .fault-badge span:last-child",
             ".share-modal__dialog",
+            ".ota-camera-list",
+            ".ota-device-card__header",
+            ".ota-job-panel",
+            ".ota-device-card__controls",
+            ".ota-state-pill--busy",
         ]:
             assert selector in css

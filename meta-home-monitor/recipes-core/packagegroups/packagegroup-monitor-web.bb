@@ -15,5 +15,6 @@ RDEPENDS:${PN} = " \
     python3-cryptography \
     python3-pyotp \
     python3-boto3 \
+    python3-zeroconf \
     python3-pip \
     "

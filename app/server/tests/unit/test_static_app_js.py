@@ -26,3 +26,20 @@ def test_server_ota_install_treats_restart_fallback_as_rebooting():
     assert "_serverRestartingError" in text
     assert "home monitor is restarting" in text
     assert "state = 'rebooting'" in text
+
+
+def test_camera_ota_uses_dedicated_multi_camera_status_layout():
+    """Camera OTA cards need stable state copy and controls per device."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    for expected in [
+        "ota-camera-list",
+        "ota-device-card",
+        "ota-job-panel",
+        "otaProgressValue",
+        "otaStateLabel",
+        "otaStateTone",
+        "cameraOtaMessage",
+        "Camera is rebooting into the new slot.",
+    ]:
+        assert expected in text

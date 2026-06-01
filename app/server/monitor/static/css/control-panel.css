@@ -2033,6 +2033,7 @@ body,
 .settings-page > div[x-show] > .settings-section:has(.user-table-wrap),
 .settings-page > div[x-show] > .settings-section:has(.rec-day-row),
 .settings-page > div[x-show] > .settings-section:has(.webhook-delivery-table),
+.settings-page > div[x-show] > .settings-section:has(.ota-camera-list),
 .settings-page > div[x-show] > .settings-section:has(.card[style*="max-width"]) {
     grid-column: 1 / -1;
 }
@@ -2080,6 +2081,251 @@ body,
 
 .info-row {
     min-height: 48px;
+}
+
+.settings-section > .ota-camera-list {
+    padding: clamp(18px, 2vw, 24px);
+}
+
+.ota-empty-state {
+    color: var(--color-text-muted);
+}
+
+.ota-camera-list {
+    display: grid;
+    gap: 14px;
+}
+
+.ota-device-card {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    padding: clamp(16px, 2vw, 22px);
+    border-color: var(--suite-line);
+    background: rgba(255, 255, 255, 0.68);
+}
+
+.ota-device-card--busy {
+    border-color: rgba(10, 132, 255, 0.24);
+    box-shadow: 0 16px 36px rgba(10, 132, 255, 0.11);
+}
+
+.ota-device-card--ready {
+    border-color: rgba(36, 138, 61, 0.22);
+}
+
+.ota-device-card--error {
+    border-color: rgba(215, 0, 21, 0.26);
+}
+
+.ota-device-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.ota-device-card__identity {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ota-device-card__name {
+    color: #111827;
+    font-size: 1.04rem;
+    font-weight: 820;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.ota-device-card__id {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.82rem;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.ota-device-card__badges {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.ota-state-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 11px;
+    border: 1px solid var(--suite-line);
+    border-radius: 999px;
+    color: var(--color-text-muted);
+    background: rgba(255, 255, 255, 0.75);
+    font-size: 0.76rem;
+    font-weight: 820;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.ota-state-pill--busy {
+    color: #0057b8;
+    border-color: rgba(10, 132, 255, 0.22);
+    background: rgba(10, 132, 255, 0.1);
+}
+
+.ota-state-pill--ready {
+    color: var(--color-success);
+    border-color: rgba(36, 138, 61, 0.2);
+    background: rgba(36, 138, 61, 0.09);
+}
+
+.ota-state-pill--error {
+    color: var(--color-danger);
+    border-color: rgba(215, 0, 21, 0.22);
+    background: rgba(215, 0, 21, 0.08);
+}
+
+.ota-state-pill--offline {
+    color: var(--color-warning);
+    border-color: rgba(191, 106, 2, 0.22);
+    background: rgba(191, 106, 2, 0.08);
+}
+
+.ota-device-card__versions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ota-version-item {
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--suite-line);
+    border-radius: 16px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.ota-version-item__label,
+.ota-job-panel__label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.ota-version-item__value {
+    display: block;
+    min-width: 0;
+    color: var(--color-text);
+    font-size: 0.98rem;
+    font-weight: 820;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ota-version-item__value--target {
+    color: var(--color-accent);
+}
+
+.ota-device-card__warning {
+    margin: 0;
+}
+
+.ota-job-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
+    align-items: center;
+    gap: 16px;
+    min-height: 74px;
+    padding: 14px;
+    border: 1px solid var(--suite-line);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.78);
+}
+
+.ota-job-panel--busy {
+    border-color: rgba(10, 132, 255, 0.18);
+    background: linear-gradient(180deg, rgba(10, 132, 255, 0.09), rgba(255, 255, 255, 0.76));
+}
+
+.ota-job-panel--ready {
+    border-color: rgba(36, 138, 61, 0.18);
+    background: linear-gradient(180deg, rgba(36, 138, 61, 0.08), rgba(255, 255, 255, 0.76));
+}
+
+.ota-job-panel--error {
+    border-color: rgba(215, 0, 21, 0.2);
+    background: linear-gradient(180deg, rgba(215, 0, 21, 0.08), rgba(255, 255, 255, 0.76));
+}
+
+.ota-job-panel__copy {
+    min-width: 0;
+}
+
+.ota-job-panel__message {
+    display: block;
+    color: var(--color-text);
+    font-size: 0.96rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.ota-job-panel__meter {
+    display: grid;
+    gap: 6px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 9px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.09);
+}
+
+.progress-bar__fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--color-accent), #12c7b7);
+    transition: width 0.2s ease;
+}
+
+.ota-job-panel__percent {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-align: right;
+}
+
+.ota-device-card__controls {
+    display: grid;
+    grid-template-columns: minmax(180px, max-content) minmax(170px, max-content);
+    align-items: center;
+    gap: 12px;
+}
+
+.ota-file-picker,
+.ota-install-button {
+    justify-content: center;
+    width: max-content;
+    max-width: 100%;
+}
+
+.ota-file-picker input {
+    display: none;
+}
+
+.ota-section-note {
+    display: block;
+    padding: 0 clamp(18px, 2vw, 24px) clamp(18px, 2vw, 24px);
 }
 
 .user-table,
@@ -2153,6 +2399,32 @@ body,
 
     .page-hero__meta span {
         min-height: 34px;
+    }
+
+    .ota-device-card__header,
+    .ota-job-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .ota-device-card__header {
+        display: grid;
+    }
+
+    .ota-device-card__badges {
+        justify-content: flex-start;
+    }
+
+    .ota-device-card__versions {
+        grid-template-columns: 1fr;
+    }
+
+    .ota-device-card__controls {
+        grid-template-columns: 1fr;
+    }
+
+    .ota-file-picker,
+    .ota-install-button {
+        width: 100%;
     }
 
     .content > .card.mb-16,
@@ -2609,8 +2881,36 @@ textarea {
     .section-header__title,
     .event-row__camera,
     .event-row__trigger,
-    .camera-card__name {
+    .camera-card__name,
+    .ota-device-card__name {
         color: #f8fbff;
+    }
+
+    .ota-version-item,
+    .ota-job-panel {
+        background: rgba(15, 25, 43, 0.72);
+        border-color: rgba(148, 163, 184, 0.18);
+    }
+
+    .ota-job-panel--busy {
+        background: linear-gradient(180deg, rgba(10, 132, 255, 0.16), rgba(15, 25, 43, 0.74));
+    }
+
+    .ota-job-panel--ready {
+        background: linear-gradient(180deg, rgba(36, 138, 61, 0.14), rgba(15, 25, 43, 0.74));
+    }
+
+    .ota-job-panel--error {
+        background: linear-gradient(180deg, rgba(215, 0, 21, 0.14), rgba(15, 25, 43, 0.74));
+    }
+
+    .ota-state-pill {
+        background: rgba(15, 25, 43, 0.78);
+        border-color: rgba(148, 163, 184, 0.2);
+    }
+
+    .progress-bar {
+        background: rgba(148, 163, 184, 0.16);
     }
 }
 
