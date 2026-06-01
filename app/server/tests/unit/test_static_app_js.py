@@ -37,6 +37,9 @@ def test_camera_ota_uses_dedicated_multi_camera_status_layout():
         "ota-common-bundle",
         "camera_bundle",
         "uploadCameraLibraryBundle",
+        "openCommonCameraBundlePicker",
+        'id="camera-common-bundle-file"',
+        "ota-file-picker__input",
         "uploadCustomCameraBundle",
         "pushAllCameraBundles",
         "ota-device-card",
@@ -48,3 +51,22 @@ def test_camera_ota_uses_dedicated_multi_camera_status_layout():
         "Camera is rebooting into the new slot.",
     ]:
         assert expected in text
+
+
+def test_common_camera_bundle_picker_cannot_be_left_disabled():
+    """The common picker is a launch button, not a disabled file input label."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    start = text.index('@click="openCommonCameraBundlePicker()"')
+    end = text.index(
+        '@change="uploadCameraLibraryBundle($event.target.files[0]); '
+        "$event.target.value = '';",
+        start,
+    )
+    common_picker_block = text[start - 300 : end + 120]
+
+    assert 'type="button"' in common_picker_block
+    assert '@click="openCommonCameraBundlePicker()"' in common_picker_block
+    assert 'style="position:absolute;left:-10000px;' in common_picker_block
+    assert ":disabled=" not in common_picker_block
+    assert "input.disabled = false;" in text

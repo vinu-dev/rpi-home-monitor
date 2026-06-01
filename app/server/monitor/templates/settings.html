@@ -2550,13 +2550,17 @@
             </div>
 
             <div class="ota-common-bundle__controls">
-                <label class="btn btn--secondary ota-file-picker"
-                       :class="{ 'btn--disabled': ota.camera_bundle._clientUploading }">
-                    <input type="file" accept=".swu"
-                           :disabled="ota.camera_bundle._clientUploading"
-                           @change="uploadCameraLibraryBundle($event.target.files[0]); $event.target.value = '';">
+                <button type="button"
+                        class="btn btn--secondary ota-file-picker"
+                        @click="openCommonCameraBundlePicker()">
                     <span x-text="cameraCommonBundleReady() ? 'Replace common bundle...' : 'Choose common bundle...'"></span>
-                </label>
+                </button>
+                <input id="camera-common-bundle-file"
+                       class="ota-file-picker__input"
+                       style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden;opacity:0;"
+                       type="file"
+                       accept=".swu"
+                       @change="uploadCameraLibraryBundle($event.target.files[0]); $event.target.value = '';">
                 <button class="btn btn--primary ota-install-button"
                         :disabled="!cameraCommonBundleReady() || !cameraCommonBundleEligible() || cameraAnyBusy()"
                         @click="pushAllCameraBundles()">Update eligible cameras</button>
@@ -4737,6 +4741,16 @@ function settingsPage() {
 
         cameraCommonBundleEligible() {
             return Number(this.ota.camera_bundle && this.ota.camera_bundle.eligible_count) > 0;
+        },
+
+        openCommonCameraBundlePicker() {
+            var input = document.getElementById('camera-common-bundle-file');
+            if (!input) {
+                window.HM.toast('Common camera bundle picker is not ready', 'error');
+                return;
+            }
+            input.disabled = false;
+            input.click();
         },
 
         cameraTargetVersion(cam) {
