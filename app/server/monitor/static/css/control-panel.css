@@ -2673,6 +2673,15 @@ body,
     display: none;
 }
 
+.ota-file-picker__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .ota-section-note {
     display: block;
     padding: 0 clamp(18px, 2vw, 24px) clamp(18px, 2vw, 24px);
