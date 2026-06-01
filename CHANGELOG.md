@@ -4,6 +4,10 @@ All notable changes to RPi Home Monitor are documented here.
 
 ## [Unreleased]
 
+(Nothing yet — next release will land here.)
+
+## [1.7.0] — 2026-06-01
+
 ### Fixed
 - **Camera OTA activation** now uses one behavior for server-pushed and
   camera-local uploads: the camera writes the inactive slot, reports
