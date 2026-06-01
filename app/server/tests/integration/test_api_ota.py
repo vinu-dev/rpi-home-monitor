@@ -197,6 +197,20 @@ class TestServerUpload:
         assert response.status_code == 400
         assert "Rejected older update" in response.get_json()["error"]
 
+    def test_upload_allowed_while_camera_update_active(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online")
+        app.ota_service.set_status("cam-001", "uploading", progress=20, error="")
+
+        response = client.post(
+            "/api/v1/ota/server/upload",
+            data={"file": (io.BytesIO(b"fake-swu-content"), "update.swu")},
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        assert "staged" in response.get_json()["message"].lower()
+
 
 class TestCameraPush:
     """Test POST /api/v1/ota/camera/<id>/push."""
@@ -222,6 +236,16 @@ class TestCameraPush:
         response = client.post("/api/v1/ota/camera/cam-001/push")
         assert response.status_code == 409
         assert "upload" in response.get_json()["error"].lower()
+
+    def test_push_blocked_while_server_install_active(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+        app.ota_service.set_status("server", "installing", progress=50, error="")
+
+        response = client.post("/api/v1/ota/camera/cam-001/push")
+
+        assert response.status_code == 409
+        assert "Server update is already running" in response.get_json()["error"]
 
     def test_pushes_update(self, monkeypatch, app, logged_in_client):
         client = logged_in_client()
@@ -366,6 +390,27 @@ class TestCameraPush:
             "cam-offline",
         }
 
+    def test_push_all_blocked_while_server_install_active(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-old", "online", firmware_version="1.6.0")
+        upload = client.post(
+            "/api/v1/ota/camera-library/upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "common.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 200
+        app.ota_service.set_status("server", "rebooting", progress=100, error="")
+
+        response = client.post("/api/v1/ota/cameras/push", json={})
+
+        assert response.status_code == 409
+        assert "Server update is already running" in response.get_json()["error"]
+
 
 class TestCameraUpload:
     """Test POST /api/v1/ota/camera/<id>/upload."""
@@ -466,6 +511,26 @@ class TestCameraUpload:
         assert data["camera_bundle"]["target_version"] == "1.6.2"
         assert data["camera_bundle"]["eligible_count"] == 1
         assert data["camera_bundle"]["already_current_count"] == 1
+
+    def test_common_camera_bundle_upload_allowed_while_server_installing(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        app.ota_service.set_status("server", "installing", progress=50, error="")
+
+        response = client.post(
+            "/api/v1/ota/camera-library/upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "common.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["target_version"] == "1.6.2"
 
     def test_custom_camera_bundle_is_not_saved_to_common_library(
         self, app, logged_in_client
@@ -729,6 +794,24 @@ class TestServerInstall:
         assert resp.status_code == 409
         assert "Rejected older update" in resp.get_json()["error"]
         assert not os.path.exists(bundle)
+
+    def test_blocks_install_while_camera_update_active(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online")
+
+        staging = app.ota_service.staging_dir
+        os.makedirs(staging, exist_ok=True)
+        bundle = os.path.join(staging, "update.swu")
+        with open(bundle, "wb") as fh:
+            fh.write(b"fake-bundle")
+        app.ota_service.set_status("cam-001", "uploading", progress=20, error="")
+
+        response = client.post("/api/v1/ota/server/install")
+
+        assert response.status_code == 409
+        error = response.get_json()["error"]
+        assert "Camera update is already running" in error
+        assert "cam-001" in error
 
 
 class TestCameraUploadEdgeCases:

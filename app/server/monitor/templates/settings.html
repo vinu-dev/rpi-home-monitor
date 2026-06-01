@@ -2478,8 +2478,12 @@
                       x-show="ota.server.staged_filename"
                       x-text="ota.server.staged_filename"></span>
                 <button class="btn btn--primary" style="margin-left:var(--space-2);"
-                        :disabled="!ota.server.staged_filename || ota.server.busy || (ota.server.verification && ota.server.verification.install_blocked)"
+                        :disabled="!ota.server.staged_filename || ota.server.busy || serverInstallLockedByCamera() || (ota.server.verification && ota.server.verification.install_blocked)"
                         @click="installServerBundle()">Install &amp; Reboot</button>
+            </div>
+            <div class="text-small text-muted" style="margin-top:var(--space-2);"
+                 x-show="serverInstallLockedByCamera()">
+                A camera update is running. Server install is locked until camera updates finish.
             </div>
             <div x-show="ota.server.busy" style="margin-top:var(--space-3);">
                 <div class="progress-bar"><div class="progress-bar__fill" :style="'width:' + (ota.server.progress || 0) + '%'"></div></div>
@@ -2562,8 +2566,12 @@
                        accept=".swu"
                        @change="uploadCameraLibraryBundle($event.target.files[0]); $event.target.value = '';">
                 <button class="btn btn--primary ota-install-button"
-                        :disabled="!cameraCommonBundleReady() || !cameraCommonBundleEligible() || cameraAnyBusy()"
+                        :disabled="!cameraCommonBundleReady() || !cameraCommonBundleEligible() || cameraAnyBusy() || cameraInstallLockedByServer()"
                         @click="pushAllCameraBundles()">Update eligible cameras</button>
+            </div>
+            <div class="text-small text-muted ota-section-note"
+                 x-show="cameraInstallLockedByServer()">
+                Server update is running. Camera installs are locked until the server update finishes.
             </div>
         </div>
         <div class="ota-camera-list" x-show="(ota.cameras || []).length > 0">
@@ -4735,6 +4743,27 @@ function settingsPage() {
             return (this.ota.cameras || []).some(this.cameraBusy);
         },
 
+        _otaStartActive(state, deviceType) {
+            state = state || 'idle';
+            if (deviceType === 'server') {
+                return state === 'verifying' || state === 'installing' || state === 'rebooting';
+            }
+            return state === 'uploading' || state === 'downloading' ||
+                state === 'verifying' || state === 'installing' ||
+                state === 'rebooting' || state === 'validating';
+        },
+
+        serverInstallLockedByCamera() {
+            var self = this;
+            return (this.ota.cameras || []).some(function(cam) {
+                return self._otaStartActive(cam && cam.state, 'camera');
+            });
+        },
+
+        cameraInstallLockedByServer() {
+            return this._otaStartActive(this.ota.server && this.ota.server.state, 'server');
+        },
+
         cameraCommonBundleReady() {
             return !!(this.ota.camera_bundle && this.ota.camera_bundle.filename && this.ota.camera_bundle.target_version);
         },
@@ -4765,6 +4794,7 @@ function settingsPage() {
         },
 
         cameraCanInstall(cam) {
+            if (this.cameraInstallLockedByServer()) return false;
             if (!cam || !cam.online || this.cameraBusy(cam)) return false;
             if (!cam.target_version || !cam.staged_filename) return false;
             if (cam.update_relation === 'same' || cam.update_relation === 'blocked' || cam.update_relation === 'downgrade') return false;
@@ -4773,6 +4803,7 @@ function settingsPage() {
 
         cameraInstallLabel(cam) {
             if (!cam) return 'Install';
+            if (this.cameraInstallLockedByServer()) return 'Server updating';
             if (this.cameraBusy(cam)) return this.otaStateLabel(cam.state);
             if (!cam.online) return 'Offline';
             if (cam.update_relation === 'same') return 'Already current';
@@ -5041,6 +5072,10 @@ function settingsPage() {
                 window.HM.toast(posture.warning || 'OTA verification is blocked', 'error');
                 return;
             }
+            if (this.serverInstallLockedByCamera()) {
+                window.HM.toast('Camera update is running; wait before installing a server update.', 'error');
+                return;
+            }
             var prompt = 'Install this update? The server will reboot into the new partition.';
             if (posture.warning) {
                 prompt = posture.warning + '\n\n' + prompt;
@@ -5177,6 +5212,7 @@ function settingsPage() {
 
         async pushCameraBundle(cam) {
             if (!cam.online) { window.HM.toast('Camera is offline', 'error'); return; }
+            if (this.cameraInstallLockedByServer()) { window.HM.toast('Server update is running; wait before starting camera updates.', 'error'); return; }
             if (!this.cameraCanInstall(cam)) { window.HM.toast('No eligible bundle for this camera', 'error'); return; }
             var scope = cam.bundle_scope === 'custom' ? 'custom' : 'common';
             if (!confirm('Push ' + (scope === 'custom' ? 'the custom bundle' : 'the selected bundle') + ' to ' + (cam.name || cam.id) + '? The camera will reboot into the new partition.')) return;
@@ -5204,6 +5240,10 @@ function settingsPage() {
             }
             if (!this.cameraCommonBundleEligible()) {
                 window.HM.toast('No online cameras need this bundle', 'info');
+                return;
+            }
+            if (this.cameraInstallLockedByServer()) {
+                window.HM.toast('Server update is running; wait before starting camera updates.', 'error');
                 return;
             }
             if (!confirm('Update all eligible online cameras to ' + (this.ota.camera_bundle.target_version || 'the selected version') + '? Each camera will reboot itself after installation.')) return;
