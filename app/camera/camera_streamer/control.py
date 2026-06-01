@@ -32,6 +32,7 @@ import os
 import tempfile
 import time
 
+from camera_streamer.restart_schedule_model import normalise_restart_schedule
 from camera_streamer.sensor_info import (
     KNOWN_SENSOR_MODES,
     SensorCapabilities,
@@ -72,6 +73,8 @@ PARAM_SCHEMA: dict[str, dict] = {
     # catalogue. Stored in camera.conf as a JSON string under
     # IMAGE_QUALITY. Empty dict clears all overrides.
     "image_quality": {"type": dict},
+    # Maintenance restart schedule. Does not restart the stream pipeline.
+    "restart_schedule": {"type": dict},
 }
 
 # Highest framerate the schema will accept regardless of resolution.
@@ -285,6 +288,7 @@ class ControlHandler:
                 "vflip": {"type": "bool"},
                 "motion_sensitivity": {"type": "int", "min": 1, "max": 10},
                 "motion_detection": {"type": "bool"},
+                "restart_schedule": {"type": "object"},
             },
         }
 
@@ -303,6 +307,7 @@ class ControlHandler:
             "motion_sensitivity": self._config.motion_sensitivity,
             "motion_detection": self._config.motion_detection,
             "image_quality": self._config.image_quality,
+            "restart_schedule": self._config.restart_schedule,
         }
 
     def set_config(self, params, request_id=0, origin="server"):
@@ -319,10 +324,16 @@ class ControlHandler:
         if request_id and request_id <= self._last_request_id:
             return None, "Stale request_id (replay rejected)", 409
 
+        schedule_only = set(params.keys()) == {"restart_schedule"}
+
         # Rate limiting
         now = time.monotonic()
         elapsed = now - self._last_change_time
-        if self._last_change_time > 0 and elapsed < RATE_LIMIT_SECONDS:
+        if (
+            self._last_change_time > 0
+            and elapsed < RATE_LIMIT_SECONDS
+            and not schedule_only
+        ):
             wait = RATE_LIMIT_SECONDS - elapsed
             return None, f"Rate limited, retry after {wait:.0f}s", 429
 
@@ -355,6 +366,14 @@ class ControlHandler:
             if isinstance(value, bool):
                 config_updates[config_key] = str(value).lower()
             elif isinstance(value, dict):
+                if key == "restart_schedule":
+                    value = {**value, "source": str(origin or "server")}
+                    value = normalise_restart_schedule(
+                        value,
+                        source=str(origin or "server"),
+                        stamp=False,
+                    )
+                    changes[key] = value
                 # image_quality is a dict — JSON-encode for config-file
                 # storage. ConfigManager re-decodes via the
                 # ``image_quality`` property (see config.py).
@@ -369,10 +388,10 @@ class ControlHandler:
         for key, new_val in changes.items():
             log.info("Config changed: %s = %s (was %s)", key, new_val, old_values[key])
 
-        # Restart stream if needed
-        restart_required = True
+        # Restart stream only when a stream-pipeline field changed.
+        restart_required = any(key != "restart_schedule" for key in changes)
         restarted = False
-        if self._stream:
+        if restart_required and self._stream:
             restarted = self._stream.restart()
 
         # Update state

@@ -310,6 +310,7 @@ class HeartbeatSender:
             "hardware_ok": hardware_ok,
             "hardware_error": hardware_error,
             "hardware_faults": hardware_faults,
+            "restart_schedule": config.restart_schedule,
             "stream_config": {
                 "width": config.width,
                 "height": config.height,

@@ -71,6 +71,7 @@ def notify_config_change(config, pairing_manager):
         "rotation": config.rotation,
         "hflip": config.hflip,
         "vflip": config.vflip,
+        "restart_schedule": config.restart_schedule,
     }
 
     body = json.dumps(stream_config).encode()

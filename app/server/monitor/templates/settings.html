@@ -168,6 +168,115 @@
         <div class="text-small text-muted" style="margin-top: var(--space-2);" x-show="manualTimeMsg" x-text="manualTimeMsg"></div>
     </div>
 
+    <div class="settings-section">
+        <div class="settings-section__title">Maintenance Restart</div>
+        <div class="card maintenance-restart">
+            <div class="maintenance-restart__server">
+                <div class="maintenance-restart__header">
+                    <div>
+                        <div class="maintenance-restart__name">Server</div>
+                        <div class="text-small text-muted"
+                             x-text="restartScheduleSummary(restart.server)"></div>
+                    </div>
+                    <button class="btn btn--danger btn--small"
+                            @click="restartServerNow()"
+                            :disabled="restart.server._rebooting">
+                        <span x-text="restart.server._rebooting ? 'Restarting...' : 'Restart now'"></span>
+                    </button>
+                </div>
+                <div class="maintenance-restart__editor">
+                    <label class="maintenance-toggle">
+                        <input type="checkbox" x-model="restart.server.enabled">
+                        <span>Scheduled restart</span>
+                    </label>
+                    <div class="restart-days" role="group" aria-label="Server restart days">
+                        <template x-for="day in restart.DAY_ORDER" :key="'server-' + day">
+                            <label class="restart-day"
+                                   :class="{ 'restart-day--active': restartDayEnabled(restart.server, day) }">
+                                <input type="checkbox"
+                                       :value="day"
+                                       :checked="restartDayEnabled(restart.server, day)"
+                                       @change="toggleRestartDay(restart.server, day, $event.target.checked)">
+                                <span x-text="restartDayLabel(day)"></span>
+                            </label>
+                        </template>
+                    </div>
+                    <div class="maintenance-restart__save-row">
+                        <label>
+                            <span class="text-small text-muted">Time</span>
+                            <input class="form-input" type="time" x-model="restart.server.time">
+                        </label>
+                        <div class="text-small text-muted">
+                            <span>Next: </span><span x-text="formatNextRun(restart.server.next_run_at)"></span>
+                        </div>
+                        <button class="btn btn--primary btn--small"
+                                @click="saveServerRestartSchedule()"
+                                :disabled="restart.server._saving">
+                            <span x-text="restart.server._saving ? 'Saving...' : 'Save'"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="maintenance-restart__cameras">
+                <template x-for="cam in restart.cameras" :key="cam.id">
+                    <article class="maintenance-device">
+                        <div class="maintenance-restart__header">
+                            <div>
+                                <div class="maintenance-restart__name" x-text="cam.name || cam.id"></div>
+                                <div class="text-small text-muted">
+                                    <span x-text="cam.status"></span>
+                                    <span> · </span>
+                                    <span x-text="restartScheduleSummary(cam.restart_schedule)"></span>
+                                </div>
+                            </div>
+                            <button class="btn btn--secondary btn--small"
+                                    @click="restartCameraNow(cam)"
+                                    :disabled="cam.status !== 'online' || cam._rebooting">
+                                <span x-text="cam._rebooting ? 'Queued...' : 'Restart now'"></span>
+                            </button>
+                        </div>
+                        <div class="maintenance-restart__editor">
+                            <label class="maintenance-toggle">
+                                <input type="checkbox" x-model="cam.restart_schedule.enabled">
+                                <span>Scheduled restart</span>
+                            </label>
+                            <div class="restart-days" role="group" :aria-label="'Restart days for ' + (cam.name || cam.id)">
+                                <template x-for="day in restart.DAY_ORDER" :key="cam.id + '-' + day">
+                                    <label class="restart-day"
+                                           :class="{ 'restart-day--active': restartDayEnabled(cam.restart_schedule, day) }">
+                                        <input type="checkbox"
+                                               :value="day"
+                                               :checked="restartDayEnabled(cam.restart_schedule, day)"
+                                               @change="toggleRestartDay(cam.restart_schedule, day, $event.target.checked)">
+                                        <span x-text="restartDayLabel(day)"></span>
+                                    </label>
+                                </template>
+                            </div>
+                            <div class="maintenance-restart__save-row">
+                                <label>
+                                    <span class="text-small text-muted">Time</span>
+                                    <input class="form-input" type="time" x-model="cam.restart_schedule.time">
+                                </label>
+                                <div class="text-small text-muted">
+                                    <span>Next: </span><span x-text="formatNextRun(cam.restart_schedule.next_run_at)"></span>
+                                </div>
+                                <button class="btn btn--primary btn--small"
+                                        @click="saveCameraRestartSchedule(cam)"
+                                        :disabled="cam._saving">
+                                    <span x-text="cam._saving ? 'Saving...' : 'Save'"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                </template>
+                <div class="text-small text-muted" x-show="!restart.cameras.length">
+                    No paired cameras yet.
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="settings-section" id="time-health" x-show="isAdmin">
         <div class="settings-section__title">Time Health</div>
         <div class="card">
@@ -2428,6 +2537,11 @@ function settingsPage() {
         _timeHealthTimer: null,
         manualTimeInput: '',
         manualTimeMsg: '',
+        restart: {
+            DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'],
+            server: { enabled: false, days: ['sun'], time: '03:30', updated_at: '', source: 'server', next_run_at: '', _saving: false, _rebooting: false },
+            cameras: [],
+        },
         sysInfo: {
             hostname: '', firmware_version: '', os: '', uptime: '',
             disk_total: '', disk_used: '', disk_free: '', retention: '',
@@ -2701,6 +2815,7 @@ function settingsPage() {
                 this.loadNetworkInterfaces();
                 this.loadTailscale();
                 this.loadRecordingCameras();
+                this.loadRestartSchedules();
                 this.loadWebhooks();
                 this.loadBackupSnapshots();
                 this.loadTimeHealth();
@@ -3146,6 +3261,11 @@ function settingsPage() {
                     session_timeout_minutes: data.session_timeout_minutes || 60,
                     require_2fa_for_remote: !!data.require_2fa_for_remote,
                 };
+                this.restart.server = Object.assign(
+                    this.defaultRestartSchedule('server'),
+                    data.restart_schedule || {},
+                    { _saving: false, _rebooting: false }
+                );
             } catch(e) { window.HM.toast('Failed to load settings', 'error'); }
         },
 
@@ -3155,6 +3275,138 @@ function settingsPage() {
                 window.HM.toast('Settings saved', 'success');
                 this.loadTimeStatus();
             } catch(e) { window.HM.toast(e.message || 'Failed to save settings', 'error'); }
+        },
+
+        defaultRestartSchedule(source) {
+            return { enabled: false, days: ['sun'], time: '03:30', updated_at: '', source: source || 'system', next_run_at: '' };
+        },
+
+        restartDayLabel(day) {
+            return ({ mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' })[day] || day;
+        },
+
+        restartDayEnabled(schedule, day) {
+            return Array.isArray(schedule && schedule.days) && schedule.days.indexOf(day) !== -1;
+        },
+
+        toggleRestartDay(schedule, day, enabled) {
+            if (!schedule.days || !Array.isArray(schedule.days)) schedule.days = [];
+            var days = this.restart.DAY_ORDER;
+            if (enabled && schedule.days.indexOf(day) === -1) schedule.days.push(day);
+            if (!enabled) schedule.days = schedule.days.filter(function(d) { return d !== day; });
+            if (!schedule.days.length) schedule.days = [day];
+            schedule.days = schedule.days
+                .filter(function(d, idx, arr) { return days.indexOf(d) !== -1 && arr.indexOf(d) === idx; })
+                .sort(function(a, b) { return days.indexOf(a) - days.indexOf(b); });
+        },
+
+        stripRestartSchedule(schedule) {
+            var clean = Object.assign(this.defaultRestartSchedule(schedule && schedule.source), schedule || {});
+            clean.days = Array.isArray(clean.days) && clean.days.length ? clean.days.slice() : ['sun'];
+            return {
+                enabled: !!clean.enabled,
+                days: clean.days,
+                time: clean.time || '03:30',
+                updated_at: clean.updated_at || '',
+                source: clean.source || 'system',
+            };
+        },
+
+        restartScheduleSummary(schedule) {
+            schedule = Object.assign(this.defaultRestartSchedule('system'), schedule || {});
+            if (!schedule.enabled) return 'Scheduled restart off';
+            var days = (schedule.days || []).map(this.restartDayLabel).join(', ');
+            return (days || 'Sun') + ' at ' + (schedule.time || '03:30');
+        },
+
+        formatNextRun(value) {
+            if (!value) return 'not scheduled';
+            var d = new Date(value);
+            if (Number.isNaN(d.getTime())) return value;
+            return d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+        },
+
+        async loadRestartSchedules() {
+            try {
+                var s = await window.HM.api.get('/api/v1/settings');
+                this.restart.server = Object.assign(
+                    this.defaultRestartSchedule('server'),
+                    s.restart_schedule || {},
+                    { _saving: false, _rebooting: false }
+                );
+            } catch(e) {}
+            try {
+                var cams = await window.HM.api.get('/api/v1/cameras');
+                this.restart.cameras = (cams || [])
+                    .filter(function(cam) { return cam.status !== 'pending'; })
+                    .map((cam) => ({
+                        id: cam.id,
+                        name: cam.name || cam.id,
+                        status: cam.status || 'offline',
+                        restart_schedule: Object.assign(
+                            this.defaultRestartSchedule('server'),
+                            cam.restart_schedule || {}
+                        ),
+                        _saving: false,
+                        _rebooting: false,
+                    }));
+            } catch(e) {}
+        },
+
+        async saveServerRestartSchedule() {
+            this.restart.server._saving = true;
+            try {
+                var data = await window.HM.api.put('/api/v1/settings', {
+                    restart_schedule: this.stripRestartSchedule(this.restart.server),
+                });
+                var next = data.restart_schedule || this.restart.server;
+                await this.loadSettings();
+                this.restart.server.next_run_at = next.next_run_at || this.restart.server.next_run_at || '';
+                window.HM.toast('Server restart schedule saved', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save server restart schedule', 'error');
+            } finally {
+                this.restart.server._saving = false;
+            }
+        },
+
+        async saveCameraRestartSchedule(cam) {
+            cam._saving = true;
+            try {
+                await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(cam.id), {
+                    restart_schedule: this.stripRestartSchedule(cam.restart_schedule),
+                });
+                window.HM.toast('Restart schedule saved for ' + (cam.name || cam.id), 'success');
+                await this.loadRestartSchedules();
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to save camera restart schedule', 'error');
+            } finally {
+                cam._saving = false;
+            }
+        },
+
+        async restartServerNow() {
+            if (!confirm('Restart the server now? Live views and recordings will be unavailable while it reboots.')) return;
+            this.restart.server._rebooting = true;
+            try {
+                await window.HM.api.post('/api/v1/system/reboot', {});
+                window.HM.toast('Server restart requested', 'info');
+            } catch(e) {
+                this.restart.server._rebooting = false;
+                window.HM.toast(e.message || 'Failed to restart server', 'error');
+            }
+        },
+
+        async restartCameraNow(cam) {
+            if (!confirm('Restart ' + (cam.name || cam.id) + ' now?')) return;
+            cam._rebooting = true;
+            try {
+                await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(cam.id) + '/reboot', {});
+                window.HM.toast('Camera restart requested for ' + (cam.name || cam.id), 'info');
+            } catch(e) {
+                cam._rebooting = false;
+                window.HM.toast(e.message || 'Failed to restart camera', 'error');
+            }
         },
 
         setBackupFile(event) {

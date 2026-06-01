@@ -8,6 +8,7 @@ Endpoints:
   GET  /system/data-protection         - /data encryption-at-rest posture
   GET  /system/time/health             - derived server/camera time integrity (admin only)
   POST /system/time/resync             - restart timesyncd on server or queue camera resync
+  POST /system/reboot                  - reboot the server appliance
   GET  /system/info                    - firmware version, uptime, hostname, OS version
   GET  /system/tailscale               - Tailscale VPN status + config
   POST /system/tailscale/connect       - Start Tailscale, return auth URL if needed
@@ -287,6 +288,22 @@ def time_resync():
             detail=f"target={target.strip()}",
         )
     return jsonify({"message": message}), 200
+
+
+@system_bp.route("/reboot", methods=["POST"])
+@admin_required
+@csrf_protect
+def reboot_server():
+    """Request an immediate server reboot. Admin only."""
+    service = getattr(current_app, "restart_schedule_service", None)
+    if service is None:
+        return jsonify({"error": "Restart service unavailable"}), 503
+    msg, status = service.request_server_reboot(
+        reason="manual",
+        requesting_user=session.get("username", ""),
+        requesting_ip=request.remote_addr or "",
+    )
+    return jsonify({"message": msg}), status
 
 
 @system_bp.route("/info", methods=["GET"])

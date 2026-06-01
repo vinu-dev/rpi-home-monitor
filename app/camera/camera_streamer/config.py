@@ -19,6 +19,8 @@ import logging
 import os
 import secrets
 
+from camera_streamer.restart_schedule_model import normalise_restart_schedule
+
 log = logging.getLogger("camera-streamer.config")
 
 MIN_ADMIN_PASSWORD_LENGTH = 12
@@ -64,6 +66,10 @@ DEFAULTS = {
     # existing control channel; applied by ``picam_backend`` after
     # ``start_recording`` via ``Picamera2.set_controls``.
     "IMAGE_QUALITY": "{}",
+    # Maintenance restart schedule. JSON object with enabled/days/time/
+    # updated_at/source; synced bidirectionally with the server over the
+    # existing heartbeat/control channel.
+    "RESTART_SCHEDULE": "{}",
 }
 
 
@@ -180,6 +186,19 @@ class ConfigManager:
             log.warning("IMAGE_QUALITY is not a JSON object (%r) — ignoring", data)
             return {}
         return data
+
+    @property
+    def restart_schedule(self) -> dict:
+        """Per-camera maintenance restart schedule."""
+        import json
+
+        raw = self._values.get("RESTART_SCHEDULE", "{}")
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            log.warning("RESTART_SCHEDULE is not valid JSON (%r) â€” ignoring", raw)
+            return normalise_restart_schedule({}, source="camera", stamp=False)
+        return normalise_restart_schedule(data, source="camera", stamp=False)
 
     @property
     def camera_id(self):

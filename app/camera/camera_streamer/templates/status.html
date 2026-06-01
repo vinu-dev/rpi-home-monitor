@@ -234,6 +234,28 @@ h2 svg { width: 14px; height: 14px; stroke-width: 2; color: var(--accent-1); }
 }
 .card + .card { margin-top: var(--gap-3); }
 
+.restart-card { display: grid; gap: var(--gap-3); }
+.restart-card__top {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--gap-3);
+}
+.restart-toggle {
+    display: inline-flex; align-items: center; gap: var(--gap-2);
+    color: var(--text); font-weight: 600;
+}
+.restart-days { display: flex; flex-wrap: wrap; gap: var(--gap-2); }
+.restart-days label {
+    min-height: 38px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: rgba(255,255,255,0.04); color: var(--muted);
+    font-size: .82rem; font-weight: 650; cursor: pointer;
+}
+.restart-days input { position: absolute; opacity: 0; pointer-events: none; }
+.restart-days label.active {
+    border-color: rgba(255,92,124,0.48);
+    background: rgba(255,92,124,0.12);
+    color: var(--text);
+}
+
 /* Details rows — dressed like cards with a soft hover */
 details {
     background: var(--surface);
@@ -1423,6 +1445,38 @@ details[open] summary {
     </div>
   </details>
 
+  <details>
+    <summary>Maintenance restart</summary>
+    <div class="details-body">
+      <div class="restart-card">
+        <div class="restart-card__top">
+          <div>
+            <strong>Camera restart</strong>
+            <div class="hint" id="restart-summary">Scheduled restart off</div>
+          </div>
+          <button class="btn btn--outline btn--sm" id="btn-restart-now" onclick="restartNow()">Restart now</button>
+        </div>
+        <label class="restart-toggle"><input type="checkbox" id="rs-enabled"> Scheduled restart</label>
+        <div class="restart-days" id="rs-days">
+          <label><input type="checkbox" value="mon"><span>Mon</span></label>
+          <label><input type="checkbox" value="tue"><span>Tue</span></label>
+          <label><input type="checkbox" value="wed"><span>Wed</span></label>
+          <label><input type="checkbox" value="thu"><span>Thu</span></label>
+          <label><input type="checkbox" value="fri"><span>Fri</span></label>
+          <label><input type="checkbox" value="sat"><span>Sat</span></label>
+          <label><input type="checkbox" value="sun"><span>Sun</span></label>
+        </div>
+        <div class="field">
+          <label>Time</label>
+          <input class="input" id="rs-time" type="time" value="03:30">
+          <div class="hint">Next: <span id="restart-next">not scheduled</span></div>
+        </div>
+        <button class="btn btn--primary btn--full" id="btn-restart-save" onclick="saveRestartSchedule()">Save restart schedule</button>
+        <div id="restart-result"></div>
+      </div>
+    </div>
+  </details>
+
   <details id="unpair-details" hidden>
     <summary>Pair with a different server · Unpair</summary>
     <div class="details-body">
@@ -1576,6 +1630,7 @@ function updateReachability(d) {
 var _streamConfig = null;
 var _hostname = "";
 var _currentFirmware = "";
+var _restartSchedule = { enabled: false, days: ["sun"], time: "03:30", updated_at: "", source: "camera", next_run_at: "" };
 function loadStatus() {
     fetch("/api/status").then(function(r){
         if (r.status === 401) { window.location.href = "/login"; return null; }
@@ -1584,6 +1639,8 @@ function loadStatus() {
         if (!d) return;
         _hostname = d.hostname || "";
         _streamConfig = d.stream_config || null;
+        _restartSchedule = normalizeRestartSchedule(d.restart_schedule || _restartSchedule);
+        renderRestartSchedule();
 
         // Top bar + reset-confirm target
         $("bar-host").textContent = _hostname || d.camera_id || "";
@@ -1659,6 +1716,119 @@ function loadStatus() {
             }
         }
     }).catch(function(){});
+}
+
+var RESTART_DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
+function normalizeRestartSchedule(s) {
+    s = s || {};
+    var days = Array.isArray(s.days) ? s.days.filter(function(day, idx, arr) {
+        return RESTART_DAYS.indexOf(day) !== -1 && arr.indexOf(day) === idx;
+    }) : ["sun"];
+    if (!days.length) days = ["sun"];
+    days.sort(function(a, b){ return RESTART_DAYS.indexOf(a) - RESTART_DAYS.indexOf(b); });
+    return {
+        enabled: !!s.enabled,
+        days: days,
+        time: /^\d{2}:\d{2}$/.test(s.time || "") ? s.time : "03:30",
+        updated_at: s.updated_at || "",
+        source: s.source || "camera",
+        next_run_at: s.next_run_at || "",
+    };
+}
+function restartDayLabel(day) {
+    return ({mon:"Mon", tue:"Tue", wed:"Wed", thu:"Thu", fri:"Fri", sat:"Sat", sun:"Sun"})[day] || day;
+}
+function restartSummary(schedule) {
+    if (!schedule.enabled) return "Scheduled restart off";
+    return schedule.days.map(restartDayLabel).join(", ") + " at " + schedule.time;
+}
+function formatNextRun(value) {
+    if (!value) return "not scheduled";
+    var d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function renderRestartSchedule() {
+    var schedule = normalizeRestartSchedule(_restartSchedule);
+    $("rs-enabled").checked = schedule.enabled;
+    $("rs-time").value = schedule.time;
+    $("restart-summary").textContent = restartSummary(schedule);
+    $("restart-next").textContent = formatNextRun(schedule.next_run_at);
+    document.querySelectorAll("#rs-days label").forEach(function(label){
+        var input = label.querySelector("input");
+        var active = schedule.days.indexOf(input.value) !== -1;
+        input.checked = active;
+        label.classList.toggle("active", active);
+    });
+}
+document.querySelectorAll("#rs-days input").forEach(function(input){
+    input.addEventListener("change", function(){
+        var days = [];
+        document.querySelectorAll("#rs-days input:checked").forEach(function(checked){
+            days.push(checked.value);
+        });
+        if (!days.length) {
+            input.checked = true;
+            days = [input.value];
+        }
+        _restartSchedule.days = days;
+        renderRestartSchedule();
+    });
+});
+["rs-enabled", "rs-time"].forEach(function(id){
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener("change", function(){
+        _restartSchedule = normalizeRestartSchedule(scheduleFromForm());
+        renderRestartSchedule();
+    });
+});
+function scheduleFromForm() {
+    var days = [];
+    document.querySelectorAll("#rs-days input:checked").forEach(function(input){
+        days.push(input.value);
+    });
+    if (!days.length) days = ["sun"];
+    return {
+        enabled: $("rs-enabled").checked,
+        days: days,
+        time: $("rs-time").value || "03:30",
+        updated_at: _restartSchedule.updated_at || "",
+        source: "camera",
+    };
+}
+function saveRestartSchedule() {
+    setBusy("btn-restart-save", true, "Saving...");
+    setMsg("restart-result", "", "");
+    fetch("/api/restart-schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(scheduleFromForm()),
+    }).then(function(r){
+        return r.json().then(function(d){ return { ok: r.ok, data: d }; });
+    }).then(function(res){
+        if (!res.ok) throw new Error(res.data.error || "Save failed");
+        _restartSchedule = normalizeRestartSchedule(res.data);
+        renderRestartSchedule();
+        setMsg("restart-result", "ok", "Restart schedule saved.");
+    }).catch(function(err){
+        setMsg("restart-result", "err", err.message || "Save failed");
+    }).finally(function(){
+        setBusy("btn-restart-save", false, "Save restart schedule");
+    });
+}
+function restartNow() {
+    if (!confirm("Restart this camera now?")) return;
+    setBusy("btn-restart-now", true, "Restarting...");
+    fetch("/api/restart", { method: "POST" }).then(function(r){
+        return r.json().then(function(d){ return { ok: r.ok, data: d }; });
+    }).then(function(res){
+        if (!res.ok) throw new Error(res.data.error || "Restart failed");
+        setMsg("restart-result", "ok", "Camera reboot requested.");
+    }).catch(function(err){
+        setBusy("btn-restart-now", false, "Restart now");
+        setMsg("restart-result", "err", err.message || "Restart failed");
+    });
 }
 function friendlyUptime(s) {
     // Server already formats as "3d 4h 12m" — just humanise zero/one.

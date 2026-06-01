@@ -6,6 +6,7 @@ Endpoints:
   GET    /cameras              - list all cameras (confirmed + pending)
   POST   /cameras              - register a new camera as pending (admin)
   POST   /cameras/<id>/confirm - confirm a discovered camera (admin)
+  POST   /cameras/<id>/reboot  - reboot a paired camera (admin)
   PUT    /cameras/<id>         - update name, location, recording mode (admin)
   DELETE /cameras/<id>         - remove camera and revoke cert (admin)
   GET    /cameras/<id>/status  - live status (online, fps, uptime)
@@ -506,6 +507,21 @@ def confirm_camera(camera_id):
     if error:
         return jsonify({"error": error}), status
     return jsonify(result), status
+
+
+@cameras_bp.route("/<camera_id>/reboot", methods=["POST"])
+@admin_required
+@csrf_protect
+def reboot_camera(camera_id):
+    """Request an immediate camera reboot. Admin only."""
+    error, status = current_app.camera_service.reboot(
+        camera_id,
+        user=session.get("username", ""),
+        ip=request.remote_addr or "",
+    )
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify({"message": "Camera reboot requested"}), status
 
 
 @cameras_bp.route("/<camera_id>", methods=["PUT"])

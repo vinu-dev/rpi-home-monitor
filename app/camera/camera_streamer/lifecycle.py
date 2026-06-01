@@ -48,6 +48,7 @@ from camera_streamer.heartbeat import HeartbeatSender
 from camera_streamer.led import LedController
 from camera_streamer.ota_agent import OTAAgent
 from camera_streamer.pairing import PairingManager
+from camera_streamer.restart_scheduler import CameraRestartScheduler
 from camera_streamer.status_server import CameraStatusServer
 from camera_streamer.stream import StreamManager
 from camera_streamer.wifi_setup import WifiSetupServer
@@ -409,6 +410,7 @@ class CameraLifecycle:
         self._heartbeat = None
         self._setup_server = None
         self._ota_agent = None
+        self._restart_scheduler = None
         self._pairing = PairingManager(config)
         self._control_handler = None
         # Background server-name resolver (#199). Replaces the previous
@@ -461,6 +463,8 @@ class CameraLifecycle:
             self._heartbeat.stop()
         if self._health:
             self._health.stop()
+        if self._restart_scheduler:
+            self._restart_scheduler.stop()
         if self._ota_agent:
             self._ota_agent.stop()
         if self._stream:
@@ -697,6 +701,12 @@ class CameraLifecycle:
         # OTA update agent (port 8080)
         self._ota_agent = OTAAgent(self._config)
         self._ota_agent.start()
+
+        self._restart_scheduler = CameraRestartScheduler(
+            self._config,
+            is_blocked=ota_installer.is_busy,
+        )
+        self._restart_scheduler.start()
 
         vcgencmd_path = getattr(self._platform, "vcgencmd_path", None)
         throttle_path = getattr(self._platform, "throttle_path", None)

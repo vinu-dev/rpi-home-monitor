@@ -22,6 +22,11 @@ from monitor.services.encoder_presets import (
     encoder_preset_params_match,
     get_encoder_preset,
 )
+from monitor.services.restart_schedule_model import (
+    is_schedule_newer,
+    next_run_at,
+    normalise_restart_schedule,
+)
 from monitor.services.throttle_state import (
     merge_throttle_state,
     sanitize_throttle_state,
@@ -79,6 +84,8 @@ STREAM_PARAM_FIELDS = (
     "image_quality",
 )
 STREAM_PARAMS = set(STREAM_PARAM_FIELDS)
+CONFIG_PARAM_FIELDS = (*STREAM_PARAM_FIELDS, "restart_schedule")
+CONFIG_PARAMS = set(CONFIG_PARAM_FIELDS)
 
 STREAM_PARAM_DEFAULTS = {
     "width": 1920,
@@ -139,6 +146,16 @@ def _stream_params_from_camera(camera) -> dict:
         if key == "image_quality" and isinstance(value, dict):
             value = dict(value)
         params[key] = value
+    return params
+
+
+def _config_params_from_camera(camera) -> dict:
+    params = _stream_params_from_camera(camera)
+    params["restart_schedule"] = normalise_restart_schedule(
+        getattr(camera, "restart_schedule", {}),
+        source="server",
+        stamp=False,
+    )
     return params
 
 
@@ -358,6 +375,10 @@ class CameraService:
             internal health metrics or the camera's LAN address.
         """
         cameras = self._store.get_cameras()
+        try:
+            timezone = self._store.get_settings().timezone
+        except Exception:
+            timezone = None
         result = []
         for c in cameras:
             # "streaming" = camera's RTSP ffmpeg is running (self-reported via
@@ -441,6 +462,16 @@ class CameraService:
                         "coalesce_seconds": 60,
                     }
                 ),
+                "restart_schedule": {
+                    **normalise_restart_schedule(
+                        getattr(c, "restart_schedule", {}),
+                        source="server",
+                        stamp=False,
+                    ),
+                    "next_run_at": next_run_at(
+                        getattr(c, "restart_schedule", {}), timezone
+                    ),
+                },
             }
             if admin_view:
                 # Admin-only fields: network topology + health metrics
@@ -497,6 +528,11 @@ class CameraService:
             "image_quality": dict(getattr(camera, "image_quality", {}) or {}),
             "encoder_max_pixels": int(getattr(camera, "encoder_max_pixels", 0) or 0),
             "board_name": getattr(camera, "board_name", "") or "",
+            "restart_schedule": normalise_restart_schedule(
+                getattr(camera, "restart_schedule", {}),
+                source="server",
+                stamp=False,
+            ),
         }, ""
 
     def confirm(
@@ -600,13 +636,19 @@ class CameraService:
                 )
 
         for key, value in data_to_apply.items():
+            if key == "restart_schedule":
+                value = (
+                    {**value, "source": "server"} if isinstance(value, dict) else value
+                )
+                value = normalise_restart_schedule(value, source="server", stamp=True)
+                data_to_apply[key] = value
             setattr(camera, key, value)
 
         # Push stream params to camera if any changed (ADR-0015).
         # Translate server-side names to the camera's wire keys
         # (e.g. recording_motion_enabled → motion_detection).
-        stream_changes = {k: v for k, v in data_to_apply.items() if k in STREAM_PARAMS}
-        wire_changes = _translate_stream_params_for_wire(stream_changes)
+        control_changes = {k: v for k, v in data_to_apply.items() if k in CONFIG_PARAMS}
+        wire_changes = _translate_stream_params_for_wire(control_changes)
         if wire_changes and camera.ip and self._control:
             result, err = self._control.set_config(
                 camera.ip,
@@ -621,7 +663,7 @@ class CameraService:
                     camera.config_sync = "pending"
             else:
                 camera.config_sync = "synced"
-        elif stream_changes and not camera.ip:
+        elif control_changes and not camera.ip:
             camera.config_sync = "pending"
 
         self._store.save_camera(camera)
@@ -772,6 +814,21 @@ class CameraService:
         if fw and isinstance(fw, str):
             camera.firmware_version = fw
 
+        incoming_restart_schedule = data.get("restart_schedule")
+        if isinstance(incoming_restart_schedule, dict):
+            observed_schedule = normalise_restart_schedule(
+                incoming_restart_schedule,
+                source="camera",
+                stamp=False,
+            )
+            stored_schedule = normalise_restart_schedule(
+                getattr(camera, "restart_schedule", {}),
+                source="server",
+                stamp=False,
+            )
+            if is_schedule_newer(observed_schedule, stored_schedule):
+                camera.restart_schedule = observed_schedule
+
         # Sensor capabilities — populated by the camera-side detection
         # layer (#173). Cameras on older firmware omit the key entirely
         # and the existing record is left untouched.
@@ -863,12 +920,25 @@ class CameraService:
         # If we have a pending config push, include it in the response
         response: dict = {"ok": True}
         extra_pending = dict(getattr(camera, "pending_config", {}) or {})
+        if isinstance(incoming_restart_schedule, dict):
+            stored_schedule = normalise_restart_schedule(
+                getattr(camera, "restart_schedule", {}),
+                source="server",
+                stamp=False,
+            )
+            observed_schedule = normalise_restart_schedule(
+                incoming_restart_schedule,
+                source="camera",
+                stamp=False,
+            )
+            if is_schedule_newer(stored_schedule, observed_schedule):
+                extra_pending["restart_schedule"] = stored_schedule
         if had_pending or extra_pending:
             pending_payload = {}
             if had_pending:
                 pending_payload.update(
                     _translate_stream_params_for_wire(
-                        _stream_params_from_camera(camera)
+                        _config_params_from_camera(camera)
                     )
                 )
             pending_payload.update(extra_pending)
@@ -891,12 +961,23 @@ class CameraService:
         if not camera:
             return "Camera not found", 404
 
-        # Only accept known stream params
+        # Only accept known camera config params
         for key in stream_config:
-            if key not in STREAM_PARAMS:
+            if key not in CONFIG_PARAMS:
                 return f"Unknown parameter: {key}", 400
 
         for key, value in stream_config.items():
+            if key == "restart_schedule":
+                value = normalise_restart_schedule(value, source="camera", stamp=False)
+                current_schedule = normalise_restart_schedule(
+                    getattr(camera, "restart_schedule", {}),
+                    source="server",
+                    stamp=False,
+                )
+                if not is_schedule_newer(value, current_schedule) and (
+                    value.get("updated_at") != current_schedule.get("updated_at")
+                ):
+                    continue
             setattr(camera, key, value)
 
         if camera.config_sync != "trust_lost":
@@ -912,6 +993,33 @@ class CameraService:
         )
 
         return "", 200
+
+    def reboot(self, camera_id: str, user: str = "", ip: str = "") -> tuple[str, int]:
+        """Request an immediate camera reboot over the paired control channel."""
+        camera = self._store.get_camera(camera_id)
+        if camera is None:
+            return "Camera not found", 404
+        if camera.status != "online" or not camera.ip:
+            return "Camera is not online", 409
+        if self._control is None:
+            return "Camera control unavailable", 503
+
+        result, err = self._control.reboot(camera.ip, camera_id=camera.id)
+        if err:
+            log.warning("Failed to request reboot for camera %s: %s", camera_id, err)
+            if err == CERT_MISMATCH_ERROR:
+                camera.config_sync = "trust_lost"
+                self._store.save_camera(camera)
+            return err, 502
+
+        self._log_audit(
+            "CAMERA_REBOOT_REQUESTED",
+            user,
+            ip,
+            f"requested reboot for {camera_id}",
+        )
+        _ = result
+        return "", 202
 
     def delete(self, camera_id: str, user: str = "", ip: str = "") -> tuple[str, int]:
         """Remove a camera and stop its video pipelines.
@@ -976,6 +1084,7 @@ class CameraService:
             # set the camera-level baseline; per-user overrides live
             # in user.notification_prefs.cameras{}.
             "notification_rule",
+            "restart_schedule",
         }
         unknown = set(data.keys()) - allowed
         if unknown:
@@ -1002,6 +1111,11 @@ class CameraService:
                         return f"notification_rule.{k} must be an integer"
                     if v < lo or v > hi:
                         return f"notification_rule.{k} must be {lo}..{hi}"
+
+        if "restart_schedule" in data and not isinstance(
+            data["restart_schedule"], dict
+        ):
+            return "restart_schedule must be an object"
 
         if (
             "recording_mode" in data

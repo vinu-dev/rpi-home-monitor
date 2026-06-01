@@ -43,6 +43,7 @@ from monitor.services.pairing_service import PairingService
 from monitor.services.provisioning_service import ProvisioningService
 from monitor.services.recording_scheduler import RecordingScheduler
 from monitor.services.recordings_service import RecordingsService
+from monitor.services.restart_schedule_service import RestartScheduleService
 from monitor.services.session_service import SessionService
 from monitor.services.settings_service import SettingsService
 from monitor.services.share_link_service import ShareLinkService
@@ -313,6 +314,14 @@ def _init_services(app):
     """Initialize application services with dependency injection."""
     recordings_dir = app.config["RECORDINGS_DIR"]
     app.settings_service = SettingsService(store=app.store, audit=app.audit)
+    app.restart_schedule_service = RestartScheduleService(
+        store=app.store,
+        audit=app.audit,
+        config_dir=app.config["CONFIG_DIR"],
+        is_blocked=lambda: bool(
+            getattr(getattr(app, "ota_service", None), "is_busy", lambda: False)()
+        ),
+    )
 
     # Settings is initialized before timestamp services consume time status.
     def _server_meta_provider():
@@ -658,8 +667,10 @@ def _startup(app):
     app.recording_scheduler.start()
     app.loop_recorder.start()
     app.offsite_backup_service.start()
+    app.restart_schedule_service.start()
     app.watchdog_notifier.start()
     atexit.register(app.watchdog_notifier.stop)
+    atexit.register(app.restart_schedule_service.stop)
 
     # mDNS browser — discovers cameras advertising _rtsp._tcp on the LAN (RFC 6762/6763)
     app.discovery_service.start_mdns_browser()

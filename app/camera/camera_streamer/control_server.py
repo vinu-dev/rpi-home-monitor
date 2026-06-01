@@ -16,6 +16,7 @@ import threading
 
 from camera_streamer import status_server as status_server_module
 from camera_streamer.control import parse_control_request
+from camera_streamer.restart_scheduler import request_reboot_async
 
 log = logging.getLogger("camera-streamer.control-server")
 
@@ -34,6 +35,7 @@ CONTROL_ROUTE_MATRIX = {
     "POST": frozenset(
         {
             "/api/v1/control/restart-stream",
+            "/api/v1/control/reboot",
             "/api/v1/control/stream/start",
             "/api/v1/control/stream/stop",
         }
@@ -197,6 +199,10 @@ def _make_control_handler(control_handler, stream_manager):
                     self._json_response({"restarted": ok, "status": "ok"})
                 else:
                     self._json_response({"error": "Stream manager not available"}, 503)
+                return
+            if self.path == "/api/v1/control/reboot":
+                request_reboot_async("server-requested")
+                self._json_response({"message": "Camera reboot requested"}, 202)
                 return
             if self.path == "/api/v1/control/stream/start":
                 result, error, status = control_handler.set_stream_state("running")
