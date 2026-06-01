@@ -1,12 +1,11 @@
 # REQ: SWR-024, SWR-050; RISK: RISK-010, RISK-012; SEC: SC-012; TEST: TC-023
 """Pin the server's mDNS identity before avahi-daemon starts.
 
-The server can have Ethernet and WiFi on the same LAN. Publishing the same
-hostname on both links can make Avahi detect a self-conflict and rename the
-host to ``rpi-divinu-2.local``. Cameras depend on the fixed
-``rpi-divinu.local`` name, so the server image runs this module as a small
-oneshot service before avahi-daemon and points Avahi at the generated config
-under /data.
+Cameras depend on the fixed ``rpi-divinu.local`` name during setup, pairing,
+time sync, and normal operation. The server may be reachable over Ethernet,
+WiFi, or both, and either link may appear after the oneshot service runs. The
+generated Avahi config therefore pins the hostname while allowing every trusted
+LAN interface that can carry mDNS instead of choosing one boot-time interface.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import logging
 import os
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from monitor.services.provisioning_service import SERVER_HOSTNAME
@@ -74,6 +73,17 @@ def _normalise_interface(interface: str) -> str:
     return iface
 
 
+def _normalise_interfaces(interfaces: Iterable[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    normalised: list[str] = []
+    for interface in interfaces:
+        iface = _normalise_interface(interface)
+        if iface and iface not in seen:
+            seen.add(iface)
+            normalised.append(iface)
+    return tuple(normalised)
+
+
 def _preferred_interfaces_from_env() -> tuple[str, ...]:
     raw = os.environ.get("MONITOR_AVAHI_PREFERRED_INTERFACES", "")
     if not raw.strip():
@@ -88,6 +98,16 @@ def _default_route_interface(run: CommandRunner = _command_output) -> str:
         if match:
             return match.group(1)
     return ""
+
+
+def _global_ipv4_interfaces(run: CommandRunner = _command_output) -> tuple[str, ...]:
+    output = run(["ip", "-4", "-o", "addr", "show", "scope", "global"])
+    interfaces: list[str] = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            interfaces.append(parts[1].rstrip(":"))
+    return tuple(interfaces)
 
 
 def _interface_has_ipv4(iface: str, run: CommandRunner = _command_output) -> bool:
@@ -117,42 +137,52 @@ def choose_publish_interface(
     preferred: tuple[str, ...] | None = None,
     run: CommandRunner = _command_output,
 ) -> str:
-    """Choose one interface so Avahi cannot self-conflict across LAN links."""
-    candidates = preferred or _preferred_interfaces_from_env()
+    """Return the first publish interface for older callers."""
+    interfaces = choose_publish_interfaces(preferred, run=run)
+    return interfaces[0] if interfaces else ""
+
+
+def choose_publish_interfaces(
+    preferred: tuple[str, ...] | None = None,
+    run: CommandRunner = _command_output,
+) -> tuple[str, ...]:
+    """Choose LAN interfaces where Avahi should answer for the server name.
+
+    Avahi supports a comma-separated ``allow-interfaces`` list. Keeping both
+    Ethernet and WiFi in that list lets the daemon publish when either link
+    comes up later, while still excluding VPN/container interfaces such as
+    Tailscale and Docker.
+    """
+    candidates = _normalise_interfaces(preferred or _preferred_interfaces_from_env())
     default_iface = _default_route_interface(run)
-    if (
-        _is_physical_candidate(default_iface, candidates)
-        and default_iface in candidates
-        and _interface_has_ipv4(default_iface, run)
-    ):
-        return default_iface
+    discovered = list(candidates)
 
-    for iface in candidates:
-        if _interface_has_ipv4(iface, run):
-            return iface
+    for iface in (default_iface, *_global_ipv4_interfaces(run)):
+        iface = _normalise_interface(iface)
+        if iface and _is_physical_candidate(iface, candidates):
+            discovered.append(iface)
 
-    for iface in candidates:
-        if _interface_exists(iface, run):
-            return iface
-
-    if _is_physical_candidate(default_iface, candidates):
-        return default_iface
-
-    return candidates[0] if candidates else ""
+    return _normalise_interfaces(discovered)
 
 
-def _pinned_lines(host_name: str, interface: str) -> list[str]:
+def _pinned_lines(host_name: str, interfaces: Iterable[str] | str) -> list[str]:
     host = _normalise_hostname(host_name)
-    iface = _normalise_interface(interface)
+    if isinstance(interfaces, str):
+        interfaces = (interfaces,)
+    interface_list = _normalise_interfaces(interfaces)
     lines = [f"host-name={host}"]
-    if iface:
-        lines.append(f"allow-interfaces={iface}")
+    if interface_list:
+        lines.append(f"allow-interfaces={','.join(interface_list)}")
     return lines
 
 
-def render_avahi_config(existing: str, host_name: str, interface: str) -> str:
+def render_avahi_config(
+    existing: str,
+    host_name: str,
+    interfaces: Iterable[str] | str,
+) -> str:
     """Return Avahi config text with pinned [server] identity settings."""
-    pinned = _pinned_lines(host_name, interface)
+    pinned = _pinned_lines(host_name, interfaces)
     lines = existing.splitlines()
     output: list[str] = []
     in_server = False
@@ -213,10 +243,11 @@ def apply_avahi_pin(
         os.environ.get("MONITOR_AVAHI_CONFIG", DEFAULT_CONFIG_PATH)
     )
     host = host_name or os.environ.get("MONITOR_AVAHI_HOST_NAME", SERVER_HOSTNAME)
-    interface = choose_publish_interface(preferred, run=run)
+    interfaces = choose_publish_interfaces(preferred, run=run)
+    interface_csv = ",".join(interfaces)
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    changed = write_if_changed(path, render_avahi_config(existing, host, interface))
-    return changed, interface
+    changed = write_if_changed(path, render_avahi_config(existing, host, interfaces))
+    return changed, interface_csv
 
 
 def main() -> int:

@@ -205,7 +205,8 @@ sync
 
 ### 4.2 Find the Server on Your Network
 
-The server advertises itself via mDNS. From any computer on the same LAN:
+The server advertises itself via mDNS on its trusted LAN interfaces. Ethernet,
+WiFi, and dual-link setups should all resolve the same fixed name:
 
 ```bash
 # Linux/macOS
@@ -456,7 +457,7 @@ nmcli connection up "Wired connection 1"
 | Connection refused | nginx not running | `systemctl start nginx` |
 | 502 Bad Gateway | Flask app crashed | `systemctl restart monitor` and check logs |
 | Certificate error | Self-signed cert | Accept the browser warning (expected) |
-| Can't reach `rpi-divinu.local` | mDNS not working | Use IP address directly |
+| Can't reach `rpi-divinu.local` | mDNS not working | Confirm the client is on the same LAN, multicast/UDP 5353 is allowed, and Avahi is publishing on the active server interface; use the IP address directly only as a temporary diagnostic |
 
 ### 7.5 Poor Video Quality or Lag
 
