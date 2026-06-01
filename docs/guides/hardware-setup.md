@@ -539,7 +539,10 @@ and is deleted after a successful install.
 The system uses A/B partitions with automatic rollback if the new image fails
 to boot. Cameras own their own activation reboot after the inactive slot is
 written, and the server reports success only when the camera comes back on the
-expected target version.
+expected target version. Uploading/staging bundles is allowed during other
+maintenance, but starting installs is serialized across device classes: a server
+install waits for active camera updates to finish, and camera installs wait for
+an active server update to finish.
 
 ### 8.4 Maintenance Restarts
 

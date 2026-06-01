@@ -70,3 +70,21 @@ def test_common_camera_bundle_picker_cannot_be_left_disabled():
     assert 'style="position:absolute;left:-10000px;' in common_picker_block
     assert ":disabled=" not in common_picker_block
     assert "input.disabled = false;" in text
+
+
+def test_ota_install_buttons_lock_across_server_and_camera_updates():
+    """Install starts are mutually exclusive; staging uploads remain separate."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    for expected in [
+        "serverInstallLockedByCamera",
+        "cameraInstallLockedByServer",
+        "A camera update is running. Server install is locked",
+        "Server update is running. Camera installs are locked",
+        "wait before installing a server update",
+        "wait before starting camera updates",
+        "serverInstallLockedByCamera() ||",
+        "cameraAnyBusy() || cameraInstallLockedByServer()",
+        "if (this.cameraInstallLockedByServer()) return false;",
+    ]:
+        assert expected in text

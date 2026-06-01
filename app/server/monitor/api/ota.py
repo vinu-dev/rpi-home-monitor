@@ -51,8 +51,64 @@ CAMERA_BUSY_STATES = {
     "rebooting",
     "validating",
 }
+SERVER_INSTALL_ACTIVE_STATES = {
+    "verifying",
+    "installing",
+    "rebooting",
+}
 CAMERA_LIBRARY_MANIFEST_SUFFIX = ".json"
 CAMERA_CUSTOM_MANIFEST = "manifest.json"
+
+
+def _normal_state(status):
+    return str((status or {}).get("state") or "idle").lower()
+
+
+def _active_camera_update(ota):
+    """Return the first camera update that would conflict with server install."""
+    for camera in current_app.store.get_cameras():
+        if camera.status == "pending":
+            continue
+        state = _normal_state(ota.get_status(camera.id))
+        if state in CAMERA_BUSY_STATES:
+            return camera.id, state
+    return "", ""
+
+
+def _reject_if_camera_update_active(ota):
+    camera_id, state = _active_camera_update(ota)
+    if not camera_id:
+        return None
+    return (
+        jsonify(
+            {
+                "error": (
+                    "Camera update is already running "
+                    f"({camera_id}: {state}). Wait for camera updates to "
+                    "finish before installing a server update."
+                )
+            }
+        ),
+        409,
+    )
+
+
+def _reject_if_server_install_active(ota):
+    state = _normal_state(ota.get_status("server"))
+    if state not in SERVER_INSTALL_ACTIVE_STATES:
+        return None
+    return (
+        jsonify(
+            {
+                "error": (
+                    "Server update is already running "
+                    f"({state}). Wait for the server update to finish before "
+                    "starting camera updates."
+                )
+            }
+        ),
+        409,
+    )
 
 
 def _safe_camera_id(camera_id):
@@ -547,6 +603,9 @@ def install_server_image():
         return jsonify(
             {"error": f"A server update is already in progress ({state})"}
         ), 409
+    camera_lock = _reject_if_camera_update_active(ota)
+    if camera_lock:
+        return camera_lock
 
     staging = ota.staging_dir
     if not os.path.isdir(staging):
@@ -1084,6 +1143,9 @@ def push_camera_update(camera_id):
 
     ota = current_app.ota_service
     ota.ensure_storage()
+    server_lock = _reject_if_server_install_active(ota)
+    if server_lock:
+        return server_lock
     body = request.get_json(silent=True) or {}
     requested_scope = str(body.get("scope") or "common")
     if requested_scope == "custom":
@@ -1188,6 +1250,9 @@ def push_all_eligible_cameras():
     """Push the reusable camera bundle to all online eligible cameras."""
     ota = current_app.ota_service
     ota.ensure_storage()
+    server_lock = _reject_if_server_install_active(ota)
+    if server_lock:
+        return server_lock
     record = _latest_camera_bundle(_read_camera_bundle_records(ota))
     if record is None:
         return jsonify({"error": "No reusable camera bundle uploaded"}), 409

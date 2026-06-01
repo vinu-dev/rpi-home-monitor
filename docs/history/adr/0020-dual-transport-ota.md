@@ -65,7 +65,7 @@ The user's practical ask is "I should be able to update both boxes from one scre
 | GET | `/api/v1/ota/usb/scan` | admin | find .swu on mounted USBs |
 | POST | `/api/v1/ota/usb/import` | admin+CSRF | import USB bundle |
 
-`push` returns 202 immediately and runs the actual upload on a background thread — a 150 MB bundle over 2.4 GHz WiFi is ~40 s, well past gunicorn's default worker timeout. The UI polls `/api/v1/ota/status` at 1.5 s while anything is in flight, 5 s when idle.
+`push` returns 202 immediately and runs the actual upload on a background thread — a 150 MB bundle over 2.4 GHz WiFi is ~40 s, well past gunicorn's default worker timeout. The UI polls `/api/v1/ota/status` at 1.5 s while anything is in flight, 5 s when idle. Server install and camera install starts are mutually exclusive: the operator can still upload/stage bundles, but cannot start a server update while any camera update is transferring/installing/rebooting, and cannot start camera updates while the server is verifying/installing/rebooting.
 
 ### UI
 
@@ -215,3 +215,13 @@ can retry or explicitly discard it. The status policy also treats runtime
 versions such as `1.6.10` as matching bundle labels such as
 `v1.6.10-dev`, so completed lab/dev updates settle to "already current"
 instead of staying in "installed; waiting for version refresh".
+
+**9. Cross-device update start lock.** The server Settings UI and OTA API now
+separate staging from activation. Uploading a server bundle, a reusable common
+camera bundle, or a one-shot custom camera bundle remains allowed during other
+maintenance. Starting an install does not: server self-update is refused while
+any camera update is transferring, verifying, installing, validating, or
+rebooting, and camera update starts are refused while the server is verifying,
+installing, or rebooting. This prevents the server from rebooting out from under
+active camera pushes and prevents camera updates from starting while the server
+is in the middle of its own activation.
