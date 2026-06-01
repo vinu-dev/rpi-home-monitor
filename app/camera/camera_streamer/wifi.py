@@ -15,6 +15,8 @@ import struct
 import subprocess
 import time
 
+from camera_streamer import privileged
+
 log = logging.getLogger("camera-streamer.wifi")
 
 # Default hotspot settings
@@ -369,6 +371,21 @@ def set_hostname(hostname: str) -> bool:
     wire. Failure of the goodbye does not block the hostname change.
     """
     try:
+        if privileged.should_use_helper():
+            try:
+                privileged.request(
+                    "hostname.set",
+                    {"hostname": hostname},
+                    timeout=25,
+                )
+                log.info("Hostname set to %s via privileged helper", hostname)
+                return True
+            except privileged.PrivilegedHelperError as exc:
+                log.warning(
+                    "Privileged hostname helper failed, falling back locally: %s",
+                    exc,
+                )
+
         # Snapshot the previous hostname so we can log the rotation
         # explicitly. avahi-daemon itself is what knew the old name —
         # we read socket.gethostname() purely for the log line.

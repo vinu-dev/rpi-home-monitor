@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from camera_streamer import privileged
 from camera_streamer.wifi import (
     HOTSPOT_DEFAULT_PASS,
     HOTSPOT_PASS,
@@ -422,6 +423,48 @@ class TestGetHostname:
 
 
 class TestSetHostname:
+    def test_uses_privileged_helper_when_available(self):
+        with (
+            patch(
+                "camera_streamer.wifi.privileged.should_use_helper", return_value=True
+            ),
+            patch("camera_streamer.wifi.privileged.request") as mock_request,
+            patch("camera_streamer.wifi.subprocess.run") as mock_run,
+        ):
+            result = set_hostname("rpi-divinu-cam-a5cf")
+
+        assert result is True
+        mock_request.assert_called_once_with(
+            "hostname.set",
+            {"hostname": "rpi-divinu-cam-a5cf"},
+            timeout=25,
+        )
+        mock_run.assert_not_called()
+
+    def test_falls_back_when_privileged_helper_fails(self):
+        runs = []
+
+        def fake_run(cmd, **kwargs):
+            runs.append(cmd)
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+        with (
+            patch(
+                "camera_streamer.wifi.privileged.should_use_helper", return_value=True
+            ),
+            patch(
+                "camera_streamer.wifi.privileged.request",
+                side_effect=privileged.PrivilegedHelperError("helper unavailable"),
+            ),
+            patch("camera_streamer.wifi.subprocess.run", side_effect=fake_run),
+            patch("camera_streamer.wifi.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+        ):
+            result = set_hostname("rpi-divinu-cam-a5cf")
+
+        assert result is True
+        assert ["hostname", "rpi-divinu-cam-a5cf"] in runs
+
     def test_returns_true_on_success(self, tmp_path):
         with patch(
             "camera_streamer.wifi.subprocess.run", return_value=MagicMock(returncode=0)

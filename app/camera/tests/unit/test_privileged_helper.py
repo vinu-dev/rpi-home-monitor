@@ -119,6 +119,94 @@ def test_hotspot_set_password_rejects_short_password():
         privileged_helper._op_hotspot_set_password({"password": "short"})
 
 
+def test_hostname_set_validates_and_updates_kernel_and_avahi(tmp_path):
+    target = tmp_path / "config" / "hostname"
+    mock_pwd = MagicMock()
+    mock_grp = MagicMock()
+    mock_pwd.getpwnam.return_value = MagicMock(pw_uid=321)
+    mock_grp.getgrnam.return_value = MagicMock(gr_gid=654)
+
+    with (
+        patch.object(privileged_helper, "CAMERA_HOSTNAME_FILE", str(target)),
+        patch.object(privileged_helper, "pwd", mock_pwd),
+        patch.object(privileged_helper, "grp", mock_grp),
+        patch.object(privileged_helper.os, "chown", create=True),
+        patch("camera_streamer.privileged_helper.subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        data = privileged_helper._op_hostname_set({"hostname": "rpi-divinu-cam-a5cf"})
+
+    assert data["hostname"] == "rpi-divinu-cam-a5cf"
+    assert target.read_text(encoding="utf-8") == "rpi-divinu-cam-a5cf\n"
+    assert [call.args[0] for call in mock_run.call_args_list] == [
+        ["hostname", "rpi-divinu-cam-a5cf"],
+        ["avahi-set-host-name", "rpi-divinu-cam-a5cf"],
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad_hostname",
+    ["", "-bad", "bad-", "bad_name", "bad.name", "a" * 64],
+)
+def test_hostname_set_rejects_invalid_hostnames(bad_hostname):
+    with pytest.raises(privileged_helper.HelperRequestError, match="hostname"):
+        privileged_helper._op_hostname_set({"hostname": bad_hostname})
+
+
+def test_hostname_set_restarts_avahi_when_dbus_update_fails(tmp_path):
+    target = tmp_path / "config" / "hostname"
+    results = [
+        MagicMock(returncode=0, stdout="", stderr=""),
+        MagicMock(returncode=1, stdout="", stderr="Access denied"),
+        MagicMock(returncode=0, stdout="", stderr=""),
+    ]
+
+    with (
+        patch.object(privileged_helper, "CAMERA_HOSTNAME_FILE", str(target)),
+        patch.object(privileged_helper, "_camera_identity", return_value=None),
+        patch("camera_streamer.privileged_helper.subprocess.run") as mock_run,
+    ):
+        mock_run.side_effect = results
+        data = privileged_helper._op_hostname_set({"hostname": "rpi-divinu-cam-a5cf"})
+
+    assert data["avahi_returncode"] == 1
+    assert [call.args[0] for call in mock_run.call_args_list] == [
+        ["hostname", "rpi-divinu-cam-a5cf"],
+        ["avahi-set-host-name", "rpi-divinu-cam-a5cf"],
+        ["systemctl", "restart", "avahi-daemon"],
+    ]
+
+
+def test_hostname_set_treats_avahi_redundant_as_success(tmp_path):
+    target = tmp_path / "config" / "hostname"
+    results = [
+        MagicMock(returncode=0, stdout="", stderr=""),
+        MagicMock(
+            returncode=1,
+            stdout="",
+            stderr=(
+                "Failed to create host name resolver: The requested operation "
+                "is invalid because redundant"
+            ),
+        ),
+    ]
+
+    with (
+        patch.object(privileged_helper, "CAMERA_HOSTNAME_FILE", str(target)),
+        patch.object(privileged_helper, "_camera_identity", return_value=None),
+        patch("camera_streamer.privileged_helper.subprocess.run") as mock_run,
+    ):
+        mock_run.side_effect = results
+        data = privileged_helper._op_hostname_set({"hostname": "rpi-divinu-cam-a5cf"})
+
+    assert data["avahi_returncode"] == 1
+    assert data["avahi_effective"] == "ok"
+    assert [call.args[0] for call in mock_run.call_args_list] == [
+        ["hostname", "rpi-divinu-cam-a5cf"],
+        ["avahi-set-host-name", "rpi-divinu-cam-a5cf"],
+    ]
+
+
 def test_system_reboot_uses_systemctl_reboot():
     with patch("camera_streamer.privileged_helper.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")

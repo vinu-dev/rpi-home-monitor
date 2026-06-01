@@ -14,7 +14,10 @@ DESCRIPTION = "Bind-mounts /data/network/system-connections over rootfs NM conne
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI = "file://nm-persist.sh"
+SRC_URI = " \
+    file://nm-persist.sh \
+    file://10-home-monitor-hostname.conf \
+    "
 
 S = "${WORKDIR}"
 
@@ -23,6 +26,10 @@ inherit systemd
 do_install() {
     install -d ${D}/opt/monitor/scripts
     install -m 0755 ${WORKDIR}/nm-persist.sh ${D}/opt/monitor/scripts/nm-persist.sh
+
+    install -d ${D}${sysconfdir}/NetworkManager/conf.d
+    install -m 0644 ${WORKDIR}/10-home-monitor-hostname.conf \
+        ${D}${sysconfdir}/NetworkManager/conf.d/10-home-monitor-hostname.conf
 
     install -d ${D}${systemd_system_unitdir}
 
@@ -50,6 +57,7 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 FILES:${PN} = " \
     /opt/monitor/scripts/nm-persist.sh \
+    ${sysconfdir}/NetworkManager/conf.d/10-home-monitor-hostname.conf \
     ${systemd_system_unitdir}/nm-persist.service \
     "
 
