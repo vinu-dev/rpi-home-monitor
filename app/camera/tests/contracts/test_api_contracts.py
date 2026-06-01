@@ -690,6 +690,12 @@ class TestStatusServerApiStatusContract:
                 'id="btn-reset"',
             ]:
                 assert anchor in html
+            assert 'id="btn-restart-now" onclick="restartNow()"' in html
+            assert 'id="btn-restart-save" onclick="saveRestartSchedule()"' in html
+            assert "window.restartNow = restartNow;" in html
+            assert "window.saveRestartSchedule = saveRestartSchedule;" in html
+            assert 'credentials: "same-origin"' in html
+            assert "Camera reboot requested. This page will reconnect" in html
             assert "Reach this camera" not in html
             assert "/static/qrcode.min.js" not in html
         finally:
@@ -736,6 +742,32 @@ class TestStatusServerNoPasswordAuthContract:
                 data, status = _json_post(path, body, scheme="https")
             assert status == 503
             _assert_fields(data, {"error"})
+        finally:
+            server.stop()
+
+
+class TestStatusServerRestartContract:
+    """POST /api/restart requests a local reboot after auth."""
+
+    @patch("camera_streamer.status_server.request_reboot_async")
+    def test_authenticated_restart_requests_reboot(
+        self, mock_reboot, configured_config
+    ):
+        server = CameraStatusServer(
+            configured_config,
+            control_handler=_make_control_handler(configured_config),
+        )
+        server.start()
+        try:
+            data, status = _json_post(
+                "/api/restart",
+                {},
+                scheme="https",
+                headers=_auth_headers(),
+            )
+            assert status == 202
+            _assert_fields(data, {"message"})
+            mock_reboot.assert_called_once_with("manual")
         finally:
             server.stop()
 

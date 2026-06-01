@@ -1454,7 +1454,7 @@ details[open] summary {
             <strong>Camera restart</strong>
             <div class="hint" id="restart-summary">Scheduled restart off</div>
           </div>
-          <button class="btn btn--outline btn--sm" id="btn-restart-now" onclick="restartNow()">Restart now</button>
+          <button class="btn btn--outline btn--sm" type="button" id="btn-restart-now" onclick="restartNow()">Restart now</button>
         </div>
         <label class="restart-toggle"><input type="checkbox" id="rs-enabled"> Scheduled restart</label>
         <div class="restart-days" id="rs-days">
@@ -1471,7 +1471,7 @@ details[open] summary {
           <input class="input" id="rs-time" type="time" value="03:30">
           <div class="hint">Next: <span id="restart-next">not scheduled</span></div>
         </div>
-        <button class="btn btn--primary btn--full" id="btn-restart-save" onclick="saveRestartSchedule()">Save restart schedule</button>
+        <button class="btn btn--primary btn--full" type="button" id="btn-restart-save" onclick="saveRestartSchedule()">Save restart schedule</button>
         <div id="restart-result"></div>
       </div>
     </div>
@@ -1820,11 +1820,22 @@ function saveRestartSchedule() {
 function restartNow() {
     if (!confirm("Restart this camera now?")) return;
     setBusy("btn-restart-now", true, "Restarting...");
-    fetch("/api/restart", { method: "POST" }).then(function(r){
-        return r.json().then(function(d){ return { ok: r.ok, data: d }; });
+    setMsg("restart-result", "warn", "Restart request sent. Waiting for the camera to go offline...");
+    fetch("/api/restart", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" },
+        cache: "no-store",
+    }).then(function(r){
+        return r.text().then(function(text){
+            var data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch(e) { data = { error: text || "Restart failed" }; }
+            return { ok: r.ok, data: data };
+        });
     }).then(function(res){
         if (!res.ok) throw new Error(res.data.error || "Restart failed");
-        setMsg("restart-result", "ok", "Camera reboot requested.");
+        setMsg("restart-result", "ok", "Camera reboot requested. This page will reconnect after it starts again.");
+        setTimeout(function(){ window.location.reload(); }, 45000);
     }).catch(function(err){
         setBusy("btn-restart-now", false, "Restart now");
         setMsg("restart-result", "err", err.message || "Restart failed");
@@ -2342,6 +2353,8 @@ window.doPassword = doPassword;
 window.toggleStreamEdit = toggleStreamEdit;
 window.onResChange = onResChange;
 window.saveStream = saveStream;
+window.saveRestartSchedule = saveRestartSchedule;
+window.restartNow = restartNow;
 window.checkResetConfirm = checkResetConfirm;
 window.doReset = doReset;
 window.uploadOta = uploadOta;
