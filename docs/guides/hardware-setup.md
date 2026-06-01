@@ -526,13 +526,20 @@ MicroSD cards degrade with writes. Signs of failure:
 # Production build: sign the update
 ./scripts/build-swu.sh --target server --rootfs build/tmp-glibc/deploy/images/raspberrypi4-64/home-monitor-image-prod-raspberrypi4-64.rootfs.ext4.gz --sign
 
-# Upload via the web dashboard: System → OTA Update
-# Or push via API:
-curl -X POST https://rpi-divinu.local/api/v1/ota/upload \
-  -F "image=@signed-update.swu"
+# Upload via the web dashboard: Settings -> Updates.
 ```
 
-The system uses A/B partitions with automatic rollback if the new image fails to boot.
+The server card installs a server `.swu` and reboots the server. The camera
+section has one common camera bundle tile: upload a camera `.swu` once, review
+the target version and eligible-camera count, then update all eligible online
+cameras or a single camera. For a one-off lab/recovery case, use a camera
+card's custom bundle upload; that temporary file is stored only for that camera
+and is deleted after a successful install.
+
+The system uses A/B partitions with automatic rollback if the new image fails
+to boot. Cameras own their own activation reboot after the inactive slot is
+written, and the server reports success only when the camera comes back on the
+expected target version.
 
 ---
 

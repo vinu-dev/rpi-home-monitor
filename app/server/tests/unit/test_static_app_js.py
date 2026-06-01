@@ -34,6 +34,11 @@ def test_camera_ota_uses_dedicated_multi_camera_status_layout():
 
     for expected in [
         "ota-camera-list",
+        "ota-common-bundle",
+        "camera_bundle",
+        "uploadCameraLibraryBundle",
+        "uploadCustomCameraBundle",
+        "pushAllCameraBundles",
         "ota-device-card",
         "ota-job-panel",
         "otaProgressValue",

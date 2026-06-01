@@ -449,7 +449,7 @@ Boot uses U-Boot (`u-boot-rpi` from meta-raspberrypi) for boot counting (`bootli
 
 #### SR-SRV-10: OTA Update Management
 
-> **Status: Implemented / release-gated.** Server OTA service, dashboard upload, USB import/staging, reusable camera bundle library, and server-pushed camera updates are implemented. Production releases still need release-specific signed install/reboot/rollback evidence. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
+> **Status: Implemented / release-gated.** Server OTA service, dashboard upload, USB import/staging, reusable common camera bundle library, one-shot per-camera custom bundle jobs, and server-pushed camera updates are implemented. Production releases still need release-specific signed install/reboot/rollback evidence. See [update-roadmap.md](../planning/update-roadmap.md), ADR-0008, and ADR-0014.
 
 - Dual rootfs partitions (A/B layout) using SWUpdate + U-Boot boot counting (`bootlimit=3`)
 - **Multi-mode delivery** (5 modes, single `inbox → verify → staging → install` pipeline):

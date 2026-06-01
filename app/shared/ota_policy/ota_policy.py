@@ -24,6 +24,7 @@ __all__ = [
     "classify_update",
     "compare_versions",
     "is_blocked_downgrade",
+    "versions_match",
 ]
 
 _SEMVER_RE = re.compile(
@@ -35,6 +36,9 @@ _SEMVER_RE = re.compile(
     r"(?:\+[0-9A-Za-z.-]+)?$"
 )
 _NUM_RE = re.compile(r"^(0|[1-9]\d*)$")
+_BUILD_PROFILE_VERSION_RE = re.compile(
+    r"^(?P<base>v?\d+\.\d+\.\d+)-(?P<profile>dev|prod)$"
+)
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,39 @@ def compare_versions(left: str, right: str) -> int | None:
     return _compare_prerelease(left_parsed.prerelease, right_parsed.prerelease)
 
 
+def _strip_build_profile_suffix(version: str) -> str:
+    match = _BUILD_PROFILE_VERSION_RE.match((version or "").strip())
+    if not match:
+        return version
+    return match.group("base")
+
+
+def versions_match(actual: str, expected: str) -> bool:
+    """Return True when runtime and target labels refer to the same image.
+
+    Runtime firmware reports plain ``VERSION_ID`` values such as ``1.6.10``.
+    Lab/dev SWU labels may include a build profile suffix such as
+    ``v1.6.10-dev``. For activation confirmation those are the same image,
+    while real prereleases like ``1.6.10-dev.20260601`` remain distinct.
+    """
+
+    actual = str(actual or "")
+    expected = str(expected or "")
+    if not expected:
+        return False
+    candidates = (
+        (actual, expected),
+        (_strip_build_profile_suffix(actual), _strip_build_profile_suffix(expected)),
+    )
+    for actual_candidate, expected_candidate in candidates:
+        if actual_candidate == expected_candidate:
+            return True
+        ordering = compare_versions(actual_candidate, expected_candidate)
+        if ordering == 0:
+            return True
+    return False
+
+
 def classify_update(current_version: str, target_version: str) -> UpdateDecision:
     """Classify an OTA bundle against the running image.
 
@@ -148,6 +185,13 @@ def classify_update(current_version: str, target_version: str) -> UpdateDecision
 
     current = (current_version or "").strip()
     target = (target_version or "").strip()
+    if versions_match(current, target):
+        return UpdateDecision(
+            relation="same",
+            allowed=True,
+            current_version=current,
+            target_version=target,
+        )
     ordering = compare_versions(target, current)
     if ordering is None:
         return UpdateDecision(

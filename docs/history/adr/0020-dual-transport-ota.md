@@ -196,3 +196,22 @@ pairing/setup, WiFi connect, reset, and normal runtime. The ACT LED
 shows the product state consistently across both devices, and
 non-product LEDs are quieted only on a best-effort basis so LED feedback
 can never block boot or recovery.
+
+## Post-implementation amendments (2026-06-01)
+
+**8. Fleet bundle tile plus one-shot per-camera overrides.** The
+server Settings -> Updates UI now separates the reusable camera bundle
+from individual camera cards. A common camera bundle is uploaded once,
+stored under `/data/ota/camera-library`, summarized by target version and
+eligible camera count, and can be pushed to all online cameras whose
+running version differs from that target. Each camera card keeps the
+same shape and always shows current version, target version, bundle
+source, and per-camera status. For exceptional cases, an admin can
+upload a custom bundle on one camera card; that file is stored only as a
+temporary job under `/data/ota/camera-custom/<camera-id>/`, is never
+added to the reusable library, and is removed after the camera install
+completes successfully. Failed custom jobs keep the file so the admin
+can retry or explicitly discard it. The status policy also treats runtime
+versions such as `1.6.10` as matching bundle labels such as
+`v1.6.10-dev`, so completed lab/dev updates settle to "already current"
+instead of staying in "installed; waiting for version refresh".

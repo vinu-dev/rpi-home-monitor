@@ -12,11 +12,15 @@ from monitor.api import ota as ota_api
 def _ota(tmp_path):
     inbox = tmp_path / "inbox"
     library = tmp_path / "camera-library"
+    custom = tmp_path / "camera-custom"
     inbox.mkdir()
     library.mkdir()
+    custom.mkdir()
     return SimpleNamespace(
+        ota_dir=str(tmp_path),
         inbox_dir=str(inbox),
         camera_staging_dir=str(library),
+        camera_custom_dir=str(custom),
     )
 
 
@@ -120,3 +124,55 @@ def test_discard_legacy_camera_inbox_ignores_remove_errors(tmp_path):
 
     called_path = rmtree.call_args.args[0]
     assert os.path.basename(called_path) == "camera-cam-001bad"
+
+
+def test_camera_bundle_summary_counts_eligible_same_and_offline(tmp_path):
+    record = {
+        "filename": "camera.swu",
+        "target_version": "v1.6.2-dev",
+        "uploaded_at": 123,
+    }
+    cameras = [
+        SimpleNamespace(status="online", firmware_version="1.6.1"),
+        SimpleNamespace(status="online", firmware_version="1.6.2"),
+        SimpleNamespace(status="offline", firmware_version="1.6.1"),
+        SimpleNamespace(status="pending", firmware_version="1.6.1"),
+    ]
+
+    summary = ota_api._camera_bundle_summary(record, cameras)
+
+    assert summary["eligible_count"] == 1
+    assert summary["already_current_count"] == 1
+    assert summary["offline_count"] == 1
+    assert summary["total_count"] == 3
+
+
+def test_custom_camera_record_is_read_and_discarded(tmp_path):
+    ota = _ota(tmp_path)
+    custom_dir = tmp_path / "camera-custom" / "cam-001"
+    custom_dir.mkdir()
+    bundle = custom_dir / "custom.swu"
+    bundle.write_bytes(b"bundle")
+
+    with (
+        patch(
+            "monitor.api.ota.ota_service.extract_bundle_version", return_value="1.6.2"
+        ),
+        patch("monitor.api.ota.time.time", return_value=123.0),
+    ):
+        record = ota_api._write_camera_custom_record(
+            ota,
+            "cam-001",
+            str(bundle),
+            "custom.swu",
+            "b" * 64,
+        )
+
+    assert record["bundle_scope"] == "custom"
+    loaded = ota_api._read_camera_custom_record(ota, "cam-001")
+    assert loaded["target_version"] == "1.6.2"
+    assert loaded["path"] == str(bundle)
+
+    ota_api._discard_camera_custom_record(ota, "cam-001")
+
+    assert ota_api._read_camera_custom_record(ota, "cam-001") is None
