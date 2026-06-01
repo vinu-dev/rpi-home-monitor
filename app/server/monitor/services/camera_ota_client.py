@@ -26,7 +26,6 @@ import http.client
 import json
 import logging
 import os
-import re
 import ssl
 import time
 
@@ -60,43 +59,10 @@ STATUS_TIMEOUT = 10
 INSTALL_POLL_INTERVAL = 5
 INSTALL_POLL_TIMEOUT = 900
 BUSY_STATES = {"downloading", "verifying", "installing", "rebooting", "validating"}
-_BUILD_PROFILE_VERSION_RE = re.compile(
-    r"^(?P<base>v?\d+\.\d+\.\d+)-(?P<profile>dev|prod)$"
-)
-
-
-def _strip_build_profile_suffix(version: str) -> str:
-    """Remove a dev/prod build-profile suffix from a plain release version.
-
-    Runtime firmware reports /etc/os-release VERSION_ID (for example,
-    ``1.6.5``). Some staged bundles still carry the build profile in
-    their target label (``v1.6.5-dev``). For activation confirmation,
-    those represent the same running image; real prereleases such as
-    ``1.6.5-dev.20260531`` are left untouched.
-    """
-
-    match = _BUILD_PROFILE_VERSION_RE.match((version or "").strip())
-    if not match:
-        return version
-    return match.group("base")
 
 
 def _version_matches(actual, expected):
-    actual = str(actual or "")
-    expected = str(expected or "")
-    if not expected:
-        return False
-    candidates = (
-        (actual, expected),
-        (_strip_build_profile_suffix(actual), _strip_build_profile_suffix(expected)),
-    )
-    for actual_candidate, expected_candidate in candidates:
-        if actual_candidate == expected_candidate:
-            return True
-        ordering = ota_policy.compare_versions(actual_candidate, expected_candidate)
-        if ordering == 0:
-            return True
-    return False
+    return ota_policy.versions_match(actual, expected)
 
 
 def _busy_status_message(status):

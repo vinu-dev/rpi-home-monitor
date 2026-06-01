@@ -46,12 +46,12 @@ The intended trust model is:
 
 | Area | Status | Notes |
 |---|---|---|
-| OTA API surface | Implemented | Server self-update, server-pushed camera update, and camera-direct upload are wired through the GUI/API and covered by tests |
+| OTA API surface | Implemented | Server self-update, reusable common camera bundles, one-shot per-camera custom bundles, server-pushed camera update, and camera-direct upload are wired through the GUI/API and covered by tests |
 | App-only hot deploy for development | Working | We use direct app sync in the lab today; this is practical but not the final signed OTA path |
 | Full-system SWUpdate flow | Implemented / lab-validated | Dev hardware has exercised server and camera install/reboot success paths; production release validation still owns signed-artifact and rollback evidence |
 | A/B rollback with U-Boot | Implemented / validation continuing | Bootlimit and health-confirmation wiring exist; release validation must continue to capture forced-failure rollback evidence |
 | USB update flow | Implemented | USB import/storage flows use the same OTA staging/library model and root-helper storage boundary |
-| Camera OTA push via server | Implemented / lab-validated | Server relays bundles over mTLS, camera owns activation reboot, and server confirms the reported target version after boot |
+| Camera OTA push via server | Implemented / lab-validated | Server relays common or one-shot custom bundles over mTLS, camera owns activation reboot, and server confirms the reported target version after boot |
 | Production signing flow | Implemented / release-gated | Signing design and artifact generation exist; each production release still needs signed install/reboot/rollback validation evidence |
 
 ### 3.2 Delivery Mode Status
@@ -60,7 +60,7 @@ The intended trust model is:
 |---|---|---|
 | Dashboard upload | Server/admin driven updates | Implemented |
 | USB import | Offline/field updates | Implemented |
-| Server push to camera | Production camera updates | Implemented |
+| Server push to camera | Production camera updates | Implemented; common bundle can update all eligible cameras, while custom per-camera bundles are temporary job files |
 | SCP to inbox | Dev/lab only | Working for development workflow |
 | Repository polling (Suricatta) | Future managed updates | Planned, not implemented |
 

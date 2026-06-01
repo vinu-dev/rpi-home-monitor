@@ -11,7 +11,7 @@ Method: STRIDE-style review of local-first system boundaries.
 | Browser to server | Operator browser crosses into authenticated server UI/API. | ARCH-001, SWA-002 |
 | Camera to server | Paired camera uses signed heartbeats, mTLS/control paths, RTSPS streams. | ARCH-001, SWA-003 |
 | Server to storage | Application writes recordings, config, audit, certs, OTA staging. | ARCH-003, SWA-005 |
-| Admin to OTA | Admin upload/install crosses into privileged update execution, reusable camera bundle storage, and camera-owned activation. | ARCH-004, SWA-006 |
+| Admin to OTA | Admin upload/install crosses into privileged update execution, reusable camera bundle storage, temporary custom camera job storage, and camera-owned activation. | ARCH-004, SWA-006 |
 | LAN and optional VPN | Local network and optional operator-managed remote access expose services. | HWA-003, SWA-010 |
 | First-run setup | Pre-auth setup and default identity cross into authenticated runtime state. | ARCH-007, SWA-011 |
 | User administration | Authenticated admin actions cross into password, role, and session trust state. | ARCH-008, SWA-013 |

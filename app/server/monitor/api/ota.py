@@ -6,8 +6,12 @@ Endpoints:
   GET  /ota/status                 - per-device OTA status (server + cameras)
   POST /ota/server/upload          - upload .swu for server (admin, multipart)
   POST /ota/server/install         - install staged server bundle (admin)
-  POST /ota/camera/<id>/upload     - upload .swu for camera (admin, multipart)
+  POST /ota/camera-library/upload  - upload reusable camera .swu (admin)
+  POST /ota/camera/<id>/upload     - legacy reusable camera upload (admin)
+  POST /ota/camera/<id>/custom-upload - one-shot camera .swu (admin)
+  POST /ota/camera/<id>/custom-discard - discard one-shot camera .swu
   POST /ota/camera/<id>/push       - stream bundle to camera via mTLS (admin)
+  POST /ota/cameras/push           - stream reusable bundle to eligible cameras
   GET  /ota/usb/scan               - scan mounted USB for bundles (admin)
   POST /ota/usb/import             - import + stage bundle from USB (admin)
 
@@ -48,16 +52,31 @@ CAMERA_BUSY_STATES = {
     "validating",
 }
 CAMERA_LIBRARY_MANIFEST_SUFFIX = ".json"
+CAMERA_CUSTOM_MANIFEST = "manifest.json"
+
+
+def _safe_camera_id(camera_id):
+    return "".join(c for c in camera_id if c.isalnum() or c in ("-", "_"))
 
 
 def _camera_inbox_dir(ota, camera_id):
     """Legacy per-camera inbox directory retained for cleanup only."""
-    safe = "".join(c for c in camera_id if c.isalnum() or c in ("-", "_"))
-    return os.path.join(ota.inbox_dir, f"camera-{safe}")
+    return os.path.join(ota.inbox_dir, f"camera-{_safe_camera_id(camera_id)}")
 
 
 def _camera_library_dir(ota):
     return ota.camera_staging_dir
+
+
+def _camera_custom_root(ota):
+    custom_dir = getattr(ota, "camera_custom_dir", "")
+    if custom_dir:
+        return custom_dir
+    return os.path.join(ota.ota_dir, "camera-custom")
+
+
+def _camera_custom_dir(ota, camera_id):
+    return os.path.join(_camera_custom_root(ota), _safe_camera_id(camera_id))
 
 
 def _hash_file(path):
@@ -151,12 +170,156 @@ def _write_camera_bundle_record(ota, bundle_path, original_filename, sha256):
     return record
 
 
+def _latest_camera_bundle(records):
+    latest = None
+    for record in records:
+        if _is_better_camera_bundle(record, latest):
+            latest = record
+    return latest
+
+
+def _camera_bundle_summary(record, cameras):
+    if not record:
+        return {
+            "filename": "",
+            "target_version": "",
+            "uploaded_at": 0,
+            "eligible_count": 0,
+            "already_current_count": 0,
+            "offline_count": 0,
+            "blocked_count": 0,
+            "total_count": len([c for c in cameras if c.status != "pending"]),
+        }
+
+    target_version = str(record.get("target_version") or "")
+    summary = {
+        "filename": record.get("original_filename") or record["filename"],
+        "target_version": target_version,
+        "uploaded_at": record.get("uploaded_at") or 0,
+        "eligible_count": 0,
+        "already_current_count": 0,
+        "offline_count": 0,
+        "blocked_count": 0,
+        "total_count": 0,
+    }
+    for camera in cameras:
+        if camera.status == "pending":
+            continue
+        summary["total_count"] += 1
+        decision = ota_policy.classify_update(camera.firmware_version, target_version)
+        if decision.blocked:
+            summary["blocked_count"] += 1
+        elif decision.relation == "same":
+            summary["already_current_count"] += 1
+        elif camera.status != "online":
+            summary["offline_count"] += 1
+        else:
+            summary["eligible_count"] += 1
+    return summary
+
+
+def _read_camera_custom_record(ota, camera_id):
+    camera_dir = _camera_custom_dir(ota, camera_id)
+    manifest_path = os.path.join(camera_dir, CAMERA_CUSTOM_MANIFEST)
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            record = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(record, dict) or record.get("target") != "camera":
+        return None
+    filename = os.path.basename(str(record.get("filename") or ""))
+    if not filename.lower().endswith(".swu"):
+        return None
+    bundle_path = os.path.join(camera_dir, filename)
+    if not os.path.isfile(bundle_path):
+        return None
+    record["path"] = bundle_path
+    record["filename"] = filename
+    record["bundle_scope"] = "custom"
+    return record
+
+
+def _write_camera_custom_record(ota, camera_id, bundle_path, original_filename, sha256):
+    camera_dir = _camera_custom_dir(ota, camera_id)
+    record = {
+        "target": "camera",
+        "bundle_scope": "custom",
+        "filename": os.path.basename(bundle_path),
+        "original_filename": original_filename,
+        "sha256": sha256,
+        "target_version": ota_service.extract_bundle_version(bundle_path),
+        "uploaded_at": time.time(),
+    }
+    manifest_path = os.path.join(camera_dir, CAMERA_CUSTOM_MANIFEST)
+    tmp_path = f"{manifest_path}.partial-{os.getpid()}"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, sort_keys=True)
+    os.replace(tmp_path, manifest_path)
+    return record
+
+
+def _discard_camera_custom_record(ota, camera_id):
+    try:
+        shutil.rmtree(_camera_custom_dir(ota, camera_id), ignore_errors=True)
+    except OSError:
+        pass
+
+
 def _discard_legacy_camera_inbox(ota, camera_id):
     """Remove pre-library per-camera staging left by older server builds."""
     try:
         shutil.rmtree(_camera_inbox_dir(ota, camera_id), ignore_errors=True)
     except OSError:
         pass
+
+
+def _store_camera_library_upload(ota, file, filename):
+    library = _camera_library_dir(ota)
+    fd, tmp_path = tempfile.mkstemp(suffix=".swu", dir=library)
+    try:
+        with os.fdopen(fd, "wb") as target_file:
+            file.save(target_file)
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return None, 0, f"Upload failed: {exc}"
+
+    try:
+        size = os.path.getsize(tmp_path)
+    except OSError:
+        size = 0
+    if size == 0:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return None, 0, "Uploaded file is empty"
+
+    target = ota_service.extract_bundle_target(tmp_path)
+    if target != "camera":
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        if target == "server":
+            return None, size, "This is a server bundle; upload a camera bundle"
+        return None, size, "This bundle target is not recognized as a camera bundle"
+
+    sha256 = _hash_file(tmp_path)
+    stored_filename = f"{sha256[:12]}-{filename}"
+    target_path = os.path.join(library, stored_filename)
+    try:
+        os.replace(tmp_path, target_path)
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return None, size, f"Upload failed: {exc}"
+    return _write_camera_bundle_record(ota, target_path, filename, sha256), size, ""
 
 
 @ota_bp.route("/status", methods=["GET"])
@@ -167,6 +330,7 @@ def get_status():
     ota = current_app.ota_service
     ota.ensure_storage()
     camera_records = _read_camera_bundle_records(ota)
+    common_record = _latest_camera_bundle(camera_records)
 
     # Live read from /etc/os-release VERSION_ID, not the persisted
     # Settings.firmware_version (which is legacy plumbing — see
@@ -180,6 +344,7 @@ def get_status():
 
     result = {
         "server": server_status,
+        "camera_bundle": _camera_bundle_summary(common_record, cameras),
         "cameras": [],
     }
 
@@ -202,11 +367,12 @@ def get_status():
             continue
 
         status_target = str(entry.get("target_version") or "")
-        installed_current = (
-            state == "installed"
-            and ota_policy.compare_versions(cam.firmware_version, status_target) == 0
+        installed_current = state == "installed" and ota_policy.versions_match(
+            cam.firmware_version, status_target
         )
         if installed_current:
+            if entry.get("bundle_scope") == "custom":
+                _discard_camera_custom_record(ota, cam.id)
             ota.set_status(
                 cam.id,
                 "idle",
@@ -215,6 +381,7 @@ def get_status():
                 staged_filename="",
                 target_version="",
                 update_relation="",
+                bundle_scope="",
             )
             entry.update(
                 {
@@ -224,24 +391,59 @@ def get_status():
                     "staged_filename": "",
                     "target_version": "",
                     "update_relation": "",
+                    "bundle_scope": "",
                 }
             )
-            result["cameras"].append(entry)
-            continue
 
-        best, decision = _best_camera_bundle_for(cam, camera_records)
-        if best and state != "installed":
-            if state != "error":
-                entry["state"] = "staged"
-            entry["staged_filename"] = best.get("original_filename") or best["filename"]
-            entry["target_version"] = best.get("target_version") or ""
-            entry["update_relation"] = decision.relation if decision else "unknown"
-        else:
-            entry["staged_filename"] = ""
-            entry["target_version"] = ""
-            entry["update_relation"] = ""
-            if state == "staged":
-                entry["state"] = "idle"
+        custom = _read_camera_custom_record(ota, cam.id)
+        if custom and state != "installed":
+            target_version = str(custom.get("target_version") or "")
+            decision = ota_policy.classify_update(cam.firmware_version, target_version)
+            if decision.blocked or decision.relation == "same":
+                _discard_camera_custom_record(ota, cam.id)
+                custom = None
+            else:
+                if state not in {"error", "installed"}:
+                    entry["state"] = "staged"
+                entry["bundle_scope"] = "custom"
+                entry["staged_filename"] = (
+                    custom.get("original_filename") or custom["filename"]
+                )
+                entry["target_version"] = target_version
+                entry["update_relation"] = decision.relation
+
+        if not custom:
+            if common_record:
+                target_version = str(common_record.get("target_version") or "")
+                decision = ota_policy.classify_update(
+                    cam.firmware_version, target_version
+                )
+                filename = (
+                    common_record.get("original_filename") or common_record["filename"]
+                )
+                entry["bundle_scope"] = "common"
+                entry["staged_filename"] = filename
+                entry["target_version"] = target_version
+                entry["update_relation"] = (
+                    "blocked" if decision.blocked else decision.relation
+                )
+                if (
+                    not decision.blocked
+                    and decision.relation != "same"
+                    and state not in {"error", "installed"}
+                ):
+                    entry["state"] = "staged"
+            else:
+                entry["staged_filename"] = ""
+                entry["target_version"] = ""
+                entry["update_relation"] = ""
+                entry["bundle_scope"] = ""
+                if state == "staged":
+                    entry["state"] = "idle"
+        if entry.get("update_relation") == "same" and entry.get("state") == "staged":
+            entry["state"] = "idle"
+        if entry.get("update_relation") == "blocked" and entry.get("state") == "staged":
+            entry["state"] = "idle"
         result["cameras"].append(entry)
 
     return jsonify(result), 200
@@ -530,14 +732,237 @@ def upload_camera_image(camera_id):
     ), 200
 
 
+@ota_bp.route("/camera-library/upload", methods=["POST"])
+@admin_required
+@csrf_protect
+def upload_camera_library_image():
+    """Upload a reusable camera .swu bundle for fleet updates (admin)."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No filename"}), 400
+
+    filename = ota_service.sanitize_bundle_filename(file.filename)
+    if not filename:
+        return jsonify({"error": "Only .swu files are accepted"}), 400
+
+    ota = current_app.ota_service
+    ok, storage_err = ota.ensure_storage()
+    if not ok:
+        return jsonify({"error": storage_err}), 500
+
+    record, size, err = _store_camera_library_upload(ota, file, filename)
+    if err:
+        status = 400 if "bundle" in err.lower() or "empty" in err.lower() else 500
+        return jsonify({"error": err}), status
+
+    cameras = current_app.store.get_cameras()
+    audit = getattr(current_app, "audit", None)
+    if audit:
+        try:
+            audit.log_event(
+                "OTA_CAMERA_LIBRARY_UPLOAD",
+                user=session.get("username", ""),
+                ip=request.remote_addr or "",
+                detail=(
+                    f"Uploaded reusable camera bundle {filename} "
+                    f"(version={record.get('target_version') or 'unknown'})"
+                ),
+            )
+        except Exception:
+            pass
+
+    return jsonify(
+        {
+            "message": "Camera bundle saved",
+            "filename": record.get("original_filename") or record["filename"],
+            "original_filename": filename,
+            "target_version": record.get("target_version") or "",
+            "size": size,
+            "camera_bundle": _camera_bundle_summary(record, cameras),
+        }
+    ), 200
+
+
+@ota_bp.route("/camera/<camera_id>/custom-upload", methods=["POST"])
+@admin_required
+@csrf_protect
+def upload_camera_custom_image(camera_id):
+    """Upload a one-shot camera bundle for a single camera (admin)."""
+    camera = current_app.store.get_camera(camera_id)
+    if camera is None:
+        return jsonify({"error": "Camera not found"}), 404
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No filename"}), 400
+
+    filename = ota_service.sanitize_bundle_filename(file.filename)
+    if not filename:
+        return jsonify({"error": "Only .swu files are accepted"}), 400
+
+    ota = current_app.ota_service
+    status = ota.get_status(camera_id)
+    if status.get("state") in CAMERA_BUSY_STATES:
+        return jsonify(
+            {"error": f"Update already in progress ({status.get('state')})"}
+        ), 409
+
+    ok, storage_err = ota.ensure_storage()
+    if not ok:
+        return jsonify({"error": storage_err}), 500
+
+    camera_dir = _camera_custom_dir(ota, camera_id)
+    _discard_camera_custom_record(ota, camera_id)
+    try:
+        os.makedirs(camera_dir, exist_ok=True)
+    except OSError as exc:
+        return jsonify({"error": f"Upload failed: {exc}"}), 500
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".swu", dir=camera_dir)
+    try:
+        with os.fdopen(fd, "wb") as target_file:
+            file.save(target_file)
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return jsonify({"error": f"Upload failed: {exc}"}), 500
+
+    try:
+        size = os.path.getsize(tmp_path)
+    except OSError:
+        size = 0
+    if size == 0:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return jsonify({"error": "Uploaded file is empty"}), 400
+
+    target = ota_service.extract_bundle_target(tmp_path)
+    if target != "camera":
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        if target == "server":
+            return jsonify(
+                {"error": "This is a server bundle; upload a camera bundle"}
+            ), 400
+        return jsonify(
+            {"error": "This bundle target is not recognized as a camera bundle"}
+        ), 400
+
+    target_version = ota_service.extract_bundle_version(tmp_path)
+    decision = ota_policy.classify_update(camera.firmware_version, target_version)
+    if decision.blocked or decision.relation == "same":
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        reason = decision.reason or "Camera is already running this version"
+        return jsonify({"error": reason}), 400
+
+    sha256 = _hash_file(tmp_path)
+    stored_filename = f"{sha256[:12]}-{filename}"
+    target_path = os.path.join(camera_dir, stored_filename)
+    try:
+        os.replace(tmp_path, target_path)
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return jsonify({"error": f"Upload failed: {exc}"}), 500
+    record = _write_camera_custom_record(ota, camera_id, target_path, filename, sha256)
+
+    ota.set_status(
+        camera_id,
+        "staged",
+        version="",
+        progress=0,
+        error="",
+        filename=record.get("original_filename") or record["filename"],
+        staged_filename=record.get("original_filename") or record["filename"],
+        target_version=target_version,
+        update_relation=decision.relation,
+        bundle_scope="custom",
+    )
+    audit = getattr(current_app, "audit", None)
+    if audit:
+        try:
+            audit.log_event(
+                "OTA_CAMERA_CUSTOM_UPLOAD",
+                user=session.get("username", ""),
+                ip=request.remote_addr or "",
+                detail=(
+                    f"Uploaded one-shot bundle {filename} for camera {camera_id} "
+                    f"(version={target_version or 'unknown'})"
+                ),
+            )
+        except Exception:
+            pass
+
+    return jsonify(
+        {
+            "message": "Custom bundle staged for camera",
+            "camera_id": camera_id,
+            "filename": record.get("original_filename") or record["filename"],
+            "original_filename": filename,
+            "target_version": target_version,
+            "size": size,
+            "bundle_scope": "custom",
+        }
+    ), 200
+
+
+@ota_bp.route("/camera/<camera_id>/custom-discard", methods=["POST"])
+@admin_required
+@csrf_protect
+def discard_camera_custom_image(camera_id):
+    """Discard a one-shot camera bundle and fall back to the common bundle."""
+    camera = current_app.store.get_camera(camera_id)
+    if camera is None:
+        return jsonify({"error": "Camera not found"}), 404
+
+    ota = current_app.ota_service
+    status = ota.get_status(camera_id)
+    if status.get("state") in CAMERA_BUSY_STATES:
+        return jsonify(
+            {"error": f"Update already in progress ({status.get('state')})"}
+        ), 409
+
+    _discard_camera_custom_record(ota, camera_id)
+    ota.set_status(
+        camera_id,
+        "idle",
+        progress=0,
+        error="",
+        staged_filename="",
+        target_version="",
+        update_relation="",
+        bundle_scope="",
+    )
+    return jsonify({"message": "Custom bundle discarded", "camera_id": camera_id}), 200
+
+
 def _run_camera_push(
     app,
     camera_id,
     camera_ip,
     bundle_path,
+    filename,
     target_version,
     user,
     ip,
+    bundle_scope="common",
 ):
     """Background job: stream the staged bundle to the camera.
 
@@ -558,7 +983,14 @@ def _run_camera_push(
             else:
                 pct = 0
             ota.set_status(
-                camera_id, "uploading", progress=pct, error="", bytes_sent=sent
+                camera_id,
+                "uploading",
+                progress=pct,
+                error="",
+                bytes_sent=sent,
+                staged_filename=filename,
+                target_version=target_version,
+                bundle_scope=bundle_scope,
             )
 
         def _status(state, progress, error=""):
@@ -566,9 +998,20 @@ def _run_camera_push(
             # rebooting, installed, error). Overwrites whatever
             # _progress last wrote so the UI reflects the real phase.
             kwargs = {"progress": progress, "error": error or ""}
+            kwargs["staged_filename"] = filename
+            kwargs["target_version"] = target_version
+            kwargs["bundle_scope"] = bundle_scope
             ota.set_status(camera_id, state, **kwargs)
 
-        ota.set_status(camera_id, "uploading", progress=0, error="")
+        ota.set_status(
+            camera_id,
+            "uploading",
+            progress=0,
+            error="",
+            staged_filename=filename,
+            target_version=target_version,
+            bundle_scope=bundle_scope,
+        )
         try:
             ok, msg = client.push_bundle(
                 camera_ip,
@@ -581,7 +1024,17 @@ def _run_camera_push(
             ok, msg = False, f"Unexpected error: {exc}"
 
         if ok:
-            ota.set_status(camera_id, "installed", progress=100, error="")
+            if bundle_scope == "custom":
+                _discard_camera_custom_record(ota, camera_id)
+            ota.set_status(
+                camera_id,
+                "installed",
+                progress=100,
+                error="",
+                staged_filename=filename,
+                target_version=target_version,
+                bundle_scope=bundle_scope,
+            )
             app.logger.info("OTA camera %s installed: %s", camera_id, msg)
             if audit:
                 try:
@@ -631,10 +1084,21 @@ def push_camera_update(camera_id):
 
     ota = current_app.ota_service
     ota.ensure_storage()
-    record, decision = _best_camera_bundle_for(
-        camera,
-        _read_camera_bundle_records(ota),
-    )
+    body = request.get_json(silent=True) or {}
+    requested_scope = str(body.get("scope") or "common")
+    if requested_scope == "custom":
+        record = _read_camera_custom_record(ota, camera_id)
+        if record is None:
+            return jsonify({"error": "No custom bundle uploaded for this camera"}), 409
+        decision = ota_policy.classify_update(
+            camera.firmware_version, str(record.get("target_version") or "")
+        )
+    else:
+        requested_scope = "common"
+        record, decision = _best_camera_bundle_for(
+            camera,
+            _read_camera_bundle_records(ota),
+        )
     if record is None:
         return jsonify(
             {"error": "No bundle uploaded for this camera — upload a .swu first"}
@@ -643,9 +1107,12 @@ def push_camera_update(camera_id):
     bundle_path = record["path"]
     filename = record.get("original_filename") or record["filename"]
     target_version = str(record.get("target_version") or "")
-    if decision and decision.blocked:
-        ota.set_status(camera_id, "idle", progress=0, error=decision.reason)
-        return jsonify({"error": decision.reason}), 409
+    if decision and (decision.blocked or decision.relation == "same"):
+        reason = decision.reason or "Camera is already running this version"
+        ota.set_status(camera_id, "idle", progress=0, error=reason)
+        if requested_scope == "custom":
+            _discard_camera_custom_record(ota, camera_id)
+        return jsonify({"error": reason}), 409
 
     status = ota.get_status(camera_id)
     if status.get("state") in CAMERA_BUSY_STATES:
@@ -663,10 +1130,23 @@ def push_camera_update(camera_id):
                 "OTA_CAMERA_PUSH",
                 user=user,
                 ip=ip,
-                detail=f"Pushing {filename} to camera {camera_id}",
+                detail=(
+                    f"Pushing {filename} to camera {camera_id} ({requested_scope})"
+                ),
             )
         except Exception:
             pass
+
+    ota.set_status(
+        camera_id,
+        "uploading",
+        progress=0,
+        error="",
+        staged_filename=filename,
+        target_version=target_version,
+        update_relation=decision.relation if decision else "unknown",
+        bundle_scope=requested_scope,
+    )
 
     # Kick off push in a background thread so the HTTP request
     # returns immediately. A 150 MB bundle over WiFi can take a
@@ -675,7 +1155,17 @@ def push_camera_update(camera_id):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_run_camera_push,
-        args=(app, camera_id, camera.ip, bundle_path, target_version, user, ip),
+        args=(
+            app,
+            camera_id,
+            camera.ip,
+            bundle_path,
+            filename,
+            target_version,
+            user,
+            ip,
+            requested_scope,
+        ),
         name=f"ota-push-{camera_id}",
         daemon=True,
     )
@@ -685,6 +1175,112 @@ def push_camera_update(camera_id):
         {
             "message": "Update push started",
             "camera_id": camera_id,
+            "filename": filename,
+            "target_version": target_version,
+        }
+    ), 202
+
+
+@ota_bp.route("/cameras/push", methods=["POST"])
+@admin_required
+@csrf_protect
+def push_all_eligible_cameras():
+    """Push the reusable camera bundle to all online eligible cameras."""
+    ota = current_app.ota_service
+    ota.ensure_storage()
+    record = _latest_camera_bundle(_read_camera_bundle_records(ota))
+    if record is None:
+        return jsonify({"error": "No reusable camera bundle uploaded"}), 409
+
+    bundle_path = record["path"]
+    filename = record.get("original_filename") or record["filename"]
+    target_version = str(record.get("target_version") or "")
+    cameras = current_app.store.get_cameras()
+    user = session.get("username", "")
+    ip = request.remote_addr or ""
+    app = current_app._get_current_object()
+
+    started = []
+    skipped = []
+    for camera in cameras:
+        if camera.status == "pending":
+            continue
+        decision = ota_policy.classify_update(camera.firmware_version, target_version)
+        reason = ""
+        if decision.blocked:
+            reason = decision.reason or "blocked"
+        elif decision.relation == "same":
+            reason = "already current"
+        elif camera.status != "online":
+            reason = "offline"
+        elif not getattr(camera, "ip", ""):
+            reason = "IP not known"
+        else:
+            status = ota.get_status(camera.id)
+            if status.get("state") in CAMERA_BUSY_STATES:
+                reason = f"busy ({status.get('state')})"
+
+        if reason:
+            skipped.append({"camera_id": camera.id, "reason": reason})
+            continue
+
+        ota.set_status(
+            camera.id,
+            "uploading",
+            progress=0,
+            error="",
+            staged_filename=filename,
+            target_version=target_version,
+            update_relation=decision.relation,
+            bundle_scope="common",
+        )
+        thread = threading.Thread(
+            target=_run_camera_push,
+            args=(
+                app,
+                camera.id,
+                camera.ip,
+                bundle_path,
+                filename,
+                target_version,
+                user,
+                ip,
+                "common",
+            ),
+            name=f"ota-push-{camera.id}",
+            daemon=True,
+        )
+        thread.start()
+        started.append(camera.id)
+
+    audit = getattr(current_app, "audit", None)
+    if audit and started:
+        try:
+            audit.log_event(
+                "OTA_CAMERA_PUSH",
+                user=user,
+                ip=ip,
+                detail=(
+                    f"Pushing {filename} to {len(started)} camera(s); "
+                    f"skipped {len(skipped)}"
+                ),
+            )
+        except Exception:
+            pass
+
+    if not started:
+        return jsonify(
+            {
+                "error": "No eligible online cameras for this bundle",
+                "skipped": skipped,
+            }
+        ), 409
+
+    return jsonify(
+        {
+            "message": f"Update started for {len(started)} camera(s)",
+            "camera_ids": started,
+            "skipped": skipped,
             "filename": filename,
             "target_version": target_version,
         }

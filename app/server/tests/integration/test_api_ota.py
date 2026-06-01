@@ -123,6 +123,27 @@ class TestOTAStatus:
         assert cam["staged_filename"] == ""
         assert not os.path.exists(inbox)
 
+    def test_status_clears_installed_when_runtime_matches_build_profile(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.10")
+        app.ota_service.set_status(
+            "cam-001",
+            "installed",
+            progress=100,
+            error="",
+            staged_filename="camera-update-v1.6.10-dev.swu",
+            target_version="v1.6.10-dev",
+            bundle_scope="common",
+        )
+
+        data = client.get("/api/v1/ota/status").get_json()
+
+        cam = next(c for c in data["cameras"] if c["id"] == "cam-001")
+        assert cam["state"] == "idle"
+        assert cam["staged_filename"] == ""
+
 
 class TestServerUpload:
     """Test POST /api/v1/ota/server/upload."""
@@ -261,6 +282,90 @@ class TestCameraPush:
         events = app.audit.get_events(event_type="OTA_CAMERA_PUSH")
         assert len(events) >= 1
 
+    def test_pushes_custom_bundle_and_removes_one_shot_file(
+        self, monkeypatch, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+        upload = client.post(
+            "/api/v1/ota/camera/cam-001/custom-upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "custom.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 200
+        custom_dir = os.path.join(app.ota_service.camera_custom_dir, "cam-001")
+        assert os.path.exists(custom_dir)
+
+        monkeypatch.setattr(
+            app.camera_ota_client,
+            "push_bundle",
+            lambda ip, path, progress_cb=None, status_cb=None, **kwargs: (
+                True,
+                "Installed",
+            ),
+        )
+
+        response = client.post(
+            "/api/v1/ota/camera/cam-001/push", json={"scope": "custom"}
+        )
+        assert response.status_code == 202
+
+        import time
+
+        for _ in range(40):
+            if app.ota_service.get_status("cam-001")["state"] in {
+                "installed",
+                "error",
+            }:
+                break
+            time.sleep(0.05)
+
+        assert app.ota_service.get_status("cam-001")["state"] == "installed"
+        assert not os.path.exists(custom_dir)
+
+    def test_pushes_common_bundle_to_all_eligible_cameras(
+        self, monkeypatch, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-old", "online", firmware_version="1.6.0")
+        _add_camera(app, "cam-current", "online", firmware_version="1.6.2")
+        _add_camera(app, "cam-offline", "offline", firmware_version="1.6.0")
+        upload = client.post(
+            "/api/v1/ota/camera-library/upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "common.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 200
+
+        calls = []
+        monkeypatch.setattr(
+            app.camera_ota_client,
+            "push_bundle",
+            lambda ip, path, progress_cb=None, status_cb=None, **kwargs: (
+                calls.append(ip) or True,
+                "Installed",
+            ),
+        )
+
+        response = client.post("/api/v1/ota/cameras/push", json={})
+        assert response.status_code == 202
+        body = response.get_json()
+        assert body["camera_ids"] == ["cam-old"]
+        assert {item["camera_id"] for item in body["skipped"]} == {
+            "cam-current",
+            "cam-offline",
+        }
+
 
 class TestCameraUpload:
     """Test POST /api/v1/ota/camera/<id>/upload."""
@@ -337,6 +442,56 @@ class TestCameraUpload:
 
         assert resp.status_code == 400
         assert "Rejected older update" in resp.get_json()["error"]
+
+    def test_common_camera_bundle_upload_updates_library_summary(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+        _add_camera(app, "cam-002", "online", firmware_version="1.6.2")
+
+        resp = client.post(
+            "/api/v1/ota/camera-library/upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "common.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["camera_bundle"]["target_version"] == "1.6.2"
+        assert data["camera_bundle"]["eligible_count"] == 1
+        assert data["camera_bundle"]["already_current_count"] == 1
+
+    def test_custom_camera_bundle_is_not_saved_to_common_library(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+
+        resp = client.post(
+            "/api/v1/ota/camera/cam-001/custom-upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "custom.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 200
+        assert os.listdir(app.ota_service.camera_staging_dir) == []
+        custom_dir = os.path.join(app.ota_service.camera_custom_dir, "cam-001")
+        assert os.path.exists(os.path.join(custom_dir, "manifest.json"))
+        status = client.get("/api/v1/ota/status").get_json()
+        cam = next(c for c in status["cameras"] if c["id"] == "cam-001")
+        assert cam["bundle_scope"] == "custom"
+        assert cam["staged_filename"] == "custom.swu"
 
 
 class TestCameraLiveStatus:

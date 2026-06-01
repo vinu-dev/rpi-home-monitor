@@ -37,7 +37,7 @@ operator-managed VPN remote access. Existing narrative architecture remains in
 | Camera stream | Camera H.264/RTSPS stream to server relay and recorder. | Paired camera to server. | ARCH-001, SWR-006, SC-002 |
 | Heartbeat/config | Camera sends signed heartbeat; server may return pending config. | Camera/server machine API. | ARCH-005, SWR-004, SC-002 |
 | Browser UI/API | Browser accesses dashboard, live view, settings, users, OTA, recordings. | Operator session to server. | ARCH-001, SWR-001, SC-001 |
-| OTA upload/install | Operator uploads server bundle, server stores reusable camera bundles, or server pushes a camera bundle that the camera activates itself. | Admin to update service; server to camera. | ARCH-004, SWR-010, SWR-038, SC-003 |
+| OTA upload/install | Operator uploads a server bundle, stores a reusable common camera bundle, stages a one-shot custom camera bundle, or pushes a camera bundle that the camera activates itself. | Admin to update service; server to camera. | ARCH-004, SWR-010, SWR-038, SC-003 |
 | Audit/logging | Security and admin events written to local audit log. | Application to persistent record. | ARCH-003, SWR-009, SC-008 |
 | First-run setup | Operator completes setup and initial administrator creation before normal dashboard use. | Pre-auth setup to authenticated runtime. | ARCH-007, SWR-021, SC-010 |
 | User administration | Admin creates, changes, or removes users and passwords. | Authenticated admin to account store. | ARCH-008, SWR-023, SC-011 |

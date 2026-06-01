@@ -2254,6 +2254,67 @@
         <div class="card ota-empty-state" x-show="(ota.cameras || []).length === 0">
             <p class="text-small text-muted" style="margin:0;">No cameras paired yet.</p>
         </div>
+        <div class="card ota-common-bundle" x-show="(ota.cameras || []).length > 0">
+            <div class="ota-common-bundle__header">
+                <div class="ota-common-bundle__identity">
+                    <div class="ota-common-bundle__label">Camera bundle</div>
+                    <div class="ota-common-bundle__name"
+                         x-text="ota.camera_bundle.filename || 'No common bundle selected'"></div>
+                </div>
+                <span class="ota-state-pill"
+                      :class="cameraCommonBundleReady() ? 'ota-state-pill--ready' : 'ota-state-pill--offline'"
+                      x-text="cameraCommonBundleReady() ? 'Ready' : 'Missing'"></span>
+            </div>
+
+            <div class="ota-common-bundle__summary">
+                <div class="ota-version-item">
+                    <span class="ota-version-item__label">Target</span>
+                    <strong class="ota-version-item__value ota-version-item__value--target"
+                            x-text="ota.camera_bundle.target_version || '--'"></strong>
+                </div>
+                <div class="ota-version-item">
+                    <span class="ota-version-item__label">Eligible</span>
+                    <strong class="ota-version-item__value"
+                            x-text="(ota.camera_bundle.eligible_count || 0) + ' / ' + (ota.camera_bundle.total_count || 0)"></strong>
+                </div>
+                <div class="ota-version-item">
+                    <span class="ota-version-item__label">Already current</span>
+                    <strong class="ota-version-item__value"
+                            x-text="ota.camera_bundle.already_current_count || 0"></strong>
+                </div>
+                <div class="ota-version-item">
+                    <span class="ota-version-item__label">Offline / blocked</span>
+                    <strong class="ota-version-item__value"
+                            x-text="(ota.camera_bundle.offline_count || 0) + ' / ' + (ota.camera_bundle.blocked_count || 0)"></strong>
+                </div>
+            </div>
+
+            <div class="ota-job-panel ota-job-panel--busy" x-show="ota.camera_bundle._clientUploading">
+                <div class="ota-job-panel__copy">
+                    <span class="ota-job-panel__label">Upload status</span>
+                    <strong class="ota-job-panel__message">Uploading common camera bundle.</strong>
+                </div>
+                <div class="ota-job-panel__meter">
+                    <div class="progress-bar">
+                        <div class="progress-bar__fill" :style="'width:' + otaProgressValue(ota.camera_bundle) + '%'"></div>
+                    </div>
+                    <span class="ota-job-panel__percent" x-text="otaProgressValue(ota.camera_bundle) + '%'"></span>
+                </div>
+            </div>
+
+            <div class="ota-common-bundle__controls">
+                <label class="btn btn--secondary ota-file-picker"
+                       :class="{ 'btn--disabled': ota.camera_bundle._clientUploading }">
+                    <input type="file" accept=".swu"
+                           :disabled="ota.camera_bundle._clientUploading"
+                           @change="uploadCameraLibraryBundle($event.target.files[0]); $event.target.value = '';">
+                    <span x-text="cameraCommonBundleReady() ? 'Replace common bundle...' : 'Choose common bundle...'"></span>
+                </label>
+                <button class="btn btn--primary ota-install-button"
+                        :disabled="!cameraCommonBundleReady() || !cameraCommonBundleEligible() || cameraAnyBusy()"
+                        @click="pushAllCameraBundles()">Update eligible cameras</button>
+            </div>
+        </div>
         <div class="ota-camera-list" x-show="(ota.cameras || []).length > 0">
             <template x-for="cam in ota.cameras" :key="cam.id">
                 <article class="card ota-device-card" :class="'ota-device-card--' + otaStateTone(cam)">
@@ -2275,14 +2336,14 @@
                             <span class="ota-version-item__label">Current</span>
                             <strong class="ota-version-item__value" x-text="cam.current_version || '--'"></strong>
                         </div>
-                        <div class="ota-version-item" x-show="cam.target_version">
-                            <span class="ota-version-item__label">After install</span>
+                        <div class="ota-version-item">
+                            <span class="ota-version-item__label">Target</span>
                             <strong class="ota-version-item__value ota-version-item__value--target"
-                                    x-text="cam.target_version"></strong>
+                                    x-text="cameraTargetVersion(cam)"></strong>
                         </div>
-                        <div class="ota-version-item" x-show="cam.staged_filename">
+                        <div class="ota-version-item">
                             <span class="ota-version-item__label">Bundle</span>
-                            <strong class="ota-version-item__value" x-text="cam.staged_filename"></strong>
+                            <strong class="ota-version-item__value" x-text="cameraBundleName(cam)"></strong>
                         </div>
                     </div>
 
@@ -2306,25 +2367,31 @@
                     </div>
 
                     <div class="ota-device-card__controls">
+                        <button class="btn btn--primary ota-install-button"
+                                :disabled="!cameraCanInstall(cam)"
+                                @click="pushCameraBundle(cam)">
+                            <span x-text="cameraInstallLabel(cam)"></span>
+                        </button>
                         <label class="btn btn--secondary ota-file-picker" :class="{ 'btn--disabled': cameraBusy(cam) }">
                             <input type="file" accept=".swu"
                                    :disabled="cameraBusy(cam)"
-                                   @change="uploadCameraBundle(cam, $event.target.files[0])">
-                            <span x-text="cam.staged_filename ? 'Replace file...' : 'Choose .swu file...'"></span>
+                                   @change="uploadCustomCameraBundle(cam, $event.target.files[0]); $event.target.value = '';">
+                            <span x-text="cam.bundle_scope === 'custom' ? 'Replace custom bundle...' : 'Upload custom bundle...'"></span>
                         </label>
-                        <button class="btn btn--primary ota-install-button"
-                                :disabled="!cam.staged_filename || !cam.online || cameraBusy(cam)"
-                                @click="pushCameraBundle(cam)">Push &amp; Install</button>
+                        <button class="btn btn--secondary ota-install-button"
+                                x-show="cam.bundle_scope === 'custom'"
+                                :disabled="cameraBusy(cam)"
+                                @click="discardCustomCameraBundle(cam)">Use common bundle</button>
                     </div>
                 </article>
             </template>
         </div>
         <div class="text-small text-muted ota-section-note">
-            Upload a firmware file for each camera, then click Push &amp;
-            Install. The server sends the update to the camera over a
-            secure paired connection, installs it, and reboots the
-            camera onto the new version. If the new version fails to
-            start, the camera automatically rolls back.
+            Upload a common camera bundle once, then update every eligible
+            online camera or a single camera. Custom bundles are one-time
+            per-camera jobs and are removed after a successful install. The
+            camera writes the inactive slot, reboots itself, and rolls back
+            automatically if the new image fails to start.
         </div>
     </div>
 </div>
@@ -2515,7 +2582,11 @@ function settingsPage() {
         deletingAllRecordings: false,
 
         // OTA state (ADR-0020 dual-transport updates)
-        ota: { server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false, verification: null }, cameras: [] },
+        ota: {
+            server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false, verification: null },
+            camera_bundle: { filename: '', target_version: '', progress: 0, eligible_count: 0, already_current_count: 0, offline_count: 0, blocked_count: 0, total_count: 0 },
+            cameras: []
+        },
         _otaPollTimer: null,
 
         // Security-tab state is limited to active-session inventory.
@@ -4034,6 +4105,46 @@ function settingsPage() {
             return 'idle';
         },
 
+        cameraAnyBusy() {
+            return (this.ota.cameras || []).some(this.cameraBusy);
+        },
+
+        cameraCommonBundleReady() {
+            return !!(this.ota.camera_bundle && this.ota.camera_bundle.filename && this.ota.camera_bundle.target_version);
+        },
+
+        cameraCommonBundleEligible() {
+            return Number(this.ota.camera_bundle && this.ota.camera_bundle.eligible_count) > 0;
+        },
+
+        cameraTargetVersion(cam) {
+            return (cam && cam.target_version) || (this.ota.camera_bundle && this.ota.camera_bundle.target_version) || '--';
+        },
+
+        cameraBundleName(cam) {
+            if (!cam) return '--';
+            if (cam.bundle_scope === 'custom') return 'Custom: ' + (cam.staged_filename || 'one-time bundle');
+            if (this.cameraCommonBundleReady()) return 'Common: ' + (this.ota.camera_bundle.filename || cam.staged_filename || '--');
+            return '--';
+        },
+
+        cameraCanInstall(cam) {
+            if (!cam || !cam.online || this.cameraBusy(cam)) return false;
+            if (!cam.target_version || !cam.staged_filename) return false;
+            if (cam.update_relation === 'same' || cam.update_relation === 'blocked' || cam.update_relation === 'downgrade') return false;
+            return cam.bundle_scope === 'custom' || cam.bundle_scope === 'common';
+        },
+
+        cameraInstallLabel(cam) {
+            if (!cam) return 'Install';
+            if (this.cameraBusy(cam)) return this.otaStateLabel(cam.state);
+            if (!cam.online) return 'Offline';
+            if (cam.update_relation === 'same') return 'Already current';
+            if (cam.update_relation === 'blocked' || cam.update_relation === 'downgrade') return 'Blocked';
+            if (!cam.target_version || !cam.staged_filename) return 'Select bundle first';
+            return cam.bundle_scope === 'custom' ? 'Install custom bundle' : 'Install selected bundle';
+        },
+
         cameraOtaMessage(cam) {
             if (!cam) return 'Waiting for camera status.';
             if (cam.error) return cam.error;
@@ -4045,10 +4156,14 @@ function settingsPage() {
             if (state === 'verifying') return 'Camera is verifying the signed bundle.';
             if (state === 'installing') return 'Camera is writing the inactive slot.';
             if (state === 'rebooting') return 'Camera is rebooting into the new slot.';
-            if (state === 'installed') return 'Installed. Waiting for the camera version to refresh.';
-            if (state === 'staged') return 'Ready to install on this camera.';
+            if (state === 'installed') return 'Install complete; refreshing the camera version.';
+            if (cam.update_relation === 'same') return 'Already current on the selected target version.';
+            if (cam.update_relation === 'blocked' || cam.update_relation === 'downgrade') return 'Selected bundle is older than this camera.';
+            if (state === 'staged' && cam.bundle_scope === 'custom') return 'Custom one-time bundle is ready for this camera.';
+            if (state === 'staged') return 'Common bundle is ready for this camera.';
             if (!cam.online) return 'Camera is offline. It can be updated after it reconnects.';
-            return 'No update staged for this camera.';
+            if (!this.cameraCommonBundleReady()) return 'No common camera bundle selected.';
+            return 'No update available for this camera.';
         },
 
         _serverBusy(state) {
@@ -4097,6 +4212,14 @@ function settingsPage() {
                     }
                 }
 
+                var prevCameraBundle = this.ota.camera_bundle || {};
+                if (!prevCameraBundle._clientUploading) {
+                    this.ota.camera_bundle = Object.assign(
+                        { filename: '', target_version: '', progress: 0, eligible_count: 0, already_current_count: 0, offline_count: 0, blocked_count: 0, total_count: 0 },
+                        data.camera_bundle || {}
+                    );
+                }
+
                 var existing = {};
                 (this.ota.cameras || []).forEach(function(c) { existing[c.id] = c; });
                 this.ota.cameras = (data.cameras || []).map(function(c) {
@@ -4124,7 +4247,7 @@ function settingsPage() {
 
         _scheduleOtaPoll() {
             if (this._otaPollTimer) clearTimeout(this._otaPollTimer);
-            var anyBusy = this.ota.server.busy || (this.ota.cameras || []).some(this.cameraBusy);
+            var anyBusy = this.ota.server.busy || !!(this.ota.camera_bundle && this.ota.camera_bundle._clientUploading) || (this.ota.cameras || []).some(this.cameraBusy);
             if (this.tab !== 'updates') return;
             var self = this;
             var delay = anyBusy ? 1500 : 5000;
@@ -4318,7 +4441,44 @@ function settingsPage() {
             this.loadOtaStatus();
         },
 
-        async uploadCameraBundle(cam, file) {
+        async uploadCameraLibraryBundle(file) {
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.swu')) {
+                window.HM.toast('Only .swu files are accepted', 'error');
+                return;
+            }
+            const check = await this._validateSwuFor(file, 'camera');
+            if (!check.ok) {
+                window.HM.toast(check.reason, 'error');
+                return;
+            }
+            this.ota.camera_bundle._clientUploading = true;
+            this.ota.camera_bundle.progress = 0;
+            var self = this;
+            try {
+                var data = await this._uploadWithCsrf(
+                    '/api/v1/ota/camera-library/upload',
+                    file,
+                    function(pct) { self.ota.camera_bundle.progress = pct; }
+                );
+                this.ota.camera_bundle = Object.assign(
+                    { progress: 100 },
+                    this.ota.camera_bundle,
+                    data.camera_bundle || {
+                        filename: data.filename || file.name,
+                        target_version: data.target_version || check.version || ''
+                    }
+                );
+                this.ota.camera_bundle._clientUploading = false;
+                window.HM.toast('Common camera bundle saved', 'success');
+            } catch(e) {
+                this.ota.camera_bundle._clientUploading = false;
+                window.HM.toast(e.message || 'Upload failed', 'error');
+            }
+            this.loadOtaStatus();
+        },
+
+        async uploadCustomCameraBundle(cam, file) {
             if (!file) return;
             if (!file.name.toLowerCase().endsWith('.swu')) {
                 window.HM.toast('Only .swu files are accepted', 'error');
@@ -4337,13 +4497,16 @@ function settingsPage() {
             cam._clientUploading = true;
             try {
                 var data = await this._uploadWithCsrf(
-                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/upload',
+                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/custom-upload',
                     file,
                     function(pct) { cam.progress = pct; }
                 );
                 cam.staged_filename = data.filename || file.name;
+                cam.target_version = data.target_version || check.version || '';
+                cam.bundle_scope = 'custom';
+                cam.update_relation = 'upgrade';
                 cam.state = 'staged';
-                window.HM.toast('Bundle staged for ' + (cam.name || cam.id), 'success');
+                window.HM.toast('Custom bundle staged for ' + (cam.name || cam.id), 'success');
             } catch(e) {
                 cam.state = 'error';
                 cam.error = e.message || 'Upload failed';
@@ -4353,21 +4516,66 @@ function settingsPage() {
             this.loadOtaStatus();
         },
 
+        async uploadCameraBundle(cam, file) {
+            await this.uploadCustomCameraBundle(cam, file);
+        },
+
+        async discardCustomCameraBundle(cam) {
+            if (!cam || cam.bundle_scope !== 'custom') return;
+            try {
+                await window.HM.api.post(
+                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/custom-discard',
+                    {}
+                );
+                cam.bundle_scope = 'common';
+                cam.staged_filename = '';
+                cam.target_version = '';
+                cam.state = 'idle';
+                cam.error = '';
+                window.HM.toast('Custom bundle discarded', 'success');
+            } catch(e) {
+                window.HM.toast(e.message || 'Failed to discard custom bundle', 'error');
+            }
+            this.loadOtaStatus();
+        },
+
         async pushCameraBundle(cam) {
             if (!cam.online) { window.HM.toast('Camera is offline', 'error'); return; }
-            if (!confirm('Push this update to ' + (cam.name || cam.id) + '? The camera will reboot into the new partition.')) return;
+            if (!this.cameraCanInstall(cam)) { window.HM.toast('No eligible bundle for this camera', 'error'); return; }
+            var scope = cam.bundle_scope === 'custom' ? 'custom' : 'common';
+            if (!confirm('Push ' + (scope === 'custom' ? 'the custom bundle' : 'the selected bundle') + ' to ' + (cam.name || cam.id) + '? The camera will reboot into the new partition.')) return;
             cam.state = 'uploading';
             cam.progress = 0;
             cam.error = '';
             try {
                 var data = await window.HM.api.post(
-                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/push', {}
+                    '/api/v1/ota/camera/' + encodeURIComponent(cam.id) + '/push',
+                    { scope: scope }
                 );
                 window.HM.toast(data.message || 'Push started', 'info');
             } catch(e) {
                 cam.state = 'error';
                 cam.error = e.message || 'Push failed';
                 window.HM.toast(cam.error, 'error');
+            }
+            this.loadOtaStatus();
+        },
+
+        async pushAllCameraBundles() {
+            if (!this.cameraCommonBundleReady()) {
+                window.HM.toast('Choose a common camera bundle first', 'error');
+                return;
+            }
+            if (!this.cameraCommonBundleEligible()) {
+                window.HM.toast('No online cameras need this bundle', 'info');
+                return;
+            }
+            if (!confirm('Update all eligible online cameras to ' + (this.ota.camera_bundle.target_version || 'the selected version') + '? Each camera will reboot itself after installation.')) return;
+            try {
+                var data = await window.HM.api.post('/api/v1/ota/cameras/push', {});
+                window.HM.toast(data.message || 'Camera updates started', 'info');
+            } catch(e) {
+                window.HM.toast(e.message || 'Bulk camera update failed', 'error');
             }
             this.loadOtaStatus();
         },

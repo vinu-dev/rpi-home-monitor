@@ -15,6 +15,14 @@ def test_allows_upgrade_and_same_version():
     assert ota_policy.classify_update("1.6.0", "v1.6.0").relation == "same"
 
 
+def test_build_profile_suffix_matches_runtime_version():
+    decision = ota_policy.classify_update("1.6.10", "v1.6.10-dev")
+
+    assert decision.allowed is True
+    assert decision.relation == "same"
+    assert ota_policy.versions_match("1.6.10", "v1.6.10-dev") is True
+
+
 def test_unknown_versions_are_not_ordered():
     decision = ota_policy.classify_update("1.6.0", "")
 

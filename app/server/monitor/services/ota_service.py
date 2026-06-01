@@ -185,6 +185,10 @@ class OTAService:
     def camera_staging_dir(self):
         return os.path.join(self.ota_dir, "camera-library")
 
+    @property
+    def camera_custom_dir(self):
+        return os.path.join(self.ota_dir, "camera-custom")
+
     def _swupdate_env(self):
         os.makedirs(self.swupdate_tmp_dir, exist_ok=True)
         env = os.environ.copy()
@@ -226,6 +230,7 @@ class OTAService:
             os.makedirs(self.staging_dir, exist_ok=True)
             os.makedirs(self.swupdate_tmp_dir, exist_ok=True)
             os.makedirs(self.camera_staging_dir, exist_ok=True)
+            os.makedirs(self.camera_custom_dir, exist_ok=True)
             return ""
         except OSError as exc:
             return str(exc)
@@ -236,6 +241,7 @@ class OTAService:
             self.staging_dir,
             self.swupdate_tmp_dir,
             self.camera_staging_dir,
+            self.camera_custom_dir,
         ):
             err = self._probe_directory_writable(directory)
             if err:
