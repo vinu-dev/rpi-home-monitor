@@ -205,7 +205,8 @@ sync
 
 ### 4.2 Find the Server on Your Network
 
-The server advertises itself via mDNS. From any computer on the same LAN:
+The server advertises itself via mDNS on its trusted LAN interfaces. Ethernet,
+WiFi, and dual-link setups should all resolve the same fixed name:
 
 ```bash
 # Linux/macOS
@@ -348,6 +349,11 @@ discovers it automatically.
 3. The server issues a client certificate (mTLS) to the camera.
 4. The camera begins streaming to the server over RTSPS.
 
+If discovery is delayed, open the camera status page directly and copy the
+visible **Camera ID** into the server's manual add flow. Clicking **Scan** on
+the server also reprocesses any cameras already present in the mDNS cache, so a
+deleted-but-still-advertising camera can reappear as pending.
+
 The camera also has its own status page at `https://rpi-divinu-cam-XXXX.local` (where XXXX is derived from the camera's serial number). Login with the credentials you set during setup to view device status, change WiFi, or update the password.
 
 ### 5.5 Verify Streaming
@@ -456,7 +462,7 @@ nmcli connection up "Wired connection 1"
 | Connection refused | nginx not running | `systemctl start nginx` |
 | 502 Bad Gateway | Flask app crashed | `systemctl restart monitor` and check logs |
 | Certificate error | Self-signed cert | Accept the browser warning (expected) |
-| Can't reach `rpi-divinu.local` | mDNS not working | Use IP address directly |
+| Can't reach `rpi-divinu.local` | mDNS not working | Confirm the client is on the same LAN, multicast/UDP 5353 is allowed, and Avahi is publishing on the active server interface; use the IP address directly only as a temporary diagnostic |
 
 ### 7.5 Poor Video Quality or Lag
 

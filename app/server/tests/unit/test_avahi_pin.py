@@ -39,6 +39,7 @@ def test_choose_publish_interface_prefers_default_physical_lan():
     )
 
     assert avahi_pin.choose_publish_interface(run=run) == "eth0"
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0", "wlan0")
 
 
 def test_choose_publish_interface_ignores_vpn_default_and_uses_lan():
@@ -62,6 +63,7 @@ def test_choose_publish_interface_ignores_vpn_default_and_uses_lan():
     )
 
     assert avahi_pin.choose_publish_interface(run=run) == "eth0"
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0", "wlan0")
 
 
 def test_choose_publish_interface_falls_back_to_existing_interface():
@@ -75,14 +77,36 @@ def test_choose_publish_interface_falls_back_to_existing_interface():
     assert avahi_pin.choose_publish_interface(run=run) == "eth0"
 
 
-def test_choose_publish_interface_uses_physical_default_when_preferred_missing():
+def test_choose_publish_interfaces_adds_physical_default_when_preferred_missing():
     run = _fake_ip(
         {
             ("ip", "-4", "route", "show", "default"): "default dev enp2s0\n",
         }
     )
 
-    assert avahi_pin.choose_publish_interface(run=run) == "enp2s0"
+    assert avahi_pin.choose_publish_interfaces(run=run) == (
+        "eth0",
+        "wlan0",
+        "enp2s0",
+    )
+
+
+def test_choose_publish_interfaces_adds_active_nonstandard_lan_interface():
+    run = _fake_ip(
+        {
+            ("ip", "-4", "route", "show", "default"): "default dev tailscale0\n",
+            ("ip", "-4", "-o", "addr", "show", "scope", "global"): (
+                "2: enp2s0 inet 192.168.1.244/24 brd 192.168.1.255 scope global enp2s0\n"
+                "3: tailscale0 inet 100.64.0.1/32 scope global tailscale0\n"
+            ),
+        }
+    )
+
+    assert avahi_pin.choose_publish_interfaces(run=run) == (
+        "eth0",
+        "wlan0",
+        "enp2s0",
+    )
 
 
 def test_choose_publish_interface_uses_first_candidate_as_last_resort():
@@ -110,12 +134,13 @@ use-ipv4=yes
 publish-addresses=yes
 """
 
-    rendered = avahi_pin.render_avahi_config(existing, "rpi-divinu.local", "eth0")
+    rendered = avahi_pin.render_avahi_config(
+        existing, "rpi-divinu.local", ("eth0", "wlan0")
+    )
 
     assert "host-name=rpi-divinu\n" in rendered
-    assert "allow-interfaces=eth0\n" in rendered
+    assert "allow-interfaces=eth0,wlan0\n" in rendered
     assert "old-name" not in rendered
-    assert "eth0,wlan0" not in rendered
     assert rendered.count("host-name=") == 1
     assert rendered.count("allow-interfaces=") == 1
     assert "[publish]" in rendered
@@ -166,12 +191,12 @@ def test_apply_avahi_pin_writes_data_config(tmp_path):
     changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
 
     assert changed is True
-    assert interface == "wlan0"
+    assert interface == "eth0,wlan0"
     assert "host-name=rpi-divinu\n" in path.read_text(encoding="utf-8")
-    assert "allow-interfaces=wlan0\n" in path.read_text(encoding="utf-8")
+    assert "allow-interfaces=eth0,wlan0\n" in path.read_text(encoding="utf-8")
 
 
-def test_apply_avahi_pin_reports_already_pinned(tmp_path):
+def test_apply_avahi_pin_updates_stale_single_interface_pin(tmp_path):
     path = tmp_path / "avahi-daemon.conf"
     path.write_text(
         "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0\n",
@@ -196,8 +221,23 @@ def test_apply_avahi_pin_reports_already_pinned(tmp_path):
 
     changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
 
+    assert changed is True
+    assert interface == "eth0,wlan0"
+    assert "allow-interfaces=eth0,wlan0\n" in path.read_text(encoding="utf-8")
+
+
+def test_apply_avahi_pin_reports_already_pinned_for_all_lan_interfaces(tmp_path):
+    path = tmp_path / "avahi-daemon.conf"
+    path.write_text(
+        "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0,wlan0\n",
+        encoding="utf-8",
+    )
+    run = _fake_ip({})
+
+    changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
+
     assert changed is False
-    assert interface == "eth0"
+    assert interface == "eth0,wlan0"
 
 
 def test_write_if_changed_preserves_original_once(tmp_path):

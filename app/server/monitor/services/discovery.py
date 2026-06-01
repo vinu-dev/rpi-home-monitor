@@ -65,6 +65,7 @@ class DiscoveryService:
         # mDNS browser (started by start_mdns_browser, stopped by stop_mdns_browser)
         self._zeroconf = None
         self._mdns_browser = None
+        self._mdns_services_seen: set[tuple[str, str]] = set()
 
     # -------------------------------------------------------------------------
     # Core status tracking
@@ -309,6 +310,15 @@ class DiscoveryService:
             log.debug("mDNS browser not running — scan request ignored")
             return
 
+        # Reprocess services already known to zeroconf before sending the fresh
+        # PTR query. When an admin deletes a camera, the service can remain in
+        # zeroconf's cache and no Added/Updated callback fires on the next
+        # manual Scan. Replaying the cached service names makes Scan idempotent:
+        # if the camera is still advertising, it is recreated as pending; if
+        # the cache entry has expired, get_service_info() returns no info.
+        for cached_type, cached_name in list(self._mdns_services_seen):
+            self._handle_mdns_service(self._zeroconf, cached_type, cached_name)
+
         try:
             # zeroconf's public send API: build a PTR question and multicast it
             from zeroconf import DNSOutgoing, DNSQuestion
@@ -337,7 +347,10 @@ class DiscoveryService:
             return
 
         if state_change in (ServiceStateChange.Added, ServiceStateChange.Updated):
+            self._mdns_services_seen.add((service_type, name))
             self._handle_mdns_service(zeroconf, service_type, name)
+        elif state_change == ServiceStateChange.Removed:
+            self._mdns_services_seen.discard((service_type, name))
         # Removed: camera going offline is handled by the staleness checker
         # (check_offline) via heartbeat timeout — mDNS removals are unreliable.
 

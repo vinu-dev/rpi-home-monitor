@@ -1302,6 +1302,7 @@ details[open] summary {
     <div><span id="hero-dot" class="hero__dot"></span><span id="hero-line" class="hero__line">Loading status…</span></div>
     <dl class="hero__sub">
       <dt>Network</dt><dd><span id="h-host" class="mono">--</span><span id="h-ip" hidden></span></dd>
+      <dt>Camera ID</dt><dd id="h-camera-id" class="mono">--</dd>
       <dt>WiFi</dt><dd id="h-wifi">--</dd>
       <dt>Server</dt><dd id="h-server">--</dd>
       <dt>Running for</dt><dd id="h-uptime">--</dd>
@@ -1595,6 +1596,7 @@ function loadStatus() {
 
         // Hero sub-facts
         $("h-host").textContent = _hostname || "--";
+        $("h-camera-id").textContent = d.camera_id || "--";
         $("h-ip").textContent = d.ip_address || "--";
         $("h-wifi").textContent = d.wifi_ssid || "Not connected";
         $("h-server").textContent = d.paired
