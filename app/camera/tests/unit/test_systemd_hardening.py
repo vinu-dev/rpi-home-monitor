@@ -38,6 +38,21 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 UNIT_FILE = REPO_ROOT / "app" / "camera" / "config" / "camera-streamer.service"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-dev-app.sh"
+NM_HOSTNAME_CONF = (
+    REPO_ROOT
+    / "meta-home-monitor"
+    / "recipes-connectivity"
+    / "nm-persist"
+    / "files"
+    / "10-home-monitor-hostname.conf"
+)
+NM_PERSIST_RECIPE = (
+    REPO_ROOT
+    / "meta-home-monitor"
+    / "recipes-connectivity"
+    / "nm-persist"
+    / "nm-persist_1.0.bb"
+)
 
 # --- The contract --------------------------------------------------
 #
@@ -149,6 +164,25 @@ def test_camera_streamer_uses_privileged_helper_socket():
 
     assert "camera-privileged-helper.service" in text
     assert "CAMERA_PRIVILEGED_HELPER_SOCKET=/run/camera/privileged-helper.sock" in text
+
+
+def test_camera_streamer_does_not_keep_hostname_admin_capability():
+    text = UNIT_FILE.read_text(encoding="utf-8")
+    match = re.search(r"^\s*AmbientCapabilities=(.*)$", text, re.MULTILINE)
+
+    assert match is not None
+    assert "CAP_NET_BIND_SERVICE" in match.group(1)
+    assert "CAP_SYS_ADMIN" not in match.group(1)
+
+
+def test_networkmanager_does_not_own_camera_hostname():
+    conf = NM_HOSTNAME_CONF.read_text(encoding="utf-8")
+    recipe = NM_PERSIST_RECIPE.read_text(encoding="utf-8")
+    deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "hostname-mode=none" in conf
+    assert "10-home-monitor-hostname.conf" in recipe
+    assert "10-home-monitor-hostname.conf" in deploy
 
 
 @pytest.mark.parametrize(

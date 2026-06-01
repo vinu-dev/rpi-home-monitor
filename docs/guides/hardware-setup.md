@@ -356,6 +356,15 @@ deleted-but-still-advertising camera can reappear as pending.
 
 The camera also has its own status page at `https://rpi-divinu-cam-XXXX.local` (where XXXX is derived from the camera's serial number). Login with the credentials you set during setup to view device status, change WiFi, or update the password.
 
+The `rpi-divinu-cam-XXXX.local` name is the customer-facing camera URL. The
+image default `rpi-divinu-cam.local` is not a stable per-camera address and must
+not be used once setup has assigned the serial-suffix hostname. On boot the
+camera restores the saved hostname from `/data/config/hostname` before the setup,
+pairing, or status UI starts. A root-only helper applies the matching Avahi mDNS
+name, and the image configures NetworkManager with `hostname-mode=none` so link
+management cannot reset the transient hostname back to the baked default after
+WiFi or Ethernet events.
+
 ### 5.5 Verify Streaming
 
 On the **server**, check that the stream is being received:

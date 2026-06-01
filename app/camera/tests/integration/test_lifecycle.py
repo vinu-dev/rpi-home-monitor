@@ -58,10 +58,24 @@ class TestInit:
         lc = CameraLifecycle(config, platform, lambda: shutdown[0])
 
         # Manually run _do_init
-        result = lc._do_init()
+        with patch.object(lc, "_restore_hostname") as mock_restore:
+            result = lc._do_init()
         assert result is True
         MockLed.assert_called_once_with(platform.led_path)
         mock_led_mod.set_controller.assert_called_once()
+        mock_restore.assert_called_once_with()
+
+    @patch("camera_streamer.lifecycle.led")
+    @patch("camera_streamer.lifecycle.LedController")
+    def test_init_restores_hostname_before_later_states(self, MockLed, mock_led_mod):
+        config = _make_config()
+        platform = _make_platform()
+        lc = CameraLifecycle(config, platform, lambda: False)
+
+        with patch.object(lc, "_restore_hostname") as mock_restore:
+            assert lc._do_init() is True
+
+        mock_restore.assert_called_once_with()
 
 
 class TestSetup:

@@ -479,6 +479,10 @@ class CameraLifecycle:
     def _do_init(self):
         """Load config, detect platform, configure LED."""
         led.set_controller(LedController(self._platform.led_path))
+        # Restore before setup/pairing/status UI starts. The rootfs keeps the
+        # baked default in /etc/hostname, while the customer-facing .local name
+        # lives on /data so it survives resets and A/B updates.
+        self._restore_hostname()
 
         log.info(
             "Platform: camera=%s wifi=%s led=%s thermal=%s",
@@ -573,8 +577,6 @@ class CameraLifecycle:
 
     def _do_connecting(self):
         """Wait for WiFi connectivity and resolve server address."""
-        # Restore hostname on every boot (transient — lost on reboot)
-        self._restore_hostname()
         led.connecting()
 
         if not self._wait_for_wifi():

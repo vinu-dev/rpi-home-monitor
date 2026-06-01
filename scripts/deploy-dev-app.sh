@@ -182,6 +182,7 @@ deploy_server() {
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/10-home-monitor-hostname.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$SERVER_STAGE"
 
@@ -229,6 +230,8 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
+        mkdir -p /etc/NetworkManager/conf.d
+        cp '$SERVER_STAGE/10-home-monitor-hostname.conf' /etc/NetworkManager/conf.d/10-home-monitor-hostname.conf
         cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
         cp '$SERVER_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
         cp '$SERVER_STAGE/mediamtx.service' /etc/systemd/system/mediamtx.service
@@ -298,6 +301,7 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/10-home-monitor-hostname.conf" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$CAMERA_STAGE"
 
@@ -343,6 +347,8 @@ deploy_camera() {
         if command -v tailscaled >/dev/null 2>&1; then
             cp '$CAMERA_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
         fi
+        mkdir -p /etc/NetworkManager/conf.d
+        cp '$CAMERA_STAGE/10-home-monitor-hostname.conf' /etc/NetworkManager/conf.d/10-home-monitor-hostname.conf
     "
 
     log "Applying boot optimisation overrides"

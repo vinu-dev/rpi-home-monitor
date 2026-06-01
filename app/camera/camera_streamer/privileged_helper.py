@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 from collections.abc import Callable
@@ -33,6 +34,8 @@ BLOCKED_SETUP_HOTSPOT_PASSWORDS = {"homecamera", "homemonitor"}
 MIN_SETUP_HOTSPOT_PASSWORD_LENGTH = 12
 MAX_SETUP_HOTSPOT_PASSWORD_LENGTH = 63
 LEDCTL = "/usr/bin/home-monitor-ledctl"
+CAMERA_HOSTNAME_FILE = "/data/config/hostname"
+HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 LED_STATES = {
     "boot",
     "healthy",
@@ -191,6 +194,79 @@ def _op_led_set(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(cmd, timeout=10, nonzero_ok=True)
 
 
+def _validate_hostname(value: Any) -> str:
+    hostname = str(value or "").strip().lower()
+    if not HOSTNAME_RE.match(hostname):
+        raise HelperRequestError(
+            "hostname must be 1-63 lowercase letters, digits, or hyphens"
+        )
+    return hostname
+
+
+def _persist_camera_hostname(hostname: str) -> None:
+    parent = os.path.dirname(CAMERA_HOSTNAME_FILE)
+    tmp_path = f"{CAMERA_HOSTNAME_FILE}.tmp"
+    identity = _camera_identity()
+    os.makedirs(parent, mode=0o700, exist_ok=True)
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            handle.write(hostname + "\n")
+        os.chmod(tmp_path, 0o644)
+        if identity is not None:
+            os.chown(tmp_path, identity[0], identity[1])
+        os.replace(tmp_path, CAMERA_HOSTNAME_FILE)
+        os.chmod(CAMERA_HOSTNAME_FILE, 0o644)
+        if identity is not None:
+            os.chown(CAMERA_HOSTNAME_FILE, identity[0], identity[1])
+    except OSError as exc:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise HelperRequestError(str(exc)) from exc
+
+
+def _avahi_result_text(result: dict[str, Any]) -> str:
+    return str(result.get("stderr") or result.get("stdout") or "").strip()
+
+
+def _is_avahi_redundant(result: dict[str, Any]) -> bool:
+    return "redundant" in _avahi_result_text(result).lower()
+
+
+def _op_hostname_set(payload: dict[str, Any]) -> dict[str, Any]:
+    hostname = _validate_hostname(payload.get("hostname"))
+    _persist_camera_hostname(hostname)
+
+    kernel = _run_command(["hostname", hostname], timeout=10)
+    avahi = _run_command(
+        ["avahi-set-host-name", hostname],
+        timeout=10,
+        nonzero_ok=True,
+    )
+    avahi_ok = int(avahi.get("returncode", 1)) == 0
+    if not avahi_ok and _is_avahi_redundant(avahi):
+        avahi_ok = True
+    if not avahi_ok:
+        log.warning(
+            "avahi-set-host-name rejected %s: %s",
+            hostname,
+            _avahi_result_text(avahi),
+        )
+        _run_command(
+            ["systemctl", "restart", "avahi-daemon"],
+            timeout=20,
+            nonzero_ok=True,
+        )
+
+    return {
+        "hostname": hostname,
+        "kernel_returncode": kernel["returncode"],
+        "avahi_returncode": avahi.get("returncode", 1),
+        "avahi_effective": "ok" if avahi_ok else "restarted",
+    }
+
+
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(["systemctl", "reboot"], timeout=15)
 
@@ -201,6 +277,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "hotspot.wipe": _op_hotspot_wipe,
     "hotspot.start": _op_hotspot_start,
     "hotspot.stop": _op_hotspot_stop,
+    "hostname.set": _op_hostname_set,
     "led.set": _op_led_set,
     "system.reboot": _op_system_reboot,
 }
