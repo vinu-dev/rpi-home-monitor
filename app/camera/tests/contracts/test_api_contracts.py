@@ -665,6 +665,7 @@ class TestStatusServerApiStatusContract:
             for anchor in [
                 'id="hardware-alert"',
                 'id="hero-line"',
+                'id="h-camera-id"',
                 'id="h-server"',
                 'id="pair-cta"',
                 'id="btn-pair"',

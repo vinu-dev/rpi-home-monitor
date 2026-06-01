@@ -349,6 +349,11 @@ discovers it automatically.
 3. The server issues a client certificate (mTLS) to the camera.
 4. The camera begins streaming to the server over RTSPS.
 
+If discovery is delayed, open the camera status page directly and copy the
+visible **Camera ID** into the server's manual add flow. Clicking **Scan** on
+the server also reprocesses any cameras already present in the mDNS cache, so a
+deleted-but-still-advertising camera can reappear as pending.
+
 The camera also has its own status page at `https://rpi-divinu-cam-XXXX.local` (where XXXX is derived from the camera's serial number). Login with the credentials you set during setup to view device status, change WiFi, or update the password.
 
 ### 5.5 Verify Streaming

@@ -364,8 +364,21 @@ class TestRegisterCamera:
             resp = client.post("/api/v1/pair/register", json={"camera_id": good_id})
             assert resp.status_code == 200, f"Expected 200 for {good_id}"
 
-    def test_rate_limited_after_10_requests(self, app, client):
-        """11th registration from same IP is rejected with 429."""
+    def test_repeated_same_camera_registration_is_idempotent(self, app, client):
+        """One real camera can retry registration without consuming the limit."""
+        for _ in range(20):
+            resp = client.post(
+                "/api/v1/pair/register",
+                json={"camera_id": "cam-retry01", "firmware_version": "1.0.0"},
+            )
+            assert resp.status_code == 200
+
+        cam = app.store.get_camera("cam-retry01")
+        assert cam is not None
+        assert cam.status == "pending"
+
+    def test_rate_limited_after_10_new_camera_ids(self, app, client):
+        """11th new camera ID from same IP is rejected with 429."""
         for _ in range(10):
             client.post("/api/v1/pair/register", json={"camera_id": f"cam-{_:03d}"})
         resp = client.post("/api/v1/pair/register", json={"camera_id": "cam-999"})

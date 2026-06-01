@@ -386,6 +386,43 @@ class TestMdnsBrowser:
             # Must not raise
             svc.trigger_scan()
 
+    def test_trigger_scan_replays_cached_mdns_services(self, app):
+        """Manual Scan must rediscover a deleted camera already in mDNS cache."""
+        with app.app_context():
+            import sys
+
+            svc = DiscoveryService(app.store, app.audit)
+            svc._zeroconf = MagicMock()
+            svc._mdns_services_seen.add(
+                (
+                    "_rtsp._tcp.local.",
+                    "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+                )
+            )
+            fake_outgoing = MagicMock()
+            mock_zeroconf_mod = MagicMock()
+            mock_zeroconf_mod.DNSOutgoing = MagicMock(return_value=fake_outgoing)
+            mock_zeroconf_mod.DNSQuestion = MagicMock(return_value="question")
+
+            original = sys.modules.get("zeroconf")
+            sys.modules["zeroconf"] = mock_zeroconf_mod
+            try:
+                with patch.object(svc, "_handle_mdns_service") as handle:
+                    svc.trigger_scan()
+            finally:
+                if original is None:
+                    sys.modules.pop("zeroconf", None)
+                else:
+                    sys.modules["zeroconf"] = original
+
+            handle.assert_called_once_with(
+                svc._zeroconf,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+            )
+            fake_outgoing.add_question.assert_called_once_with("question")
+            svc._zeroconf.send.assert_called_once_with(fake_outgoing)
+
     def test_handle_mdns_service_calls_report_camera(self, app):
         """_handle_mdns_service() parses TXT records and calls report_camera()."""
         with app.app_context():

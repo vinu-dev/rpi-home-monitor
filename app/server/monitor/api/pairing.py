@@ -12,7 +12,8 @@ The exchange endpoint intentionally has no session auth — the 6-digit PIN
 (rate-limited, 5-min expiry) is the authentication mechanism for the camera.
 
 Security notes:
-- /pair/register is rate-limited (10 per IP per 5 min) to prevent fake camera spam.
+- /pair/register is rate-limited to 10 new camera IDs per IP per 5 min to
+  prevent fake camera spam without blocking one real camera's retry loop.
 - /pair/exchange already has 3-attempt lockout per camera in PairingService.
 - Error messages from pairing_service are sanitised before returning to clients
   to avoid leaking internal paths (e.g. CA cert location).
@@ -29,21 +30,33 @@ pairing_bp = Blueprint("pairing", __name__)
 
 # ── /pair/register rate limiter ───────────────────────────────────────────────
 # Prevents a LAN attacker from flooding the dashboard with fake pending cameras.
-_register_attempts: dict[str, list[float]] = {}
+# Repeated registration from the same camera ID is intentionally idempotent: an
+# unpaired camera retries until the admin pairs it, and those retries must not
+# consume the "new camera" budget.
+_register_attempts: dict[str, dict[str, float]] = {}
 _REGISTER_RATE_WINDOW = 300  # seconds (5 minutes)
-_REGISTER_RATE_MAX = 10  # max registrations per window per IP
+_REGISTER_RATE_MAX = 10  # max new camera IDs per window per IP
 
 
-def _register_rate_limited(ip: str) -> bool:
-    """Return True if the IP has exceeded the registration rate limit."""
+def _register_rate_limited(ip: str, camera_id: str) -> bool:
+    """Return True if the IP has exceeded the new-camera registration limit."""
     now = time.time()
-    attempts = [
-        t for t in _register_attempts.get(ip, []) if now - t < _REGISTER_RATE_WINDOW
-    ]
+    attempts = {
+        cid: seen_at
+        for cid, seen_at in _register_attempts.get(ip, {}).items()
+        if now - seen_at < _REGISTER_RATE_WINDOW
+    }
+
+    if camera_id in attempts:
+        attempts[camera_id] = now
+        _register_attempts[ip] = attempts
+        return False
+
     _register_attempts[ip] = attempts
     if len(attempts) >= _REGISTER_RATE_MAX:
         return True
-    attempts.append(now)
+
+    attempts[camera_id] = now
     _register_attempts[ip] = attempts
     return False
 
@@ -130,13 +143,10 @@ def register_camera():
     the dashboard. The server creates a pending entry if it doesn't
     already exist.
 
-    Rate-limited: 10 requests per IP per 5 minutes to prevent fake camera spam.
-    Camera ID format is validated to the cam-<hex> pattern.
+    Rate-limited: 10 new camera IDs per IP per 5 minutes to prevent fake camera
+    spam. Camera ID format is validated to the cam-<hex> pattern.
     """
     ip = request.remote_addr or ""
-    if _register_rate_limited(ip):
-        return jsonify({"error": "Too many registration requests"}), 429
-
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "JSON body required"}), 400
@@ -150,6 +160,9 @@ def register_camera():
 
     if not re.match(r"^cam-[a-z0-9]{1,48}$", camera_id):
         return jsonify({"error": "Invalid camera_id format"}), 400
+
+    if _register_rate_limited(ip, camera_id):
+        return jsonify({"error": "Too many registration requests"}), 429
 
     # A camera that calls /pair/register is by definition asking to pair,
     # so treat it as explicitly unpaired. This guarantees that if the server
