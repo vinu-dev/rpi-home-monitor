@@ -211,27 +211,27 @@
             <div class="text-small text-muted" x-show="timeHealth.state === 'unknown'">
                 Time health unavailable in this environment.
             </div>
-            <div style="margin-top: var(--space-3); overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse;">
+            <div class="settings-table-cards time-health-table-wrap">
+                <table class="time-health-table">
                     <thead>
                         <tr class="text-small text-muted">
-                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">Camera</th>
-                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">Drift</th>
-                            <th style="text-align:left; padding:0 0 var(--space-2) 0;">State</th>
-                            <th style="text-align:right; padding:0 0 var(--space-2) 0;">Action</th>
+                            <th scope="col">Camera</th>
+                            <th scope="col">Drift</th>
+                            <th scope="col">State</th>
+                            <th scope="col" class="time-health-table__action">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template x-for="camera in timeHealth.cameras" :key="camera.id">
                             <tr>
-                                <td style="padding:10px 0; border-top:1px solid var(--color-border);" x-text="camera.name || camera.id"></td>
-                                <td style="padding:10px 0; border-top:1px solid var(--color-border);" x-text="formatSignedSeconds(camera.drift_seconds)"></td>
-                                <td style="padding:10px 0; border-top:1px solid var(--color-border);">
+                                <td data-label="Camera" x-text="camera.name || camera.id"></td>
+                                <td data-label="Drift" x-text="formatSignedSeconds(camera.drift_seconds)"></td>
+                                <td data-label="State">
                                     <span class="badge"
                                           :style="timeHealthBadgeStyle(camera.state)"
                                           x-text="timeHealthStateLabel(camera.state)"></span>
                                 </td>
-                                <td style="padding:10px 0; border-top:1px solid var(--color-border); text-align:right;">
+                                <td data-label="Action" class="time-health-table__action">
                                     <button class="btn btn--secondary btn--small"
                                             @click="resyncTime(camera.id)"
                                             :disabled="camera.state === 'unknown' || timeHealthBusyTarget === camera.id">
@@ -241,7 +241,7 @@
                             </tr>
                         </template>
                         <tr x-show="!timeHealth.cameras.length">
-                            <td colspan="4" class="text-small text-muted" style="padding-top:10px; border-top:1px solid var(--color-border);">
+                            <td colspan="4" class="text-small text-muted">
                                 No paired cameras reporting time health yet.
                             </td>
                         </tr>

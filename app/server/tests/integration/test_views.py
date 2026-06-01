@@ -903,6 +903,9 @@ class TestCompleteGuiRedesignCoverage:
             "Camera defaults",
             "Server Software Update",
             "Camera Software Updates",
+            "time-health-table-wrap",
+            'data-label="Camera"',
+            'data-label="Action"',
         ]
         for expected in expected_controls:
             assert expected in body
@@ -950,5 +953,7 @@ class TestCompleteGuiRedesignCoverage:
             ".ota-job-panel",
             ".ota-device-card__controls",
             ".ota-state-pill--busy",
+            ".time-health-table",
+            ".time-health-table__action",
         ]:
             assert selector in css
