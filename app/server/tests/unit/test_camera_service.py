@@ -48,6 +48,13 @@ def _make_camera(**overrides):
         "motion_sensitivity": 5,
         "image_controls": {},
         "image_quality": {},
+        "restart_schedule": {
+            "enabled": False,
+            "days": ["sun"],
+            "time": "03:30",
+            "updated_at": "",
+            "source": "system",
+        },
         # #136 offline alerts
         "offline_alerts_enabled": True,
         "last_offline_alert_at": "",
@@ -604,6 +611,33 @@ class TestDelete:
         assert status == 200
 
 
+class TestReboot:
+    def test_reboot_requests_camera_control(self):
+        cam = _make_camera(status="online", ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        control = MagicMock()
+        control.reboot.return_value = ({"message": "ok"}, "")
+        svc = CameraService(store, control_client=control)
+
+        error, status = svc.reboot("cam-001", user="admin", ip="10.0.0.1")
+
+        assert error == ""
+        assert status == 202
+        control.reboot.assert_called_once_with("192.168.1.50", camera_id="cam-001")
+
+    def test_reboot_rejects_offline_camera(self):
+        cam = _make_camera(status="offline", ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store, control_client=MagicMock())
+
+        error, status = svc.reboot("cam-001")
+
+        assert status == 409
+        assert "not online" in error
+
+
 class TestAuditLogging:
     """Test audit logging across all mutating operations."""
 
@@ -769,6 +803,63 @@ class TestAcceptCameraConfig:
         assert cam.fps == 30
         assert cam.config_sync == "synced"
         store.save_camera.assert_called_once_with(cam)
+
+    def test_updates_restart_schedule_from_camera_when_newer(self):
+        cam = _make_camera(
+            restart_schedule={
+                "enabled": False,
+                "days": ["sun"],
+                "time": "03:30",
+                "updated_at": "2026-06-01T00:00:00Z",
+                "source": "server",
+            }
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.accept_camera_config(
+            "cam-001",
+            {
+                "restart_schedule": {
+                    "enabled": True,
+                    "days": ["mon"],
+                    "time": "04:15",
+                    "updated_at": "2026-06-01T01:00:00Z",
+                    "source": "camera",
+                }
+            },
+        )
+        assert status == 200, error
+        assert cam.restart_schedule["enabled"] is True
+        assert cam.restart_schedule["time"] == "04:15"
+
+    def test_ignores_older_restart_schedule_from_camera(self):
+        cam = _make_camera(
+            restart_schedule={
+                "enabled": True,
+                "days": ["mon"],
+                "time": "04:15",
+                "updated_at": "2026-06-01T01:00:00Z",
+                "source": "server",
+            }
+        )
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.accept_camera_config(
+            "cam-001",
+            {
+                "restart_schedule": {
+                    "enabled": False,
+                    "days": ["sun"],
+                    "time": "03:30",
+                    "updated_at": "2026-06-01T00:00:00Z",
+                    "source": "camera",
+                }
+            },
+        )
+        assert status == 200, error
+        assert cam.restart_schedule["enabled"] is True
 
     def test_rejects_unknown_camera(self):
         store = MagicMock()

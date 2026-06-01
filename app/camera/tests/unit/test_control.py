@@ -159,6 +159,7 @@ class TestPerSensorCapabilities:
             # (renamed from recording_motion_enabled) when the admin
             # toggles motion on from the Camera Settings modal.
             "motion_detection",
+            "restart_schedule",
         }
         assert set(params.keys()) == expected
 
@@ -194,8 +195,13 @@ class TestGetConfig:
             "motion_detection",
             # #182 image-quality controls dict.
             "image_quality",
+            "restart_schedule",
         }
         assert set(cfg.keys()) == expected
+
+    def test_restart_schedule_present(self, control):
+        cfg = control.get_config()
+        assert cfg["restart_schedule"]["enabled"] is False
 
 
 # --- set_config validation ---
@@ -206,6 +212,23 @@ class TestSetConfigValidation:
         result, err, status = control.set_config({"unknown_field": 42})
         assert status == 400
         assert "Unknown parameters" in err
+
+    def test_accepts_restart_schedule_without_stream_restart(self, control):
+        result, err, status = control.set_config(
+            {
+                "restart_schedule": {
+                    "enabled": True,
+                    "days": ["mon"],
+                    "time": "04:15",
+                    "updated_at": "2026-06-01T00:00:00Z",
+                    "source": "server",
+                }
+            }
+        )
+        assert status == 200, err
+        assert result["restart_required"] is False
+        assert result["applied"]["restart_schedule"]["time"] == "04:15"
+        control._stream.restart.assert_not_called()
 
     def test_rejects_wrong_type_int(self, control):
         result, err, status = control.set_config({"fps": "fast"})

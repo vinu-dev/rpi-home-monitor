@@ -26,6 +26,11 @@ from camera_streamer import ota_installer, wifi
 from camera_streamer.config import MIN_ADMIN_PASSWORD_LENGTH
 from camera_streamer.control import parse_control_request
 from camera_streamer.factory_reset import FactoryResetService
+from camera_streamer.restart_schedule_model import (
+    next_run_at,
+    normalise_restart_schedule,
+)
+from camera_streamer.restart_scheduler import request_reboot_async
 from camera_streamer.server_notifier import notify_config_change
 
 # Cap direct-upload bundle size: matches OTAAgent's cap. A 512 MB camera
@@ -57,6 +62,7 @@ STATUS_ROUTE_MATRIX = {
             "/api/status",
             "/api/networks",
             "/api/pair/fingerprint",
+            "/api/restart-schedule",
         }
     ),
     "GET": frozenset(
@@ -70,9 +76,10 @@ STATUS_ROUTE_MATRIX = {
             "/api/networks",
             "/api/ota/status",
             "/api/pair/fingerprint",
+            "/api/restart-schedule",
         }
     ),
-    "PUT": frozenset({"/api/stream-config"}),
+    "PUT": frozenset({"/api/stream-config", "/api/restart-schedule"}),
     "POST": frozenset(
         {
             "/api/ota/upload",
@@ -83,6 +90,7 @@ STATUS_ROUTE_MATRIX = {
             "/api/factory-reset",
             "/api/unpair",
             "/api/password",
+            "/api/restart",
         }
     ),
 }
@@ -628,7 +636,7 @@ def _make_status_handler(
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-            elif request_path == "/api/networks":
+            elif request_path in {"/api/networks", "/api/restart-schedule"}:
                 if not self._require_auth():
                     return
                 self.send_response(200)
@@ -706,6 +714,16 @@ def _make_status_handler(
                     return
                 nets = wifi.scan_networks(wifi_interface)
                 self._json_response({"networks": nets})
+            elif request_path == "/api/restart-schedule":
+                if not self._require_auth():
+                    return
+                schedule = normalise_restart_schedule(
+                    config.restart_schedule,
+                    source="camera",
+                    stamp=False,
+                )
+                schedule["next_run_at"] = next_run_at(schedule)
+                self._json_response(schedule)
             elif request_path == "/api/pair/fingerprint":
                 self._handle_pair_fingerprint()
             elif request_path == "/api/ota/status":
@@ -758,6 +776,31 @@ def _make_status_handler(
                         args=(config, pairing_manager),
                         daemon=True,
                         name="config-notify",
+                    ).start()
+            elif self.path == "/api/restart-schedule":
+                if not self._require_auth():
+                    return
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    self._json_response({"error": "Invalid JSON"}, 400)
+                    return
+                data = {**data, "source": "camera"} if isinstance(data, dict) else data
+                schedule = normalise_restart_schedule(
+                    data,
+                    source="camera",
+                    stamp=True,
+                )
+                config.update(RESTART_SCHEDULE=json.dumps(schedule))
+                result = dict(schedule)
+                result["next_run_at"] = next_run_at(schedule)
+                self._json_response(result, 200)
+                if pairing_manager and pairing_manager.is_paired and config.server_ip:
+                    threading.Thread(
+                        target=notify_config_change,
+                        args=(config, pairing_manager),
+                        daemon=True,
+                        name="config-notify-restart-schedule",
                     ).start()
             else:
                 self.send_error(404)
@@ -841,6 +884,11 @@ def _make_status_handler(
                     self._json_response({"message": "Password changed"})
                 except json.JSONDecodeError:
                     self._json_response({"error": "Invalid JSON"}, 400)
+            elif self.path == "/api/restart":
+                if not self._require_auth():
+                    return
+                self._json_response({"message": "Camera reboot requested"}, 202)
+                request_reboot_async("manual")
             else:
                 self.send_error(404)
 
@@ -1022,6 +1070,14 @@ def _make_status_handler(
                 "memory_used_mb": mem_used,
                 "hardware_ok": hardware_ok,
                 "hardware_error": hardware_error,
+                "restart_schedule": {
+                    **normalise_restart_schedule(
+                        config.restart_schedule,
+                        source="camera",
+                        stamp=False,
+                    ),
+                    "next_run_at": next_run_at(config.restart_schedule),
+                },
                 "stream_config": {
                     "width": config.width,
                     "height": config.height,

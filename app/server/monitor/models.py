@@ -182,6 +182,18 @@ class Camera:
     # ISO-8601 timestamp of the last motion notification delivered
     # for this camera. Used to enforce the coalesce window.
     last_notification_at: str = ""
+    # Per-camera maintenance restart schedule. The camera and server both
+    # write this shape and reconcile with updated_at last-writer-wins over
+    # heartbeat/config-notify. Execution state is local to each camera.
+    restart_schedule: dict = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "days": ["sun"],
+            "time": "03:30",
+            "updated_at": "",
+            "source": "system",
+        }
+    )
 
 
 @dataclass
@@ -301,6 +313,18 @@ class Settings:
     webhook_destinations: list[WebhookDestination] = field(default_factory=list)
     webhook_delivery_history_retention_days: int = 30
     backup_max_history: int = 3
+    # Server maintenance restart schedule. Execution state lives separately
+    # in /data/config/restart_schedule_state.json so "last run" never
+    # competes with user intent during config backup/restore.
+    restart_schedule: dict = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "days": ["sun"],
+            "time": "03:30",
+            "updated_at": "",
+            "source": "system",
+        }
+    )
 
     def __post_init__(self) -> None:
         normalised: list[WebhookDestination] = []

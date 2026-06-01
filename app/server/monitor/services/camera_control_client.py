@@ -142,6 +142,18 @@ class CameraControlClient:
             camera_id=camera_id,
         )
 
+    def reboot(self, camera_ip, camera_id=""):
+        """POST /api/v1/control/reboot on camera.
+
+        Returns (result_dict, error_string).
+        """
+        return self._request(
+            "POST",
+            camera_ip,
+            "/api/v1/control/reboot",
+            camera_id=camera_id,
+        )
+
     def start_stream(self, camera_ip, camera_id=""):
         """POST /api/v1/control/stream/start on camera (ADR-0017).
 

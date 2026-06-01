@@ -18,6 +18,10 @@ from flask import current_app
 
 from monitor.services import privileged
 from monitor.services.audit import TAILSCALE_AUTH_KEY_ROTATED
+from monitor.services.restart_schedule_model import (
+    next_run_at,
+    normalise_restart_schedule,
+)
 
 log = logging.getLogger("monitor.services.settings_service")
 
@@ -91,6 +95,7 @@ UPDATABLE_FIELDS = {
     "loop_hysteresis_percent",
     # Issue #238: TOTP 2FA policy
     "require_2fa_for_remote",
+    "restart_schedule",
 }
 
 # REQ: SWR-101-B; RISK: RISK-101-1; SEC: SC-005, SC-101; TEST: TC-101-AC-2, TC-101-AC-12
@@ -137,6 +142,17 @@ class SettingsService:
             "loop_low_watermark_percent": settings.loop_low_watermark_percent,
             "loop_hysteresis_percent": settings.loop_hysteresis_percent,
             "require_2fa_for_remote": settings.require_2fa_for_remote,
+            "restart_schedule": {
+                **normalise_restart_schedule(
+                    getattr(settings, "restart_schedule", {}),
+                    source="server",
+                    stamp=False,
+                ),
+                "next_run_at": next_run_at(
+                    getattr(settings, "restart_schedule", {}),
+                    settings.timezone,
+                ),
+            },
         }
 
     def update_settings(
@@ -179,6 +195,11 @@ class SettingsService:
         settings = self._store.get_settings()
         previous_tailscale_auth_key = settings.tailscale_auth_key
         for key, value in data.items():
+            if key == "restart_schedule":
+                value = (
+                    {**value, "source": "server"} if isinstance(value, dict) else value
+                )
+                value = normalise_restart_schedule(value, source="server", stamp=True)
             setattr(settings, key, value)
         self._store.save_settings(settings)
         self._apply_runtime_changes(settings, set(data.keys()))
@@ -636,6 +657,11 @@ class SettingsService:
                 errors.append("tailscale_auth_key must be a string")
             elif len(val) > 256:
                 errors.append("tailscale_auth_key must be at most 256 characters")
+
+        if "restart_schedule" in data:
+            val = data["restart_schedule"]
+            if not isinstance(val, dict):
+                errors.append("restart_schedule must be an object")
 
         # ADR-0017: loop-recording watermarks. Low must be in [1, 50];
         # hysteresis in [1, 50]; low + hysteresis must stay < 100 so the

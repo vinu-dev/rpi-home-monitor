@@ -135,6 +135,8 @@ _STATE_CHANGING_ROUTES = [
     ("POST", "/api/v1/settings/offsite-backup/test-connection", {}),
     ("POST", "/api/v1/settings/time", {"time": "2026-01-01T00:00:00Z"}),
     ("POST", "/api/v1/system/time/resync", {"target": "server"}),
+    ("POST", "/api/v1/system/reboot", {}),
+    ("POST", "/api/v1/cameras/cam-test/reboot", {}),
     ("POST", "/api/v1/settings/wifi", {"ssid": "x", "password": "y"}),
     (
         "POST",

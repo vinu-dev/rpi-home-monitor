@@ -71,13 +71,22 @@ class TestGetSettings:
         assert result["loop_low_watermark_percent"] == 10
         assert result["loop_hysteresis_percent"] == 5
         assert result["require_2fa_for_remote"] is False
+        assert result["restart_schedule"] == {
+            "enabled": False,
+            "days": ["sun"],
+            "time": "03:30",
+            "updated_at": "",
+            "source": "server",
+            "next_run_at": "",
+        }
 
     def test_returns_dict(self):
         svc, _ = _make_service()
         result = svc.get_settings()
         assert isinstance(result, dict)
-        # 12 original + 2 ADR-0017 loop-recording + 1 ADR-0019 ntp_mode + 1 Issue #238 policy
-        assert len(result) == 16
+        # 12 original + 2 ADR-0017 loop-recording + 1 ADR-0019 ntp_mode
+        # + 1 Issue #238 policy + 1 maintenance restart schedule.
+        assert len(result) == 17
 
     def test_reflects_custom_values(self):
         settings = _make_settings(
@@ -158,6 +167,33 @@ class TestUpdateSettings:
 
         svc.update_settings({"hostname": "newname"}, "admin", "1.2.3.4")
         assert settings.hostname == "newname"
+
+    def test_restart_schedule_is_normalised_and_stamped(self):
+        settings = _make_settings()
+        store = MagicMock()
+        store.get_settings.return_value = settings
+        svc = SettingsService(store)
+
+        msg, code = svc.update_settings(
+            {
+                "restart_schedule": {
+                    "enabled": True,
+                    "days": ["fri", "bogus", "mon"],
+                    "time": "04:20",
+                    "source": "camera",
+                }
+            },
+            "admin",
+            "1.2.3.4",
+        )
+
+        assert code == 200
+        assert msg == "Settings updated"
+        assert settings.restart_schedule["enabled"] is True
+        assert settings.restart_schedule["days"] == ["mon", "fri"]
+        assert settings.restart_schedule["time"] == "04:20"
+        assert settings.restart_schedule["source"] == "server"
+        assert settings.restart_schedule["updated_at"]
 
     def test_audit_logged_on_success(self):
         audit = MagicMock()
@@ -698,6 +734,8 @@ class TestUpdatableFields:
             "loop_hysteresis_percent",
             # Issue #238: remote-origin TOTP enforcement
             "require_2fa_for_remote",
+            # Maintenance restart schedule
+            "restart_schedule",
         }
         assert expected == UPDATABLE_FIELDS
 

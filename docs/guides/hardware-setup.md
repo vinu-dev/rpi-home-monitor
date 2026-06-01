@@ -541,6 +541,24 @@ to boot. Cameras own their own activation reboot after the inactive slot is
 written, and the server reports success only when the camera comes back on the
 expected target version.
 
+### 8.4 Maintenance Restarts
+
+The Settings -> System tab has a Maintenance restart section for the server and
+for each paired camera. The UI intentionally follows the common appliance
+pattern used by routers and NAS systems: one immediate restart action, one
+recurring enable switch, day chips, a time field, and a visible next-run value.
+
+Server schedules are stored in server settings. Camera schedules are per-camera
+settings and converge from either direction: changing a camera's schedule in the
+server UI pushes it to that camera, while changing it in the camera-local UI is
+reported back to the server. The latest `updated_at` value wins so the two
+surfaces do not fight each other.
+
+Scheduled restarts are skipped while OTA work is busy and are executed only once
+for a given scheduled minute. Manual restart buttons remain admin-only actions:
+the server uses its privileged helper boundary, and cameras use the paired
+control channel or their own authenticated local status page.
+
 ---
 
 ## 9. Physical Security Tips

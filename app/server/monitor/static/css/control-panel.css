@@ -2064,6 +2064,85 @@ body,
     box-shadow: none;
 }
 
+.maintenance-restart {
+    display: grid;
+    gap: 18px;
+}
+
+.maintenance-restart__server,
+.maintenance-device {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--suite-line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.maintenance-restart__cameras {
+    display: grid;
+    gap: 12px;
+}
+
+.maintenance-restart__header,
+.maintenance-restart__save-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.maintenance-restart__name {
+    color: #122039;
+    font-weight: 820;
+}
+
+.maintenance-restart__editor {
+    display: grid;
+    gap: 12px;
+}
+
+.maintenance-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #263955;
+    font-weight: 720;
+}
+
+.restart-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.restart-day {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border: 1px solid var(--suite-line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.62);
+    color: #52637d;
+    font-size: 0.82rem;
+    font-weight: 780;
+    cursor: pointer;
+}
+
+.restart-day input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.restart-day--active {
+    border-color: rgba(10, 132, 255, 0.32);
+    background: linear-gradient(135deg, rgba(10, 132, 255, 0.14), rgba(30, 213, 195, 0.14));
+    color: #12365f;
+}
+
 .settings-section .settings-section {
     margin-top: 16px;
     border: 1px solid var(--suite-line);
@@ -2498,6 +2577,18 @@ body,
     .ota-file-picker,
     .ota-install-button {
         width: 100%;
+    }
+
+    .maintenance-restart__header,
+    .maintenance-restart__save-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .maintenance-restart__header .btn,
+    .maintenance-restart__save-row .btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .content > .card.mb-16,

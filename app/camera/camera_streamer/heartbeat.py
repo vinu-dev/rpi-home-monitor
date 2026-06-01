@@ -28,6 +28,7 @@ import urllib.request
 
 from camera_streamer.control import ControlHandler, parse_control_request
 from camera_streamer.health import read_throttle_state as _read_throttle_state
+from camera_streamer.restart_schedule_model import normalise_restart_schedule
 from camera_streamer.server_notifier import notify_config_change
 from camera_streamer.server_tls import paired_server_context
 
@@ -310,6 +311,11 @@ class HeartbeatSender:
             "hardware_ok": hardware_ok,
             "hardware_error": hardware_error,
             "hardware_faults": hardware_faults,
+            "restart_schedule": normalise_restart_schedule(
+                getattr(config, "restart_schedule", {}),
+                source="camera",
+                stamp=False,
+            ),
             "stream_config": {
                 "width": config.width,
                 "height": config.height,

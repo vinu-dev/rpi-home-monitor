@@ -266,6 +266,9 @@ CAMERA_LIST_FIELDS_ADMIN = {
     # camera-level baseline; per-user overrides live separately
     # in user.notification_prefs.cameras{}.
     "notification_rule",
+    # Maintenance restart schedule convergence (#257). Dict with
+    # {enabled, days, time, updated_at, source, next_run_at}.
+    "restart_schedule",
 }
 
 # Viewers see a subset — no IP (network topology) or health metrics (occupancy risk)

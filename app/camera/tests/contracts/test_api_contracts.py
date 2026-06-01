@@ -586,6 +586,8 @@ STATUS_API_FIELDS = {
     "memory_total_mb",
     "memory_used_mb",
     "stream_config",
+    # Maintenance restart schedule shown on the camera-local settings card.
+    "restart_schedule",
     # Hardware health surfaces the "no camera module detected" banner
     # on both the camera's own status page and the server dashboard.
     "hardware_ok",
@@ -677,6 +679,8 @@ class TestStatusServerApiStatusContract:
                 'id="btn-stream-edit"',
                 'id="se-res"',
                 'id="btn-stream-save"',
+                'id="btn-restart-now"',
+                'id="btn-restart-save"',
                 'id="unpair-details"',
                 'id="btn-repair"',
                 'id="btn-unpair"',
@@ -699,9 +703,12 @@ class TestStatusServerNoPasswordAuthContract:
         ("method", "path", "body"),
         [
             ("GET", "/api/networks", None),
+            ("GET", "/api/restart-schedule", None),
             ("GET", "/api/ota/status", None),
             ("PUT", "/api/stream-config", {"fps": 20}),
+            ("PUT", "/api/restart-schedule", {"enabled": True}),
             ("POST", "/api/ota/upload", {"bundle": "x"}),
+            ("POST", "/api/restart", {}),
             ("POST", "/api/wifi", {"ssid": "NewNet", "password": "pass123"}),
             ("POST", "/api/factory-reset", {}),
             ("POST", "/api/unpair", {}),
