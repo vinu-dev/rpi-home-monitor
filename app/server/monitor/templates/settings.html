@@ -847,7 +847,7 @@
                                     <span class="badge" :class="u.totp_enabled ? 'badge--ok' : 'badge--offline'" x-text="u.totp_enabled ? 'on' : 'off'"></span>
                                 </td>
                                 <td data-label="Created" class="text-muted" x-text="u.created_at ? new Date(u.created_at).toLocaleDateString() : '--'"></td>
-                                <td data-label="Actions" style="display:flex; gap:6px; align-items:center;">
+                                <td data-label="Actions" class="settings-table-actions">
                                     <!-- Reset password — admin-only, and
                                          hidden for the admin's own row (they
                                          use Settings → Change Password). Sets
@@ -1953,8 +1953,8 @@
                 <div class="text-small text-muted">No webhook destinations configured yet.</div>
             </template>
 
-            <div class="user-table-wrap" x-show="webhooks.destinations.length > 0">
-                <table class="user-table">
+            <div class="user-table-wrap settings-table-cards" x-show="webhooks.destinations.length > 0">
+                <table class="user-table webhook-destination-table">
                     <thead>
                         <tr>
                             <th>Destination</th>
@@ -1967,7 +1967,7 @@
                     <tbody>
                         <template x-for="dest in webhooks.destinations" :key="dest.id">
                             <tr>
-                                <td>
+                                <td data-label="Destination">
                                     <div style="font-weight:600;" x-text="dest.url"></div>
                                     <div class="text-small text-muted" x-show="dest.custom_header_count > 0">
                                         <span x-text="dest.custom_header_count"></span> custom header(s)
@@ -1975,11 +1975,11 @@
                                               x-text="' · ' + dest.custom_header_names.join(', ')"></span>
                                     </div>
                                 </td>
-                                <td class="text-small" x-text="(dest.event_classes || []).map(webhookEventLabel).join(', ')"></td>
-                                <td>
+                                <td data-label="Events" class="text-small" x-text="(dest.event_classes || []).map(webhookEventLabel).join(', ')"></td>
+                                <td data-label="Auth">
                                     <span class="badge" :class="dest.auth_type === 'hmac' ? 'badge--pending' : (dest.auth_type === 'bearer' ? 'badge--warn' : 'badge--offline')" x-text="dest.auth_type"></span>
                                 </td>
-                                <td>
+                                <td data-label="Status">
                                     <div class="text-small">
                                         <span class="badge" :class="dest.enabled ? 'badge--ok' : 'badge--offline'" x-text="dest.enabled ? 'enabled' : 'paused'"></span>
                                         <span class="badge badge--warn" x-show="dest.degraded" style="margin-left:6px;">degraded</span>
@@ -1989,8 +1989,8 @@
                                         <span x-show="dest.last_delivery_at" x-text="' · last attempt ' + formatLocalTime(dest.last_delivery_at)"></span>
                                     </div>
                                 </td>
-                                <td>
-                                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                                <td data-label="Actions">
+                                    <div class="settings-table-actions">
                                         <label class="text-small" style="display:inline-flex; gap:6px; align-items:center; cursor:pointer;">
                                             <input type="checkbox"
                                                    :checked="dest.enabled"
@@ -2108,7 +2108,7 @@
             <template x-if="webhooks.deliveries.length === 0">
                 <div class="text-small text-muted">No delivery attempts recorded yet.</div>
             </template>
-            <div class="user-table-wrap" x-show="webhooks.deliveries.length > 0">
+            <div class="user-table-wrap settings-table-cards" x-show="webhooks.deliveries.length > 0">
                 <table class="user-table webhook-delivery-table">
                     <thead>
                         <tr>
@@ -2123,16 +2123,16 @@
                     <tbody>
                         <template x-for="delivery in webhooks.deliveries" :key="delivery.timestamp + ':' + delivery.destination_id + ':' + delivery.attempt">
                             <tr>
-                                <td class="text-small" x-text="formatLocalTime(delivery.timestamp)"></td>
-                                <td class="text-small" x-text="webhookEventLabel(delivery.event_type)"></td>
-                                <td class="text-small" x-text="delivery.url"></td>
-                                <td class="text-small">
+                                <td data-label="Time" class="text-small" x-text="formatLocalTime(delivery.timestamp)"></td>
+                                <td data-label="Event" class="text-small" x-text="webhookEventLabel(delivery.event_type)"></td>
+                                <td data-label="Destination" class="text-small" x-text="delivery.url"></td>
+                                <td data-label="Status" class="text-small">
                                     <span class="badge"
                                           :class="delivery.delivered ? 'badge--ok' : (delivery.will_retry ? 'badge--warn' : 'badge--offline')"
                                           x-text="delivery.delivered ? 'delivered' : (delivery.status_code ? ('HTTP ' + delivery.status_code) : 'error')"></span>
                                 </td>
-                                <td class="text-small" x-text="delivery.latency_ms ? (delivery.latency_ms + ' ms') : '--'"></td>
-                                <td class="text-small text-muted">
+                                <td data-label="Latency" class="text-small" x-text="delivery.latency_ms ? (delivery.latency_ms + ' ms') : '--'"></td>
+                                <td data-label="Detail" class="text-small text-muted">
                                     <span x-text="delivery.error || delivery.response_excerpt || '--'"></span>
                                 </td>
                             </tr>

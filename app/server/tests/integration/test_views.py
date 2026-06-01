@@ -906,6 +906,10 @@ class TestCompleteGuiRedesignCoverage:
             "time-health-table-wrap",
             'data-label="Camera"',
             'data-label="Action"',
+            "webhook-destination-table",
+            "settings-table-actions",
+            'data-label="Destination"',
+            'data-label="Detail"',
         ]
         for expected in expected_controls:
             assert expected in body
@@ -955,5 +959,7 @@ class TestCompleteGuiRedesignCoverage:
             ".ota-state-pill--busy",
             ".time-health-table",
             ".time-health-table__action",
+            ".webhook-destination-table",
+            ".settings-table-actions",
         ]:
             assert selector in css
