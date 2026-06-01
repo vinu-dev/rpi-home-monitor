@@ -483,7 +483,9 @@ def scan_cameras():
     Returns the current camera list (same as GET /cameras) so the dashboard
     can update in a single round-trip.
     """
-    current_app.discovery_service.trigger_scan()
+    scan_ok, scan_error = current_app.discovery_service.trigger_scan()
+    if not scan_ok:
+        return jsonify({"error": scan_error}), 503
     cameras = current_app.camera_service.list_cameras(admin_view=True)
     return jsonify(cameras), 200
 

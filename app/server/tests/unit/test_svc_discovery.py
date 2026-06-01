@@ -379,12 +379,14 @@ class TestMdnsBrowser:
             assert svc._zeroconf is None
             assert svc._mdns_browser is None
 
-    def test_trigger_scan_does_nothing_without_browser(self, app):
-        """trigger_scan() is a no-op when mDNS browser is not running."""
+    def test_trigger_scan_reports_unavailable_without_browser(self, app):
+        """trigger_scan() tells callers when mDNS browser is not running."""
         with app.app_context():
             svc = DiscoveryService(app.store, app.audit)
-            # Must not raise
-            svc.trigger_scan()
+            ok, message = svc.trigger_scan()
+
+            assert ok is False
+            assert "mDNS browser is not running" in message
 
     def test_trigger_scan_replays_cached_mdns_services(self, app):
         """Manual Scan must rediscover a deleted camera already in mDNS cache."""
@@ -408,7 +410,7 @@ class TestMdnsBrowser:
             sys.modules["zeroconf"] = mock_zeroconf_mod
             try:
                 with patch.object(svc, "_handle_mdns_service") as handle:
-                    svc.trigger_scan()
+                    ok, message = svc.trigger_scan()
             finally:
                 if original is None:
                     sys.modules.pop("zeroconf", None)
@@ -422,6 +424,8 @@ class TestMdnsBrowser:
             )
             fake_outgoing.add_question.assert_called_once_with("question")
             svc._zeroconf.send.assert_called_once_with(fake_outgoing)
+            assert ok is True
+            assert message == ""
 
     def test_handle_mdns_service_calls_report_camera(self, app):
         """_handle_mdns_service() parses TXT records and calls report_camera()."""
@@ -566,6 +570,7 @@ class TestScanEndpoint:
                 status="pending",
             )
             app.store.save_camera(cam)
+            app.discovery_service.trigger_scan = MagicMock(return_value=(True, ""))
 
         self._login(app, client)
         resp = client.post("/api/v1/cameras/scan")
@@ -574,6 +579,19 @@ class TestScanEndpoint:
         assert isinstance(data, list)
         ids = [c["id"] for c in data]
         assert "cam-scan01" in ids
+
+    def test_scan_reports_unavailable_discovery(self, app, client):
+        """POST /cameras/scan surfaces a disabled mDNS browser."""
+        with app.app_context():
+            app.discovery_service.trigger_scan = MagicMock(
+                return_value=(False, "Camera auto-discovery is unavailable")
+            )
+
+        self._login(app, client)
+        resp = client.post("/api/v1/cameras/scan")
+
+        assert resp.status_code == 503
+        assert resp.get_json()["error"] == "Camera auto-discovery is unavailable"
 
     def test_scan_requires_admin(self, app, client):
         """POST /cameras/scan returns 403 for non-admin users."""

@@ -23,6 +23,29 @@ def test_parse_prerequisites_are_present():
 
 
 @pytest.mark.integration
+def test_server_image_includes_mdns_discovery_runtime():
+    """Camera Scan depends on python-zeroconf being present in the image."""
+    packagegroup = (
+        REPO_ROOT
+        / "meta-home-monitor"
+        / "recipes-core"
+        / "packagegroups"
+        / "packagegroup-monitor-web.bb"
+    )
+    monitor_recipe = (
+        REPO_ROOT
+        / "meta-home-monitor"
+        / "recipes-monitor"
+        / "monitor-server"
+        / "monitor-server_1.0.bb"
+    )
+
+    for path in (packagegroup, monitor_recipe):
+        text = path.read_text(encoding="utf-8")
+        assert "python3-zeroconf" in text
+
+
+@pytest.mark.integration
 @pytest.mark.slow
 def test_bitbake_parse_if_available():
     if shutil.which("bitbake") is None:
