@@ -67,6 +67,8 @@ The user's practical ask is "I should be able to update both boxes from one scre
 
 `push` returns 202 immediately and runs the actual upload on a background thread — a 150 MB bundle over 2.4 GHz WiFi is ~40 s, well past gunicorn's default worker timeout. The UI polls `/api/v1/ota/status` at 1.5 s while anything is in flight, 5 s when idle. Server install and camera install starts are mutually exclusive: the operator can still upload/stage bundles, but cannot start a server update while any camera update is transferring/installing/rebooting, and cannot start camera updates while the server is verifying/installing/rebooting.
 
+The server enforces mutual exclusion with an OTA operation reservation in `OTAService`; status fields remain progress reporting, while the reservation is the authoritative start guard surfaced through `/api/v1/ota/status`.
+
 ### UI
 
 A new **Updates** tab in Settings, admin-only. One card for the server, one card per paired camera. Each card:

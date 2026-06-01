@@ -2856,6 +2856,7 @@ function settingsPage() {
 
         // OTA state (ADR-0020 dual-transport updates)
         ota: {
+            operation: { kind: '', token: '', device_ids: [] },
             server: { current_version: '', state: 'idle', progress: 0, error: '', staged_filename: '', busy: false, verification: null },
             camera_bundle: { filename: '', target_version: '', progress: 0, eligible_count: 0, already_current_count: 0, offline_count: 0, blocked_count: 0, total_count: 0 },
             cameras: []
@@ -4754,6 +4755,7 @@ function settingsPage() {
         },
 
         serverInstallLockedByCamera() {
+            if (this.ota.operation && this.ota.operation.kind === 'camera-update') return true;
             var self = this;
             return (this.ota.cameras || []).some(function(cam) {
                 return self._otaStartActive(cam && cam.state, 'camera');
@@ -4761,6 +4763,7 @@ function settingsPage() {
         },
 
         cameraInstallLockedByServer() {
+            if (this.ota.operation && this.ota.operation.kind === 'server-install') return true;
             return this._otaStartActive(this.ota.server && this.ota.server.state, 'server');
         },
 
@@ -4859,6 +4862,7 @@ function settingsPage() {
         async loadOtaStatus() {
             try {
                 var data = await window.HM.api.get('/api/v1/ota/status');
+                this.ota.operation = data.operation || { kind: '', token: '', device_ids: [] };
 
                 // Guard only the window when a *client-side* browser upload
                 // is actively streaming bytes — that's the only case where
@@ -4873,7 +4877,7 @@ function settingsPage() {
                         prev,
                         data.server || {}
                     );
-                    this.ota.server.busy = this._serverBusy(this.ota.server.state);
+                    this.ota.server.busy = this._serverBusy(this.ota.server.state) || !!this.ota.server._clientStartingInstall;
                     if (!this.ota.server.staged_filename) {
                         this.ota.server.staged_filename = prev.staged_filename || '';
                     }
@@ -4914,7 +4918,7 @@ function settingsPage() {
 
         _scheduleOtaPoll() {
             if (this._otaPollTimer) clearTimeout(this._otaPollTimer);
-            var anyBusy = this.ota.server.busy || !!(this.ota.camera_bundle && this.ota.camera_bundle._clientUploading) || (this.ota.cameras || []).some(this.cameraBusy);
+            var anyBusy = this.ota.server.busy || !!(this.ota.operation && this.ota.operation.kind) || !!(this.ota.camera_bundle && this.ota.camera_bundle._clientUploading) || (this.ota.cameras || []).some(this.cameraBusy);
             if (this.tab !== 'updates') return;
             var self = this;
             var delay = anyBusy ? 1500 : 5000;
@@ -5082,9 +5086,10 @@ function settingsPage() {
             }
             if (!confirm(prompt)) return;
             this.ota.server.busy = true;
-            this.ota.server.state = 'installing';
             this.ota.server.progress = 0;
             this.ota.server.error = '';
+            this.ota.server._clientStartingInstall = true;
+            this._scheduleOtaPoll();
             try {
                 var data = await window.HM.api.post('/api/v1/ota/server/install', {});
                 // The install endpoint reboots the server after a 2s
@@ -5109,6 +5114,7 @@ function settingsPage() {
                     window.HM.toast(this.ota.server.error, 'error');
                 }
             }
+            this.ota.server._clientStartingInstall = false;
             this.loadOtaStatus();
         },
 

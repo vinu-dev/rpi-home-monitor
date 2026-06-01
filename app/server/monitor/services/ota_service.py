@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 
 from monitor import ota_policy, status_led
@@ -32,6 +33,9 @@ MAX_BUNDLE_SIZE = 500 * 1024 * 1024
 
 # Minimum free space required for staging (100MB headroom)
 MIN_FREE_SPACE = 100 * 1024 * 1024
+
+SERVER_INSTALL_OPERATION = "server-install"
+CAMERA_UPDATE_OPERATION = "camera-update"
 
 
 def _human_size(nbytes):
@@ -137,6 +141,7 @@ class OTAService:
         self._public_key_path = public_key_path or "/etc/swupdate-public.crt"
         self._enforce_marker_path = enforce_marker_path or "/etc/swupdate-enforce"
         self._status = {}
+        self._operation = None
         self._status_lock = threading.Lock()
 
     def _set_status_led(self, state):
@@ -412,6 +417,90 @@ class OTAService:
             current["state"] = state
             current.update(kwargs)
             self._status[device_id] = current
+
+    def get_operation(self):
+        """Return the currently reserved OTA operation, or an idle record."""
+        with self._status_lock:
+            if not self._operation:
+                return {"kind": "", "token": "", "device_ids": []}
+            op = dict(self._operation)
+            op["device_ids"] = list(op.get("device_ids") or [])
+            return op
+
+    def _operation_conflict_message(self, op):
+        kind = str((op or {}).get("kind") or "")
+        devices = ", ".join(op.get("device_ids") or [])
+        if kind == SERVER_INSTALL_OPERATION:
+            return (
+                "Server update is already running. Wait for the server update "
+                "to finish before starting camera updates."
+            )
+        if devices:
+            return (
+                "Camera update is already running "
+                f"({devices}). Wait for camera updates to finish before "
+                "installing a server update."
+            )
+        return (
+            "Camera update is already running. Wait for camera updates to "
+            "finish before installing a server update."
+        )
+
+    def begin_operation(self, kind, device_ids=None):
+        """Reserve the single OTA start lane.
+
+        Server installs and camera installs are mutually exclusive at start
+        time. Status fields are still used for progress, but this reservation
+        is the authoritative guard that prevents two install classes from
+        beginning from separate HTTP requests while the UI is polling.
+        """
+        device_ids = list(dict.fromkeys(device_ids or []))
+        with self._status_lock:
+            if self._operation:
+                return "", self._operation_conflict_message(self._operation)
+            token = uuid.uuid4().hex
+            self._operation = {
+                "token": token,
+                "kind": kind,
+                "device_ids": device_ids,
+                "started_at": time.time(),
+                "updated_at": time.time(),
+            }
+            return token, ""
+
+    def update_operation_devices(self, token, device_ids):
+        """Replace the reserved camera device list for an active operation."""
+        with self._status_lock:
+            if not self._operation or self._operation.get("token") != token:
+                return False
+            self._operation["device_ids"] = list(dict.fromkeys(device_ids or []))
+            self._operation["updated_at"] = time.time()
+            return True
+
+    def finish_operation_device(self, token, device_id):
+        """Mark one camera finished; release the operation after the last one."""
+        with self._status_lock:
+            if not self._operation or self._operation.get("token") != token:
+                return False
+            remaining = [
+                item
+                for item in self._operation.get("device_ids", [])
+                if item != device_id
+            ]
+            if remaining:
+                self._operation["device_ids"] = remaining
+                self._operation["updated_at"] = time.time()
+            else:
+                self._operation = None
+            return True
+
+    def release_operation(self, token):
+        """Release a reserved OTA operation if the token still owns it."""
+        with self._status_lock:
+            if not self._operation or self._operation.get("token") != token:
+                return False
+            self._operation = None
+            return True
 
     def check_space(self, required_bytes=0):
         """Check if enough disk space is available for staging.

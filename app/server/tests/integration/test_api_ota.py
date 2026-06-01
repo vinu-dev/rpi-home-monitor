@@ -5,6 +5,7 @@ import io
 import os
 
 from monitor.models import Camera
+from monitor.services import ota_service
 
 
 def _add_camera(app, camera_id="cam-001", status="online", firmware_version=""):
@@ -74,6 +75,22 @@ class TestOTAStatus:
         assert isinstance(data["server"]["current_version"], str)
         assert "cameras" in data
         assert "verification" in data["server"]
+        assert data["operation"] == {"kind": "", "token": "", "device_ids": []}
+
+    def test_returns_reserved_operation(self, app, logged_in_client):
+        client = logged_in_client()
+        token, err = app.ota_service.begin_operation(
+            ota_service.CAMERA_UPDATE_OPERATION, ["cam-001"]
+        )
+        assert token
+        assert err == ""
+
+        response = client.get("/api/v1/ota/status")
+
+        assert response.status_code == 200
+        operation = response.get_json()["operation"]
+        assert operation["kind"] == ota_service.CAMERA_UPDATE_OPERATION
+        assert operation["device_ids"] == ["cam-001"]
 
     def test_status_surfaces_ota_verification_posture(
         self, monkeypatch, app, logged_in_client
@@ -241,6 +258,31 @@ class TestCameraPush:
         client = logged_in_client()
         _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
         app.ota_service.set_status("server", "installing", progress=50, error="")
+
+        response = client.post("/api/v1/ota/camera/cam-001/push")
+
+        assert response.status_code == 409
+        assert "Server update is already running" in response.get_json()["error"]
+
+    def test_push_blocked_while_server_operation_reserved(self, app, logged_in_client):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online", firmware_version="1.6.0")
+        upload = client.post(
+            "/api/v1/ota/camera-library/upload",
+            data={
+                "file": (
+                    io.BytesIO(_swu_bytes("1.6.2", "camera")),
+                    "common.swu",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert upload.status_code == 200
+        token, err = app.ota_service.begin_operation(
+            ota_service.SERVER_INSTALL_OPERATION, ["server"]
+        )
+        assert token
+        assert err == ""
 
         response = client.post("/api/v1/ota/camera/cam-001/push")
 
@@ -805,6 +847,30 @@ class TestServerInstall:
         with open(bundle, "wb") as fh:
             fh.write(b"fake-bundle")
         app.ota_service.set_status("cam-001", "uploading", progress=20, error="")
+
+        response = client.post("/api/v1/ota/server/install")
+
+        assert response.status_code == 409
+        error = response.get_json()["error"]
+        assert "Camera update is already running" in error
+        assert "cam-001" in error
+
+    def test_blocks_install_while_camera_operation_reserved(
+        self, app, logged_in_client
+    ):
+        client = logged_in_client()
+        _add_camera(app, "cam-001", "online")
+
+        staging = app.ota_service.staging_dir
+        os.makedirs(staging, exist_ok=True)
+        bundle = os.path.join(staging, "update.swu")
+        with open(bundle, "wb") as fh:
+            fh.write(_swu_bytes("1.6.2"))
+        token, err = app.ota_service.begin_operation(
+            ota_service.CAMERA_UPDATE_OPERATION, ["cam-001"]
+        )
+        assert token
+        assert err == ""
 
         response = client.post("/api/v1/ota/server/install")
 

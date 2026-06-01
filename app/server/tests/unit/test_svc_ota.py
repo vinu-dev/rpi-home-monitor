@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from monitor.services import privileged
-from monitor.services.ota_service import MAX_BUNDLE_SIZE, OTAService
+from monitor.services.ota_service import (
+    CAMERA_UPDATE_OPERATION,
+    MAX_BUNDLE_SIZE,
+    SERVER_INSTALL_OPERATION,
+    OTAService,
+)
 
 
 def _newc_entry(name: str, data: bytes) -> bytes:
@@ -110,6 +115,63 @@ class TestGetSetStatus:
 
         assert status["state"] == "idle"
         assert not os.path.exists(staged)
+
+
+class TestOperationReservation:
+    """Test the OTA start-lane reservation."""
+
+    def test_default_operation_idle(self, svc):
+        assert svc.get_operation() == {"kind": "", "token": "", "device_ids": []}
+
+    def test_server_operation_blocks_camera_operation(self, svc):
+        token, err = svc.begin_operation(SERVER_INSTALL_OPERATION, ["server"])
+
+        assert token
+        assert err == ""
+
+        second_token, second_err = svc.begin_operation(
+            CAMERA_UPDATE_OPERATION, ["cam-001"]
+        )
+
+        assert second_token == ""
+        assert "Server update is already running" in second_err
+
+    def test_camera_operation_blocks_server_operation_with_device(self, svc):
+        token, err = svc.begin_operation(CAMERA_UPDATE_OPERATION, ["cam-001"])
+
+        assert token
+        assert err == ""
+
+        second_token, second_err = svc.begin_operation(
+            SERVER_INSTALL_OPERATION, ["server"]
+        )
+
+        assert second_token == ""
+        assert "Camera update is already running" in second_err
+        assert "cam-001" in second_err
+
+    def test_camera_operation_releases_after_last_device(self, svc):
+        token, err = svc.begin_operation(CAMERA_UPDATE_OPERATION, [])
+        assert token
+        assert err == ""
+        assert svc.update_operation_devices(token, ["cam-001", "cam-002"])
+
+        assert svc.finish_operation_device(token, "cam-001")
+        assert svc.get_operation()["device_ids"] == ["cam-002"]
+
+        assert svc.finish_operation_device(token, "cam-002")
+        assert svc.get_operation()["kind"] == ""
+
+    def test_release_requires_matching_token(self, svc):
+        token, err = svc.begin_operation(SERVER_INSTALL_OPERATION, ["server"])
+        assert token
+        assert err == ""
+
+        assert not svc.release_operation("wrong-token")
+        assert svc.get_operation()["kind"] == SERVER_INSTALL_OPERATION
+
+        assert svc.release_operation(token)
+        assert svc.get_operation()["kind"] == ""
 
 
 class TestCheckSpace:

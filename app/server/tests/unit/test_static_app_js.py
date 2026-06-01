@@ -79,6 +79,9 @@ def test_ota_install_buttons_lock_across_server_and_camera_updates():
     for expected in [
         "serverInstallLockedByCamera",
         "cameraInstallLockedByServer",
+        "this.ota.operation && this.ota.operation.kind === 'camera-update'",
+        "this.ota.operation && this.ota.operation.kind === 'server-install'",
+        "this.ota.server._clientStartingInstall = true;",
         "A camera update is running. Server install is locked",
         "Server update is running. Camera installs are locked",
         "wait before installing a server update",
@@ -88,3 +91,4 @@ def test_ota_install_buttons_lock_across_server_and_camera_updates():
         "if (this.cameraInstallLockedByServer()) return false;",
     ]:
         assert expected in text
+    assert "this.ota.server.state = 'installing';" not in text

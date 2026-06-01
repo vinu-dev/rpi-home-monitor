@@ -66,6 +66,12 @@ def _normal_state(status):
 
 def _active_camera_update(ota):
     """Return the first camera update that would conflict with server install."""
+    operation = ota.get_operation()
+    if operation.get("kind") == ota_service.CAMERA_UPDATE_OPERATION:
+        device_ids = operation.get("device_ids") or []
+        if device_ids:
+            return device_ids[0], "reserved"
+        return "camera-update", "reserved"
     for camera in current_app.store.get_cameras():
         if camera.status == "pending":
             continue
@@ -94,6 +100,19 @@ def _reject_if_camera_update_active(ota):
 
 
 def _reject_if_server_install_active(ota):
+    operation = ota.get_operation()
+    if operation.get("kind") == ota_service.SERVER_INSTALL_OPERATION:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Server update is already running. Wait for the server "
+                        "update to finish before starting camera updates."
+                    )
+                }
+            ),
+            409,
+        )
     state = _normal_state(ota.get_status("server"))
     if state not in SERVER_INSTALL_ACTIVE_STATES:
         return None
@@ -402,6 +421,7 @@ def get_status():
         "server": server_status,
         "camera_bundle": _camera_bundle_summary(common_record, cameras),
         "cameras": [],
+        "operation": ota.get_operation(),
     }
 
     for cam in cameras:
@@ -636,22 +656,34 @@ def install_server_image():
         ota.set_status("server", "idle", progress=0, error=decision.reason)
         return jsonify({"error": decision.reason}), 409
 
-    ok, err = ota.install_bundle(bundle_path, user=user, ip=ip)
-    if not ok:
-        return jsonify({"error": err}), 500
-    ota.clean_staging()
+    operation_token, operation_error = ota.begin_operation(
+        ota_service.SERVER_INSTALL_OPERATION, ["server"]
+    )
+    if operation_error:
+        return jsonify({"error": operation_error}), 409
+    try:
+        camera_lock = _reject_if_camera_update_active(ota)
+        if camera_lock:
+            return camera_lock
 
-    # The button says "Install & Reboot", so actually reboot. We flush
-    # the HTTP response first (the client needs the 200 to transition
-    # its UI into the "rebooting" state) and schedule the reboot on a
-    # background thread with a short delay so systemd has a moment to
-    # tear down Flask cleanly.
-    ota.prepare_reboot_activation(target_version)
-    ota.set_status("server", "rebooting", progress=100, error="")
-    ota.schedule_reboot()
-    return jsonify(
-        {"message": "Installation complete — rebooting now", "rebooting": True}
-    ), 200
+        ok, err = ota.install_bundle(bundle_path, user=user, ip=ip)
+        if not ok:
+            return jsonify({"error": err}), 500
+        ota.clean_staging()
+
+        # The button says "Install & Reboot", so actually reboot. We flush
+        # the HTTP response first (the client needs the 200 to transition
+        # its UI into the "rebooting" state) and schedule the reboot on a
+        # background thread with a short delay so systemd has a moment to
+        # tear down Flask cleanly.
+        ota.prepare_reboot_activation(target_version)
+        ota.set_status("server", "rebooting", progress=100, error="")
+        ota.schedule_reboot()
+        return jsonify(
+            {"message": "Installation complete — rebooting now", "rebooting": True}
+        ), 200
+    finally:
+        ota.release_operation(operation_token)
 
 
 @ota_bp.route("/camera/<camera_id>/upload", methods=["POST"])
@@ -1022,6 +1054,7 @@ def _run_camera_push(
     user,
     ip,
     bundle_scope="common",
+    operation_token="",
 ):
     """Background job: stream the staged bundle to the camera.
 
@@ -1118,6 +1151,8 @@ def _run_camera_push(
                     )
                 except Exception:
                     pass
+        if operation_token:
+            ota.finish_operation_device(operation_token, camera_id)
 
 
 @ota_bp.route("/camera/<camera_id>/push", methods=["POST"])
@@ -1182,6 +1217,16 @@ def push_camera_update(camera_id):
             {"error": f"Update already in progress ({status.get('state')})"}
         ), 409
 
+    operation_token, operation_error = ota.begin_operation(
+        ota_service.CAMERA_UPDATE_OPERATION, [camera_id]
+    )
+    if operation_error:
+        return jsonify({"error": operation_error}), 409
+    server_lock = _reject_if_server_install_active(ota)
+    if server_lock:
+        ota.release_operation(operation_token)
+        return server_lock
+
     user = session.get("username", "")
     ip = request.remote_addr or ""
 
@@ -1227,6 +1272,7 @@ def push_camera_update(camera_id):
             user,
             ip,
             requested_scope,
+            operation_token,
         ),
         name=f"ota-push-{camera_id}",
         daemon=True,
@@ -1264,6 +1310,11 @@ def push_all_eligible_cameras():
     user = session.get("username", "")
     ip = request.remote_addr or ""
     app = current_app._get_current_object()
+    operation_token, operation_error = ota.begin_operation(
+        ota_service.CAMERA_UPDATE_OPERATION, []
+    )
+    if operation_error:
+        return jsonify({"error": operation_error}), 409
 
     started = []
     skipped = []
@@ -1311,12 +1362,19 @@ def push_all_eligible_cameras():
                 user,
                 ip,
                 "common",
+                operation_token,
             ),
             name=f"ota-push-{camera.id}",
             daemon=True,
         )
-        thread.start()
         started.append(camera.id)
+        ota.update_operation_devices(operation_token, started)
+        thread.start()
+
+    if started:
+        ota.update_operation_devices(operation_token, started)
+    else:
+        ota.release_operation(operation_token)
 
     audit = getattr(current_app, "audit", None)
     if audit and started:
