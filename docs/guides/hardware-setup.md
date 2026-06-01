@@ -544,9 +544,10 @@ expected target version.
 ### 8.4 Maintenance Restarts
 
 The Settings -> System tab has a Maintenance restart section for the server and
-for each paired camera. The UI intentionally follows the common appliance
-pattern used by routers and NAS systems: one immediate restart action, one
-recurring enable switch, day chips, a time field, and a visible next-run value.
+a fleet-style camera panel. The camera panel uses search, filters, explicit
+selection, and bulk actions so large installs do not become one long form per
+camera. A common camera schedule can be applied to selected or visible cameras,
+and an individual camera can still be expanded for a one-off override.
 
 Server schedules are stored in server settings. Camera schedules are per-camera
 settings and converge from either direction: changing a camera's schedule in the

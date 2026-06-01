@@ -177,6 +177,17 @@ input {
     color: #172033;
 }
 
+.btn--ghost {
+    border-color: rgba(20, 35, 61, 0.12);
+    background: rgba(255, 255, 255, 0.42);
+    color: #40516b;
+    box-shadow: none;
+}
+
+.btn--ghost:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.72);
+}
+
 .btn--danger {
     background: linear-gradient(180deg, #ff453a, #d70015);
 }
@@ -2082,6 +2093,214 @@ body,
 .maintenance-restart__cameras {
     display: grid;
     gap: 12px;
+}
+
+.maintenance-fleet {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--suite-line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.maintenance-fleet__toolbar,
+.maintenance-fleet__bulk-header,
+.maintenance-camera-row__main {
+    display: grid;
+    gap: 12px;
+    align-items: center;
+}
+
+.maintenance-fleet__toolbar,
+.maintenance-fleet__bulk-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.maintenance-fleet__actions,
+.maintenance-fleet__bulk-actions,
+.maintenance-camera-row__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.maintenance-fleet__filters {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(132px, 0.22fr) minmax(132px, 0.22fr);
+    gap: 10px;
+}
+
+.maintenance-fleet__filters label,
+.maintenance-restart__save-row label {
+    display: grid;
+    gap: 6px;
+    color: #52637d;
+    font-size: 0.78rem;
+    font-weight: 780;
+}
+
+.maintenance-fleet__bulk {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(10, 132, 255, 0.18);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(10, 132, 255, 0.08), rgba(255, 255, 255, 0.52));
+}
+
+.maintenance-restart__editor--bulk {
+    grid-template-columns: minmax(150px, 0.25fr) minmax(260px, 1fr) minmax(180px, 0.35fr);
+    align-items: center;
+}
+
+.maintenance-camera-list {
+    display: grid;
+    gap: 8px;
+}
+
+.maintenance-camera-list__head,
+.maintenance-camera-row__main {
+    grid-template-columns: minmax(86px, 0.18fr) minmax(190px, 1.1fr) minmax(96px, 0.28fr) minmax(220px, 1fr) minmax(240px, 0.8fr);
+}
+
+.maintenance-camera-list__head {
+    display: grid;
+    gap: 10px;
+    padding: 0 12px 4px;
+    color: #60708a;
+    font-size: 0.72rem;
+    font-weight: 860;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.maintenance-camera-row {
+    display: grid;
+    gap: 0;
+    border: 1px solid rgba(20, 35, 61, 0.1);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.56);
+    overflow: hidden;
+}
+
+.maintenance-camera-row--selected {
+    border-color: rgba(10, 132, 255, 0.34);
+    background: linear-gradient(180deg, rgba(10, 132, 255, 0.09), rgba(255, 255, 255, 0.66));
+}
+
+.maintenance-camera-row__main {
+    padding: 12px;
+}
+
+.maintenance-camera-row__identity,
+.maintenance-camera-row__schedule {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.maintenance-camera-row__identity strong,
+.maintenance-camera-row__schedule strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #122039;
+    font-weight: 820;
+}
+
+.maintenance-camera-row__identity span,
+.maintenance-camera-row__schedule span {
+    min-width: 0;
+    color: #52637d;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.maintenance-camera-row__editor {
+    padding: 14px;
+    border-top: 1px solid rgba(20, 35, 61, 0.08);
+    background: rgba(255, 255, 255, 0.42);
+}
+
+.maintenance-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: #52637d;
+    font-size: 0.78rem;
+    font-weight: 780;
+}
+
+.maintenance-select input {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+}
+
+.maintenance-status--online {
+    background: rgba(35, 171, 93, 0.14);
+    color: #17713e;
+}
+
+.maintenance-status--offline {
+    background: rgba(108, 117, 134, 0.14);
+    color: #566176;
+}
+
+.maintenance-status--pending {
+    background: rgba(255, 184, 0, 0.16);
+    color: #8a6100;
+}
+
+.maintenance-camera-list__empty {
+    padding: 14px;
+    border: 1px dashed rgba(20, 35, 61, 0.18);
+    border-radius: 16px;
+    text-align: center;
+}
+
+@media (max-width: 1100px) {
+    .maintenance-restart__editor--bulk,
+    .maintenance-camera-list__head,
+    .maintenance-camera-row__main {
+        grid-template-columns: 1fr;
+    }
+
+    .maintenance-camera-list__head {
+        display: none;
+    }
+
+    .maintenance-camera-row__main {
+        align-items: stretch;
+    }
+
+    .maintenance-camera-row__actions,
+    .maintenance-fleet__actions,
+    .maintenance-fleet__bulk-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 700px) {
+    .maintenance-fleet,
+    .maintenance-fleet__bulk {
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    .maintenance-fleet__toolbar,
+    .maintenance-fleet__bulk-header,
+    .maintenance-fleet__filters {
+        grid-template-columns: 1fr;
+    }
+
+    .maintenance-fleet__actions .btn,
+    .maintenance-fleet__bulk-actions .btn,
+    .maintenance-camera-row__actions .btn {
+        flex: 1 1 130px;
+    }
 }
 
 .maintenance-restart__header,

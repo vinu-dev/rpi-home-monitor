@@ -218,61 +218,199 @@
                 </div>
             </div>
 
-            <div class="maintenance-restart__cameras">
-                <template x-for="cam in restart.cameras" :key="cam.id">
-                    <article class="maintenance-device">
-                        <div class="maintenance-restart__header">
-                            <div>
-                                <div class="maintenance-restart__name" x-text="cam.name || cam.id"></div>
-                                <div class="text-small text-muted">
-                                    <span x-text="cam.status"></span>
-                                    <span> · </span>
-                                    <span x-text="restartScheduleSummary(cam.restart_schedule)"></span>
-                                </div>
+            <div class="maintenance-fleet" x-show="restart.cameras.length">
+                <div class="maintenance-fleet__toolbar">
+                    <div>
+                        <div class="maintenance-restart__name">Camera fleet</div>
+                        <div class="text-small text-muted" x-text="restartFleetSummary()"></div>
+                    </div>
+                    <div class="maintenance-fleet__actions">
+                        <button class="btn btn--secondary btn--small"
+                                @click="restartSelectedCameras()"
+                                :disabled="!selectedOnlineRestartCameras().length || restart.bulkRestarting">
+                            <span x-text="restart.bulkRestarting ? restart.bulkMessage : 'Restart selected'"></span>
+                        </button>
+                        <button class="btn btn--ghost btn--small"
+                                @click="selectVisibleRestartCameras(true)"
+                                :disabled="!filteredRestartCameras().length">
+                            Select visible
+                        </button>
+                        <button class="btn btn--ghost btn--small"
+                                @click="clearRestartCameraSelection()"
+                                :disabled="!restart.selectedCameraIds.length">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <div class="maintenance-fleet__filters" aria-label="Camera restart filters">
+                    <label class="maintenance-fleet__search">
+                        <span>Search cameras</span>
+                        <input class="form-input" type="search" x-model="restart.cameraQuery" placeholder="Name, ID, IP, status">
+                    </label>
+                    <label>
+                        <span>Status</span>
+                        <select class="form-input" x-model="restart.cameraStatusFilter">
+                            <option value="all">All</option>
+                            <option value="online">Online</option>
+                            <option value="offline">Offline</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Schedule</span>
+                        <select class="form-input" x-model="restart.cameraScheduleFilter">
+                            <option value="all">All</option>
+                            <option value="enabled">Scheduled</option>
+                            <option value="disabled">Off</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="maintenance-fleet__bulk">
+                    <div class="maintenance-fleet__bulk-header">
+                        <div>
+                            <div class="maintenance-restart__name">Common camera schedule</div>
+                            <div class="text-small text-muted">
+                                Set one schedule here, then apply it to selected or visible cameras.
                             </div>
+                        </div>
+                        <div class="maintenance-fleet__bulk-actions">
+                            <button class="btn btn--primary btn--small"
+                                    @click="applyRestartScheduleToSelected()"
+                                    :disabled="!selectedRestartCameras().length || restart.bulkSaving">
+                                <span x-text="restart.bulkSaving ? restart.bulkMessage : 'Apply to selected'"></span>
+                            </button>
                             <button class="btn btn--secondary btn--small"
-                                    @click="restartCameraNow(cam)"
-                                    :disabled="cam.status !== 'online' || cam._rebooting">
-                                <span x-text="cam._rebooting ? 'Queued...' : 'Restart now'"></span>
+                                    @click="applyRestartScheduleToVisible()"
+                                    :disabled="!filteredRestartCameras().length || restart.bulkSaving">
+                                Apply to visible
                             </button>
                         </div>
-                        <div class="maintenance-restart__editor">
-                            <label class="maintenance-toggle">
-                                <input type="checkbox" x-model="cam.restart_schedule.enabled">
-                                <span>Scheduled restart</span>
-                            </label>
-                            <div class="restart-days" role="group" :aria-label="'Restart days for ' + (cam.name || cam.id)">
-                                <template x-for="day in restart.DAY_ORDER" :key="cam.id + '-' + day">
-                                    <label class="restart-day"
-                                           :class="{ 'restart-day--active': restartDayEnabled(cam.restart_schedule, day) }">
-                                        <input type="checkbox"
-                                               :value="day"
-                                               :checked="restartDayEnabled(cam.restart_schedule, day)"
-                                               @change="toggleRestartDay(cam.restart_schedule, day, $event.target.checked)">
-                                        <span x-text="restartDayLabel(day)"></span>
-                                    </label>
-                                </template>
-                            </div>
-                            <div class="maintenance-restart__save-row">
-                                <label>
-                                    <span class="text-small text-muted">Time</span>
-                                    <input class="form-input" type="time" x-model="cam.restart_schedule.time">
+                    </div>
+                    <div class="maintenance-restart__editor maintenance-restart__editor--bulk">
+                        <label class="maintenance-toggle">
+                            <input type="checkbox" x-model="restart.bulkSchedule.enabled">
+                            <span>Scheduled restart</span>
+                        </label>
+                        <div class="restart-days" role="group" aria-label="Common camera restart days">
+                            <template x-for="day in restart.DAY_ORDER" :key="'fleet-' + day">
+                                <label class="restart-day"
+                                       :class="{ 'restart-day--active': restartDayEnabled(restart.bulkSchedule, day) }">
+                                    <input type="checkbox"
+                                           :value="day"
+                                           :checked="restartDayEnabled(restart.bulkSchedule, day)"
+                                           @change="toggleRestartDay(restart.bulkSchedule, day, $event.target.checked)">
+                                    <span x-text="restartDayLabel(day)"></span>
                                 </label>
-                                <div class="text-small text-muted">
-                                    <span>Next: </span><span x-text="formatNextRun(cam.restart_schedule.next_run_at)"></span>
-                                </div>
-                                <button class="btn btn--primary btn--small"
-                                        @click="saveCameraRestartSchedule(cam)"
-                                        :disabled="cam._saving">
-                                    <span x-text="cam._saving ? 'Saving...' : 'Save'"></span>
-                                </button>
-                            </div>
+                            </template>
                         </div>
-                    </article>
-                </template>
-                <div class="text-small text-muted" x-show="!restart.cameras.length">
-                    No paired cameras yet.
+                        <div class="maintenance-restart__save-row">
+                            <label>
+                                <span class="text-small text-muted">Time</span>
+                                <input class="form-input" type="time" x-model="restart.bulkSchedule.time">
+                            </label>
+                            <div class="text-small text-muted" x-text="restartScheduleSummary(restart.bulkSchedule)"></div>
+                        </div>
+                    </div>
                 </div>
+
+                <div class="maintenance-camera-list" role="table" aria-label="Camera restart controls">
+                    <div class="maintenance-camera-list__head" role="row">
+                        <label class="maintenance-select">
+                            <input type="checkbox"
+                                   :checked="allVisibleRestartCamerasSelected()"
+                                   @change="selectVisibleRestartCameras($event.target.checked)">
+                            <span>Select</span>
+                        </label>
+                        <span>Camera</span>
+                        <span>State</span>
+                        <span>Schedule</span>
+                        <span>Actions</span>
+                    </div>
+                    <template x-for="cam in filteredRestartCameras()" :key="cam.id">
+                        <article class="maintenance-camera-row"
+                                 :class="{ 'maintenance-camera-row--selected': restartCameraSelected(cam) }"
+                                 role="row">
+                            <div class="maintenance-camera-row__main">
+                                <label class="maintenance-select" :aria-label="'Select ' + (cam.name || cam.id)">
+                                    <input type="checkbox"
+                                           :checked="restartCameraSelected(cam)"
+                                           @change="toggleRestartCameraSelection(cam, $event.target.checked)">
+                                    <span></span>
+                                </label>
+                                <div class="maintenance-camera-row__identity">
+                                    <strong x-text="cam.name || cam.id"></strong>
+                                    <span x-text="cam.id"></span>
+                                    <span x-show="cam.ip" x-text="cam.ip"></span>
+                                </div>
+                                <div>
+                                    <span class="badge"
+                                          :class="restartCameraStatusClass(cam)"
+                                          x-text="cameraStatusLabel(cam.status)"></span>
+                                </div>
+                                <div class="maintenance-camera-row__schedule">
+                                    <strong x-text="restartScheduleSummary(cam.restart_schedule)"></strong>
+                                    <span>Next: <span x-text="formatNextRun(cam.restart_schedule.next_run_at)"></span></span>
+                                </div>
+                                <div class="maintenance-camera-row__actions">
+                                    <button class="btn btn--secondary btn--small"
+                                            @click="restartCameraNow(cam)"
+                                            :disabled="cam.status !== 'online' || cam._rebooting">
+                                        <span x-text="cam._rebooting ? 'Queued...' : 'Restart'"></span>
+                                    </button>
+                                    <button class="btn btn--ghost btn--small"
+                                            @click="copyCameraScheduleToBulk(cam)">
+                                        Use schedule
+                                    </button>
+                                    <button class="btn btn--ghost btn--small"
+                                            @click="toggleRestartCameraEditor(cam)"
+                                            x-text="restart.expandedCameraId === cam.id ? 'Close' : 'Edit'">
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="maintenance-camera-row__editor" x-show="restart.expandedCameraId === cam.id">
+                                <div class="maintenance-restart__editor">
+                                    <label class="maintenance-toggle">
+                                        <input type="checkbox" x-model="cam.restart_schedule.enabled">
+                                        <span>Scheduled restart</span>
+                                    </label>
+                                    <div class="restart-days" role="group" :aria-label="'Restart days for ' + (cam.name || cam.id)">
+                                        <template x-for="day in restart.DAY_ORDER" :key="cam.id + '-' + day">
+                                            <label class="restart-day"
+                                                   :class="{ 'restart-day--active': restartDayEnabled(cam.restart_schedule, day) }">
+                                                <input type="checkbox"
+                                                       :value="day"
+                                                       :checked="restartDayEnabled(cam.restart_schedule, day)"
+                                                       @change="toggleRestartDay(cam.restart_schedule, day, $event.target.checked)">
+                                                <span x-text="restartDayLabel(day)"></span>
+                                            </label>
+                                        </template>
+                                    </div>
+                                    <div class="maintenance-restart__save-row">
+                                        <label>
+                                            <span class="text-small text-muted">Time</span>
+                                            <input class="form-input" type="time" x-model="cam.restart_schedule.time">
+                                        </label>
+                                        <div class="text-small text-muted">
+                                            <span>Next: </span><span x-text="formatNextRun(cam.restart_schedule.next_run_at)"></span>
+                                        </div>
+                                        <button class="btn btn--primary btn--small"
+                                                @click="saveCameraRestartSchedule(cam)"
+                                                :disabled="cam._saving">
+                                            <span x-text="cam._saving ? 'Saving...' : 'Save camera'"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    </template>
+                    <div class="maintenance-camera-list__empty text-small text-muted" x-show="restart.cameras.length && !filteredRestartCameras().length">
+                        No cameras match these filters.
+                    </div>
+                </div>
+            </div>
+            <div class="text-small text-muted" x-show="!restart.cameras.length">
+                No paired cameras yet.
             </div>
         </div>
     </div>
@@ -2541,6 +2679,15 @@ function settingsPage() {
             DAY_ORDER: ['mon','tue','wed','thu','fri','sat','sun'],
             server: { enabled: false, days: ['sun'], time: '03:30', updated_at: '', source: 'server', next_run_at: '', _saving: false, _rebooting: false },
             cameras: [],
+            bulkSchedule: { enabled: false, days: ['sun'], time: '03:30', updated_at: '', source: 'server', next_run_at: '' },
+            selectedCameraIds: [],
+            expandedCameraId: '',
+            cameraQuery: '',
+            cameraStatusFilter: 'all',
+            cameraScheduleFilter: 'all',
+            bulkSaving: false,
+            bulkRestarting: false,
+            bulkMessage: '',
         },
         sysInfo: {
             hostname: '', firmware_version: '', os: '', uptime: '',
@@ -3326,6 +3473,179 @@ function settingsPage() {
             return d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
         },
 
+        cameraStatusLabel(status) {
+            status = (status || 'offline').toLowerCase();
+            if (status === 'online') return 'Online';
+            if (status === 'pending') return 'Pending';
+            return 'Offline';
+        },
+
+        restartCameraStatusClass(cam) {
+            var status = ((cam && cam.status) || 'offline').toLowerCase();
+            if (status === 'online') return 'maintenance-status--online';
+            if (status === 'pending') return 'maintenance-status--pending';
+            return 'maintenance-status--offline';
+        },
+
+        restartFleetSummary() {
+            var cameras = this.restart.cameras || [];
+            var filtered = this.filteredRestartCameras();
+            var online = cameras.filter(function(cam) { return cam.status === 'online'; }).length;
+            var scheduled = cameras.filter(function(cam) {
+                return cam.restart_schedule && cam.restart_schedule.enabled;
+            }).length;
+            var parts = [
+                cameras.length + ' cameras',
+                online + ' online',
+                scheduled + ' scheduled',
+            ];
+            if (filtered.length !== cameras.length) {
+                parts.push(filtered.length + ' shown');
+            }
+            if (this.restart.selectedCameraIds.length) {
+                parts.push(this.restart.selectedCameraIds.length + ' selected');
+            }
+            return parts.join(' / ');
+        },
+
+        filteredRestartCameras() {
+            var query = (this.restart.cameraQuery || '').trim().toLowerCase();
+            var statusFilter = this.restart.cameraStatusFilter || 'all';
+            var scheduleFilter = this.restart.cameraScheduleFilter || 'all';
+            return (this.restart.cameras || []).filter((cam) => {
+                var status = (cam.status || 'offline').toLowerCase();
+                if (statusFilter !== 'all' && status !== statusFilter) return false;
+                var enabled = !!(cam.restart_schedule && cam.restart_schedule.enabled);
+                if (scheduleFilter === 'enabled' && !enabled) return false;
+                if (scheduleFilter === 'disabled' && enabled) return false;
+                if (!query) return true;
+                var haystack = [
+                    cam.name || '',
+                    cam.id || '',
+                    cam.ip || '',
+                    status,
+                    this.restartScheduleSummary(cam.restart_schedule),
+                ].join(' ').toLowerCase();
+                return haystack.indexOf(query) !== -1;
+            });
+        },
+
+        restartCameraSelected(cam) {
+            return this.restart.selectedCameraIds.indexOf(cam.id) !== -1;
+        },
+
+        selectedRestartCameras() {
+            var selected = this.restart.selectedCameraIds || [];
+            return (this.restart.cameras || []).filter(function(cam) {
+                return selected.indexOf(cam.id) !== -1;
+            });
+        },
+
+        selectedOnlineRestartCameras() {
+            return this.selectedRestartCameras().filter(function(cam) {
+                return cam.status === 'online';
+            });
+        },
+
+        toggleRestartCameraSelection(cam, selected) {
+            var ids = this.restart.selectedCameraIds.slice();
+            var idx = ids.indexOf(cam.id);
+            if (selected && idx === -1) ids.push(cam.id);
+            if (!selected && idx !== -1) ids.splice(idx, 1);
+            this.restart.selectedCameraIds = ids;
+        },
+
+        selectVisibleRestartCameras(selected) {
+            var visibleIds = this.filteredRestartCameras().map(function(cam) { return cam.id; });
+            if (selected) {
+                var ids = this.restart.selectedCameraIds.slice();
+                visibleIds.forEach(function(id) {
+                    if (ids.indexOf(id) === -1) ids.push(id);
+                });
+                this.restart.selectedCameraIds = ids;
+            } else {
+                this.restart.selectedCameraIds = this.restart.selectedCameraIds.filter(function(id) {
+                    return visibleIds.indexOf(id) === -1;
+                });
+            }
+        },
+
+        clearRestartCameraSelection() {
+            this.restart.selectedCameraIds = [];
+        },
+
+        allVisibleRestartCamerasSelected() {
+            var visible = this.filteredRestartCameras();
+            if (!visible.length) return false;
+            var selected = this.restart.selectedCameraIds;
+            return visible.every(function(cam) { return selected.indexOf(cam.id) !== -1; });
+        },
+
+        toggleRestartCameraEditor(cam) {
+            this.restart.expandedCameraId = this.restart.expandedCameraId === cam.id ? '' : cam.id;
+        },
+
+        copyCameraScheduleToBulk(cam) {
+            this.restart.bulkSchedule = Object.assign(
+                this.defaultRestartSchedule('server'),
+                this.stripRestartSchedule(cam.restart_schedule || {}),
+                { source: 'server' }
+            );
+            window.HM.toast('Copied schedule from ' + (cam.name || cam.id), 'info');
+        },
+
+        async applyRestartScheduleToSelected() {
+            var cameras = this.selectedRestartCameras();
+            if (!cameras.length) {
+                window.HM.toast('Select cameras first', 'error');
+                return;
+            }
+            await this.applyRestartScheduleToCameras(cameras, 'selected cameras');
+        },
+
+        async applyRestartScheduleToVisible() {
+            var cameras = this.filteredRestartCameras();
+            if (!cameras.length) {
+                window.HM.toast('No visible cameras to update', 'error');
+                return;
+            }
+            await this.applyRestartScheduleToCameras(cameras, 'visible cameras');
+        },
+
+        async applyRestartScheduleToCameras(cameras, label) {
+            if (!confirm('Apply this restart schedule to ' + cameras.length + ' ' + label + '?')) return;
+            this.restart.bulkSaving = true;
+            var saved = 0;
+            var failed = 0;
+            var schedule = this.stripRestartSchedule(this.restart.bulkSchedule);
+            schedule.source = 'server';
+            this.restart.bulkMessage = 'Saving 0/' + cameras.length;
+            for (var i = 0; i < cameras.length; i++) {
+                var cam = cameras[i];
+                cam._saving = true;
+                cam.restart_schedule = Object.assign(this.defaultRestartSchedule('server'), schedule);
+                try {
+                    await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(cam.id), {
+                        restart_schedule: schedule,
+                    });
+                    saved += 1;
+                } catch(e) {
+                    failed += 1;
+                } finally {
+                    cam._saving = false;
+                    this.restart.bulkMessage = 'Saving ' + (saved + failed) + '/' + cameras.length;
+                }
+            }
+            this.restart.bulkSaving = false;
+            this.restart.bulkMessage = '';
+            await this.loadRestartSchedules();
+            if (failed) {
+                window.HM.toast('Saved ' + saved + ' camera schedules; ' + failed + ' failed', 'error');
+            } else {
+                window.HM.toast('Saved restart schedule for ' + saved + ' cameras', 'success');
+            }
+        },
+
         async loadRestartSchedules() {
             try {
                 var s = await window.HM.api.get('/api/v1/settings');
@@ -3342,6 +3662,7 @@ function settingsPage() {
                     .map((cam) => ({
                         id: cam.id,
                         name: cam.name || cam.id,
+                        ip: cam.ip || '',
                         status: cam.status || 'offline',
                         restart_schedule: Object.assign(
                             this.defaultRestartSchedule('server'),
@@ -3350,6 +3671,13 @@ function settingsPage() {
                         _saving: false,
                         _rebooting: false,
                     }));
+                var knownIds = this.restart.cameras.map(function(cam) { return cam.id; });
+                this.restart.selectedCameraIds = this.restart.selectedCameraIds.filter(function(id) {
+                    return knownIds.indexOf(id) !== -1;
+                });
+                if (knownIds.indexOf(this.restart.expandedCameraId) === -1) {
+                    this.restart.expandedCameraId = '';
+                }
             } catch(e) {}
         },
 
@@ -3370,16 +3698,25 @@ function settingsPage() {
             }
         },
 
-        async saveCameraRestartSchedule(cam) {
+        async saveCameraRestartSchedule(cam, options) {
+            options = options || {};
             cam._saving = true;
             try {
                 await window.HM.api.put('/api/v1/cameras/' + encodeURIComponent(cam.id), {
                     restart_schedule: this.stripRestartSchedule(cam.restart_schedule),
                 });
-                window.HM.toast('Restart schedule saved for ' + (cam.name || cam.id), 'success');
-                await this.loadRestartSchedules();
+                if (!options.silent) {
+                    window.HM.toast('Restart schedule saved for ' + (cam.name || cam.id), 'success');
+                }
+                if (!options.skipReload) {
+                    await this.loadRestartSchedules();
+                }
+                return true;
             } catch(e) {
-                window.HM.toast(e.message || 'Failed to save camera restart schedule', 'error');
+                if (!options.silent) {
+                    window.HM.toast(e.message || 'Failed to save camera restart schedule', 'error');
+                }
+                return false;
             } finally {
                 cam._saving = false;
             }
@@ -3397,15 +3734,48 @@ function settingsPage() {
             }
         },
 
-        async restartCameraNow(cam) {
-            if (!confirm('Restart ' + (cam.name || cam.id) + ' now?')) return;
+        async restartCameraNow(cam, options) {
+            options = options || {};
+            if (!options.skipConfirm && !confirm('Restart ' + (cam.name || cam.id) + ' now?')) return false;
             cam._rebooting = true;
             try {
                 await window.HM.api.post('/api/v1/cameras/' + encodeURIComponent(cam.id) + '/reboot', {});
-                window.HM.toast('Camera restart requested for ' + (cam.name || cam.id), 'info');
+                if (!options.silent) {
+                    window.HM.toast('Camera restart requested for ' + (cam.name || cam.id), 'info');
+                }
+                return true;
             } catch(e) {
                 cam._rebooting = false;
-                window.HM.toast(e.message || 'Failed to restart camera', 'error');
+                if (!options.silent) {
+                    window.HM.toast(e.message || 'Failed to restart camera', 'error');
+                }
+                return false;
+            }
+        },
+
+        async restartSelectedCameras() {
+            var cameras = this.selectedOnlineRestartCameras();
+            if (!cameras.length) {
+                window.HM.toast('Select at least one online camera', 'error');
+                return;
+            }
+            if (!confirm('Restart ' + cameras.length + ' selected online camera(s) now?')) return;
+            this.restart.bulkRestarting = true;
+            var requested = 0;
+            var failed = 0;
+            this.restart.bulkMessage = 'Restarting 0/' + cameras.length;
+            for (var i = 0; i < cameras.length; i++) {
+                var ok = await this.restartCameraNow(cameras[i], { skipConfirm: true, silent: true });
+                if (ok) requested += 1;
+                else failed += 1;
+                this.restart.bulkMessage = 'Restarting ' + (requested + failed) + '/' + cameras.length;
+            }
+            this.restart.bulkRestarting = false;
+            this.restart.bulkMessage = '';
+            if (failed) {
+                window.HM.toast('Restart requested for ' + requested + ' cameras; ' + failed + ' failed', 'error');
+            } else {
+                window.HM.toast('Restart requested for ' + requested + ' cameras', 'info');
             }
         },
 
