@@ -37,6 +37,139 @@ class TestStreamManager:
             time.sleep(0.2)
             mgr.stop()
 
+    def test_start_while_running_requests_retry_without_new_thread(self, camera_config):
+        """Repeated start requests must wake the loop, not spawn contenders."""
+        mgr = StreamManager(camera_config)
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        mgr._running = True
+        mgr._thread = thread
+
+        with patch("camera_streamer.stream.threading.Thread") as thread_factory:
+            assert mgr.start() is True
+
+        thread_factory.assert_not_called()
+        assert mgr._retry_event.is_set()
+
+    def test_running_stream_reconnects_when_resolved_endpoint_changes(
+        self, camera_config
+    ):
+        """A live stream must not stay pinned to a stale server IP."""
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+        mgr = StreamManager(camera_config, server_resolver=resolver)
+        mgr._running = True
+        mgr._active_stream_url = mgr._stream_url
+        backend = MagicMock()
+        backend.is_streaming = True
+        mgr._picam_backend = backend
+
+        resolver.resolved_ip = "192.168.1.245"
+        mgr._monitor_picam_backend()
+
+        assert mgr._consume_endpoint_reconnect_requested() is True
+
+    def test_external_endpoint_reconnect_request_is_owned_by_stream_loop(
+        self, camera_config, monkeypatch
+    ):
+        """Observers signal endpoint changes; the stream loop performs teardown."""
+        timers = []
+
+        class FakeTimer:
+            daemon = False
+
+            def __init__(self, timeout, target, args=()):
+                self.timeout = timeout
+                self.target = target
+                self.args = args
+                timers.append(self)
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr("camera_streamer.stream.threading.Timer", FakeTimer)
+        mgr = StreamManager(camera_config)
+        mgr._running = True
+        mgr._active_stream_url = mgr._stream_url
+        backend = MagicMock()
+        backend.is_streaming = True
+        mgr._picam_backend = backend
+
+        mgr.request_endpoint_reconnect("192.168.1.244", "192.168.1.245", source="test")
+        mgr._monitor_picam_backend()
+
+        assert mgr._consume_endpoint_reconnect_requested() is True
+        assert mgr._retry_event.is_set()
+        assert timers
+        assert timers[0].daemon is True
+
+    def test_stale_ffmpeg_detection_matches_only_this_stream(self, camera_config):
+        """Stale cleanup should only target ffmpeg publishers for this camera ID."""
+        mgr = StreamManager(camera_config)
+
+        assert mgr._cmdline_targets_stream(
+            [
+                "ffmpeg",
+                "-f",
+                "rtsp",
+                "rtsps://192.168.1.244:8322/cam-test001",
+            ],
+            mgr._stream_path,
+        )
+        assert not mgr._cmdline_targets_stream(
+            [
+                "ffmpeg",
+                "-f",
+                "rtsp",
+                "rtsps://192.168.1.244:8322/cam-other",
+            ],
+            mgr._stream_path,
+        )
+        assert not mgr._cmdline_targets_stream(
+            ["python3", "-m", "camera_streamer.main"],
+            mgr._stream_path,
+        )
+
+    def test_endpoint_reconnect_watchdog_exits_when_stuck(
+        self, camera_config, monkeypatch
+    ):
+        """A hung reconnect must let systemd restart the streamer."""
+        mgr = StreamManager(camera_config)
+        mgr._endpoint_reconnect_requested = True
+        mgr._endpoint_reconnect_generation = 7
+        killed = []
+        exits = []
+        monkeypatch.setattr(
+            mgr,
+            "_terminate_stream_publishers",
+            lambda **kwargs: killed.append(kwargs),
+        )
+        monkeypatch.setattr(
+            "camera_streamer.stream.os._exit", lambda code: exits.append(code)
+        )
+
+        mgr._exit_if_endpoint_reconnect_stuck(7)
+
+        assert killed == [
+            {"reason": "endpoint reconnect watchdog", "include_known": True}
+        ]
+        assert exits == [0]
+
+    def test_endpoint_reconnect_watchdog_ignores_completed_generation(
+        self, camera_config, monkeypatch
+    ):
+        mgr = StreamManager(camera_config)
+        mgr._endpoint_reconnect_requested = False
+        mgr._endpoint_reconnect_generation = 7
+        exits = []
+        monkeypatch.setattr(
+            "camera_streamer.stream.os._exit", lambda code: exits.append(code)
+        )
+
+        mgr._exit_if_endpoint_reconnect_stuck(7)
+
+        assert exits == []
+
     def test_build_ffmpeg_only_cmd(self, camera_config):
         """Should build correct ffmpeg command."""
         mgr = StreamManager(camera_config)

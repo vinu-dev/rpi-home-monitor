@@ -73,15 +73,47 @@ class TestResolverHappyPath:
         )
         resolver._resolved_ip = "192.168.1.245"
 
-        with patch(
-            "camera_streamer.lifecycle.socket.gethostbyname",
-            return_value="192.168.1.244",
+        with (
+            patch(
+                "camera_streamer.lifecycle._ServerResolver._resolve_with_avahi",
+                return_value=None,
+            ),
+            patch(
+                "camera_streamer.lifecycle.socket.gethostbyname",
+                return_value="192.168.1.244",
+            ),
         ):
             assert resolver.refresh_now(source="heartbeat_failure") is True
 
         assert resolver.resolved_ip == "192.168.1.244"
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
         assert cached["ip"] == "192.168.1.244"
+
+    def test_refresh_now_prefers_direct_avahi_for_local_names(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+        resolver._resolved_ip = "192.168.1.244"
+
+        with (
+            patch(
+                "camera_streamer.lifecycle._ServerResolver._resolve_with_avahi",
+                return_value="192.168.1.245",
+            ),
+            patch(
+                "camera_streamer.lifecycle.socket.gethostbyname",
+                return_value="192.168.1.244",
+            ) as socket_lookup,
+        ):
+            assert resolver.refresh_now(source="heartbeat_tick") is True
+
+        assert resolver.resolved_ip == "192.168.1.245"
+        socket_lookup.assert_not_called()
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cached["ip"] == "192.168.1.245"
 
     def test_success_persists_cache_atomically(self, tmp_path):
         cache_path = tmp_path / "server_resolved_ip"

@@ -125,6 +125,41 @@ class TestStartEncoder:
         assert isinstance(backend._encoder.output, FakeFileOutput)
         assert backend._pre_roll_output is None
 
+    def test_stop_terminates_ffmpeg_before_picam_recording(self, camera_config):
+        calls = []
+
+        class FakeProc:
+            pid = 1234
+            stdin = io.BytesIO()
+
+            def terminate(self):
+                calls.append("ffmpeg.terminate")
+
+            def wait(self, timeout=None):
+                calls.append(f"ffmpeg.wait:{timeout}")
+
+            def kill(self):
+                calls.append("ffmpeg.kill")
+
+        class StopAwarePicam:
+            def stop_recording(self):
+                calls.append("picam.stop_recording")
+
+            def close(self):
+                calls.append("picam.close")
+
+        backend = PicameraH264Backend(camera_config)
+        backend._ffmpeg = FakeProc()
+        backend._picam2 = StopAwarePicam()
+
+        backend.stop()
+
+        assert calls[:2] == ["ffmpeg.terminate", "ffmpeg.wait:2"]
+        assert "picam.stop_recording" in calls
+        assert calls.index("ffmpeg.terminate") < calls.index("picam.stop_recording")
+        assert backend._ffmpeg is None
+        assert backend._picam2 is None
+
 
 class TestPreRollRecording:
     def test_start_and_stop_finalize_buffered_then_live_bytes(

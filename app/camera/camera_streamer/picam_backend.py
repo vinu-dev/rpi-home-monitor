@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -110,6 +111,8 @@ LORES_WIDTH = 320
 LORES_HEIGHT = 240
 LORES_FPS = 5
 MIN_RETAIN_BYTES = 32 * 1024
+FFMPEG_TERM_TIMEOUT = 2
+FFMPEG_KILL_TIMEOUT = 1
 
 
 class PicameraH264Backend:
@@ -182,7 +185,12 @@ class PicameraH264Backend:
             self.stop_pre_rolled_recording("aborted")
         except Exception:  # pragma: no cover - defensive cleanup
             log.debug("pre-roll teardown failed", exc_info=True)
-        # Encoder + picam first so frames stop flowing before we close ffmpeg's stdin.
+        # Kill the publisher first. On server endpoint loss, ffmpeg can be stuck
+        # in the RTSPS output path; leaving it alive while stopping Picamera2 can
+        # block the encoder output cleanup and prevent the reconnect loop from
+        # ever starting a publisher for the new server IP.
+        self._stop_ffmpeg()
+
         try:
             if self._picam2 is not None:
                 try:
@@ -201,21 +209,42 @@ class PicameraH264Backend:
             self._lores_thread.join(timeout=5)
         self._lores_thread = None
 
-        if self._ffmpeg is not None:
+        log.info("PicameraH264Backend stopped")
+
+    def _stop_ffmpeg(self) -> None:
+        proc = self._ffmpeg
+        self._ffmpeg = None
+        if proc is None:
+            return
+        try:
+            self._signal_ffmpeg(proc, signal.SIGTERM)
             try:
-                # Closing stdin lets ffmpeg finish its muxer cleanup.
-                if self._ffmpeg.stdin and not self._ffmpeg.stdin.closed:
-                    self._ffmpeg.stdin.close()
-                self._ffmpeg.terminate()
-                try:
-                    self._ffmpeg.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self._ffmpeg.kill()
-                    self._ffmpeg.wait(timeout=2)
+                proc.wait(timeout=FFMPEG_TERM_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                self._signal_ffmpeg(proc, signal.SIGKILL)
+                proc.wait(timeout=FFMPEG_KILL_TIMEOUT)
+        except OSError:
+            pass
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    @staticmethod
+    def _signal_ffmpeg(proc, sig: int) -> None:
+        """Signal ffmpeg's process group, falling back to the process itself."""
+        pid = getattr(proc, "pid", None)
+        if pid and hasattr(os, "getpgid"):
+            try:
+                os.killpg(os.getpgid(pid), sig)
+                return
             except OSError:
                 pass
-            self._ffmpeg = None
-        log.info("PicameraH264Backend stopped")
+        if sig == signal.SIGTERM:
+            proc.terminate()
+        else:
+            proc.kill()
 
     @property
     def is_streaming(self) -> bool:

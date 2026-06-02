@@ -255,6 +255,7 @@ class HeartbeatSender:
 
         while not self._stop_event.is_set():
             try:
+                self._refresh_server_resolver("heartbeat_tick")
                 self._refresh_resolver_for_network_event()
                 response = self._send()
                 if response and response.get("pending_config"):
@@ -485,32 +486,33 @@ class HeartbeatSender:
     def _restart_stream_for_endpoint_change(
         self, previous_ip: str | None, current_ip: str
     ) -> None:
-        """Restart an active stream so FFmpeg reconnects to the preferred IP."""
+        """Notify the stream owner to reconnect to the preferred endpoint."""
         if self._stream is None:
             return
+        desired_running = False
         try:
-            if not self._stream.is_streaming:
+            desired_running = (
+                self._control is not None
+                and self._control.desired_stream_state == "running"
+            )
+        except Exception:
+            desired_running = False
+        try:
+            streaming = bool(self._stream.is_streaming)
+            if not streaming and not desired_running:
                 return
         except Exception:
+            if not desired_running:
+                return
+        notifier = getattr(self._stream, "request_endpoint_reconnect", None)
+        if callable(notifier):
+            notifier(previous_ip, current_ip, source="heartbeat")
+            if desired_running and not streaming:
+                starter = getattr(self._stream, "start", None)
+                if callable(starter):
+                    starter()
             return
-
-        def _restart() -> None:
-            try:
-                log.info(
-                    "Restarting stream for server endpoint change: %s -> %s",
-                    previous_ip or "(none)",
-                    current_ip,
-                )
-                self._stream.stop()
-                self._stream.start()
-            except Exception as exc:
-                log.warning("Failed to restart stream after endpoint change: %s", exc)
-
-        threading.Thread(
-            target=_restart,
-            daemon=True,
-            name="stream-endpoint-restart",
-        ).start()
+        log.warning("Stream manager cannot reconnect for server endpoint change")
 
     def _handle_server_unpair(self) -> None:
         """Wipe local pairing state and exit so systemd restarts us into PAIRING.
