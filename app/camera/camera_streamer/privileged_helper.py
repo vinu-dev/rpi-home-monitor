@@ -271,6 +271,10 @@ def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(["systemctl", "reboot"], timeout=15)
 
 
+def _op_time_restart_timesyncd(payload: dict[str, Any]) -> dict[str, Any]:
+    return _run_command(["systemctl", "restart", "systemd-timesyncd"], timeout=10)
+
+
 OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "hotspot.connect": _op_hotspot_connect,
     "hotspot.set_password": _op_hotspot_set_password,
@@ -280,6 +284,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "hostname.set": _op_hostname_set,
     "led.set": _op_led_set,
     "system.reboot": _op_system_reboot,
+    "time.restart_timesyncd": _op_time_restart_timesyncd,
 }
 
 

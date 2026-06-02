@@ -1576,16 +1576,7 @@ function dashboardPage() {
             this.savingStream = true;
             this.streamSaveMsg = '';
             var parts = this.editForm.resolution.split('x');
-            // Validate name client-side before the round-trip so a trivial
-            // empty-field typo surfaces immediately (backend enforces
-            // 1-64 chars and will 400 otherwise).
             var name = (this.editForm.name || '').trim();
-            if (!name) {
-                this.streamSaveOk = false;
-                this.streamSaveMsg = 'Name is required (1-64 characters).';
-                this.savingStream = false;
-                return;
-            }
             var payload = {
                 name: name,
                 location: (this.editForm.location || '').trim(),

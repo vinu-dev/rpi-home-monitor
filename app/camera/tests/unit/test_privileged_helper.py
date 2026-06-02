@@ -223,6 +223,22 @@ def test_system_reboot_uses_systemctl_reboot():
     )
 
 
+def test_time_restart_timesyncd_uses_systemctl_restart():
+    with patch("camera_streamer.privileged_helper.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        data = privileged_helper._op_time_restart_timesyncd({})
+
+    assert data["returncode"] == 0
+    mock_run.assert_called_once_with(
+        ["systemctl", "restart", "systemd-timesyncd"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+
 def test_rejects_unknown_operation():
     with pytest.raises(privileged_helper.HelperRequestError, match="not allowed"):
         privileged_helper._handle_request(b'{"operation":"not.allowed","payload":{}}')

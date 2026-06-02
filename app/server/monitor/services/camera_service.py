@@ -1140,8 +1140,13 @@ class CameraService:
 
         if "name" in data:
             name = data["name"]
-            if not isinstance(name, str) or len(name) < 1 or len(name) > 64:
-                return "name must be 1-64 characters"
+            if not isinstance(name, str) or len(name) > 64:
+                return "name must be 64 characters or fewer"
+
+        if "location" in data:
+            location = data["location"]
+            if not isinstance(location, str) or len(location) > 64:
+                return "location must be 64 characters or fewer"
 
         if "width" in data and (
             not isinstance(data["width"], int) or data["width"] < 1
