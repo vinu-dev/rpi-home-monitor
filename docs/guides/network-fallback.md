@@ -44,5 +44,12 @@ path, so it reflects the interface that is already reachable from your device.
 
 - IP bookmarks can go stale if your router rotates DHCP leases. Revisit the
   product pages above to pick up the new IP if needed.
+- Paired cameras report their current source IP on every authenticated
+  heartbeat, so the server should update camera addresses automatically after a
+  DHCP change. The camera also refreshes its cached server IP after heartbeat
+  failures or NetworkManager link events.
+- When the server has both Ethernet and WiFi active on the same LAN, Ethernet is
+  the canonical server address for camera communication. WiFi remains a fallback
+  if Ethernet is unavailable.
 - Self-signed HTTPS certificate warnings are expected on first use for both the
   hostname and IP URLs.

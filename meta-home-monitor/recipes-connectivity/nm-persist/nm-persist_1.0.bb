@@ -17,6 +17,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 SRC_URI = " \
     file://nm-persist.sh \
     file://10-home-monitor-hostname.conf \
+    file://20-home-monitor-arp-flux.conf \
     "
 
 S = "${WORKDIR}"
@@ -30,6 +31,9 @@ do_install() {
     install -d ${D}${sysconfdir}/NetworkManager/conf.d
     install -m 0644 ${WORKDIR}/10-home-monitor-hostname.conf \
         ${D}${sysconfdir}/NetworkManager/conf.d/10-home-monitor-hostname.conf
+    install -d ${D}${sysconfdir}/sysctl.d
+    install -m 0644 ${WORKDIR}/20-home-monitor-arp-flux.conf \
+        ${D}${sysconfdir}/sysctl.d/20-home-monitor-arp-flux.conf
 
     install -d ${D}${systemd_system_unitdir}
 
@@ -58,6 +62,7 @@ SYSTEMD_AUTO_ENABLE = "enable"
 FILES:${PN} = " \
     /opt/monitor/scripts/nm-persist.sh \
     ${sysconfdir}/NetworkManager/conf.d/10-home-monitor-hostname.conf \
+    ${sysconfdir}/sysctl.d/20-home-monitor-arp-flux.conf \
     ${systemd_system_unitdir}/nm-persist.service \
     "
 

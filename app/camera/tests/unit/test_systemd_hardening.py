@@ -53,6 +53,21 @@ NM_PERSIST_RECIPE = (
     / "nm-persist"
     / "nm-persist_1.0.bb"
 )
+NM_ARP_FLUX_CONF = (
+    REPO_ROOT
+    / "meta-home-monitor"
+    / "recipes-connectivity"
+    / "nm-persist"
+    / "files"
+    / "20-home-monitor-arp-flux.conf"
+)
+CAMERA_RECIPE = (
+    REPO_ROOT
+    / "meta-home-monitor"
+    / "recipes-camera"
+    / "camera-streamer"
+    / "camera-streamer_1.0.bb"
+)
 
 # --- The contract --------------------------------------------------
 #
@@ -183,6 +198,41 @@ def test_networkmanager_does_not_own_camera_hostname():
     assert "hostname-mode=none" in conf
     assert "10-home-monitor-hostname.conf" in recipe
     assert "10-home-monitor-hostname.conf" in deploy
+
+
+def test_dev_deploy_installs_network_dispatchers_and_arp_sysctl():
+    deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert "monitor-network-dispatcher.sh" in deploy
+    assert "20-home-monitor-lan-identity" in deploy
+    assert "camera-network-dispatcher.sh" in deploy
+    assert "20-home-camera-network-event" in deploy
+    assert "20-home-monitor-arp-flux.conf" in deploy
+    assert "sysctl --system" in deploy
+
+
+def test_camera_recipe_installs_network_dispatcher():
+    recipe = CAMERA_RECIPE.read_text(encoding="utf-8")
+    script = (
+        REPO_ROOT / "app" / "camera" / "config" / "camera-network-dispatcher.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "file://config/camera-network-dispatcher.sh" in recipe
+    assert "NetworkManager/dispatcher.d/20-home-camera-network-event" in recipe
+    assert "/data/config/network-event" in script
+    assert "try-restart camera-streamer.service" in script
+    assert "/data/.setup-done" in script
+
+
+def test_nm_persist_installs_arp_flux_sysctl():
+    recipe = NM_PERSIST_RECIPE.read_text(encoding="utf-8")
+    conf = NM_ARP_FLUX_CONF.read_text(encoding="utf-8")
+
+    assert "file://20-home-monitor-arp-flux.conf" in recipe
+    assert "sysctl.d/20-home-monitor-arp-flux.conf" in recipe
+    assert "net.ipv4.conf.all.arp_filter = 1" in conf
+    assert "net.ipv4.conf.all.arp_ignore = 1" in conf
+    assert "net.ipv4.conf.all.arp_announce = 2" in conf
 
 
 @pytest.mark.parametrize(

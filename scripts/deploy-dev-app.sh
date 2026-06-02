@@ -174,6 +174,7 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-network-dispatcher.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/status_led.py" "$host" "$SERVER_STAGE"
@@ -183,6 +184,7 @@ deploy_server() {
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/10-home-monitor-hostname.conf" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/20-home-monitor-arp-flux.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$SERVER_STAGE"
 
@@ -232,6 +234,12 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
         mkdir -p /etc/NetworkManager/conf.d
         cp '$SERVER_STAGE/10-home-monitor-hostname.conf' /etc/NetworkManager/conf.d/10-home-monitor-hostname.conf
+        mkdir -p /etc/NetworkManager/dispatcher.d
+        cp '$SERVER_STAGE/monitor-network-dispatcher.sh' /etc/NetworkManager/dispatcher.d/20-home-monitor-lan-identity
+        chmod 0755 /etc/NetworkManager/dispatcher.d/20-home-monitor-lan-identity
+        mkdir -p /etc/sysctl.d
+        cp '$SERVER_STAGE/20-home-monitor-arp-flux.conf' /etc/sysctl.d/20-home-monitor-arp-flux.conf
+        sysctl --system >/dev/null 2>&1 || true
         cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
         cp '$SERVER_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
         cp '$SERVER_STAGE/mediamtx.service' /etc/systemd/system/mediamtx.service
@@ -290,6 +298,7 @@ deploy_camera() {
     copy_file "$REPO_ROOT/app/camera/config/camera-privileged-helper.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/camera/config/camera-hotspot.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/camera/config/camera-hotspot.service" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/app/camera/config/camera-network-dispatcher.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/server/config/gpio-trigger.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/app/camera/config/camera-ota-installer.service" "$host" "$CAMERA_STAGE"
@@ -302,6 +311,7 @@ deploy_camera() {
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/10-home-monitor-hostname.conf" "$host" "$CAMERA_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/20-home-monitor-arp-flux.conf" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/first-boot-setup.sh" "$host" "$CAMERA_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-core/first-boot/files/luks-first-boot.sh" "$host" "$CAMERA_STAGE"
 
@@ -349,6 +359,12 @@ deploy_camera() {
         fi
         mkdir -p /etc/NetworkManager/conf.d
         cp '$CAMERA_STAGE/10-home-monitor-hostname.conf' /etc/NetworkManager/conf.d/10-home-monitor-hostname.conf
+        mkdir -p /etc/NetworkManager/dispatcher.d
+        cp '$CAMERA_STAGE/camera-network-dispatcher.sh' /etc/NetworkManager/dispatcher.d/20-home-camera-network-event
+        chmod 0755 /etc/NetworkManager/dispatcher.d/20-home-camera-network-event
+        mkdir -p /etc/sysctl.d
+        cp '$CAMERA_STAGE/20-home-monitor-arp-flux.conf' /etc/sysctl.d/20-home-monitor-arp-flux.conf
+        sysctl --system >/dev/null 2>&1 || true
     "
 
     log "Applying boot optimisation overrides"

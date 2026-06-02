@@ -3,6 +3,7 @@
 
 import hashlib
 import hmac
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 from camera_streamer.heartbeat import (
@@ -482,6 +483,49 @@ class TestHeartbeatSender:
         assert started == [True]
         stream.stop.assert_called_once()
         stream.start.assert_called_once()
+
+    def test_network_failures_force_resolver_refresh(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.245"
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            server_resolver=resolver,
+            network_event_path="",
+        )
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.paired_server_context",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "camera_streamer.heartbeat.urllib.request.urlopen",
+                side_effect=urllib.error.URLError("stale endpoint"),
+            ),
+        ):
+            sender.send_once()
+            sender.send_once()
+
+        resolver.refresh_now.assert_called_once_with(source="heartbeat_failure")
+
+    def test_network_event_marker_forces_resolver_refresh(self, tmp_path):
+        marker = tmp_path / "network-event"
+        marker.write_text("dhcp4-change wlan0\n", encoding="utf-8")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.245"
+        sender = HeartbeatSender(
+            _make_config(server_ip="homemonitor.local"),
+            _make_pairing(),
+            server_resolver=resolver,
+            network_event_path=str(marker),
+        )
+
+        sender._refresh_resolver_for_network_event()
+        sender._refresh_resolver_for_network_event()
+
+        resolver.refresh_now.assert_called_once_with(source="network_event")
 
     def test_apply_pending_config_calls_control_handler(self):
         cfg = _make_config()

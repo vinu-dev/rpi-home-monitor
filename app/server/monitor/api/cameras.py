@@ -292,7 +292,9 @@ def camera_heartbeat():
         return jsonify({"error": "JSON body required"}), 400
 
     response, error, status = current_app.camera_service.accept_heartbeat(
-        camera_id, data
+        camera_id,
+        data,
+        source_ip=request.remote_addr or "",
     )
     if error:
         return jsonify({"error": error}), status
