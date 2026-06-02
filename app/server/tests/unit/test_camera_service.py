@@ -534,14 +534,24 @@ class TestUpdate:
         assert status == 400
         assert "name" in error
 
-    def test_rejects_empty_name(self):
+    def test_allows_empty_name_to_clear_display_name(self):
         cam = _make_camera()
         store = MagicMock()
         store.get_camera.return_value = cam
         svc = CameraService(store)
         error, status = svc.update("cam-001", {"name": ""})
+        assert status == 200
+        assert error == ""
+        assert cam.name == ""
+
+    def test_rejects_location_longer_than_64_chars(self):
+        cam = _make_camera()
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        svc = CameraService(store)
+        error, status = svc.update("cam-001", {"location": "x" * 65})
         assert status == 400
-        assert "name" in error
+        assert "location" in error
 
     def test_mode_change_off_to_continuous_no_direct_streaming_call(self):
         """ADR-0017: pipeline changes are driven by RecordingScheduler, not here."""

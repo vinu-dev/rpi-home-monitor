@@ -627,6 +627,10 @@ class TestHeartbeatSender:
 
         with (
             patch(
+                "camera_streamer.heartbeat.privileged.should_use_helper",
+                return_value=False,
+            ),
+            patch(
                 "camera_streamer.heartbeat.subprocess.run",
                 return_value=MagicMock(returncode=0, stdout="", stderr=""),
             ) as mock_run,
@@ -643,6 +647,27 @@ class TestHeartbeatSender:
         )
         mock_handler_cls.assert_not_called()
 
+    def test_apply_pending_config_restarts_timesyncd_via_helper_when_unprivileged(
+        self,
+    ):
+        cfg = _make_config()
+        sender = HeartbeatSender(cfg, _make_pairing())
+
+        with (
+            patch(
+                "camera_streamer.heartbeat.privileged.should_use_helper",
+                return_value=True,
+            ),
+            patch("camera_streamer.heartbeat.privileged.request") as mock_request,
+            patch("camera_streamer.heartbeat.subprocess.run") as mock_run,
+            patch("camera_streamer.heartbeat.ControlHandler") as mock_handler_cls,
+        ):
+            sender._apply_pending_config({"time_resync": True})
+
+        mock_request.assert_called_once_with("time.restart_timesyncd", timeout=10)
+        mock_run.assert_not_called()
+        mock_handler_cls.assert_not_called()
+
     def test_apply_pending_config_handles_time_resync_and_stream_config(self):
         cfg = _make_config()
         sender = HeartbeatSender(cfg, _make_pairing())
@@ -650,6 +675,10 @@ class TestHeartbeatSender:
         mock_handler.set_config.return_value = ({"applied": True}, "", 200)
 
         with (
+            patch(
+                "camera_streamer.heartbeat.privileged.should_use_helper",
+                return_value=False,
+            ),
             patch(
                 "camera_streamer.heartbeat.subprocess.run",
                 return_value=MagicMock(returncode=0, stdout="", stderr=""),

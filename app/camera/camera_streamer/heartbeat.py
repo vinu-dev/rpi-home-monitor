@@ -26,6 +26,7 @@ import time
 import urllib.error
 import urllib.request
 
+from camera_streamer import privileged
 from camera_streamer.control import ControlHandler, parse_control_request
 from camera_streamer.health import read_throttle_state as _read_throttle_state
 from camera_streamer.restart_schedule_model import normalise_restart_schedule
@@ -52,6 +53,15 @@ UNPAIR_401_THRESHOLD = 5
 
 def _restart_timesyncd() -> None:
     # REQ: SWR-025; RISK: RISK-015; SEC: SC-002; TEST: TC-030
+    if privileged.should_use_helper():
+        try:
+            privileged.request("time.restart_timesyncd", timeout=10)
+        except privileged.PrivilegedHelperError as exc:
+            log.warning("Failed to restart systemd-timesyncd via helper: %s", exc)
+            return
+        log.info("Restarted systemd-timesyncd after server-requested time resync")
+        return
+
     try:
         result = subprocess.run(
             ["systemctl", "restart", "systemd-timesyncd"],

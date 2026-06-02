@@ -324,19 +324,6 @@ class ControlHandler:
         if request_id and request_id <= self._last_request_id:
             return None, "Stale request_id (replay rejected)", 409
 
-        schedule_only = set(params.keys()) == {"restart_schedule"}
-
-        # Rate limiting
-        now = time.monotonic()
-        elapsed = now - self._last_change_time
-        if (
-            self._last_change_time > 0
-            and elapsed < RATE_LIMIT_SECONDS
-            and not schedule_only
-        ):
-            wait = RATE_LIMIT_SECONDS - elapsed
-            return None, f"Rate limited, retry after {wait:.0f}s", 429
-
         if not params:
             return None, "No parameters provided", 400
 
@@ -358,6 +345,21 @@ class ControlHandler:
                 "",
                 200,
             )
+
+        schedule_only = set(changes.keys()) == {"restart_schedule"}
+
+        # Rate-limit real changes, but let full desired-state replays that
+        # collapse to no-op above succeed. The server deliberately sends full
+        # state for convergence after either side changes settings.
+        now = time.monotonic()
+        elapsed = now - self._last_change_time
+        if (
+            self._last_change_time > 0
+            and elapsed < RATE_LIMIT_SECONDS
+            and not schedule_only
+        ):
+            wait = RATE_LIMIT_SECONDS - elapsed
+            return None, f"Rate limited, retry after {wait:.0f}s", 429
 
         # Apply changes to config
         config_updates = {}

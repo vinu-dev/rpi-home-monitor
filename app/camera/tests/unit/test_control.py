@@ -359,6 +359,16 @@ class TestRateLimiting:
         assert status == 429
         assert "Rate limited" in err
 
+    def test_allows_unchanged_full_state_during_cooldown(self, control):
+        control.set_config({"fps": 15})
+        desired_state = control.get_config()
+
+        result, err, status = control.set_config(desired_state)
+
+        assert status == 200, err
+        assert result["status"] == "unchanged"
+        assert result["applied"] == {}
+
     def test_allows_after_cooldown(self, control):
         control.set_config({"fps": 15})
         # Manually reset the timer
