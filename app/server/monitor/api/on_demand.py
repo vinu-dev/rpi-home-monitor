@@ -1,18 +1,18 @@
 # REQ: SWR-052; RISK: RISK-001, RISK-017; SEC: SC-016; TEST: TC-001, TC-028
 """
-On-demand coordinator (ADR-0017) — localhost-only Flask blueprint.
+On-demand coordinator (ADR-0017) - localhost-only Flask blueprint.
 
 MediaMTX invokes this via a shell wrapper on `runOnDemand` /
 `runOnDemandCloseAfter`. The coordinator is the single "does anyone still
 need this stream?" gate:
 
     POST /internal/on-demand/<camera_id>/start
-        - If camera.desired_stream_state == "running" → no-op (200).
-        - Else → control_client.start_stream(ip), persist, return {"ok": true}.
+        - If desired and observed stream state are both running: no-op (200).
+        - Else: control_client.start_stream(ip), persist, return {"ok": true}.
 
     POST /internal/on-demand/<camera_id>/stop
-        - If RecordingScheduler.needs_stream(cam) → no-op (200, kept_running).
-        - Else → control_client.stop_stream(ip), persist, return {"ok": true}.
+        - If RecordingScheduler.needs_stream(cam): no-op (200, kept_running).
+        - Else: control_client.stop_stream(ip), persist, return {"ok": true}.
 
 Auth: 127.0.0.1 / ::1 only (localhost trust). No session / CSRF.
 CSRF is not applied (blueprint is not under /api/v1).
@@ -44,14 +44,17 @@ def _require_localhost():
 
 @on_demand_bp.route("/<camera_id>/start", methods=["POST"])
 def on_demand_start(camera_id: str):
-    """Viewer arrived — make sure the camera is streaming."""
+    """Viewer arrived - make sure the camera is streaming."""
     camera = current_app.store.get_camera(camera_id)
     if camera is None:
         return jsonify({"error": "Camera not found"}), 404
 
-    if camera.desired_stream_state == "running":
+    observed_running = bool(getattr(camera, "streaming", False))
+    if camera.desired_stream_state == "running" and observed_running:
         log.debug("on-demand start %s: already running", camera_id)
         return jsonify({"ok": True, "already_running": True}), 200
+
+    reconciling = camera.desired_stream_state == "running" and not observed_running
 
     if not camera.ip:
         return jsonify({"error": "Camera IP unknown"}), 409
@@ -67,12 +70,12 @@ def on_demand_start(camera_id: str):
 
     camera.desired_stream_state = "running"
     current_app.store.save_camera(camera)
-    return jsonify({"ok": True, "started": True}), 200
+    return jsonify({"ok": True, "started": True, "reconciled": reconciling}), 200
 
 
 @on_demand_bp.route("/<camera_id>/stop", methods=["POST"])
 def on_demand_stop(camera_id: str):
-    """Viewer left — stop the camera stream unless the scheduler still wants it."""
+    """Viewer left - stop the camera stream unless the scheduler still wants it."""
     camera = current_app.store.get_camera(camera_id)
     if camera is None:
         return jsonify({"error": "Camera not found"}), 404

@@ -34,6 +34,7 @@ class TestOnDemandStart:
         body = resp.get_json()
         assert body["ok"] is True
         assert body.get("started") is True
+        assert body.get("reconciled") is False
         app.camera_control_client.start_stream.assert_called_once_with(
             "192.0.2.50",
             camera_id="cam-x",
@@ -45,6 +46,7 @@ class TestOnDemandStart:
         app = app_with_cam
         cam = app.store.get_camera("cam-x")
         cam.desired_stream_state = "running"
+        cam.streaming = True
         app.store.save_camera(cam)
 
         client = app.test_client()
@@ -54,6 +56,29 @@ class TestOnDemandStart:
         assert body["ok"] is True
         assert body.get("already_running") is True
         app.camera_control_client.start_stream.assert_not_called()
+
+    def test_start_reconciles_when_desired_running_but_not_streaming(
+        self, app_with_cam
+    ):
+        app = app_with_cam
+        cam = app.store.get_camera("cam-x")
+        cam.desired_stream_state = "running"
+        cam.streaming = False
+        app.store.save_camera(cam)
+
+        client = app.test_client()
+        resp = client.post("/internal/on-demand/cam-x/start")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body.get("started") is True
+        assert body.get("reconciled") is True
+        app.camera_control_client.start_stream.assert_called_once_with(
+            "192.0.2.50",
+            camera_id="cam-x",
+        )
+        cam = app.store.get_camera("cam-x")
+        assert cam.desired_stream_state == "running"
 
     def test_start_404_unknown_camera(self, app_with_cam):
         client = app_with_cam.test_client()
