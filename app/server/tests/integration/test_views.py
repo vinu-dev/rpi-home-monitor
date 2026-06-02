@@ -725,6 +725,12 @@ class TestCompleteGuiRedesignCoverage:
             assert title in body
             assert supporting_text in body
 
+    def test_alpine_pages_do_not_double_initialize_pollers(self, client):
+        """Alpine auto-calls an init() method; x-init="init()" calls it again."""
+        for path in ["/dashboard", "/settings", "/events", "/alerts"]:
+            body = self._get_body(client, path)
+            assert 'x-init="init()"' not in body
+
     def test_dashboard_preserves_all_camera_roll_call_actions(self, client):
         body = self._get_body(client, "/dashboard")
         for text in [
