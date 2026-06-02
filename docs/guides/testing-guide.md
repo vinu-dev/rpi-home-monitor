@@ -177,10 +177,9 @@ GUI redesign coverage lives in both browser and rendered-template tests:
 mDNS identity coverage is part of the server unit lane:
 
 - `app/server/tests/unit/test_avahi_pin.py` verifies the server Avahi config is
-  generated under `/data/config`, pins `rpi-divinu.local`, publishes on the
-  trusted LAN interface allow-list (`eth0,wlan0` by default, plus active
-  non-virtual LAN defaults), and ensures Yocto installs the systemd unit and
-  Avahi drop-in.
+  generated under `/data/config`, pins `rpi-divinu.local`, publishes on one
+  canonical LAN interface (Ethernet first, WiFi fallback), and ensures Yocto
+  installs the systemd unit, Avahi drop-in, and NetworkManager dispatcher hook.
 
 Current project model:
 

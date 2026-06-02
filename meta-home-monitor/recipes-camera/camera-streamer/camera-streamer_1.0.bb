@@ -27,6 +27,7 @@ SRC_URI = " \
     file://config/camera-privileged-helper.service \
     file://config/camera-hotspot.service \
     file://config/camera-hotspot.sh \
+    file://config/camera-network-dispatcher.sh \
     file://config/nftables-camera.conf \
     file://config/captive-portal-dnsmasq.conf \
     file://config/camera.conf.default \
@@ -120,6 +121,8 @@ do_install() {
     # Captive portal DNS redirect (NM shared-mode dnsmasq config)
     install -d ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d
     install -m 0644 ${WORKDIR}/config/captive-portal-dnsmasq.conf ${D}${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf
+    install -d ${D}${sysconfdir}/NetworkManager/dispatcher.d
+    install -m 0755 ${WORKDIR}/config/camera-network-dispatcher.sh ${D}${sysconfdir}/NetworkManager/dispatcher.d/20-home-camera-network-event
 
     # Camera NTP drop-in — prefer LAN server as time source (ADR-0019)
     install -d ${D}${sysconfdir}/systemd/timesyncd.conf.d
@@ -139,6 +142,7 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/camera-ota-installer.path \
     ${sysconfdir}/nftables.d/camera.conf \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
+    ${sysconfdir}/NetworkManager/dispatcher.d/20-home-camera-network-event \
     ${sysconfdir}/systemd/timesyncd.conf.d/10-home-camera.conf \
     ${sysconfdir}/tmpfiles.d/camera-ota.conf \
     "

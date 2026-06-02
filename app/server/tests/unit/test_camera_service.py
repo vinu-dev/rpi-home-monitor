@@ -958,6 +958,71 @@ class TestAcceptHeartbeat:
         assert cam.last_seen != "2020-01-01T00:00:00Z"
         assert "Z" in cam.last_seen
 
+    def test_updates_camera_ip_from_authenticated_heartbeat_source(self):
+        cam = _make_camera(ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(),
+            source_ip="192.168.1.115",
+        )
+
+        assert cam.ip == "192.168.1.115"
+        audit.log_event.assert_called_once_with(
+            "CAMERA_IP_CHANGED",
+            user="camera",
+            ip="192.168.1.115",
+            detail="camera cam-001 IP 192.168.1.50 -> 192.168.1.115",
+        )
+
+    def test_heartbeat_ignores_non_lan_source_ip_for_camera_record(self):
+        cam = _make_camera(ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+
+        svc.accept_heartbeat("cam-001", self._basic_payload(), source_ip="8.8.8.8")
+
+        assert cam.ip == "192.168.1.50"
+        audit.log_event.assert_not_called()
+
+    def test_heartbeat_normalises_ipv6_mapped_lan_source_ip(self):
+        cam = _make_camera(ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(),
+            source_ip="::ffff:192.168.1.115",
+        )
+
+        assert cam.ip == "192.168.1.115"
+        audit.log_event.assert_called_once()
+
+    def test_heartbeat_does_not_audit_unchanged_camera_ip(self):
+        cam = _make_camera(ip="192.168.1.50")
+        store = MagicMock()
+        store.get_camera.return_value = cam
+        audit = MagicMock()
+        svc = CameraService(store, audit=audit)
+
+        svc.accept_heartbeat(
+            "cam-001",
+            self._basic_payload(),
+            source_ip="192.168.1.50",
+        )
+
+        assert cam.ip == "192.168.1.50"
+        audit.log_event.assert_not_called()
+
     def test_updates_streaming_flag(self):
         cam = _make_camera(streaming=False)
         store = MagicMock()

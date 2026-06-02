@@ -64,6 +64,25 @@ class TestResolverHappyPath:
 
         assert resolver.resolved_ip == "192.168.1.245"
 
+    def test_refresh_now_re_resolves_configured_hostname(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+        resolver._resolved_ip = "192.168.1.245"
+
+        with patch(
+            "camera_streamer.lifecycle.socket.gethostbyname",
+            return_value="192.168.1.244",
+        ):
+            assert resolver.refresh_now(source="heartbeat_failure") is True
+
+        assert resolver.resolved_ip == "192.168.1.244"
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cached["ip"] == "192.168.1.244"
+
     def test_success_persists_cache_atomically(self, tmp_path):
         cache_path = tmp_path / "server_resolved_ip"
         resolver = _ServerResolver(
@@ -165,6 +184,26 @@ class TestResolverDeadlineFault:
         assert emitted.code == FAULT_NETWORK_MDNS_RESOLUTION_FAILED
         assert emitted.context["address"] == "missing-server.local"
         assert emitted.context["attempts"] >= 1
+
+    def test_public_resolution_is_not_accepted_as_lan_endpoint(self):
+        capture = MagicMock()
+        resolver = _ServerResolver("homemonitor.local", capture_manager=capture)
+        resolver.DEADLINE_S = 0.05
+        resolver.INITIAL_BACKOFF_S = 0.01
+        resolver.MAX_BACKOFF_S = 0.01
+
+        with (
+            patch(
+                "camera_streamer.lifecycle.socket.gethostbyname",
+                return_value="8.8.8.8",
+            ),
+            patch.object(resolver._stop, "wait", return_value=False),
+        ):
+            resolver._run()
+
+        assert resolver.resolved_ip is None
+        capture.clear_fault.assert_not_called()
+        capture.add_fault.assert_called_once()
 
     def test_no_capture_manager_does_not_crash_on_failure(self):
         """Defensive: resolver works without a CaptureManager (older
@@ -298,6 +337,32 @@ class TestResolverCachePriming:
                 {
                     "hostname": "other.local",
                     "ip": "192.168.1.99",
+                    "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        resolver = _ServerResolver(
+            "homemonitor.local",
+            capture_manager=MagicMock(),
+            cache_path=str(cache_path),
+        )
+
+        with patch(
+            "camera_streamer.lifecycle.threading.Thread",
+            return_value=MagicMock(start=MagicMock()),
+        ):
+            resolver.start()
+
+        assert resolver.resolved_ip is None
+
+    def test_start_ignores_public_ip_cache(self, tmp_path):
+        cache_path = tmp_path / "server_resolved_ip"
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "hostname": "homemonitor.local",
+                    "ip": "8.8.8.8",
                     "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 }
             ),

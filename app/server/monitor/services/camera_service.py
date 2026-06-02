@@ -12,6 +12,7 @@ Design patterns:
 - Fail-Silent (audit failures don't break operations)
 """
 
+import ipaddress
 import logging
 import re
 from datetime import UTC, datetime
@@ -60,6 +61,12 @@ _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 # - Filesystem limit violations (>255 chars)
 # - Injection via shell-unsafe characters
 _CAMERA_ID_RE = re.compile(r"^cam-[a-z0-9]{1,48}$")
+
+_PRIVATE_IPV4_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
 
 # Stream parameters that should be pushed to the camera (ADR-0015).
 STREAM_PARAM_FIELDS = (
@@ -115,6 +122,23 @@ def _heartbeat_timestamp_to_iso(value) -> str | None:
         return datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     except (OverflowError, OSError, ValueError):
         return None
+
+
+def _normalise_observed_camera_ip(value: str | None) -> str:
+    """Return a private IPv4 camera source address, or empty if unusable."""
+    if not value:
+        return ""
+    try:
+        ip = ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return ""
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if ip.version != 4:
+        return ""
+    if not any(ip in network for network in _PRIVATE_IPV4_NETWORKS):
+        return ""
+    return str(ip)
 
 
 def _translate_stream_params_for_wire(params: dict) -> dict:
@@ -700,7 +724,9 @@ class CameraService:
 
         return "", 200
 
-    def accept_heartbeat(self, camera_id: str, data: dict) -> tuple[dict, str, int]:
+    def accept_heartbeat(
+        self, camera_id: str, data: dict, source_ip: str = ""
+    ) -> tuple[dict, str, int]:
         """Accept a heartbeat from a camera and update its live status.
 
         Updates last_seen, status, streaming flag, and health metrics.
@@ -712,6 +738,17 @@ class CameraService:
         camera = self._store.get_camera(camera_id)
         if not camera:
             return {}, "Camera not found", 404
+
+        observed_ip = _normalise_observed_camera_ip(source_ip)
+        if observed_ip and observed_ip != (camera.ip or ""):
+            previous_ip = camera.ip or ""
+            camera.ip = observed_ip
+            self._log_audit(
+                "CAMERA_IP_CHANGED",
+                "camera",
+                observed_ip,
+                f"camera {camera_id} IP {previous_ip or '(none)'} -> {observed_ip}",
+            )
 
         was_offline = camera.status == "offline"
         camera.status = "online"

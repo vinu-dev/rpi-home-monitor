@@ -39,7 +39,7 @@ def test_choose_publish_interface_prefers_default_physical_lan():
     )
 
     assert avahi_pin.choose_publish_interface(run=run) == "eth0"
-    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0", "wlan0")
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0",)
 
 
 def test_choose_publish_interface_ignores_vpn_default_and_uses_lan():
@@ -63,7 +63,41 @@ def test_choose_publish_interface_ignores_vpn_default_and_uses_lan():
     )
 
     assert avahi_pin.choose_publish_interface(run=run) == "eth0"
-    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0", "wlan0")
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("eth0",)
+
+
+def test_choose_publish_interface_falls_back_to_wifi_when_ethernet_has_no_ip():
+    run = _fake_ip(
+        {
+            ("ip", "-4", "route", "show", "default"): (
+                "default via 192.168.1.1 dev wlan0 proto dhcp\n"
+            ),
+            (
+                "ip",
+                "-4",
+                "-o",
+                "addr",
+                "show",
+                "dev",
+                "eth0",
+                "scope",
+                "global",
+            ): "",
+            (
+                "ip",
+                "-4",
+                "-o",
+                "addr",
+                "show",
+                "dev",
+                "wlan0",
+                "scope",
+                "global",
+            ): "3: wlan0 inet 192.168.1.245/24 brd 192.168.1.255 scope global wlan0\n",
+        }
+    )
+
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("wlan0",)
 
 
 def test_choose_publish_interface_falls_back_to_existing_interface():
@@ -84,11 +118,7 @@ def test_choose_publish_interfaces_adds_physical_default_when_preferred_missing(
         }
     )
 
-    assert avahi_pin.choose_publish_interfaces(run=run) == (
-        "eth0",
-        "wlan0",
-        "enp2s0",
-    )
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("enp2s0",)
 
 
 def test_choose_publish_interfaces_adds_active_nonstandard_lan_interface():
@@ -102,11 +132,7 @@ def test_choose_publish_interfaces_adds_active_nonstandard_lan_interface():
         }
     )
 
-    assert avahi_pin.choose_publish_interfaces(run=run) == (
-        "eth0",
-        "wlan0",
-        "enp2s0",
-    )
+    assert avahi_pin.choose_publish_interfaces(run=run) == ("enp2s0",)
 
 
 def test_choose_publish_interface_uses_first_candidate_as_last_resort():
@@ -191,15 +217,15 @@ def test_apply_avahi_pin_writes_data_config(tmp_path):
     changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
 
     assert changed is True
-    assert interface == "eth0,wlan0"
+    assert interface == "wlan0"
     assert "host-name=rpi-divinu\n" in path.read_text(encoding="utf-8")
-    assert "allow-interfaces=eth0,wlan0\n" in path.read_text(encoding="utf-8")
+    assert "allow-interfaces=wlan0\n" in path.read_text(encoding="utf-8")
 
 
-def test_apply_avahi_pin_updates_stale_single_interface_pin(tmp_path):
+def test_apply_avahi_pin_removes_noncanonical_wifi_pin(tmp_path):
     path = tmp_path / "avahi-daemon.conf"
     path.write_text(
-        "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0\n",
+        "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0,wlan0\n",
         encoding="utf-8",
     )
     run = _fake_ip(
@@ -222,14 +248,15 @@ def test_apply_avahi_pin_updates_stale_single_interface_pin(tmp_path):
     changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
 
     assert changed is True
-    assert interface == "eth0,wlan0"
-    assert "allow-interfaces=eth0,wlan0\n" in path.read_text(encoding="utf-8")
+    assert interface == "eth0"
+    assert "allow-interfaces=eth0\n" in path.read_text(encoding="utf-8")
+    assert "allow-interfaces=eth0,wlan0\n" not in path.read_text(encoding="utf-8")
 
 
-def test_apply_avahi_pin_reports_already_pinned_for_all_lan_interfaces(tmp_path):
+def test_apply_avahi_pin_reports_already_pinned_for_canonical_lan_interface(tmp_path):
     path = tmp_path / "avahi-daemon.conf"
     path.write_text(
-        "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0,wlan0\n",
+        "[server]\nhost-name=rpi-divinu\nallow-interfaces=eth0\n",
         encoding="utf-8",
     )
     run = _fake_ip({})
@@ -237,7 +264,7 @@ def test_apply_avahi_pin_reports_already_pinned_for_all_lan_interfaces(tmp_path)
     changed, interface = avahi_pin.apply_avahi_pin(config_path=path, run=run)
 
     assert changed is False
-    assert interface == "eth0,wlan0"
+    assert interface == "eth0"
 
 
 def test_write_if_changed_preserves_original_once(tmp_path):
@@ -301,6 +328,18 @@ def test_monitor_server_recipe_installs_avahi_pin_unit():
 
     assert "file://config/monitor-avahi-pin.service" in text
     assert "file://config/avahi-daemon-home-monitor.conf" in text
+    assert "file://config/monitor-network-dispatcher.sh" in text
     assert "monitor-avahi-pin.service" in services
     assert "monitor.service" in services
     assert "avahi-daemon.service.d/10-home-monitor.conf" in text
+    assert "NetworkManager/dispatcher.d/20-home-monitor-lan-identity" in text
+
+
+def test_monitor_network_dispatcher_reapplies_avahi_identity():
+    script = (
+        REPO_ROOT / "app" / "server" / "config" / "monitor-network-dispatcher.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "monitor.services.avahi_pin" in script
+    assert "try-restart avahi-daemon.service" in script
+    assert "dhcp4-change" in script

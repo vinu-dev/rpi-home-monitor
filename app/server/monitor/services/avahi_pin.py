@@ -3,9 +3,10 @@
 
 Cameras depend on the fixed ``rpi-divinu.local`` name during setup, pairing,
 time sync, and normal operation. The server may be reachable over Ethernet,
-WiFi, or both, and either link may appear after the oneshot service runs. The
-generated Avahi config therefore pins the hostname while allowing every trusted
-LAN interface that can carry mDNS instead of choosing one boot-time interface.
+WiFi, or both, but publishing the same name on both interfaces when they share
+one subnet causes ARP/mDNS split-brain. The generated Avahi config therefore
+pins the hostname to one canonical LAN interface: Ethernet first when active,
+then WiFi as fallback.
 """
 
 from __future__ import annotations
@@ -146,23 +147,32 @@ def choose_publish_interfaces(
     preferred: tuple[str, ...] | None = None,
     run: CommandRunner = _command_output,
 ) -> tuple[str, ...]:
-    """Choose LAN interfaces where Avahi should answer for the server name.
+    """Choose the canonical LAN interface where Avahi should answer.
 
-    Avahi supports a comma-separated ``allow-interfaces`` list. Keeping both
-    Ethernet and WiFi in that list lets the daemon publish when either link
-    comes up later, while still excluding VPN/container interfaces such as
-    Tailscale and Docker.
+    NetworkManager route metrics and Linux ARP policy already prefer Ethernet
+    for outbound traffic. Avahi should mirror that product identity instead of
+    advertising the same hostname on Ethernet and WiFi simultaneously.
     """
     candidates = _normalise_interfaces(preferred or _preferred_interfaces_from_env())
     default_iface = _default_route_interface(run)
-    discovered = list(candidates)
 
-    for iface in (default_iface, *_global_ipv4_interfaces(run)):
+    for iface in candidates:
+        if _interface_has_ipv4(iface, run):
+            return (iface,)
+
+    if default_iface and _is_physical_candidate(default_iface, candidates):
+        return (_normalise_interface(default_iface),)
+
+    for iface in _global_ipv4_interfaces(run):
         iface = _normalise_interface(iface)
         if iface and _is_physical_candidate(iface, candidates):
-            discovered.append(iface)
+            return (iface,)
 
-    return _normalise_interfaces(discovered)
+    for iface in candidates:
+        if _interface_exists(iface, run):
+            return (iface,)
+
+    return candidates[:1]
 
 
 def _pinned_lines(host_name: str, interfaces: Iterable[str] | str) -> list[str]:

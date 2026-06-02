@@ -99,14 +99,32 @@ requests.
 2. If `config_sync != "pending"`: accept `stream_config` and mark synced.
 3. If `config_sync == "pending"`: keep server's stored params (they are the
    desired state) and return them in the response for the camera to apply.
-4. Update: `status=online`, `last_seen=now`, `streaming`, health fields.
+4. Update: `status=online`, `last_seen=now`, `streaming`, health fields, and
+   the camera's current LAN IP from the verified request source when it is a
+   private IPv4 address. This keeps DHCP cameras from getting stuck behind a
+   stale server-side `camera.ip` value.
 5. Audit `CAMERA_ONLINE` if camera was previously `offline`.
-6. Save to store.
+6. Audit `CAMERA_IP_CHANGED` when a paired camera's observed source address
+   changes.
+7. Save to store.
 
 **Response — normal:**
 ```json
-{"ok": true}
+{
+  "ok": true,
+  "server_endpoint": {
+    "stream_host": "192.168.1.244",
+    "rtsps_port": 8322,
+    "source": "route_iface"
+  }
+}
 ```
+
+`server_endpoint` is included when the server can identify the LAN interface it
+would use to reach the camera. Cameras cache this as a fast path, but re-resolve
+the configured server hostname after repeated heartbeat failures or
+NetworkManager link events so a DHCP or Ethernet/WiFi transition does not pin
+them to a stale address.
 
 **Response — with pending config:**
 ```json

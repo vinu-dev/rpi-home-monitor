@@ -221,10 +221,11 @@ Cross-references:
   blip); it is invalidated on the next successful live resolution that
   returns a different IP, OR after `MAX_CACHE_AGE_S` (7 days), whichever
   comes first.
-- **Server IP changes mid-session**: not addressed by this spec. The
-  current heartbeat reconnection logic handles this on a best-effort
-  basis; the cache is overwritten on the next successful live
-  resolution.
+- **Server IP changes mid-session**: originally out of scope for this spec,
+  but the later dynamic-LAN endpoint follow-up covers the durable path:
+  cameras refresh the cached server endpoint after heartbeat failures or
+  NetworkManager link/DHCP events, and the server learns each camera's
+  current private LAN source IP from authenticated heartbeats.
 - **Server self-IP block fails to render** (admin behind a reverse proxy
   that hides the server's LAN IP): the block shows "Network address
   hidden by reverse proxy" and falls back to the request host. No QR.

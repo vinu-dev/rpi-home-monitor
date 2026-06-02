@@ -49,6 +49,8 @@ HEARTBEAT_JITTER = 3  # max random jitter in seconds to spread load
 # 15s each is ~75s, comfortably above the OFFLINE_TIMEOUT (30s) used on
 # the server side.
 UNPAIR_401_THRESHOLD = 5
+RESOLVER_REFRESH_FAILURE_THRESHOLD = 2
+DEFAULT_NETWORK_EVENT_PATH = "/data/config/network-event"
 
 
 def _restart_timesyncd() -> None:
@@ -183,6 +185,7 @@ class HeartbeatSender:
         control_handler=None,
         capture_manager=None,
         server_resolver=None,
+        network_event_path=None,
     ):
         self._config = config
         self._pairing = pairing_manager
@@ -204,10 +207,17 @@ class HeartbeatSender:
         # Optional _ServerResolver â€” when present, heartbeats prefer its
         # last known-good resolved IP during transient mDNS outages.
         self._server_resolver = server_resolver
+        self._network_event_path = (
+            network_event_path
+            if network_event_path is not None
+            else os.environ.get("CAMERA_NETWORK_EVENT_PATH", DEFAULT_NETWORK_EVENT_PATH)
+        )
+        self._last_network_event_mtime = 0.0
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Track consecutive 401 Unknown-camera responses to detect server-side unpair
         self._consecutive_unknown_camera = 0
+        self._consecutive_network_failures = 0
 
     def start(self) -> None:
         """Start the heartbeat background thread."""
@@ -245,6 +255,7 @@ class HeartbeatSender:
 
         while not self._stop_event.is_set():
             try:
+                self._refresh_resolver_for_network_event()
                 response = self._send()
                 if response and response.get("pending_config"):
                     self._apply_pending_config(response["pending_config"])
@@ -386,9 +397,11 @@ class HeartbeatSender:
                 log.debug("Heartbeat accepted by server (HTTP %d)", resp.status)
                 # Server accepted us — reset the unpair-detection counter
                 self._consecutive_unknown_camera = 0
+                self._consecutive_network_failures = 0
                 self._apply_server_endpoint(result)
                 return result
         except urllib.error.HTTPError as e:
+            self._consecutive_network_failures = 0
             # 401 + "Unknown camera" means the server no longer has this camera
             # in its database (admin deleted it). After UNPAIR_401_THRESHOLD
             # consecutive such responses we assume the server really did unpair
@@ -414,7 +427,38 @@ class HeartbeatSender:
             # Network errors don't count as "server unpaired me" — the server
             # might just be offline or the network might be flaky.
             log.debug("Heartbeat failed (server %s): %s", server_ip, e)
+            self._consecutive_network_failures += 1
+            if self._consecutive_network_failures >= RESOLVER_REFRESH_FAILURE_THRESHOLD:
+                self._refresh_server_resolver("heartbeat_failure")
         return None
+
+    def _refresh_resolver_for_network_event(self) -> None:
+        """Refresh cached server endpoint after a NetworkManager link event."""
+        if not self._network_event_path:
+            return
+        try:
+            mtime = os.path.getmtime(self._network_event_path)
+        except OSError:
+            return
+        if mtime <= self._last_network_event_mtime:
+            return
+        self._last_network_event_mtime = mtime
+        self._refresh_server_resolver("network_event")
+
+    def _refresh_server_resolver(self, source: str) -> None:
+        if self._server_resolver is None:
+            return
+        refresher = getattr(self._server_resolver, "refresh_now", None)
+        if refresher is None:
+            return
+        try:
+            previous = getattr(self._server_resolver, "resolved_ip", None)
+            refreshed = bool(refresher(source=source))
+            current = getattr(self._server_resolver, "resolved_ip", None)
+            if refreshed and current and current != previous:
+                self._restart_stream_for_endpoint_change(previous, current)
+        except Exception as exc:
+            log.debug("Server endpoint refresh from %s failed: %s", source, exc)
 
     def _apply_server_endpoint(self, result: dict) -> None:
         """Use the server-advertised preferred stream endpoint, when present."""

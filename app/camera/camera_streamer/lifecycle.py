@@ -123,12 +123,14 @@ class _ServerResolver:
         self._cache_path = cache_path or ""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
         self._resolved_ip: str | None = None
 
     @property
     def resolved_ip(self) -> str | None:
         """The most recent successful resolution, or None if never resolved."""
-        return self._resolved_ip
+        with self._lock:
+            return self._resolved_ip
 
     def update_preferred_ip(self, ip: str, source: str = "server_endpoint") -> bool:
         """Accept a server-advertised preferred LAN endpoint.
@@ -145,15 +147,53 @@ class _ServerResolver:
         if parsed.version != 4 or not parsed.is_private:
             return False
 
+        return self._set_resolved_ip(str(parsed), source=source)
+
+    def refresh_now(self, source: str = "manual") -> bool:
+        """Synchronously re-resolve the configured server address.
+
+        Cached LAN endpoints are only a fast path. When heartbeats fail or a
+        network event fires, callers use this method to force a fresh `.local`
+        lookup so DHCP or server-interface changes do not leave the camera
+        pinned to an old address until reboot.
+        """
+        if not self._address:
+            return False
+        try:
+            ip = socket.gethostbyname(self._address)
+        except socket.gaierror as exc:
+            log.debug(
+                "ServerResolver: refresh from %s failed for %s: %s",
+                source,
+                self._address,
+                exc,
+            )
+            return False
+        return self._set_resolved_ip(ip, source=source)
+
+    def _set_resolved_ip(self, ip: str, source: str) -> bool:
+        try:
+            parsed = ipaddress.ip_address(str(ip).strip())
+        except ValueError:
+            log.warning("ServerResolver: ignoring invalid %s IP %r", source, ip)
+            return False
+        if parsed.version != 4 or not parsed.is_private:
+            log.warning("ServerResolver: ignoring non-LAN %s IP %s", source, parsed)
+            return False
+
         new_ip = str(parsed)
-        if new_ip != self._resolved_ip:
+        with self._lock:
+            old_ip = self._resolved_ip
+            changed = new_ip != old_ip
+            self._resolved_ip = new_ip
+
+        if changed:
             log.info(
                 "ServerResolver: preferred server endpoint from %s: %s -> %s",
                 source,
-                self._resolved_ip or "(none)",
+                old_ip or "(none)",
                 new_ip,
             )
-        self._resolved_ip = new_ip
         self._persist_cache(new_ip)
         if self._capture is not None:
             try:
@@ -212,36 +252,29 @@ class _ServerResolver:
                 backoff = min(backoff * self.BACKOFF_MULTIPLIER, self.MAX_BACKOFF_S)
                 continue
 
-            self._resolved_ip = ip
-            self._persist_cache(ip)
+            if not self._set_resolved_ip(ip, source="mdns"):
+                if self._stop.wait(timeout=backoff):
+                    return
+                backoff = min(backoff * self.BACKOFF_MULTIPLIER, self.MAX_BACKOFF_S)
+                continue
             log.info(
                 "Server address resolved after %d attempt(s): %s -> %s",
                 attempts,
                 self._address,
-                ip,
+                self.resolved_ip,
             )
-            # If we'd previously emitted the fault (e.g. earlier deadline
-            # expired and the network later recovered), clear it so the
-            # heartbeat-visible state transition propagates to the
-            # dashboard without needing a restart.
-            if self._capture is not None:
-                try:
-                    self._capture.clear_fault(FAULT_NETWORK_MDNS_RESOLUTION_FAILED)
-                except AttributeError:
-                    # Older CaptureManager stub without the API. Test-only.
-                    pass
             return
 
         if self._stop.is_set():
             return
 
-        if self._resolved_ip:
+        if self.resolved_ip:
             log.warning(
                 "Server address '%s' did not resolve within %.0fs, but cached "
                 "IP %s is available; continuing to use the cached LAN endpoint",
                 self._address,
                 self.DEADLINE_S,
-                self._resolved_ip,
+                self.resolved_ip,
             )
             return
 
@@ -302,6 +335,10 @@ class _ServerResolver:
                 return
             if not ip:
                 raise ValueError("missing ip")
+            parsed = ipaddress.ip_address(ip)
+            if parsed.version != 4 or not parsed.is_private:
+                raise ValueError("cached IP is not a private IPv4 LAN address")
+            ip = str(parsed)
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             log.warning(
                 "ServerResolver: ignoring invalid cache %s: %s",
@@ -310,7 +347,8 @@ class _ServerResolver:
             )
             return
 
-        self._resolved_ip = ip
+        with self._lock:
+            self._resolved_ip = ip
         log.info("ServerResolver: primed cached IP for %s -> %s", self._address, ip)
         if self._capture is not None:
             try:
