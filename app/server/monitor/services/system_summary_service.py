@@ -317,7 +317,7 @@ class SystemSummaryService:
 
     def _storage_state(self) -> tuple[str, dict, str]:
         try:
-            stats = self._storage.get_storage_stats()
+            stats = self._get_storage_stats_for_summary()
         except Exception as exc:
             log.warning("summary: get_storage_stats failed: %s", exc)
             return (
@@ -341,11 +341,10 @@ class SystemSummaryService:
         else:
             state = "green"
 
-        retention = (
-            None
-            if state == "red" and storage_error
-            else self._estimate_retention_days(stats)
-        )
+        tree_scanned = bool(stats.get("tree_scanned", True))
+        retention = None
+        if not (state == "red" and storage_error) and tree_scanned:
+            retention = self._estimate_retention_days(stats)
         detail = {
             "percent": round(percent, 1),
             "retention_days": retention,
@@ -355,6 +354,15 @@ class SystemSummaryService:
             "storage_error": storage_error,
         }
         return state, detail, "/settings#storage"
+
+    def _get_storage_stats_for_summary(self) -> dict:
+        """Read dashboard storage stats without expensive clip-tree walks."""
+        try:
+            return self._storage.get_storage_stats(include_tree=False)
+        except TypeError:
+            # Backward-compatible for tests or adapters with the older
+            # no-argument storage interface.
+            return self._storage.get_storage_stats()
 
     def _estimate_retention_days(self, stats: dict) -> float | None:
         """Retention = free_bytes / bytes_written_per_day (7-day trailing).
