@@ -172,6 +172,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-avahi-pin.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/monitor-avahi-pin.timer" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-hotspot.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-network-dispatcher.sh" "$host" "$SERVER_STAGE"
@@ -231,6 +233,8 @@ deploy_server() {
         chmod 0755 /usr/bin/home-monitor-ledctl
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
+        cp '$SERVER_STAGE/monitor-avahi-pin.service' /etc/systemd/system/monitor-avahi-pin.service
+        cp '$SERVER_STAGE/monitor-avahi-pin.timer' /etc/systemd/system/monitor-avahi-pin.timer
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
         mkdir -p /etc/NetworkManager/conf.d
         cp '$SERVER_STAGE/10-home-monitor-hostname.conf' /etc/NetworkManager/conf.d/10-home-monitor-hostname.conf
@@ -265,7 +269,9 @@ deploy_server() {
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl start monitor-avahi-pin.timer >/dev/null 2>&1 || true
+        systemctl restart monitor-avahi-pin.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then

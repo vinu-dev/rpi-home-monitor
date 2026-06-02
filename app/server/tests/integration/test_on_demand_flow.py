@@ -88,12 +88,30 @@ class TestOnDemandFlow:
 
         client.post("/internal/on-demand/cam-a/start")
         fake.calls.clear()
+        cam = app.store.get_camera("cam-a")
+        cam.streaming = True
+        app.store.save_camera(cam)
 
         # Second start call should be a no-op.
         r = client.post("/internal/on-demand/cam-a/start")
         assert r.status_code == 200
         assert fake.calls == []
         assert r.get_json().get("already_running") is True
+
+    def test_start_reconciles_desired_running_when_stream_not_observed(self, staged):
+        app, fake = staged
+        client = app.test_client()
+
+        cam = app.store.get_camera("cam-a")
+        cam.desired_stream_state = "running"
+        cam.streaming = False
+        app.store.save_camera(cam)
+
+        r = client.post("/internal/on-demand/cam-a/start")
+        assert r.status_code == 200
+        assert fake.calls == [("start", "10.0.0.7", "cam-a")]
+        assert r.get_json().get("reconciled") is True
+        assert app.store.get_camera("cam-a").desired_stream_state == "running"
 
 
 class TestOnDemandEdgeCases:

@@ -40,6 +40,7 @@ SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
 PINNED_KEY_RE = re.compile(r"^\s*#?\s*(host-name|allow-interfaces)\s*=")
 
 CommandRunner = Callable[[list[str]], str]
+CommandStatusRunner = Callable[[list[str]], int]
 
 
 def _command_output(argv: list[str]) -> str:
@@ -58,6 +59,21 @@ def _command_output(argv: list[str]) -> str:
         log.debug("Command failed for Avahi pinning: %s (%s)", argv, result.stderr)
         return ""
     return result.stdout
+
+
+def _command_status(argv: list[str]) -> int:
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
+        log.debug("Command unavailable for Avahi pinning: %s (%s)", argv, exc)
+        return 1
+    return int(result.returncode)
 
 
 def _normalise_hostname(host_name: str) -> str:
@@ -260,11 +276,26 @@ def apply_avahi_pin(
     return changed, interface_csv
 
 
+def restart_avahi_if_active(run: CommandStatusRunner = _command_status) -> bool:
+    """Restart Avahi only when it is already running."""
+    active = run(["systemctl", "is-active", "--quiet", "avahi-daemon.service"])
+    if active != 0:
+        return False
+    restarted = run(["systemctl", "try-restart", "avahi-daemon.service"])
+    return restarted == 0
+
+
 def main() -> int:
     changed, interface = apply_avahi_pin()
+    restarted = restart_avahi_if_active() if changed else False
     action = "updated" if changed else "already pinned"
+    restart = " restarted avahi" if restarted else ""
     log.warning(
-        "Avahi mDNS identity %s: %s.local on %s", action, SERVER_HOSTNAME, interface
+        "Avahi mDNS identity %s: %s.local on %s%s",
+        action,
+        SERVER_HOSTNAME,
+        interface,
+        restart,
     )
     return 0
 

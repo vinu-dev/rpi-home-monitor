@@ -22,5 +22,3 @@ fi
 PYTHONPATH=/opt/monitor \
 MONITOR_AVAHI_CONFIG=/data/config/avahi-daemon.conf \
     /usr/bin/python3 -m monitor.services.avahi_pin >/dev/null 2>&1 || true
-
-systemctl try-restart avahi-daemon.service >/dev/null 2>&1 || true

@@ -302,6 +302,43 @@ def test_main_logs_pinned_identity():
         assert avahi_pin.main() == 0
 
 
+def test_main_restarts_active_avahi_when_pin_changes():
+    with (
+        patch.object(avahi_pin, "apply_avahi_pin", return_value=(True, "eth0")),
+        patch.object(
+            avahi_pin, "restart_avahi_if_active", return_value=True
+        ) as restart,
+    ):
+        assert avahi_pin.main() == 0
+
+    restart.assert_called_once_with()
+
+
+def test_restart_avahi_if_active_skips_inactive_daemon():
+    calls = []
+
+    def fake_status(argv):
+        calls.append(argv)
+        return 3 if "is-active" in argv else 0
+
+    assert avahi_pin.restart_avahi_if_active(run=fake_status) is False
+    assert calls == [["systemctl", "is-active", "--quiet", "avahi-daemon.service"]]
+
+
+def test_restart_avahi_if_active_restarts_running_daemon():
+    calls = []
+
+    def fake_status(argv):
+        calls.append(argv)
+        return 0
+
+    assert avahi_pin.restart_avahi_if_active(run=fake_status) is True
+    assert calls == [
+        ["systemctl", "is-active", "--quiet", "avahi-daemon.service"],
+        ["systemctl", "try-restart", "avahi-daemon.service"],
+    ]
+
+
 def test_avahi_unit_drop_in_uses_generated_data_config():
     drop_in = REPO_ROOT / "app" / "server" / "config" / "avahi-daemon-home-monitor.conf"
     text = drop_in.read_text(encoding="utf-8")
@@ -327,11 +364,14 @@ def test_monitor_server_recipe_installs_avahi_pin_unit():
     )
 
     assert "file://config/monitor-avahi-pin.service" in text
+    assert "file://config/monitor-avahi-pin.timer" in text
     assert "file://config/avahi-daemon-home-monitor.conf" in text
     assert "file://config/monitor-network-dispatcher.sh" in text
     assert "monitor-avahi-pin.service" in services
+    assert "monitor-avahi-pin.timer" in services
     assert "monitor.service" in services
     assert "avahi-daemon.service.d/10-home-monitor.conf" in text
+    assert "${systemd_system_unitdir}/monitor-avahi-pin.timer" in text
     assert "NetworkManager/dispatcher.d/20-home-monitor-lan-identity" in text
 
 
@@ -341,5 +381,24 @@ def test_monitor_network_dispatcher_reapplies_avahi_identity():
     ).read_text(encoding="utf-8")
 
     assert "monitor.services.avahi_pin" in script
-    assert "try-restart avahi-daemon.service" in script
     assert "dhcp4-change" in script
+
+
+def test_avahi_pin_service_is_rerunnable_for_reconciliation_timer():
+    service = (
+        REPO_ROOT / "app" / "server" / "config" / "monitor-avahi-pin.service"
+    ).read_text(encoding="utf-8")
+
+    assert "Type=oneshot" in service
+    assert "RemainAfterExit" not in service
+    assert "systemd-networkd.service" in service
+
+
+def test_avahi_pin_timer_reconciles_networkd_managed_links():
+    timer = (
+        REPO_ROOT / "app" / "server" / "config" / "monitor-avahi-pin.timer"
+    ).read_text(encoding="utf-8")
+
+    assert "Unit=monitor-avahi-pin.service" in timer
+    assert "OnBootSec=20s" in timer
+    assert "OnUnitInactiveSec=30s" in timer
