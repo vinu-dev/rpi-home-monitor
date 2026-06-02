@@ -26,6 +26,7 @@ SRC_URI = " \
     file://config/monitor.service \
     file://config/monitor-privileged-helper.service \
     file://config/monitor-avahi-pin.service \
+    file://config/monitor-avahi-pin.timer \
     file://config/monitor-hotspot.service \
     file://config/monitor-hotspot.sh \
     file://config/monitor-network-dispatcher.sh \
@@ -61,7 +62,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "home-monitor-led-init.service monitor-avahi-pin.service monitor-privileged-helper.service monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "home-monitor-led-init.service monitor-avahi-pin.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -109,6 +110,7 @@ do_install() {
     install -m 0644 ${WORKDIR}/config/monitor.service ${D}${systemd_system_unitdir}/monitor.service
     install -m 0644 ${WORKDIR}/config/monitor-privileged-helper.service ${D}${systemd_system_unitdir}/monitor-privileged-helper.service
     install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.service ${D}${systemd_system_unitdir}/monitor-avahi-pin.service
+    install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.timer ${D}${systemd_system_unitdir}/monitor-avahi-pin.timer
     install -m 0644 ${WORKDIR}/config/monitor-hotspot.service ${D}${systemd_system_unitdir}/monitor-hotspot.service
     install -m 0644 ${WORKDIR}/status_led/home-monitor-led-init.service ${D}${systemd_system_unitdir}/home-monitor-led-init.service
 
@@ -144,6 +146,7 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/monitor.service \
     ${systemd_system_unitdir}/monitor-privileged-helper.service \
     ${systemd_system_unitdir}/monitor-avahi-pin.service \
+    ${systemd_system_unitdir}/monitor-avahi-pin.timer \
     ${systemd_system_unitdir}/monitor-hotspot.service \
     ${systemd_system_unitdir}/avahi-daemon.service.d/10-home-monitor.conf \
     ${sysconfdir}/nginx/sites-enabled/monitor.conf \

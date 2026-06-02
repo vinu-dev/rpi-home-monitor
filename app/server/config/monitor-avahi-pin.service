@@ -2,8 +2,8 @@
 [Unit]
 Description=Pin Home Monitor mDNS identity
 Documentation=https://github.com/vinu-dev/rpi-home-monitor
-After=local-fs.target NetworkManager.service
-Wants=NetworkManager.service
+After=local-fs.target NetworkManager.service systemd-networkd.service
+Wants=NetworkManager.service systemd-networkd.service
 Before=avahi-daemon.service
 RequiresMountsFor=/data
 
@@ -12,7 +12,6 @@ Type=oneshot
 Environment=PYTHONPATH=/opt/monitor
 Environment=MONITOR_AVAHI_CONFIG=/data/config/avahi-daemon.conf
 ExecStart=/usr/bin/python3 -m monitor.services.avahi_pin
-RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
