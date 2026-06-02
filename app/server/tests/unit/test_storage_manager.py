@@ -261,6 +261,18 @@ class TestGetStorageStats:
         ):
             assert key in stats, f"Missing key: {key}"
 
+    def test_fast_path_skips_recording_tree_walk(self, tmp_path):
+        mgr, rec_dir = _make_manager(tmp_path)
+        _make_clip(rec_dir, "cam-001", "2026-04-01", "08-00-00")
+
+        with patch("pathlib.Path.iterdir", side_effect=AssertionError("no scan")):
+            stats = mgr.get_storage_stats(include_tree=False)
+
+        assert stats["tree_scanned"] is False
+        assert stats["clip_count"] == 0
+        assert stats["camera_count"] == 0
+        assert stats["per_camera"] == {}
+
     def test_counts_clips_per_camera(self, tmp_path):
         mgr, rec_dir = _make_manager(tmp_path)
         _make_clip(rec_dir, "cam-001", "2026-04-01", "08-00-00")

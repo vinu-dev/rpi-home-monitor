@@ -4,7 +4,7 @@
 {% block title %}Events - Home Monitor{% endblock %}
 
 {% block content %}
-<div x-data="eventsPage()" x-init="init()">
+<div x-data="eventsPage()" x-init="boot()">
 
 <section class="page-hero page-hero--compact">
     <div>
@@ -141,7 +141,7 @@ function eventsPage() {
         error: '',
         playingKey: '',
 
-        async init() {
+        async boot() {
             // Default to last 7 days so the page isn't a firehose on
             // first load. Operators can clear the dates to see all.
             var today = new Date();

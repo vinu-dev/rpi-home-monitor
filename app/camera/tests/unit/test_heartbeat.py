@@ -460,29 +460,93 @@ class TestHeartbeatSender:
             stream_manager=stream,
             server_resolver=resolver,
         )
-        started = []
 
-        class FakeThread:
-            def __init__(self, target=None, **_kwargs):
-                self._target = target
-
-            def start(self):
-                started.append(True)
-                self._target()
-
-        with patch("camera_streamer.heartbeat.threading.Thread", FakeThread):
-            sender._apply_server_endpoint(
-                {
-                    "server_endpoint": {
-                        "stream_host": "192.168.1.244",
-                        "source": "route_iface",
-                    }
+        sender._apply_server_endpoint(
+            {
+                "server_endpoint": {
+                    "stream_host": "192.168.1.244",
+                    "source": "route_iface",
                 }
-            )
+            }
+        )
 
-        assert started == [True]
-        stream.stop.assert_called_once()
+        stream.request_endpoint_reconnect.assert_called_once_with(
+            "192.168.1.245", "192.168.1.244", source="heartbeat"
+        )
+        stream.stop.assert_not_called()
+        stream.start.assert_not_called()
+
+    def test_server_endpoint_change_retries_desired_running_inactive_stream(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+
+        def update_ip(ip, source="server_endpoint"):
+            resolver.resolved_ip = ip
+            return True
+
+        resolver.update_preferred_ip.side_effect = update_ip
+        stream = MagicMock()
+        stream.is_streaming = False
+        handler = MagicMock()
+        handler.desired_stream_state = "running"
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            stream_manager=stream,
+            control_handler=handler,
+            server_resolver=resolver,
+        )
+
+        sender._apply_server_endpoint(
+            {
+                "server_endpoint": {
+                    "stream_host": "192.168.1.245",
+                    "source": "route_iface",
+                }
+            }
+        )
+
+        stream.request_endpoint_reconnect.assert_called_once_with(
+            "192.168.1.244", "192.168.1.245", source="heartbeat"
+        )
+        stream.stop.assert_not_called()
         stream.start.assert_called_once()
+
+    def test_server_endpoint_change_ignores_inactive_stopped_stream(self):
+        cfg = _make_config(server_ip="homemonitor.local")
+        resolver = MagicMock()
+        resolver.resolved_ip = "192.168.1.244"
+
+        def update_ip(ip, source="server_endpoint"):
+            resolver.resolved_ip = ip
+            return True
+
+        resolver.update_preferred_ip.side_effect = update_ip
+        stream = MagicMock()
+        stream.is_streaming = False
+        handler = MagicMock()
+        handler.desired_stream_state = "stopped"
+        sender = HeartbeatSender(
+            cfg,
+            _make_pairing(),
+            stream_manager=stream,
+            control_handler=handler,
+            server_resolver=resolver,
+        )
+
+        sender._apply_server_endpoint(
+            {
+                "server_endpoint": {
+                    "stream_host": "192.168.1.245",
+                    "source": "route_iface",
+                }
+            }
+        )
+
+        stream.request_endpoint_reconnect.assert_not_called()
+        stream.stop.assert_not_called()
+        stream.start.assert_not_called()
 
     def test_network_failures_force_resolver_refresh(self):
         cfg = _make_config(server_ip="homemonitor.local")

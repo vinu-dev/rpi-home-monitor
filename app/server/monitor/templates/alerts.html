@@ -4,7 +4,7 @@
 {% block title %}Alerts - Home Monitor{% endblock %}
 
 {% block content %}
-<div x-data="alertsPage()" x-init="init()" class="alerts-page">
+<div x-data="alertsPage()" x-init="boot()" class="alerts-page">
 
 <section class="page-hero page-hero--compact">
     <div>
@@ -159,7 +159,7 @@ function alertsPage() {
         markingId: '',
         markingAll: false,
 
-        async init() {
+        async boot() {
             await this.reload();
         },
 

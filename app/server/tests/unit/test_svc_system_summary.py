@@ -93,7 +93,7 @@ def _build(**overrides):
         },
     )
 
-    return SystemSummaryService(
+    service = SystemSummaryService(
         store=store,
         storage_manager=storage,
         audit=audit,
@@ -101,6 +101,16 @@ def _build(**overrides):
         health_module=health,
         time_health=time_health,
     )
+    if overrides.get("return_deps"):
+        return service, SimpleNamespace(
+            store=store,
+            storage=storage,
+            audit=audit,
+            recordings=rec_svc,
+            health=health,
+            time_health=time_health,
+        )
+    return service
 
 
 def _iso_ago(seconds: float) -> str:
@@ -127,6 +137,11 @@ class TestGreenBaseline:
         assert out["details"]["cameras"]["online"] == 1
         assert out["details"]["cameras"]["total"] == 1
         assert out["details"]["recent_errors"] == 0
+
+    def test_summary_uses_fast_storage_stats(self):
+        svc, deps = _build(return_deps=True)
+        svc.compute_summary()
+        deps.storage.get_storage_stats.assert_called_once_with(include_tree=False)
 
     def test_pending_cameras_excluded_from_totals(self):
         svc = _build(

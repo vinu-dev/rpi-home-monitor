@@ -30,6 +30,7 @@ Features:
 
 import logging
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -50,6 +51,9 @@ MAX_BACKOFF = 60
 MOTION_LORES_WIDTH = 320
 MOTION_LORES_HEIGHT = 240
 MOTION_LORES_FPS = 5
+STALE_PUBLISHER_TERM_TIMEOUT = 2.0
+STALE_PUBLISHER_KILL_TIMEOUT = 1.0
+ENDPOINT_RECONNECT_EXIT_TIMEOUT = 12.0
 
 
 class StreamManager:
@@ -75,8 +79,12 @@ class StreamManager:
         self._libcamera_proc = None
         self._running = False
         self._thread = None
+        self._retry_event = threading.Event()
         self._backoff = INITIAL_BACKOFF
         self._consecutive_failures = 0
+        self._active_stream_url: str | None = None
+        self._endpoint_reconnect_requested = False
+        self._endpoint_reconnect_generation = 0
         self._lock = threading.Lock()
         self._motion_runner = None
         # Picamera2 backend (preferred path). None means we're on the
@@ -118,13 +126,56 @@ class StreamManager:
             log.warning("Server not configured — streaming disabled")
             return False
 
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._stream_loop, daemon=True, name="stream-loop"
-        )
-        self._thread.start()
+        with self._lock:
+            if self._running and self._thread and self._thread.is_alive():
+                self._retry_event.set()
+                log.info("Stream manager already running; retry requested")
+                return True
+
+            self._running = True
+            self._retry_event.clear()
+            self._endpoint_reconnect_requested = False
+            self._thread = threading.Thread(
+                target=self._stream_loop, daemon=True, name="stream-loop"
+            )
+            thread = self._thread
+
+        thread.start()
         log.info("Stream manager started")
         return True
+
+    def request_endpoint_reconnect(
+        self,
+        previous_ip: str | None = None,
+        current_ip: str | None = None,
+        *,
+        source: str = "resolver",
+    ) -> None:
+        """Ask the stream loop to reconnect to the current resolved endpoint.
+
+        Heartbeat/network observers must not call stop()+start() directly:
+        that creates a second lifecycle owner and can leave an old ffmpeg
+        publisher alive on a stale server IP. This method only marks intent
+        and wakes the single stream loop that owns process teardown/startup.
+        """
+        with self._lock:
+            self._endpoint_reconnect_requested = True
+            self._endpoint_reconnect_generation += 1
+            generation = self._endpoint_reconnect_generation
+        self._retry_event.set()
+        log.info(
+            "Stream endpoint reconnect requested by %s: %s -> %s",
+            source,
+            previous_ip or "(none)",
+            current_ip or "(current)",
+        )
+        watchdog = threading.Timer(
+            ENDPOINT_RECONNECT_EXIT_TIMEOUT,
+            self._exit_if_endpoint_reconnect_stuck,
+            args=(generation,),
+        )
+        watchdog.daemon = True
+        watchdog.start()
 
     def _motion_enabled(self) -> bool:
         """True iff config wants motion detection AND wiring is in place."""
@@ -218,11 +269,15 @@ class StreamManager:
     def stop(self):
         """Stop streaming and tear down whichever backend is active."""
         self._running = False
+        self._retry_event.set()
+        with self._lock:
+            self._endpoint_reconnect_requested = False
         self._teardown_picam_backend()
         self._kill_ffmpeg()
         self._stop_motion_runner()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=10)
+        self._retry_event.clear()
         log.info("Stream manager stopped")
 
     def _teardown_picam_backend(self):
@@ -231,12 +286,14 @@ class StreamManager:
         with self._lock:
             backend = self._picam_backend
             self._picam_backend = None
+            self._active_stream_url = None
         if backend is not None:
             try:
                 backend.stop()
             except Exception:
                 log.exception("Picamera backend stop failed")
         self._stop_motion_runner()
+        self._terminate_stale_stream_publishers(reason="picamera teardown")
 
     def _stop_motion_runner(self):
         if self._motion_runner is not None:
@@ -269,10 +326,16 @@ class StreamManager:
         while self._running:
             try:
                 if use_picam:
+                    self._terminate_stale_stream_publishers(
+                        reason="before picamera start"
+                    )
                     if self._start_picam_backend():
                         self._monitor_picam_backend()
                     self._teardown_picam_backend()
                 else:
+                    self._terminate_stale_stream_publishers(
+                        reason="before ffmpeg start"
+                    )
                     self._start_ffmpeg()
                     self._monitor_ffmpeg()
             except Exception:
@@ -280,6 +343,12 @@ class StreamManager:
 
             if not self._running:
                 break
+
+            if self._consume_endpoint_reconnect_requested():
+                self._consecutive_failures = 0
+                self._backoff = INITIAL_BACKOFF
+                log.info("Stream endpoint changed; reconnecting immediately")
+                continue
 
             # Reconnect with backoff
             self._consecutive_failures += 1
@@ -291,11 +360,12 @@ class StreamManager:
                 self._consecutive_failures,
                 wait,
             )
-            # Sleep in small increments so we can stop quickly
-            for _ in range(int(wait * 10)):
-                if not self._running:
-                    return
-                time.sleep(0.1)
+            if self._retry_event.wait(timeout=wait):
+                self._retry_event.clear()
+                if self._running:
+                    log.info("Stream retry requested; reconnecting now")
+            if not self._running:
+                return
 
     @property
     def _use_mtls(self):
@@ -324,6 +394,36 @@ class StreamManager:
         if self._use_mtls:
             return self._config.rtsps_url
         return self._config.rtsp_url
+
+    def _set_active_stream_url(self) -> str:
+        """Remember the endpoint used by the currently running pipeline."""
+        url = self._stream_url
+        with self._lock:
+            self._active_stream_url = url
+        return url
+
+    def _clear_active_stream_url(self) -> None:
+        with self._lock:
+            self._active_stream_url = None
+
+    def _request_endpoint_reconnect_if_changed(self) -> bool:
+        current_url = self._stream_url
+        with self._lock:
+            active_url = self._active_stream_url
+            if self._endpoint_reconnect_requested:
+                return True
+            if not active_url or current_url == active_url:
+                return False
+            self._endpoint_reconnect_requested = True
+        log.info("Stream target changed: %s -> %s", active_url, current_url)
+        return True
+
+    def _consume_endpoint_reconnect_requested(self) -> bool:
+        with self._lock:
+            requested = self._endpoint_reconnect_requested
+            self._endpoint_reconnect_requested = False
+            self._active_stream_url = None
+        return requested
 
     def _tls_flags(self):
         """Return ffmpeg TLS flags for mTLS client cert authentication.
@@ -531,15 +631,18 @@ class StreamManager:
             motion_enabled=motion_enabled,
             server_resolver=self._server_resolver,
         )
+        target_url = self._set_active_stream_url()
         if not backend.start():
             log.error("Picamera backend failed to start")
+            self._clear_active_stream_url()
             self._stop_motion_runner()
             return False
         with self._lock:
             self._picam_backend = backend
         log.info(
-            "Streaming via Picamera2 backend (motion=%s)",
+            "Streaming via Picamera2 backend (motion=%s target=%s)",
             motion_enabled,
+            target_url,
         )
         return True
 
@@ -549,6 +652,8 @@ class StreamManager:
         if backend is None:
             return
         while self._running and backend.is_streaming:
+            if self._request_endpoint_reconnect_if_changed():
+                break
             time.sleep(1.0)
         log.info("Picamera backend no longer streaming")
 
@@ -556,6 +661,7 @@ class StreamManager:
         """Launch the streaming pipeline."""
         import shutil
 
+        target_url = self._set_active_stream_url()
         log.info(
             "Stream config: device=%s resolution=%dx%d fps=%d "
             "server=%s:%s camera_id=%s",
@@ -567,14 +673,16 @@ class StreamManager:
             self._config.server_port,
             self._config.camera_id,
         )
-        log.info("Stream target URL: %s (mTLS=%s)", self._stream_url, self._use_mtls)
+        log.info("Stream target URL: %s (mTLS=%s)", target_url, self._use_mtls)
 
         # Check if video device exists before starting
         if not os.path.exists(self._camera_device):
+            self._clear_active_stream_url()
             log.error("%s not found — camera not detected", self._camera_device)
             return
 
         if not shutil.which("ffmpeg"):
+            self._clear_active_stream_url()
             log.error("ffmpeg binary not found in PATH — cannot stream")
             return
 
@@ -611,6 +719,7 @@ class StreamManager:
             time.sleep(5)
 
             if self._libcamera_proc.poll() is not None:
+                self._clear_active_stream_url()
                 log.error(
                     "libcamera-vid exited early (code %d)",
                     self._libcamera_proc.returncode,
@@ -631,7 +740,7 @@ class StreamManager:
             log.info(
                 "ffmpeg started (PID %d), streaming to %s",
                 self._process.pid,
-                self._config.rtsp_url,
+                target_url,
             )
         else:
             # Direct ffmpeg v4l2 capture (camera outputs H.264 natively)
@@ -676,13 +785,26 @@ class StreamManager:
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
 
-        # Wait for process to exit
-        proc.wait()
+        endpoint_reconnect = False
+        while self._running and proc.poll() is None:
+            if self._request_endpoint_reconnect_if_changed():
+                endpoint_reconnect = True
+                self._kill_ffmpeg()
+                break
+            time.sleep(1.0)
+
+        if proc.poll() is None:
+            proc.wait()
         stderr_thread.join(timeout=2)
 
         returncode = proc.returncode
         with self._lock:
-            self._process = None
+            if self._process is proc:
+                self._process = None
+
+        if endpoint_reconnect:
+            log.info("ffmpeg stopped for server endpoint change")
+            return
 
         if returncode == 0:
             # Clean exit (shouldn't happen during normal streaming)
@@ -725,3 +847,139 @@ class StreamManager:
         # ffmpeg exit — the reconnect loop will _start_ffmpeg() again
         # and allocate a fresh pipe.
         self._stop_motion_runner()
+
+    def _terminate_stale_stream_publishers(self, *, reason: str) -> None:
+        """Kill leftover ffmpeg publishers for this camera stream.
+
+        The normal owner is ``self._process`` or the Picamera backend's
+        private ffmpeg. This sweep is a safety net for races during endpoint
+        changes or abrupt backend teardown: no camera should keep publishing
+        to two server IPs, and no stale publisher should keep a dead IP alive.
+        """
+        self._terminate_stream_publishers(reason=reason, include_known=False)
+
+    def _terminate_stream_publishers(self, *, reason: str, include_known: bool) -> None:
+        pids = self._find_stream_publisher_pids(include_known=include_known)
+        if not pids:
+            return
+        log.warning(
+            "Terminating ffmpeg publisher(s) for %s after %s: %s",
+            self._stream_path,
+            reason,
+            ", ".join(str(pid) for pid in pids),
+        )
+        for pid in pids:
+            self._terminate_pid(pid)
+
+    def _exit_if_endpoint_reconnect_stuck(self, generation: int) -> None:
+        with self._lock:
+            still_stuck = (
+                self._endpoint_reconnect_requested
+                and generation == self._endpoint_reconnect_generation
+            )
+        if not still_stuck:
+            return
+        log.error(
+            "Endpoint reconnect did not complete within %.0fs; "
+            "terminating stream publishers and restarting camera-streamer",
+            ENDPOINT_RECONNECT_EXIT_TIMEOUT,
+        )
+        self._terminate_stream_publishers(
+            reason="endpoint reconnect watchdog",
+            include_known=True,
+        )
+        os._exit(0)
+
+    @property
+    def _stream_path(self) -> str:
+        return self._config.camera_id or self._config.stream_name
+
+    def _known_stream_pids(self) -> set[int]:
+        known: set[int] = set()
+        with self._lock:
+            proc = self._process
+            backend = self._picam_backend
+        if proc is not None and getattr(proc, "pid", None):
+            known.add(int(proc.pid))
+        backend_proc = (
+            getattr(backend, "_ffmpeg", None) if backend is not None else None
+        )
+        if backend_proc is not None and getattr(backend_proc, "pid", None):
+            known.add(int(backend_proc.pid))
+        return known
+
+    def _find_stream_publisher_pids(self, *, include_known: bool) -> list[int]:
+        if not os.path.isdir("/proc"):
+            return []
+        stream_path = self._stream_path
+        own_pid = os.getpid()
+        known = self._known_stream_pids()
+        pids: list[int] = []
+        try:
+            entries = os.listdir("/proc")
+        except OSError:
+            return []
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            if pid == own_pid or (not include_known and pid in known):
+                continue
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                    parts = [
+                        p.decode("utf-8", "replace")
+                        for p in fh.read().split(b"\0")
+                        if p
+                    ]
+            except OSError:
+                continue
+            if self._cmdline_targets_stream(parts, stream_path):
+                pids.append(pid)
+        return pids
+
+    @staticmethod
+    def _cmdline_targets_stream(parts: list[str], stream_path: str) -> bool:
+        if not parts:
+            return False
+        exe = os.path.basename(parts[0])
+        if exe != "ffmpeg":
+            return False
+        suffix = f"/{stream_path}"
+        for arg in parts:
+            if (arg.startswith("rtsp://") or arg.startswith("rtsps://")) and (
+                arg == suffix or arg.endswith(suffix)
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _terminate_pid(pid: int) -> None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError as exc:
+            log.debug("Failed to terminate stale ffmpeg pid %d: %s", pid, exc)
+            return
+        deadline = time.monotonic() + STALE_PUBLISHER_TERM_TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.1)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except OSError as exc:
+            log.debug("Failed to kill stale ffmpeg pid %d: %s", pid, exc)
+            return
+        deadline = time.monotonic() + STALE_PUBLISHER_KILL_TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.1)

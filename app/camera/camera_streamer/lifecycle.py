@@ -160,8 +160,8 @@ class _ServerResolver:
         if not self._address:
             return False
         try:
-            ip = socket.gethostbyname(self._address)
-        except socket.gaierror as exc:
+            ip = self._resolve_address()
+        except (OSError, subprocess.SubprocessError, socket.gaierror) as exc:
             log.debug(
                 "ServerResolver: refresh from %s failed for %s: %s",
                 source,
@@ -170,6 +170,39 @@ class _ServerResolver:
             )
             return False
         return self._set_resolved_ip(ip, source=source)
+
+    def _resolve_address(self) -> str:
+        """Resolve the configured server address to an IPv4 LAN endpoint."""
+        address = self._address.strip()
+        if address.lower().endswith(".local"):
+            avahi_ip = self._resolve_with_avahi(address)
+            if avahi_ip:
+                return avahi_ip
+        return socket.gethostbyname(address)
+
+    @staticmethod
+    def _resolve_with_avahi(address: str) -> str | None:
+        """Resolve a ``.local`` name through Avahi's direct CLI helper."""
+        try:
+            result = subprocess.run(
+                ["avahi-resolve", "-n", address],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode != 0:
+            return None
+        for token in result.stdout.replace("\t", " ").split():
+            try:
+                parsed = ipaddress.ip_address(token)
+            except ValueError:
+                continue
+            if parsed.version == 4 and parsed.is_private:
+                return str(parsed)
+        return None
 
     def _set_resolved_ip(self, ip: str, source: str) -> bool:
         try:
@@ -235,8 +268,8 @@ class _ServerResolver:
         while not self._stop.is_set() and time.monotonic() < deadline:
             attempts += 1
             try:
-                ip = socket.gethostbyname(self._address)
-            except socket.gaierror as e:
+                ip = self._resolve_address()
+            except (OSError, subprocess.SubprocessError, socket.gaierror) as e:
                 log.debug(
                     "Resolution attempt %d for '%s' failed: %s — retry in %.1fs",
                     attempts,

@@ -111,8 +111,13 @@ class StorageManager:
             self._thread.join(timeout=10)
         log.info("Storage manager stopped")
 
-    def get_storage_stats(self) -> dict:
-        """Get storage usage stats for the current recordings location."""
+    def get_storage_stats(self, *, include_tree: bool = True) -> dict:
+        """Get storage usage stats for the current recordings location.
+
+        ``include_tree=False`` is the dashboard-fast path: it reports disk
+        usage without recursively walking the recordings tree. Detailed views
+        keep the default so they still get clip counts and oldest/newest data.
+        """
         rec_dir = self._recordings_dir
         storage_health = "ok"
         storage_error = ""
@@ -140,8 +145,34 @@ class StorageManager:
                 "threshold_percent": self._threshold_percent,
                 "oldest_segment": None,
                 "newest_segment": None,
+                "tree_scanned": False,
                 "storage_health": "unavailable",
                 "storage_error": _storage_error_message(exc),
+            }
+
+        base_stats = {
+            "total_gb": total_gb,
+            "used_gb": used_gb,
+            "free_gb": free_gb,
+            "percent": percent,
+            "recordings_dir": str(rec_dir),
+            "is_usb": self._is_usb_path(rec_dir),
+            "reserve_mb": self._reserve_mb,
+            "threshold_percent": self._threshold_percent,
+            "storage_health": storage_health,
+            "storage_error": storage_error,
+        }
+
+        if not include_tree:
+            return {
+                **base_stats,
+                "recordings_mb": 0,
+                "camera_count": 0,
+                "clip_count": 0,
+                "per_camera": {},
+                "oldest_segment": None,
+                "newest_segment": None,
+                "tree_scanned": False,
             }
 
         # Count clips per camera; track oldest/newest mtime across all clips
@@ -196,20 +227,14 @@ class StorageManager:
             recordings_bytes += cam_bytes
 
         return {
-            "total_gb": total_gb,
-            "used_gb": used_gb,
-            "free_gb": free_gb,
-            "percent": percent,
+            **base_stats,
             "recordings_mb": round(recordings_bytes / (1024 * 1024), 1),
             "camera_count": len(camera_stats),
             "clip_count": total_clips,
             "per_camera": camera_stats,
-            "recordings_dir": str(rec_dir),
-            "is_usb": self._is_usb_path(rec_dir),
-            "reserve_mb": self._reserve_mb,
-            "threshold_percent": self._threshold_percent,
             "oldest_segment": _epoch_to_iso(oldest_mtime),
             "newest_segment": _epoch_to_iso(newest_mtime),
+            "tree_scanned": True,
             "storage_health": storage_health,
             "storage_error": storage_error,
         }
