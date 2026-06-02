@@ -6,6 +6,18 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.7.3] — 2026-06-02
+
+### Fixed
+- **Camera settings sync** now accepts blank display names so the server camera
+  cards can fall back to camera IDs without rejecting the save.
+- **Repeated full camera settings saves** no longer get rate-limited when the
+  full-state payload is unchanged, keeping server-to-camera settings convergence
+  reliable.
+- **Camera time resync** now restarts `systemd-timesyncd` through the camera
+  privileged helper instead of attempting the restart from the unprivileged
+  camera process.
+
 ## [1.7.0] — 2026-06-01
 
 ### Fixed
