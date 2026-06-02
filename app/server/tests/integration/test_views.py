@@ -726,10 +726,18 @@ class TestCompleteGuiRedesignCoverage:
             assert supporting_text in body
 
     def test_alpine_pages_do_not_double_initialize_pollers(self, client):
-        """Alpine auto-calls an init() method; x-init="init()" calls it again."""
-        for path in ["/dashboard", "/settings", "/events", "/alerts"]:
+        """Explicit boot() avoids Alpine auto-calling init() plus x-init."""
+        pages = {
+            "/dashboard": "dashboardPage",
+            "/settings": "settingsPage",
+            "/events": "eventsPage",
+            "/alerts": "alertsPage",
+        }
+        for path, component in pages.items():
             body = self._get_body(client, path)
             assert 'x-init="init()"' not in body
+            assert 'x-init="boot()"' in body
+            assert f'x-data="{component}()"' in body
 
     def test_dashboard_preserves_all_camera_roll_call_actions(self, client):
         body = self._get_body(client, "/dashboard")
