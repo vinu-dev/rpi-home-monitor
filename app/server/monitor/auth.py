@@ -20,6 +20,7 @@ import hashlib
 import os
 import time
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import bcrypt
 from flask import (
@@ -38,6 +39,10 @@ RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX = 5  # attempts per window
 RATE_LIMIT_BLOCK = 10  # block after this many in window
 _DUMMY_PASSWORD_HASH = "$2b$12$8F9hUeUPKp0SlH2tZV.xie8XJch6fLZl1mmf/10adBjJexfXcIn2S"
+AUTH_MODE_PASSWORD = "password"
+AUTH_MODE_CERTIFICATE = "certificate"
+AUTH_MODE_MIXED = "mixed"
+VALID_AUTH_MODES = {AUTH_MODE_PASSWORD, AUTH_MODE_CERTIFICATE, AUTH_MODE_MIXED}
 
 # Account lockout thresholds (ADR-0011)
 LOCKOUT_THRESHOLDS = [
@@ -148,6 +153,21 @@ def _get_session_service():
     return getattr(current_app, "session_service", None)
 
 
+def _auth_mode() -> str:
+    mode = str(current_app.config.get("AUTH_MODE", AUTH_MODE_PASSWORD)).lower().strip()
+    if mode not in VALID_AUTH_MODES:
+        return AUTH_MODE_PASSWORD
+    return mode
+
+
+def _password_auth_enabled() -> bool:
+    return _auth_mode() in {AUTH_MODE_PASSWORD, AUTH_MODE_MIXED}
+
+
+def _certificate_auth_enabled() -> bool:
+    return _auth_mode() in {AUTH_MODE_CERTIFICATE, AUTH_MODE_MIXED}
+
+
 def _current_session_id() -> str:
     """Return the opaque sid for server-side tracked sessions."""
     sid = session.get("sid")
@@ -201,6 +221,59 @@ def _begin_user_session(user, *, source_ip: str = ""):
     # was a suggestion to the client (returned in the login response body)
     # and any API client ignoring it could keep using default credentials.
     session["must_change_password"] = bool(user.must_change_password)
+
+
+def _begin_certificate_session(principal, *, source_ip: str = ""):
+    """Start a fresh session for a validated certificate principal."""
+    user = SimpleNamespace(
+        id=principal.user_id,
+        username=principal.username,
+        role=principal.role,
+        must_change_password=False,
+    )
+    _begin_user_session(user, source_ip=source_ip)
+    session["auth_method"] = "client_certificate"
+    session["cert_fingerprint"] = principal.fingerprint
+    session["cert_serial"] = principal.serial
+    session["cert_profile"] = principal.profile
+
+
+def begin_certificate_session_from_request(*, audit_failure: bool = False):
+    """Validate request client cert headers and create a cert-backed session."""
+    if not _certificate_auth_enabled():
+        return None, "Certificate authentication is not enabled", 404
+    service = getattr(current_app, "certificate_auth_service", None)
+    if service is None:
+        return None, "Certificate authentication is not configured", 503
+    principal, error = service.authenticate_headers(request.headers)
+    ip = request.remote_addr or ""
+    if error:
+        if audit_failure:
+            service.log_denial(error, ip=ip)
+        return None, error, 401
+    _begin_certificate_session(principal, source_ip=ip)
+    csrf_token = generate_csrf_token()
+    service.log_success(principal, ip=ip)
+    return (
+        {
+            "user": {
+                "id": principal.user_id,
+                "username": principal.username,
+                "role": principal.role,
+            },
+            "csrf_token": csrf_token,
+            "auth_method": "client_certificate",
+            "certificate": {
+                "profile": principal.profile,
+                "fingerprint": principal.fingerprint,
+                "serial": principal.serial,
+                "subject": principal.subject,
+                "issuer": principal.issuer,
+            },
+        },
+        "",
+        200,
+    )
 
 
 def _is_session_valid() -> bool:
@@ -368,6 +441,9 @@ def auth_check():
 @auth_bp.route("/login", methods=["POST"])
 def login():
     """Authenticate user and create session."""
+    if not _password_auth_enabled():
+        return jsonify({"error": "Password login is disabled"}), 404
+
     ip = request.remote_addr or ""
     audit = _get_audit_logger()
 
@@ -514,6 +590,39 @@ def login():
         response_data["must_change_password"] = True
 
     return jsonify(response_data), 200
+
+
+@auth_bp.route("/cert/session", methods=["POST"])
+def certificate_session():
+    """Create a browser session from a validated client certificate."""
+    result, error, status = begin_certificate_session_from_request(audit_failure=True)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
+
+
+@auth_bp.route("/cert/me", methods=["GET"])
+@login_required
+def certificate_me():
+    """Return the active certificate-authenticated identity."""
+    if session.get("auth_method") != "client_certificate":
+        return jsonify({"error": "Certificate session required"}), 403
+    return jsonify(
+        {
+            "user": {
+                "id": session.get("user_id"),
+                "username": session.get("username"),
+                "role": session.get("role"),
+            },
+            "auth_method": "client_certificate",
+            "certificate": {
+                "profile": session.get("cert_profile", ""),
+                "fingerprint": session.get("cert_fingerprint", ""),
+                "serial": session.get("cert_serial", ""),
+            },
+            "csrf_token": session.get("csrf_token", ""),
+        }
+    ), 200
 
 
 @auth_bp.route("/logout", methods=["POST"])

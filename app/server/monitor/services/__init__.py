@@ -19,6 +19,7 @@ Services:
   recorder_service.py     - RecorderService: clip metadata, listing, deletion
   recordings_service.py   - RecordingsService: orchestrates clip queries + deletion + audit
   discovery.py            - DiscoveryService: camera discovery via Avahi/mDNS
+  certificate_auth_service.py - CertificateAuthService: client certificate auth
   audit.py                - AuditLogger: append-only security event log
   health.py               - HealthService: CPU temp, RAM, disk, uptime
   usb.py                  - USB device detection, mount, format

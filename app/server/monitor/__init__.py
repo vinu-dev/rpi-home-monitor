@@ -24,6 +24,7 @@ from monitor.services.camera_control_client import CameraControlClient
 from monitor.services.camera_ota_client import CameraOTAClient
 from monitor.services.camera_service import CameraService
 from monitor.services.cert_service import CertService
+from monitor.services.certificate_auth_service import CertificateAuthService
 from monitor.services.clip_stamp_queue import ClipStampQueue
 from monitor.services.clip_stamper import ClipStamper
 from monitor.services.config_backup_service import ConfigBackupService
@@ -62,6 +63,22 @@ from monitor.services.webhook_delivery_service import WebhookDeliveryService
 from monitor.store import Store
 
 log = logging.getLogger("monitor")
+
+
+def _config_flag(value, *, default: bool = False) -> bool:
+    """Parse bool-like config/env values without treating "0" as true."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    raw = str(value).strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 
 def _load_or_create_secret_key(config_dir, audit=None):
@@ -157,6 +174,14 @@ def create_app(config=None):
         LIVE_DIR=os.environ.get("MONITOR_LIVE_DIR", "/data/live"),
         CONFIG_DIR=config_dir,
         CERTS_DIR=os.environ.get("MONITOR_CERTS_DIR", "/data/certs"),
+        AUTH_MODE=os.environ.get("MONITOR_AUTH_MODE", "password").strip().lower(),
+        CERT_AUTH_ALLOW_PROFILE_LOGIN=_config_flag(
+            os.environ.get("MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN"),
+        ),
+        CERT_AUTH_ENFORCE_TIME=_config_flag(
+            os.environ.get("MONITOR_CERT_AUTH_ENFORCE_TIME"),
+            default=True,
+        ),
         CLIP_DURATION_SECONDS=180,
         STORAGE_THRESHOLD_PERCENT=90,
         SESSION_TIMEOUT_MINUTES=60,
@@ -409,6 +434,17 @@ def _init_services(app):
         store=app.store,
         audit=app.audit,
         idle_timeout_provider=lambda: app.config.get("SESSION_TIMEOUT_MINUTES", 60),
+    )
+    app.certificate_auth_service = CertificateAuthService(
+        config_dir=app.config["CONFIG_DIR"],
+        audit=app.audit,
+        allow_profile_login=_config_flag(
+            app.config.get("CERT_AUTH_ALLOW_PROFILE_LOGIN"),
+        ),
+        enforce_time=_config_flag(
+            app.config.get("CERT_AUTH_ENFORCE_TIME"),
+            default=True,
+        ),
     )
 
     # User service — user CRUD + password management

@@ -31,7 +31,10 @@ def _is_authenticated():
     from monitor.auth import _is_session_valid
 
     if "user_id" not in session:
-        return False
+        from monitor.auth import begin_certificate_session_from_request
+
+        result, _error, status = begin_certificate_session_from_request()
+        return bool(status == 200 and result)
     if not _is_session_valid():
         session.clear()
         return False
