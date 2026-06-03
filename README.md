@@ -51,9 +51,33 @@ Both the server and camera use a **captive portal** for zero-config WiFi provisi
 **Quick version:**
 1. **Power on** — the device LED blinks while booting, then slow-blinks in setup mode
 2. **Connect phone** to hotspot (`HomeMonitor-Setup` / `HomeCam-Setup`) using the factory setup password (`homemonitor` for server, `homecamera` for camera). The setup wizard then requires a new setup hotspot password for future setup/reset mode.
-3. **Setup wizard auto-opens** — configure WiFi + admin password (server) or WiFi + server address + camera login (camera)
-4. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
-5. **Access camera** at `https://rpi-divinu-cam-XXXX.local` (shown after setup completes)
+3. **Server certificate login** — on certificate-auth builds, install a Home Monitor Provisioning CA-signed `.p12` on the laptop or phone before opening the server GUI.
+4. **Setup wizard auto-opens** — configure WiFi + server setup actions using the certificate-authenticated browser session, or configure WiFi + server address + camera login for cameras.
+5. **Done** — LED goes solid = running. Camera finds server automatically via `rpi-divinu.local`
+6. **Access camera** at `https://rpi-divinu-cam-XXXX.local` (shown after setup completes)
+
+### Certificate-Only Server Login
+
+The `docs/local-ca-mtls-design` branch packages server GUI login in certificate
+mode. There is no shared default GUI password for this flow.
+
+The certificate authority tooling lives outside this repository in the private
+`home-monitor-ca-generator` project. Use it to create the Home Monitor
+Provisioning CA, issue laptop/mobile `.p12` client certificates, and export
+only the public CA certificate into this repository before building:
+
+```powershell
+python .\home_monitor_ca.py export-public-ca --dest D:\Codex\rpi-home-monitor\local-secrets\provisioning-ca\home-monitor-provisioning-ca.crt
+```
+
+`local-secrets/` and the generated Yocto copy are gitignored. The RPI image
+packages only the public trust anchor at
+`/etc/home-monitor/trust/home-monitor-provisioning-ca.crt`; private CA keys,
+client keys, `.p12` bundles, and passphrases stay in the private CA generator
+project.
+
+The detailed workflow and diagrams are in
+[docs/exec-plans/local-ca-client-certificate-auth.md](docs/exec-plans/local-ca-client-certificate-auth.md).
 
 ### LED Status Indicators
 
@@ -104,6 +128,7 @@ The server advertises itself as `rpi-divinu.local` on the local network via Avah
 | Default admin warning | **Implemented** | `admin`/`admin` created on first boot, must change during setup |
 | RTSPS (mTLS) | **Implemented** | Camera streams over RTSPS with mTLS client certs after pairing |
 | mTLS camera pairing | **Implemented** | PIN-based pairing with certificate exchange (ADR-0009) |
+| Local GUI client certificate login | **Branch** | `docs/local-ca-mtls-design` supports certificate-only server GUI login using a locally generated Home Monitor Provisioning CA and browser-installed `.p12` client certificates |
 | Factory reset | **Implemented** | WiFi wipe, config reset, returns to first-boot state |
 | OTA updates | **Implemented** | Three GUI-driven install paths validated on hardware; CMS signature verification in production builds (ADR-0014); A/B rollback with bootlimit; camera installer runs privilege-separated via systemd `.path` trigger and owns reboot/activation (ADR-0020). See `docs/history/planning/update-roadmap.md` |
 
@@ -120,6 +145,11 @@ cd ~/yocto
 # Build images
 ./scripts/build.sh server-dev      # RPi 4B development image
 ./scripts/build.sh camera-dev      # Zero 2W development image
+
+# Certificate-auth server builds require the public CA certificate to be
+# exported first, then staged for Yocto.
+bash scripts/stage-provisioning-ca.sh
+./scripts/build.sh server-dev
 
 # Flash to SD card
 bzcat build/tmp/deploy/images/raspberrypi4-64/home-monitor-image-dev-*.wic.bz2 \
