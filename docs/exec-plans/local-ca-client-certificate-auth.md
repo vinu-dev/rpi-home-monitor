@@ -146,17 +146,20 @@ per operator direction. They are not committed in this RPI repository.
     include `/data/config/nginx-client-cert.d/*.conf`, because stale test
     snippets from older deployments can duplicate `ssl_client_certificate` and
     make nginx fail on OTA boot.
-11. nginx requests client certificates with `optional_no_ca` so existing
-    camera machine-to-machine requests on HTTPS port 443 are not rejected at
-    the TLS handshake when they present camera identity material instead of a
-    provisioning-login certificate.
-12. For `/api/v1/auth/cert/session`, Flask requires nginx verification success,
+11. nginx keeps HTTPS port `443` for existing server API and camera
+    machine-to-machine traffic. The provisioning-client CA snippet is not
+    included on this listener.
+12. nginx exposes a separate certificate-authenticated GUI listener on
+    `9443`. This listener includes the packaged Home Monitor Provisioning CA
+    snippet and requires a browser client certificate during TLS handshake.
+13. For `/api/v1/auth/cert/session`, Flask requires nginx verification success,
     validates the presented certificate against the packaged Home Monitor
     Provisioning CA public cert, checks clientAuth EKU/profile metadata, and
     creates the logged-in session without username/password entry.
-13. Existing camera traffic remains on its existing trust model: heartbeat and
-    motion APIs use HMAC pairing secrets, MediaMTX RTSPS uses the camera stream
-    mTLS setup, and camera control keeps status-certificate pinning.
+14. Existing camera traffic remains on its existing trust model: heartbeat and
+    motion APIs continue to use `443` plus HMAC pairing secrets, MediaMTX
+    RTSPS uses the camera stream mTLS setup, and camera control keeps
+    status-certificate pinning.
 
 ## Laptop/Mobile Login Flow
 
@@ -172,39 +175,34 @@ sequenceDiagram
     CA->>Device: Create and install client .p12
     CA->>RPI: Export public CA into image build input
     RPI->>RPI: Boot with packaged public CA and certificate auth mode
-    Device->>Nginx: Open local HTTPS GUI
+    Device->>Nginx: Open local HTTPS GUI on :9443
     Nginx->>Device: Request browser client certificate
     Device->>Nginx: Present installed client certificate
-    Nginx->>Nginx: Report TLS client-cert verification result
+    Nginx->>Nginx: Verify chain to packaged public CA
     Nginx->>App: Forward certificate metadata
     App->>App: Require verification success and validate CA, EKU, profile
     App->>Device: Create role-scoped GUI session
 ```
 
-## One-Port Tradeoff
+## Port Split
 
-The current server image has browser GUI requests and camera machine APIs
-sharing nginx HTTPS port 443. A single TLS listener cannot cleanly enforce two
-different client-certificate CA populations at handshake time. The branch
-therefore uses nginx `ssl_verify_client optional_no_ca` on that shared listener
-and moves provisioning-login CA enforcement into the Flask certificate-session
-endpoint.
+The server keeps camera and GUI trust surfaces separate without changing
+camera firmware/config:
 
-This is the safest fix within the current one-port architecture because it
-keeps camera heartbeats, motion events, camera pairing, MediaMTX RTSPS, and
-camera control trust paths working while still refusing GUI sessions unless
-the certificate is signed by the packaged Home Monitor Provisioning CA.
+- `443`: existing server HTTPS API and camera machine traffic. Camera
+  heartbeat and motion requests keep working with the existing HMAC pairing
+  trust model.
+- `9443`: certificate-authenticated browser GUI. nginx requires a client
+  certificate signed by the Home Monitor Provisioning CA before proxying the
+  request to Flask.
+- `8322`: existing MediaMTX RTSPS camera streaming mTLS.
+- camera control `8443`: existing camera-side status/control certificate
+  pinning path.
 
-The cleaner long-term design is to split trust surfaces:
-
-- GUI HTTPS listener: laptop/phone/user certificates signed by the Home Monitor
-  Provisioning CA.
-- Camera machine API listener: camera pairing trust/HMAC or camera CA policy.
-- MediaMTX RTSPS listener: existing camera streaming mTLS.
-
-That split can use separate ports or separate hostnames/server blocks. It is a
-larger migration because deployed cameras currently post heartbeat and motion
-events to the server HTTPS API.
+This is cleaner than moving camera APIs to a new port because deployed cameras
+already call `https://<server>/api/v1/cameras/...` on `443`. Moving the GUI
+certificate listener is server-only: nginx and the server firewall change, but
+camera software does not.
 
 ## Resumption
 

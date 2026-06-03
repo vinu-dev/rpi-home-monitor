@@ -45,11 +45,19 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
 
     assert "include /etc/nginx/client-cert.d/*.conf;" in nginx
     assert "include /data/config/nginx-client-cert.d/*.conf;" not in nginx
+    assert "listen 443 ssl;" in nginx
+    assert "listen 9443 ssl;" in nginx
     assert (
         "ssl_client_certificate /etc/home-monitor/trust/"
         "home-monitor-provisioning-ca.crt;"
     ) in snippet
-    assert "ssl_verify_client optional_no_ca;" in snippet
+    assert "ssl_verify_client on;" in snippet
+
+
+def test_server_firewall_allows_certificate_gui_port():
+    nft = _read("app/server/config/nftables-server.conf")
+
+    assert "9443" in nft
 
 
 def test_packaged_monitor_defaults_to_certificate_auth():
