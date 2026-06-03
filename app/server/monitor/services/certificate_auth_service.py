@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, ExtensionOID, NameOID
 
 log = logging.getLogger("monitor.services.certificate_auth_service")
@@ -75,11 +76,13 @@ class CertificateAuthService:
         audit=None,
         allow_profile_login: bool = False,
         enforce_time: bool = True,
+        trust_ca_path: str = "",
     ):
         self._config_dir = Path(config_dir)
         self._audit = audit
         self._allow_profile_login = bool(allow_profile_login)
         self._enforce_time = bool(enforce_time)
+        self._trust_ca_path = Path(trust_ca_path) if trust_ca_path else None
 
     @property
     def cert_users_path(self) -> Path:
@@ -102,6 +105,14 @@ class CertificateAuthService:
         cert, error = _load_certificate(raw_pem)
         if error:
             return None, error
+
+        ca_cert, error = self._trusted_ca()
+        if error:
+            return None, error
+        if ca_cert is not None:
+            error = _verify_issued_by_trusted_ca(cert, ca_cert)
+            if error:
+                return None, error
 
         fingerprint = _fingerprint(cert)
         serial = _serial(cert)
@@ -210,6 +221,20 @@ class CertificateAuthService:
         except Exception as exc:  # pragma: no cover - defensive
             log.debug("Audit log failed for %s: %s", event, exc)
 
+    def _trusted_ca(self) -> tuple[x509.Certificate | None, str]:
+        if self._trust_ca_path is None:
+            return None, ""
+        try:
+            raw = self._trust_ca_path.read_bytes()
+        except FileNotFoundError:
+            return None, "trusted client CA certificate is not installed"
+        except OSError:
+            return None, "trusted client CA certificate could not be read"
+        try:
+            return x509.load_pem_x509_certificate(raw), ""
+        except ValueError:
+            return None, "trusted client CA certificate could not be parsed"
+
 
 def _load_certificate(raw_pem: str) -> tuple[x509.Certificate | None, str]:
     pem = unquote(raw_pem).replace("\\n", "\n").strip()
@@ -220,6 +245,42 @@ def _load_certificate(raw_pem: str) -> tuple[x509.Certificate | None, str]:
     except ValueError:
         return None, "client certificate PEM could not be parsed"
     return cert, ""
+
+
+def _verify_issued_by_trusted_ca(
+    cert: x509.Certificate,
+    ca_cert: x509.Certificate,
+) -> str:
+    if cert.issuer != ca_cert.subject:
+        return "client certificate was not issued by the trusted CA"
+
+    public_key = ca_cert.public_key()
+    try:
+        if isinstance(public_key, rsa.RSAPublicKey):
+            public_key.verify(
+                cert.signature,
+                cert.tbs_certificate_bytes,
+                padding.PKCS1v15(),
+                cert.signature_hash_algorithm,
+            )
+        elif isinstance(public_key, ec.EllipticCurvePublicKey):
+            public_key.verify(
+                cert.signature,
+                cert.tbs_certificate_bytes,
+                ec.ECDSA(cert.signature_hash_algorithm),
+            )
+        else:
+            return "trusted CA key type is unsupported"
+    except Exception:
+        return "client certificate signature does not match trusted CA"
+
+    try:
+        basic = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except x509.ExtensionNotFound:
+        return "trusted CA certificate is missing CA constraints"
+    if not basic.ca:
+        return "trusted CA certificate is not a CA"
+    return ""
 
 
 def _fingerprint(cert: x509.Certificate) -> str:

@@ -70,6 +70,63 @@ def _client_cert(
     return cert, pem
 
 
+def _ca_cert(*, common_name="Home Monitor Test CA"):
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.now(UTC)
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ]
+    )
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    pem = cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+    return key, cert, pem
+
+
+def _client_cert_signed_by_ca(ca_key, ca_cert, *, common_name="service-laptop-01"):
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Home Monitor Test"),
+                ]
+            )
+        )
+        .issuer_name(ca_cert.subject)
+        .public_key(key.public_key())
+        .serial_number(1001)
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]),
+            critical=False,
+        )
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.UniformResourceIdentifier("urn:home-monitor:profile:owner-admin")]
+            ),
+            critical=False,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    pem = cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+    return cert, pem
+
+
 def _headers(pem, *, serial="3E9", verify="SUCCESS"):
     return {
         VERIFY_HEADER: verify,
@@ -130,6 +187,42 @@ def test_requires_local_allowlist_by_default(tmp_path):
 
     assert principal is None
     assert "locally allowed" in error
+
+
+def test_trusted_ca_path_accepts_ca_signed_certificate(tmp_path):
+    ca_key, ca_cert, ca_pem = _ca_cert()
+    _cert, pem = _client_cert_signed_by_ca(ca_key, ca_cert)
+    ca_path = tmp_path / "home-monitor-provisioning-ca.crt"
+    ca_path.write_text(ca_pem, encoding="utf-8")
+    svc = CertificateAuthService(
+        config_dir=str(tmp_path),
+        allow_profile_login=True,
+        trust_ca_path=str(ca_path),
+    )
+
+    principal, error = svc.authenticate_headers(_headers(pem))
+
+    assert error == ""
+    assert principal is not None
+    assert principal.username == "service-laptop-01"
+
+
+def test_trusted_ca_path_rejects_other_issuer(tmp_path):
+    _ca_key, _ca_certificate, ca_pem = _ca_cert()
+    other_key, other_ca, _other_pem = _ca_cert(common_name="Other CA")
+    _cert, pem = _client_cert_signed_by_ca(other_key, other_ca)
+    ca_path = tmp_path / "home-monitor-provisioning-ca.crt"
+    ca_path.write_text(ca_pem, encoding="utf-8")
+    svc = CertificateAuthService(
+        config_dir=str(tmp_path),
+        allow_profile_login=True,
+        trust_ca_path=str(ca_path),
+    )
+
+    principal, error = svc.authenticate_headers(_headers(pem))
+
+    assert principal is None
+    assert "trusted CA" in error
 
 
 def test_profile_login_generates_id_from_full_sha256_fingerprint(tmp_path):

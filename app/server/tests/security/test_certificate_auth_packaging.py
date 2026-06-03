@@ -49,7 +49,7 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
         "ssl_client_certificate /etc/home-monitor/trust/"
         "home-monitor-provisioning-ca.crt;"
     ) in snippet
-    assert "ssl_verify_client optional;" in snippet
+    assert "ssl_verify_client optional_no_ca;" in snippet
 
 
 def test_packaged_monitor_defaults_to_certificate_auth():

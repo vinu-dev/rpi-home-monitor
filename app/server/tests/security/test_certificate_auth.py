@@ -35,6 +35,7 @@ def _make_app(data_dir, *, auth_mode="password", allow_profile_login=False):
             "SESSION_COOKIE_SECURE": False,
             "AUTH_MODE": auth_mode,
             "CERT_AUTH_ALLOW_PROFILE_LOGIN": allow_profile_login,
+            "CERT_AUTH_TRUST_CA_PATH": "",
         }
     )
 

@@ -182,6 +182,10 @@ def create_app(config=None):
             os.environ.get("MONITOR_CERT_AUTH_ENFORCE_TIME"),
             default=True,
         ),
+        CERT_AUTH_TRUST_CA_PATH=os.environ.get(
+            "MONITOR_CERT_AUTH_TRUST_CA_PATH",
+            "/etc/home-monitor/trust/home-monitor-provisioning-ca.crt",
+        ),
         CLIP_DURATION_SECONDS=180,
         STORAGE_THRESHOLD_PERCENT=90,
         SESSION_TIMEOUT_MINUTES=60,
@@ -445,6 +449,7 @@ def _init_services(app):
             app.config.get("CERT_AUTH_ENFORCE_TIME"),
             default=True,
         ),
+        trust_ca_path=app.config.get("CERT_AUTH_TRUST_CA_PATH"),
     )
 
     # User service — user CRUD + password management
