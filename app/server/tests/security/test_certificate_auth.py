@@ -211,6 +211,28 @@ def test_certificate_mode_creates_cert_backed_session(data_dir):
     assert me.get_json()["auth_method"] == "client_certificate"
 
 
+def test_certificate_session_can_read_totp_status_for_settings_page(data_dir):
+    app = _make_app(
+        data_dir,
+        auth_mode="certificate",
+        allow_profile_login=True,
+    )
+    client = app.test_client()
+    pem = _client_cert()
+    login = client.post("/api/v1/auth/cert/session", headers=_cert_headers(pem))
+    assert login.status_code == 200
+
+    response = client.get("/api/v1/auth/totp/status")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "available": False,
+        "enabled": False,
+        "reason": "certificate_session",
+        "recovery_codes_remaining": 0,
+    }
+
+
 def test_certificate_session_rejects_unverified_header(data_dir):
     app = _make_app(
         data_dir,

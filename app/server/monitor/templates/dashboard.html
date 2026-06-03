@@ -323,13 +323,14 @@
                 <div class="camera-card__health" x-show="cam.status === 'online' && (cam.cpu_temp || cam.memory_percent || _cameraThrottleInfo(cam))">
                     <span class="text-small text-muted" x-text="cam.cpu_temp ? cam.cpu_temp.toFixed(1) + '\u00B0C' : ''"></span>
                     <span class="text-small text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
-                    <span x-show="_cameraThrottleInfo(cam)"
-                          class="fault-badge"
-                          :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
-                          :title="_cameraThrottleInfo(cam).title">
-                        <span class="fault-badge__dot" aria-hidden="true"></span>
-                        <span x-text="_cameraThrottleInfo(cam).label"></span>
-                    </span>
+                    <template x-if="_cameraThrottleInfo(cam)">
+                        <span class="fault-badge"
+                              :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
+                              :title="_cameraThrottleInfo(cam).title">
+                            <span class="fault-badge__dot" aria-hidden="true"></span>
+                            <span x-text="_cameraThrottleInfo(cam).label"></span>
+                        </span>
+                    </template>
                 </div>
                 <!-- Collapsible details panel (issue #110). All data already
                      comes back from /api/v1/cameras — we were just not
@@ -388,14 +389,15 @@
                                 <span x-show="cam.cpu_temp" x-text="cam.cpu_temp.toFixed(1) + '\u00B0C'"></span>
                                 <span class="text-muted" x-show="cam.memory_percent" x-text="' \u00B7 ' + cam.memory_percent + '% mem'"></span>
                                 <span class="text-muted" x-show="cam.uptime_seconds" x-text="' \u00B7 up ' + _uptimeLabel(cam.uptime_seconds)"></span>
-                                <span x-show="_cameraThrottleInfo(cam)"
-                                      class="fault-badge"
-                                      :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
-                                      :title="_cameraThrottleInfo(cam).title"
-                                      style="margin-left:6px;">
-                                    <span class="fault-badge__dot" aria-hidden="true"></span>
-                                    <span x-text="_cameraThrottleInfo(cam).label"></span>
-                                </span>
+                                <template x-if="_cameraThrottleInfo(cam)">
+                                    <span class="fault-badge"
+                                          :class="'fault-badge--' + _cameraThrottleInfo(cam).severity"
+                                          :title="_cameraThrottleInfo(cam).title"
+                                          style="margin-left:6px;">
+                                        <span class="fault-badge__dot" aria-hidden="true"></span>
+                                        <span x-text="_cameraThrottleInfo(cam).label"></span>
+                                    </span>
+                                </template>
                             </dd>
                         </template>
                     </dl>

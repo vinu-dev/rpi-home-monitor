@@ -50,6 +50,10 @@ def _user_or_401():
     return current_app.store.get_user(user_id)
 
 
+def _is_certificate_session() -> bool:
+    return session.get("auth_method") == "client_certificate"
+
+
 @auth_totp_bp.route("/enroll/start", methods=["POST"])
 @login_required
 @csrf_protect
@@ -232,6 +236,15 @@ def status():
     """Return the current user's 2FA state for the Settings page."""
     user = _user_or_401()
     if not user:
+        if _is_certificate_session():
+            return jsonify(
+                {
+                    "enabled": False,
+                    "recovery_codes_remaining": 0,
+                    "available": False,
+                    "reason": "certificate_session",
+                }
+            ), 200
         return jsonify({"error": "Authentication required"}), 401
     return jsonify(
         {

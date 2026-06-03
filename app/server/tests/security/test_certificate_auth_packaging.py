@@ -54,6 +54,19 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
     assert "ssl_verify_client on;" in snippet
 
 
+def test_nginx_redirects_gui_pages_to_certificate_listener_without_moving_api():
+    nginx = _read("app/server/config/nginx-monitor.conf")
+
+    assert (
+        "location ~ ^/(|login|dashboard|live|recordings|events|alerts|logs|settings|shares|help/network-fallback)/?$"
+        in nginx
+    )
+    assert "return 302 https://$host:9443$request_uri;" in nginx
+    assert nginx.index("location ~ ^/(|login|dashboard") < nginx.index(
+        "location ^~ /api/"
+    )
+
+
 def test_server_firewall_allows_certificate_gui_port():
     nft = _read("app/server/config/nftables-server.conf")
 
