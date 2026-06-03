@@ -173,6 +173,310 @@ When a browser opens the RPI GUI:
 7. Flask creates a short cert-bound session or requires the certificate on
    every privileged request.
 
+## Workflow Diagrams
+
+This section collects the main diagrams in one place. Later sections explain
+each box in detail.
+
+### Diagram 1: Offline Local CA Trust Model
+
+```text
+                      +--------------------------------+
+                      | Local CA Machine               |
+                      |--------------------------------|
+                      | CA private key: stays here     |
+                      | CA public cert: copied out     |
+                      +---------------+----------------+
+                                      |
+                    signs certificates and exports CA cert
+                                      |
+        +-----------------------------+------------------------------+
+        |                                                            |
+        v                                                            v
++----------------------+                                  +----------------------+
+| RPI Device           |                                  | Service/User Device  |
+|----------------------|                                  |----------------------|
+| trusts local-ca.crt  |                                  | trusts local-ca.crt  |
+| has server.key       |                                  | has client private   |
+| has server.crt       |                                  | key + client cert    |
++----------+-----------+                                  +----------+-----------+
+           |                                                         |
+           | presents server.crt                                     |
+           |<--------------------------------------------------------|
+           |                                                         |
+           | requests client cert                                    |
+           |-------------------------------------------------------->|
+           |                                                         |
+           | validates client cert                                   |
+           |<--------------------------------------------------------|
+           v
+  HTTPS GUI permits only role-authorized actions
+```
+
+Key point: only `local-ca.crt` is shared. `local-ca.key` never leaves the CA
+machine.
+
+### Diagram 2: Certificate Creation And Installation
+
+```text
+ +------------------+
+ | Create local CA  |
+ | ca.key + ca.crt  |
+ +---------+--------+
+           |
+           +-------------------------------+
+           |                               |
+           v                               v
+ +---------------------+        +--------------------------+
+ | Issue RPI cert      |        | Issue client cert        |
+ |---------------------|        |--------------------------|
+ | rpi-001.server.key  |        | service-laptop-01.key    |
+ | rpi-001.server.crt  |        | service-laptop-01.crt    |
+ +----------+----------+        | package as .p12/.pfx     |
+            |                   +------------+-------------+
+            |                                |
+            v                                v
+ +---------------------+        +--------------------------+
+ | Install on RPI      |        | Install on laptop/mobile |
+ |---------------------|        |--------------------------|
+ | /data/certs/key     |        | OS/browser cert store    |
+ | /data/certs/crt     |        | private key protected    |
+ | local-ca.crt trust  |        | local-ca.crt trusted     |
+ +----------+----------+        +------------+-------------+
+            |                                |
+            +---------------+----------------+
+                            |
+                            v
+                  Browser and RPI can trust
+                  each other's certificates
+```
+
+### Diagram 3: Preferred First-Boot Setup Workflow
+
+```text
+Before boot
+-----------
+
+ +-----------------------+       +--------------------------+
+ | Local CA workstation  |       | Fresh SD card            |
+ |-----------------------|       |--------------------------|
+ | signs RPI cert        |-----> | write server.crt/key     |
+ | signs service cert    |-----> | write local-ca.crt       |
+ +-----------------------+       +-------------+------------+
+                                               |
+                                               v
+Runtime
+-------
+
+ +-----------------------+
+ | RPI boots             |
+ |-----------------------|
+ | starts setup hotspot  |
+ | starts HTTPS GUI      |
+ | requests client cert  |
+ +-----------+-----------+
+             |
+             v
+ +-----------------------+
+ | Service laptop        |
+ |-----------------------|
+ | joins setup hotspot   |
+ | opens HTTPS GUI       |
+ | presents client cert  |
+ +-----------+-----------+
+             |
+             v
+ +-----------------------+
+ | RPI setup UI          |
+ |-----------------------|
+ | Wi-Fi setup           |
+ | proxy setup           |
+ | backend registration  |
+ | first owner cert      |
+ +-----------+-----------+
+             |
+             v
+ +-----------------------+
+ | Setup complete        |
+ |-----------------------|
+ | writes setup stamp    |
+ | stops hotspot         |
+ | normal cert login     |
+ +-----------------------+
+```
+
+This is the recommended production workflow because the first HTTPS session can
+already be trusted by the service laptop.
+
+### Diagram 4: Fallback CSR-On-First-Boot Workflow
+
+```text
+ +--------------------------+
+ | RPI first boot           |
+ |--------------------------|
+ | generates server.key     |
+ | generates server.csr     |
+ | serves temporary HTTPS   |
+ +------------+-------------+
+              |
+              v
+ +--------------------------+
+ | Service laptop           |
+ |--------------------------|
+ | downloads CSR or reads   |
+ | CSR from SD/USB          |
+ +------------+-------------+
+              |
+              v
+ +--------------------------+
+ | Local CA workstation     |
+ |--------------------------|
+ | signs CSR offline        |
+ | produces server.crt      |
+ +------------+-------------+
+              |
+              v
+ +--------------------------+
+ | RPI                      |
+ |--------------------------|
+ | installs server.crt      |
+ | restarts HTTPS           |
+ | browser now trusts GUI   |
+ +--------------------------+
+```
+
+This keeps the RPI private key on the RPI, but the first temporary HTTPS step
+is weaker unless the operator verifies the physical device fingerprint.
+
+### Diagram 5: Runtime Login And Authorization
+
+```text
+ +------------------------+
+ | Browser request        |
+ |------------------------|
+ | HTTPS to RPI GUI       |
+ | client cert selected   |
+ +-----------+------------+
+             |
+             v
+ +------------------------+
+ | nginx TLS layer        |
+ |------------------------|
+ | verifies CA chain      |
+ | checks TLS cert status |
+ | forwards cert headers  |
+ +-----------+------------+
+             |
+             v
+ +------------------------+
+ | Flask cert auth        |
+ |------------------------|
+ | parses certificate     |
+ | checks clientAuth EKU  |
+ | checks product purpose |
+ | checks profile/role    |
+ | checks local denylist  |
+ | checks time policy     |
+ +-----------+------------+
+             |
+             v
+ +------------------------+
+ | Route policy           |
+ |------------------------|
+ | role allows action?    |
+ | service mode active?   |
+ | work order valid?      |
+ +------+-----------------+
+        |
+        +--------- yes ----------------+
+        |                              |
+        v                              v
+ +-------------+              +-------------------+
+ | Allow       |              | Audit event       |
+ | action      |------------->| cert/action/result|
+ +-------------+              +-------------------+
+
+        +--------- no -----------------+
+        |
+        v
+ +-------------+              +-------------------+
+ | Deny        |------------->| Audit denial      |
+ | action      |              | cert/reason       |
+ +-------------+              +-------------------+
+```
+
+### Diagram 6: User Lifecycle After Setup
+
+```text
+ +---------------------+
+ | First setup         |
+ |---------------------|
+ | setup-provisioner   |
+ | registers first     |
+ | owner-admin cert    |
+ +----------+----------+
+            |
+            v
+ +---------------------+
+ | Owner-admin login   |
+ |---------------------|
+ | cert-backed session |
+ | full admin role     |
+ +----------+----------+
+            |
+            +--------------------+-------------------+
+            |                    |                   |
+            v                    v                   v
+ +------------------+  +------------------+  +------------------+
+ | Add viewer cert  |  | Add service cert |  | Disable cert     |
+ |------------------|  |------------------|  |------------------|
+ | live/recordings  |  | maintenance only |  | local denylist   |
+ +------------------+  +------------------+  +------------------+
+```
+
+The first setup certificate should not silently become the permanent owner
+identity. The cleaner flow is to register a separate owner-admin certificate.
+
+### Diagram 7: Service Mode With Offline Work Order
+
+```text
+ +-------------------------+
+ | Local CA / work-order   |
+ | signing workstation     |
+ +------------+------------+
+              |
+              | signs token for device + job + service cert
+              v
+ +-------------------------+
+ | Service laptop          |
+ |-------------------------|
+ | has client cert         |
+ | carries work-order file |
+ +------------+------------+
+              |
+              v
+ +-------------------------+
+ | RPI service endpoint    |
+ |-------------------------|
+ | validates client cert   |
+ | validates token sig     |
+ | checks device binding   |
+ | checks allowed actions  |
+ +------------+------------+
+              |
+              v
+ +-------------------------+
+ | Temporary service mode  |
+ |-------------------------|
+ | Wi-Fi/proxy/backend     |
+ | basic status/diagnostic |
+ | expires automatically   |
+ +-------------------------+
+```
+
+The work order is optional for owner-admin login, but recommended for service
+maintenance because it limits what a broadly trusted service certificate can do.
+
 ## Certificate And Key Storage
 
 ### Local CA Machine
@@ -1279,4 +1583,3 @@ This design is review-ready when:
 - time/expiry/revocation limitations are called out
 - implementation impact is scoped but not implemented
 - review questions are listed
-
