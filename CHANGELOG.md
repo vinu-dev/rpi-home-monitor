@@ -6,6 +6,31 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.8.0] — 2026-06-02
+
+Feature and reliability release for homes where Ethernet and WiFi can both be
+active, plus stronger camera live-stream failover behavior.
+
+### Added
+- **Dynamic LAN endpoint tracking** lets the server learn each camera's current
+  private LAN IP from authenticated heartbeats, publish one canonical LAN
+  identity, and reject stale non-LAN resolver/cache addresses.
+- **Network change reconciliation** installs the NetworkManager dispatcher and
+  Avahi pin service/timer pieces needed for Ethernet/WiFi route changes,
+  including systemd-networkd-managed Ethernet links.
+
+### Fixed
+- **Live stream recovery after LAN changes** now reconciles on-demand starts
+  when a camera should still be publishing but the latest heartbeat reports the
+  stream down.
+- **Camera stream failover** now lets the stream loop own server endpoint
+  reconnects, prefers direct Avahi resolution for `.local` names, refreshes
+  resolver state on heartbeat ticks, and terminates stale ffmpeg publishers
+  pinned to a dead server IP.
+- **Dashboard and settings page initialization** no longer double-runs Alpine
+  setup or starts duplicate pollers, and the dashboard summary avoids
+  unnecessary recording tree scans.
+
 ## [1.7.3] — 2026-06-02
 
 ### Fixed
