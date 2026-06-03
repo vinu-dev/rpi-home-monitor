@@ -22,6 +22,7 @@ be able to pick up a spec from here and work without inventing product behavior.
 - [Camera offline alerts](r1-camera-offline-alerts.md)
 - [Storage low / retention risk alerts](r1-storage-retention-alerts.md)
 - [Review queue for important events](r1-review-queue.md)
+- [Local CA client-certificate authentication](local-ca-client-certificate-auth.md)
 
 ## Spec Requirements
 
