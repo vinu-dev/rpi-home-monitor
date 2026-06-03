@@ -51,6 +51,8 @@ artifacts/hardware/
 *.key
 *.p12
 *.pfx
+local-secrets/
+app/server/config/generated/
 meta-home-monitor/recipes-support/swupdate/files/generated/
 
 # OS

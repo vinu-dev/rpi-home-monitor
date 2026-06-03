@@ -36,6 +36,9 @@ Environment=MONITOR_LOG_DIR=/data/logs
 Environment=MONITOR_PRIVILEGED_HELPER_SOCKET=/run/monitor/privileged-helper.sock
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=LOG_LEVEL=INFO
+Environment=MONITOR_AUTH_MODE=certificate
+Environment=MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN=1
+Environment=MONITOR_CERT_AUTH_ENFORCE_TIME=1
 
 # Security: nftables firewall (default DROP, private nets only) + HTTPS
 # Note: systemd ProtectSystem/ProtectHome/ProtectKernel* directives create

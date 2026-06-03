@@ -9,6 +9,7 @@
 set -e
 
 CERTS_DIR="/data/certs"
+CONFIG_DIR="/data/config"
 CA_KEY="$CERTS_DIR/ca.key"
 CA_CERT="$CERTS_DIR/ca.crt"
 SERVER_KEY="$CERTS_DIR/server.key"
@@ -23,7 +24,7 @@ fi
 
 echo "Generating local CA and server certificates..."
 
-mkdir -p "$CERTS_DIR/cameras"
+mkdir -p "$CERTS_DIR/cameras" "$CONFIG_DIR/nginx-client-cert.d"
 
 # Generate CA private key
 openssl ecparam -genkey -name prime256v1 -out "$CA_KEY"

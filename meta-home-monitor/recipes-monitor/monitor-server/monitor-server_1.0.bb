@@ -31,6 +31,8 @@ SRC_URI = " \
     file://config/monitor-hotspot.sh \
     file://config/monitor-network-dispatcher.sh \
     file://config/nginx-monitor.conf \
+    file://config/nginx-client-cert.d/provisioning-client-ca.conf \
+    file://config/generated/trust/home-monitor-provisioning-ca.crt \
     file://config/nftables-server.conf \
     file://config/captive-portal-dnsmasq.conf \
     file://config/avahi-homemonitor.service \
@@ -117,6 +119,12 @@ do_install() {
     # Nginx config
     install -d ${D}${sysconfdir}/nginx/sites-enabled
     install -m 0644 ${WORKDIR}/config/nginx-monitor.conf ${D}${sysconfdir}/nginx/sites-enabled/monitor.conf
+    install -d ${D}${sysconfdir}/nginx/client-cert.d
+    install -m 0644 ${WORKDIR}/config/nginx-client-cert.d/provisioning-client-ca.conf \
+        ${D}${sysconfdir}/nginx/client-cert.d/provisioning-client-ca.conf
+    install -d ${D}${sysconfdir}/home-monitor/trust
+    install -m 0644 ${WORKDIR}/config/generated/trust/home-monitor-provisioning-ca.crt \
+        ${D}${sysconfdir}/home-monitor/trust/home-monitor-provisioning-ca.crt
 
     # Firewall rules
     install -d ${D}${sysconfdir}/nftables.d
@@ -150,6 +158,8 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/monitor-hotspot.service \
     ${systemd_system_unitdir}/avahi-daemon.service.d/10-home-monitor.conf \
     ${sysconfdir}/nginx/sites-enabled/monitor.conf \
+    ${sysconfdir}/nginx/client-cert.d/provisioning-client-ca.conf \
+    ${sysconfdir}/home-monitor/trust/home-monitor-provisioning-ca.crt \
     ${sysconfdir}/nftables.d/monitor.conf \
     ${sysconfdir}/logrotate.d/monitor \
     ${sysconfdir}/NetworkManager/dnsmasq-shared.d/captive-portal.conf \

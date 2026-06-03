@@ -3,28 +3,32 @@
 ## Goal
 
 Implement the first safe vertical slice of local/offline-CA client certificate
-authentication for the server GUI without changing default password behavior.
+authentication for the server GUI, then package the server image so local GUI
+login is certificate-only by default.
 
 ## Non-Goals
 
 - Do not merge to `main`.
-- Do not remove the existing password/session auth path in this slice.
-- Do not generate or commit real CA keys, RPI keys, client certs, `.p12`, or
-  secrets.
-- Do not implement mobile installation tooling in this slice.
-- Do not implement full first-boot password removal until the opt-in auth core
-  is tested and reviewed.
+- Do not add the CA generator project to this RPI repository.
+- Do not commit CA private keys, client private keys, laptop/mobile `.p12`
+  bundles, passphrases, or generated RPI private keys to this RPI repository.
+- Do not remove the underlying password/session implementation in this branch;
+  it remains available for future explicit recovery/admin modes, but packaged
+  server GUI login is configured for certificate mode.
 
 ## Constraints
 
-- Security-sensitive change: keep default behavior unchanged unless
-  certificate mode is explicitly configured.
+- Security-sensitive change: certificate-only login is now the packaged server
+  default for this branch, so the image build must fail early if the local
+  public CA trust anchor is missing.
 - Preserve ADR-0022: certificate auth must be a primary auth mechanism for the
   configured mode, not a hidden recovery bypass.
 - Trust certificate headers only from nginx-to-Flask localhost deployment.
 - Keep routes thin and put certificate validation in a service.
 - Maintain traceability annotations and focused security tests.
 - Existing unrelated dirty files in the worktree must not be staged.
+- The CA generator is a separate private project:
+  `https://github.com/vinu-dev/home-monitor-ca-generator`.
 
 ## Context
 
@@ -34,12 +38,19 @@ authentication for the server GUI without changing default password behavior.
 - Server auth/session code: `app/server/monitor/auth.py`
 - Server view routing: `app/server/monitor/views.py`
 - Existing camera mTLS precedent: `app/camera/camera_streamer/control_server.py`
+- Private CA generator repo:
+  `D:\Codex\home-monitor-ca-generator` /
+  `https://github.com/vinu-dev/home-monitor-ca-generator`
+- RPI build input for public trust anchor:
+  `local-secrets/provisioning-ca/home-monitor-provisioning-ca.crt`
+- Packaged RPI trust anchor path:
+  `/etc/home-monitor/trust/home-monitor-provisioning-ca.crt`
 
 ## Plan
 
-1. Add opt-in auth mode configuration:
+1. Add auth mode configuration:
    - `AUTH_MODE=password|certificate|mixed`
-   - default `password`
+   - service package default `certificate`
 2. Add certificate auth service:
    - read nginx client certificate headers
    - require nginx verification success
@@ -55,15 +66,120 @@ authentication for the server GUI without changing default password behavior.
 5. Add nginx client-cert request headers in a way that does not require client
    certs by default.
 6. Add focused unit/security tests.
-7. Run relevant validation and push the design branch.
+7. Add build-time public CA staging from `local-secrets/`.
+8. Package the public CA certificate and nginx client-cert snippet into the
+   server image.
+9. Keep the CA generator separate in the private
+   `home-monitor-ca-generator` repository.
+10. Run relevant validation and push the design branch.
+
+## CA Generator Project
+
+The CA generator is intentionally outside this RPI repository. It is a
+separate private GitHub project:
+
+```text
+https://github.com/vinu-dev/home-monitor-ca-generator
+```
+
+Current local path:
+
+```text
+D:\Codex\home-monitor-ca-generator
+```
+
+It contains:
+
+- `home_monitor_ca.py` command-line tool
+- `python home_monitor_ca.py wizard` menu-driven flow
+- `init-ca` to create the Home Monitor Provisioning CA
+- `issue-client` to create laptop/mobile browser-login `.p12` bundles
+- `issue-rpi` to create optional per-RPI HTTPS/server certificates
+- `export-public-ca` to copy only the public CA certificate into the RPI build
+  input folder
+
+Generated private CA material, generated client certificates, generated `.p12`
+bundles, and passphrase files are committed in that private CA-generator repo
+per operator direction. They are not committed in this RPI repository.
+
+## Build-Time CA Flow
+
+1. Operator runs the private CA generator.
+2. Operator creates or reuses the Home Monitor Provisioning CA.
+3. Operator creates laptop/mobile certificates with a profile such as
+   `owner-admin`:
+
+   ```powershell
+   python .\home_monitor_ca.py issue-client --name "vinu-laptop" --profile owner-admin
+   ```
+
+4. Operator installs the generated `.p12` on the service laptop or phone.
+5. Operator exports only the public CA certificate into this RPI repo's
+   gitignored input folder:
+
+   ```powershell
+   python .\home_monitor_ca.py export-public-ca --dest D:\Codex\rpi-home-monitor\local-secrets\provisioning-ca\home-monitor-provisioning-ca.crt
+   ```
+
+6. `scripts/build.sh` calls `scripts/stage-provisioning-ca.sh` for
+   `home-monitor-image-*` builds.
+7. The staging script refuses to continue if the public CA certificate is
+   missing, and copies it to:
+
+   ```text
+   app/server/config/generated/trust/home-monitor-provisioning-ca.crt
+   ```
+
+8. The Yocto recipe packages that staged public CA certificate into:
+
+   ```text
+   /etc/home-monitor/trust/home-monitor-provisioning-ca.crt
+   ```
+
+9. The Yocto recipe also packages:
+
+   ```text
+   /etc/nginx/client-cert.d/provisioning-client-ca.conf
+   ```
+
+10. nginx requests client certificates, verifies that the presented browser
+    certificate chains to the packaged public CA, and passes verified
+    certificate headers to Flask.
+11. Flask certificate auth validates the certificate profile and creates the
+    logged-in session without username/password entry.
+
+## Laptop/Mobile Login Flow
+
+```mermaid
+sequenceDiagram
+    participant CA as Private CA Generator
+    participant Device as Laptop or Phone
+    participant RPI as New RPI Image
+    participant Nginx as RPI nginx
+    participant App as Flask App
+
+    CA->>CA: Create Home Monitor Provisioning CA
+    CA->>Device: Create and install client .p12
+    CA->>RPI: Export public CA into image build input
+    RPI->>RPI: Boot with packaged public CA and certificate auth mode
+    Device->>Nginx: Open local HTTPS GUI
+    Nginx->>Device: Request browser client certificate
+    Device->>Nginx: Present installed client certificate
+    Nginx->>Nginx: Verify chain to packaged public CA
+    Nginx->>App: Forward verified certificate metadata
+    App->>App: Check clientAuth EKU and profile URI
+    App->>Device: Create role-scoped GUI session
+```
 
 ## Resumption
 
-- Current status: opt-in certificate auth core implemented and validated
-  locally.
-- Last completed step: broad auth/security, startup, lint, docs, traceability,
-  and versioning checks passed.
-- Next step: review branch diff and push branch update.
+- Current status: certificate auth core is implemented; RPI service package is
+  being updated to default to certificate-only GUI login and consume a
+  build-time public CA trust anchor.
+- Last completed step: private CA-generator repo created and pushed; public CA
+  exported into this repo's gitignored local build input folder.
+- Next step: validate packaging guards, review branch diff, and push branch
+  update.
 - Branch / PR: `docs/local-ca-mtls-design`, no PR merged.
 - Devices / environments: local repo first; VM only if build/image validation is
   needed later.
@@ -75,6 +191,9 @@ authentication for the server GUI without changing default password behavior.
   - existing unrelated dirty files must remain unstaged
   - full no-password first-boot flow is intentionally deferred until core auth
     is reviewed
+  - current branch default disables GUI password login for the packaged server
+    service; recovery/admin policy still needs final operator approval before
+    merge
   - `openapi/server.yaml` was already dirty before this task; avoid mixing API
     contract edits into this branch update unless a clean patch can be staged
     separately
@@ -111,9 +230,8 @@ Hardware/dev-RPI validation on 2026-06-03:
 
 - Branch commit deployed to server `192.168.1.245` from a clean `git archive
   HEAD` snapshot to avoid unrelated local dirty files.
-- Test CA/client material generated under local
-  `D:\RPIBUILDKEYS\local-ca-mtls-test`; no private keys or certificates were
-  committed.
+- Temporary test CA/client material was generated locally for the hardware
+  smoke test; no private keys or certificates were committed in this RPI repo.
 - Installed test trusted client CA at `/data/config/provisioning-ca.crt`.
 - Enabled nginx client certificate verification with
   `/data/config/nginx-client-cert.d/provisioning-client-ca.conf`.
@@ -144,6 +262,20 @@ Hardware/dev-RPI validation on 2026-06-03:
   `POST /api/v1/auth/cert/session` when the browser/client presents the signed
   test certificate.
 
+Build-time CA packaging validation:
+
+- Private CA generator compiled successfully with `python -m py_compile`.
+- Public CA exported from the private generator into the RPI repo's gitignored
+  `local-secrets/provisioning-ca/` folder.
+- `bash scripts/stage-provisioning-ca.sh` copied only the public CA certificate
+  into the generated Yocto input path.
+- Focused packaging tests cover:
+  - gitignore protection for local CA inputs and generated Yocto copy
+  - staging script missing-input behavior
+  - Yocto recipe installation of public CA and nginx snippet
+  - packaged monitor service certificate-mode defaults
+  - no CA generator code inside the RPI repo
+
 ## Risks
 
 - Header spoofing if Flask is exposed directly instead of only behind nginx.
@@ -151,13 +283,19 @@ Hardware/dev-RPI validation on 2026-06-03:
 - Certificate-only mode could lock out existing password users if enabled
   before owner certificates are registered.
 - Offline revocation depends on local denylist/expiry/work-order controls.
+- Build-time certificate-only images can lock out setup if the operator has not
+  installed a valid client `.p12` on the service laptop or phone before opening
+  the local GUI.
 
 ## Completion Criteria
 
-- Existing default password auth remains unchanged.
-- Certificate auth can be enabled explicitly in tests.
+- Packaged server GUI login defaults to certificate mode.
 - Valid local-CA-style client cert creates a role-scoped session.
 - Invalid, missing, wrong-EKU, denied, or insufficient-role certs are rejected.
 - nginx passes certificate metadata to Flask.
+- Image build refuses to package certificate mode when the local public CA input
+  is missing.
+- RPI repo contains only the public CA build input/output paths and not the CA
+  generator or private key material.
 - Security tests document the auth-mode behavior.
 - Branch is pushed without staging unrelated dirty files.

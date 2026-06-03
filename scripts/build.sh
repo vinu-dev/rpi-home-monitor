@@ -104,6 +104,10 @@ stage_local_ota_cert() {
     fi
 }
 
+stage_provisioning_ca() {
+    "$YOCTO_DIR/scripts/stage-provisioning-ca.sh"
+}
+
 # --- Clone Yocto layers ---
 clone_layer() {
     local url=$1 dir=$2 branch=$3
@@ -159,6 +163,9 @@ build_image() {
     fi
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
     stage_local_ota_cert "$configdir" "$builddir"
+    case "$image" in
+        home-monitor-image-*) stage_provisioning_ca ;;
+    esac
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"
