@@ -82,6 +82,7 @@
 <script>
 (function() {
     var authMode = '{{ auth_mode|e }}';
+    var certificateAuthPort = '{{ certificate_auth_port|e }}';
     var form = document.getElementById('login-form');
     var errorEl = document.getElementById('login-error');
     var btnLogin = document.getElementById('btn-login');
@@ -95,6 +96,10 @@
     var challengeToken = '';
 
     if (authMode === 'certificate') {
+        if (shouldUseCertificatePort()) {
+            redirectToCertificatePort();
+            return;
+        }
         if (btnCertLogin) {
             btnCertLogin.addEventListener('click', tryCertificateLogin);
         }
@@ -174,6 +179,10 @@
     }
 
     function tryCertificateLogin() {
+        if (shouldUseCertificatePort()) {
+            redirectToCertificatePort();
+            return;
+        }
         errorEl.classList.remove('visible');
         errorEl.textContent = '';
         if (btnCertLogin) {
@@ -206,6 +215,30 @@
             btnVerifyTotp.disabled = false;
             btnVerifyTotp.textContent = 'Verify';
         }
+    }
+
+    function currentPort() {
+        if (window.location.port) {
+            return window.location.port;
+        }
+        return window.location.protocol === 'https:' ? '443' : '80';
+    }
+
+    function shouldUseCertificatePort() {
+        return window.location.protocol === 'https:' &&
+            certificateAuthPort &&
+            currentPort() !== certificateAuthPort;
+    }
+
+    function redirectToCertificatePort() {
+        var target = window.location.protocol + '//' +
+            window.location.hostname + ':' + certificateAuthPort +
+            window.location.pathname + window.location.search + window.location.hash;
+        if (btnCertLogin) {
+            btnCertLogin.disabled = true;
+            btnCertLogin.textContent = 'Opening certificate login...';
+        }
+        window.location.replace(target);
     }
 })();
 </script>

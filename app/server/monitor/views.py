@@ -70,6 +70,7 @@ def login():
     return render_template(
         "login.html",
         auth_mode=str(current_app.config.get("AUTH_MODE", "password")).lower(),
+        certificate_auth_port=str(current_app.config.get("CERT_AUTH_GUI_PORT", "9443")),
         logged_out=request.args.get("logged_out") == "1",
     )
 

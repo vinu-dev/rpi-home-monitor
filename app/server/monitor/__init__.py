@@ -186,6 +186,7 @@ def create_app(config=None):
             "MONITOR_CERT_AUTH_TRUST_CA_PATH",
             "/etc/home-monitor/trust/home-monitor-provisioning-ca.crt",
         ),
+        CERT_AUTH_GUI_PORT=os.environ.get("MONITOR_CERT_AUTH_GUI_PORT", "9443"),
         CLIP_DURATION_SECONDS=180,
         STORAGE_THRESHOLD_PERCENT=90,
         SESSION_TIMEOUT_MINUTES=60,

@@ -142,6 +142,8 @@ def test_certificate_mode_login_page_hides_password_form(data_dir):
     assert '<input type="password" id="login-password"' not in html
     assert "Continue with Certificate" in html
     assert "Password sign-in is disabled on this device." in html
+    assert "certificateAuthPort = '9443'" in html
+    assert "redirectToCertificatePort" in html
     assert "tryCertificateLogin();" not in html
 
 
