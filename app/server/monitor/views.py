@@ -69,7 +69,10 @@ def login():
         return redirect(url_for("views.setup"))
     if _is_authenticated():
         return redirect(url_for("views.dashboard"))
-    return render_template("login.html")
+    return render_template(
+        "login.html",
+        auth_mode=str(current_app.config.get("AUTH_MODE", "password")).lower(),
+    )
 
 
 @views_bp.route("/help/network-fallback")

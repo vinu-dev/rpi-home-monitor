@@ -138,6 +138,11 @@ Hardware/dev-RPI validation on 2026-06-03:
 - Audit log confirmed `CERT_AUTH_DENIED`, `CERT_AUTH_SUCCESS`,
   `LOGIN_SUCCESS`, and `SESSION_LOGOUT` events.
 - Final service checks: `monitor` active, nginx active, `nginx -t` successful.
+- Follow-up certificate-only UX validation:
+  `AUTH_MODE=certificate` now renders `/login` without username/password input
+  controls, shows a certificate-required state, and still returns HTTP 200 from
+  `POST /api/v1/auth/cert/session` when the browser/client presents the signed
+  test certificate.
 
 ## Risks
 

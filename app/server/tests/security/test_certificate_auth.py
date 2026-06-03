@@ -128,6 +128,35 @@ def test_certificate_mode_disables_password_login(data_dir):
     assert response.get_json()["error"] == "Password login is disabled"
 
 
+def test_certificate_mode_login_page_hides_password_form(data_dir):
+    app = _make_app(data_dir, auth_mode="certificate")
+    client = app.test_client()
+    (data_dir / ".setup-done").write_text("1", encoding="utf-8")
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '<input type="text" id="login-username"' not in html
+    assert '<input type="password" id="login-password"' not in html
+    assert "Continue with Certificate" in html
+    assert "Password sign-in is disabled on this device." in html
+
+
+def test_password_mode_login_page_keeps_password_form(data_dir):
+    app = _make_app(data_dir, auth_mode="password")
+    client = app.test_client()
+    (data_dir / ".setup-done").write_text("1", encoding="utf-8")
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "login-username" in html
+    assert "login-password" in html
+    assert "Continue with Certificate" not in html
+
+
 def test_certificate_mode_creates_cert_backed_session(data_dir):
     app = _make_app(
         data_dir,
