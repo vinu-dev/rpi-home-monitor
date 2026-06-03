@@ -44,7 +44,7 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
     snippet = _read("app/server/config/nginx-client-cert.d/provisioning-client-ca.conf")
 
     assert "include /etc/nginx/client-cert.d/*.conf;" in nginx
-    assert "include /data/config/nginx-client-cert.d/*.conf;" in nginx
+    assert "include /data/config/nginx-client-cert.d/*.conf;" not in nginx
     assert (
         "ssl_client_certificate /etc/home-monitor/trust/"
         "home-monitor-provisioning-ca.crt;"

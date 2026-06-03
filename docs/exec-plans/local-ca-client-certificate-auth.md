@@ -142,10 +142,14 @@ per operator direction. They are not committed in this RPI repository.
    /etc/nginx/client-cert.d/provisioning-client-ca.conf
    ```
 
-10. nginx requests client certificates, verifies that the presented browser
+10. nginx includes only packaged client-cert snippets from `/etc`. It does not
+    include `/data/config/nginx-client-cert.d/*.conf`, because stale test
+    snippets from older deployments can duplicate `ssl_client_certificate` and
+    make nginx fail on OTA boot.
+11. nginx requests client certificates, verifies that the presented browser
     certificate chains to the packaged public CA, and passes verified
     certificate headers to Flask.
-11. Flask certificate auth validates the certificate profile and creates the
+12. Flask certificate auth validates the certificate profile and creates the
     logged-in session without username/password entry.
 
 ## Laptop/Mobile Login Flow
@@ -233,8 +237,10 @@ Hardware/dev-RPI validation on 2026-06-03:
 - Temporary test CA/client material was generated locally for the hardware
   smoke test; no private keys or certificates were committed in this RPI repo.
 - Installed test trusted client CA at `/data/config/provisioning-ca.crt`.
-- Enabled nginx client certificate verification with
+- Earlier hardware testing enabled nginx client certificate verification with
   `/data/config/nginx-client-cert.d/provisioning-client-ca.conf`.
+  The packaged image no longer includes `/data/config/nginx-client-cert.d/*.conf`
+  to avoid stale duplicate `ssl_client_certificate` directives after OTA.
 - Enabled monitor mixed mode through
   `/etc/systemd/system/monitor.service.d/20-cert-auth.conf`:
   `MONITOR_AUTH_MODE=mixed`,
