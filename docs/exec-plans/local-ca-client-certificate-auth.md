@@ -107,6 +107,38 @@ Results:
 - Repo-wide ruff check/format, docs, traceability, and versioning guards passed.
 - VM image build validation was not run for this opt-in app/config slice.
 
+Hardware/dev-RPI validation on 2026-06-03:
+
+- Branch commit deployed to server `192.168.1.245` from a clean `git archive
+  HEAD` snapshot to avoid unrelated local dirty files.
+- Test CA/client material generated under local
+  `D:\RPIBUILDKEYS\local-ca-mtls-test`; no private keys or certificates were
+  committed.
+- Installed test trusted client CA at `/data/config/provisioning-ca.crt`.
+- Enabled nginx client certificate verification with
+  `/data/config/nginx-client-cert.d/provisioning-client-ca.conf`.
+- Enabled monitor mixed mode through
+  `/etc/systemd/system/monitor.service.d/20-cert-auth.conf`:
+  `MONITOR_AUTH_MODE=mixed`,
+  `MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN=1`,
+  `MONITOR_CERT_AUTH_ENFORCE_TIME=1`.
+- Positive cert API test:
+  `POST https://192.168.1.245/api/v1/auth/cert/session` with the signed client
+  cert returned HTTP 200, `auth_method=client_certificate`, profile
+  `owner-admin`, role `admin`, username `vinu-service-laptop`.
+- Negative cert API test without a client cert returned HTTP 401 with
+  `client certificate was not verified`.
+- Temporary certificate-only mode check passed:
+  password login returned HTTP 404 `Password login is disabled`; cert login
+  still returned HTTP 200.
+- Server was restored to `mixed` mode after the strict-mode check.
+- Existing password smoke test passed:
+  `bash scripts/smoke-test.sh 192.168.1.245 1234567891011` reported 31 passed,
+  0 failed, 6 skipped.
+- Audit log confirmed `CERT_AUTH_DENIED`, `CERT_AUTH_SUCCESS`,
+  `LOGIN_SUCCESS`, and `SESSION_LOGOUT` events.
+- Final service checks: `monitor` active, nginx active, `nginx -t` successful.
+
 ## Risks
 
 - Header spoofing if Flask is exposed directly instead of only behind nginx.
