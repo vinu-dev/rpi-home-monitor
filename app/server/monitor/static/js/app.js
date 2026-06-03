@@ -142,9 +142,9 @@
             return api.post('/api/v1/auth/logout', {}).then(function() {
                 _csrfToken = '';
                 _user = null;
-                window.location.href = '/login';
+                window.location.href = '/login?logged_out=1';
             }).catch(function() {
-                window.location.href = '/login';
+                window.location.href = '/login?logged_out=1';
             });
         },
     };

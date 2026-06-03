@@ -141,6 +141,34 @@ def test_certificate_mode_login_page_hides_password_form(data_dir):
     assert '<input type="password" id="login-password"' not in html
     assert "Continue with Certificate" in html
     assert "Password sign-in is disabled on this device." in html
+    assert "tryCertificateLogin();" not in html
+
+
+def test_certificate_mode_logged_out_page_is_stable(data_dir):
+    app = _make_app(data_dir, auth_mode="certificate", allow_profile_login=True)
+    client = app.test_client()
+    (data_dir / ".setup-done").write_text("1", encoding="utf-8")
+
+    response = client.get("/login?logged_out=1", headers=_cert_headers(_client_cert()))
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Signed out." in html
+    assert "Continue with Certificate" in html
+    assert "tryCertificateLogin();" not in html
+
+
+def test_certificate_mode_protected_view_does_not_auto_login(data_dir):
+    app = _make_app(data_dir, auth_mode="certificate", allow_profile_login=True)
+    client = app.test_client()
+    (data_dir / ".setup-done").write_text("1", encoding="utf-8")
+
+    response = client.get("/dashboard", headers=_cert_headers(_client_cert()))
+
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
 
 
 def test_password_mode_login_page_keeps_password_form(data_dir):

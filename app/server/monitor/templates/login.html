@@ -13,6 +13,9 @@
             {% if certificate_only %}Certificate required{% else %}Sign in to your dashboard{% endif %}
         </div>
 
+        {% if logged_out %}
+        <div class="login-card__notice" id="login-notice">Signed out.</div>
+        {% endif %}
         <div class="login-card__error" id="login-error"></div>
 
         <form id="login-form" autocomplete="on">
@@ -95,7 +98,6 @@
         if (btnCertLogin) {
             btnCertLogin.addEventListener('click', tryCertificateLogin);
         }
-        tryCertificateLogin();
         return;
     }
 

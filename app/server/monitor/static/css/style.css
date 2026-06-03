@@ -581,6 +581,15 @@ select.form-input {
 .login-card__error.visible {
     display: block;
 }
+.login-card__notice {
+    background: rgba(46, 204, 113, 0.14);
+    border: 1px solid rgba(46, 204, 113, 0.55);
+    color: var(--color-text);
+    padding: 10px var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-4);
+}
 
 /* --- Video Player --- */
 .video-container {

@@ -13,6 +13,7 @@ from flask import (
     current_app,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
@@ -31,10 +32,7 @@ def _is_authenticated():
     from monitor.auth import _is_session_valid
 
     if "user_id" not in session:
-        from monitor.auth import begin_certificate_session_from_request
-
-        result, _error, status = begin_certificate_session_from_request()
-        return bool(status == 200 and result)
+        return False
     if not _is_session_valid():
         session.clear()
         return False
@@ -72,6 +70,7 @@ def login():
     return render_template(
         "login.html",
         auth_mode=str(current_app.config.get("AUTH_MODE", "password")).lower(),
+        logged_out=request.args.get("logged_out") == "1",
     )
 
 
