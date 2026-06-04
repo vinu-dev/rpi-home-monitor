@@ -96,12 +96,11 @@
     var challengeToken = '';
 
     if (authMode === 'certificate') {
-        if (shouldUseCertificatePort()) {
-            redirectToCertificatePort();
-            return;
-        }
         if (btnCertLogin) {
             btnCertLogin.addEventListener('click', tryCertificateLogin);
+        }
+        if (!shouldUseCertificatePort() && wantsCertificateLogin()) {
+            tryCertificateLogin();
         }
         return;
     }
@@ -180,7 +179,7 @@
 
     function tryCertificateLogin() {
         if (shouldUseCertificatePort()) {
-            redirectToCertificatePort();
+            redirectToCertificatePort(true);
             return;
         }
         errorEl.classList.remove('visible');
@@ -230,15 +229,21 @@
             currentPort() !== certificateAuthPort;
     }
 
-    function redirectToCertificatePort() {
-        var target = window.location.protocol + '//' +
-            window.location.hostname + ':' + certificateAuthPort +
-            window.location.pathname + window.location.search + window.location.hash;
+    function wantsCertificateLogin() {
+        return new URLSearchParams(window.location.search).get('cert_login') === '1';
+    }
+
+    function redirectToCertificatePort(startLogin) {
+        var target = new URL(window.location.href);
+        target.port = certificateAuthPort;
+        if (startLogin) {
+            target.searchParams.set('cert_login', '1');
+        }
         if (btnCertLogin) {
             btnCertLogin.disabled = true;
             btnCertLogin.textContent = 'Opening certificate login...';
         }
-        window.location.replace(target);
+        window.location.replace(target.toString());
     }
 })();
 </script>

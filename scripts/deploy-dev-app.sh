@@ -170,6 +170,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/setup.py" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/requirements.txt" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/nftables-server.conf" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/home-monitor-firewall.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-avahi-pin.service" "$host" "$SERVER_STAGE"
@@ -184,6 +186,7 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.yml" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/10-home-monitor-hostname.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/nm-persist/files/20-home-monitor-arp-flux.conf" "$host" "$SERVER_STAGE"
@@ -233,6 +236,7 @@ deploy_server() {
         chmod 0755 /usr/bin/home-monitor-ledctl
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
+        cp '$SERVER_STAGE/home-monitor-firewall.service' /etc/systemd/system/home-monitor-firewall.service
         cp '$SERVER_STAGE/monitor-avahi-pin.service' /etc/systemd/system/monitor-avahi-pin.service
         cp '$SERVER_STAGE/monitor-avahi-pin.timer' /etc/systemd/system/monitor-avahi-pin.timer
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
@@ -247,6 +251,10 @@ deploy_server() {
         cp '$SERVER_STAGE/gpio-trigger.service' /etc/systemd/system/gpio-trigger.service
         cp '$SERVER_STAGE/home-monitor-led-init.service' /etc/systemd/system/home-monitor-led-init.service
         cp '$SERVER_STAGE/mediamtx.service' /etc/systemd/system/mediamtx.service
+        mkdir -p /etc/mediamtx /etc/nftables.d
+        cp '$SERVER_STAGE/mediamtx.yml' /etc/mediamtx/mediamtx.yml
+        cp '$SERVER_STAGE/nftables-server.conf' /etc/nftables.d/monitor.conf
+        nft -c -f /etc/nftables.d/monitor.conf
         if command -v tailscaled >/dev/null 2>&1; then
             cp '$SERVER_STAGE/tailscaled.service' /etc/systemd/system/tailscaled.service
         fi
@@ -269,14 +277,15 @@ deploy_server() {
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-firewall.service home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl restart home-monitor-firewall.service
         systemctl start monitor-avahi-pin.timer >/dev/null 2>&1 || true
         systemctl restart monitor-avahi-pin.service >/dev/null 2>&1 || true
     "
 
     if [ "$SKIP_RESTART" -eq 0 ]; then
         log "Restarting server services"
-        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart monitor-privileged-helper monitor nginx && systemctl is-active monitor-privileged-helper monitor nginx >/dev/null"
+        ssh "${SSH_OPTS[@]}" "$host" "systemctl restart monitor-privileged-helper monitor nginx mediamtx && systemctl is-active monitor-privileged-helper monitor nginx mediamtx >/dev/null"
     fi
 
     log "Validating server health"

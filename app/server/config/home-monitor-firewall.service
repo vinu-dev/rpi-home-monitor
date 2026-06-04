@@ -1,0 +1,16 @@
+# REQ: SWR-020, SWR-050; RISK: RISK-017, RISK-018; SEC: SC-004, SC-019; TEST: TC-010, TC-044
+[Unit]
+Description=Home Monitor firewall
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target network.target nginx.service mediamtx.service monitor.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/monitor.conf
+ExecReload=/usr/sbin/nft -f /etc/nftables.d/monitor.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

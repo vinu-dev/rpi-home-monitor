@@ -58,11 +58,11 @@ def test_nginx_redirects_gui_pages_to_certificate_listener_without_moving_api():
     nginx = _read("app/server/config/nginx-monitor.conf")
 
     assert (
-        "location ~ ^/(|login|dashboard|live|recordings|events|alerts|logs|settings|shares|help/network-fallback)/?$"
+        "location ~ ^/(dashboard|live|recordings|events|alerts|logs|settings|shares|help/network-fallback)/?$"
         in nginx
     )
     assert "return 302 https://$host:9443$request_uri;" in nginx
-    assert nginx.index("location ~ ^/(|login|dashboard") < nginx.index(
+    assert nginx.index("location ~ ^/(dashboard|live") < nginx.index(
         "location ^~ /api/"
     )
 
@@ -71,6 +71,48 @@ def test_server_firewall_allows_certificate_gui_port():
     nft = _read("app/server/config/nftables-server.conf")
 
     assert "9443" in nft
+
+
+def test_server_firewall_exposes_only_required_lan_product_ports():
+    nft = _read("app/server/config/nftables-server.conf")
+
+    assert "tcp dport { 80, 443, 9443 }" in nft
+    assert 'iifname "tailscale0" tcp dport { 80, 443, 9443 }' in nft
+    assert "tcp dport 8322" in nft
+    assert "udp dport 8189" in nft
+    assert 'iifname "tailscale0" udp dport 8189' in nft
+    assert "udp dport 41641 accept" in nft
+    assert "tcp dport 8554" not in nft
+    assert "tcp dport 8889" not in nft
+    assert "tcp dport 1935" not in nft
+    assert "udp dport 8890" not in nft
+
+
+def test_mediamtx_binds_internal_protocols_to_loopback_only():
+    mediamtx = _read("meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.yml")
+
+    assert "rtspAddress: 127.0.0.1:8554" in mediamtx
+    assert "rtspsAddress: :8322" in mediamtx
+    assert "webrtcAddress: 127.0.0.1:8889" in mediamtx
+    assert "webrtcLocalUDPAddress: :8189" in mediamtx
+    assert "rtmp: no" in mediamtx
+    assert "srt: no" in mediamtx
+
+
+def test_server_image_enables_firewall_at_boot():
+    recipe = _read(
+        "meta-home-monitor/recipes-monitor/monitor-server/monitor-server_1.0.bb"
+    )
+    unit = _read("app/server/config/home-monitor-firewall.service")
+
+    assert "file://config/home-monitor-firewall.service" in recipe
+    assert "home-monitor-firewall.service" in recipe
+    assert "${systemd_system_unitdir}/home-monitor-firewall.service" in recipe
+    assert "ExecStart=/usr/sbin/nft -f /etc/nftables.d/monitor.conf" in unit
+    assert (
+        "Before=network-pre.target network.target nginx.service mediamtx.service monitor.service"
+        in unit
+    )
 
 
 def test_packaged_monitor_defaults_to_certificate_auth():

@@ -14,8 +14,9 @@ api: no
 ###############################################
 # RTSP server
 ###############################################
-# Accept RTSP streams from cameras
-rtspAddress: :8554
+# Plain RTSP is for server-local readers such as recorders. Cameras use
+# RTSPS on :8322, so do not expose unauthenticated RTSP on the LAN.
+rtspAddress: 127.0.0.1:8554
 rtsp: yes
 
 # TCP only (reliable over WiFi)
@@ -49,12 +50,18 @@ hls: no
 # WHEP endpoint: POST /<stream-path>/whep (SDP offer/answer)
 # Proxied through nginx at /webrtc/<stream-path>/whep
 webrtc: yes
-webrtcAddress: :8889
+# Flask/nginx authenticate browser access and proxy WHEP signaling locally.
+webrtcAddress: 127.0.0.1:8889
 
 # ICE candidates — local network only (no STUN/TURN needed for LAN)
 webrtcICEServers2: []
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: ""
+
+# Disable unused MediaMTX protocol servers. Home Monitor uses RTSPS camera
+# ingest, localhost RTSP readers, and proxied WHEP/WebRTC live view only.
+rtmp: no
+srt: no
 
 ###############################################
 # Recording

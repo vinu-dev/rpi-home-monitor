@@ -144,7 +144,8 @@ def test_certificate_mode_login_page_hides_password_form(data_dir):
     assert "Password sign-in is disabled on this device." in html
     assert "certificateAuthPort = '9443'" in html
     assert "redirectToCertificatePort" in html
-    assert "tryCertificateLogin();" not in html
+    assert "cert_login" in html
+    assert "wantsCertificateLogin()" in html
 
 
 def test_certificate_mode_logged_out_page_is_stable(data_dir):
@@ -158,7 +159,7 @@ def test_certificate_mode_logged_out_page_is_stable(data_dir):
     html = response.get_data(as_text=True)
     assert "Signed out." in html
     assert "Continue with Certificate" in html
-    assert "tryCertificateLogin();" not in html
+    assert "wantsCertificateLogin()" in html
 
 
 def test_certificate_mode_protected_view_does_not_auto_login(data_dir):
