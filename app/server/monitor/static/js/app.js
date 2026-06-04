@@ -57,14 +57,7 @@
             opts.headers['X-CSRF-Token'] = _csrfToken;
         }
 
-        return fetch(url, opts).catch(function() {
-            if (retriesRemaining > 0) {
-                return _delay(RETRY_DELAY_MS).then(function() {
-                    return _requestAttempt(method, url, body, retriesRemaining - 1);
-                });
-            }
-            return Promise.reject(new Error('Server is unreachable; it may be restarting.'));
-        }).then(function(resp) {
+        return _fetchWithNetworkRetry(method, url, opts, retriesRemaining).then(function(resp) {
             if (resp.status === 401) {
                 // Session expired — redirect to login
                 var path = window.location.pathname;
@@ -89,6 +82,17 @@
         });
     }
 
+    function _fetchWithNetworkRetry(method, url, opts, retriesRemaining) {
+        return fetch(url, opts).catch(function() {
+            if (method === 'GET' && retriesRemaining > 0) {
+                return _delay(RETRY_DELAY_MS).then(function() {
+                    return _fetchWithNetworkRetry(method, url, opts, retriesRemaining - 1);
+                });
+            }
+            return Promise.reject(new Error('Server is unreachable; it may be restarting.'));
+        });
+    }
+
     function _delay(ms) {
         return new Promise(function(resolve) {
             setTimeout(resolve, ms);
@@ -100,7 +104,11 @@
     }
 
     function _readResponseBody(resp) {
-        var contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
+        var headers = resp && resp.headers;
+        var contentType = '';
+        if (headers && typeof headers.get === 'function') {
+            contentType = (headers.get('Content-Type') || '').toLowerCase();
+        }
         if (contentType.indexOf('application/json') !== -1) {
             return resp.json().catch(function() {
                 return { error: 'Invalid JSON response from server' };

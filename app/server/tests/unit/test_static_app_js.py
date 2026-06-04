@@ -1,6 +1,8 @@
 # REQ: SWR-010, SWR-032; RISK: RISK-004, RISK-017; SEC: SC-003, SC-016; TEST: TC-013, TC-028
 """Static checks for shared browser API error handling."""
 
+import subprocess
+import textwrap
 from pathlib import Path
 
 APP_JS = Path(__file__).resolve().parents[2] / "monitor" / "static" / "js" / "app.js"
@@ -27,10 +29,57 @@ def test_api_retries_transient_get_failures_only():
     assert "var GET_RETRIES = 2;" in text
     assert "method === 'GET' ? GET_RETRIES : 0" in text
     assert "function _requestAttempt(method, url, body, retriesRemaining)" in text
+    assert (
+        "function _fetchWithNetworkRetry(method, url, opts, retriesRemaining)" in text
+    )
     assert "function _isRetryableResponse(method, status)" in text
     assert "status === 502 || status === 503 || status === 504" in text
     assert "method === 'GET' &&" in text
     assert "method !== 'GET' && _csrfToken" in text
+
+
+def test_api_get_network_retry_returns_response_once():
+    """A retry success must not be parsed once, then treated as a Response."""
+    script = textwrap.dedent(
+        f"""
+        const appPath = {str(APP_JS)!r};
+        global.window = {{ location: {{ pathname: '/settings', href: '' }} }};
+        global.document = {{
+          readyState: 'loading',
+          addEventListener: function() {{}},
+          getElementById: function() {{ return null; }},
+        }};
+        global.setTimeout = function(fn) {{ fn(); return 1; }};
+        let calls = 0;
+        global.fetch = function() {{
+          calls += 1;
+          if (calls === 1) {{
+            return Promise.reject(new Error('temporary network miss'));
+          }}
+          return Promise.resolve({{
+            status: 200,
+            ok: true,
+            headers: {{ get: function() {{ return 'application/json'; }} }},
+            json: function() {{ return Promise.resolve({{ ok: true }}); }},
+            text: function() {{ return Promise.resolve(''); }},
+          }});
+        }};
+        require(appPath);
+        window.HM.api.get('/api/test').then(function(data) {{
+          if (!data || data.ok !== true) {{
+            throw new Error('unexpected data: ' + JSON.stringify(data));
+          }}
+          if (calls !== 2) {{
+            throw new Error('expected one retry, got ' + calls + ' calls');
+          }}
+        }}).catch(function(err) {{
+          console.error(err && err.stack ? err.stack : err);
+          process.exit(1);
+        }});
+        """
+    )
+
+    subprocess.run(["node", "-e", script], check=True)
 
 
 def test_app_js_asset_has_cache_buster():
