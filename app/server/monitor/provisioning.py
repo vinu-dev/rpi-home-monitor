@@ -125,6 +125,17 @@ def _gui_cert_status_payload() -> dict:
     }
 
 
+def setup_template_context() -> dict:
+    """Return template values shared by /setup and /api/v1/setup/wizard."""
+    return {
+        "setup_cert_required": _setup_cert_required(),
+        "setup_cert_authorized": _setup_cert_authorized(),
+        "certificate_auth_port": str(
+            current_app.config.get("CERT_AUTH_GUI_PORT", "9443")
+        ),
+    }
+
+
 @provisioning_bp.route("/status", methods=["GET"])
 def setup_status():
     """Return current setup state."""
@@ -268,7 +279,5 @@ def setup_wizard():
     return render_template(
         "setup.html",
         hostname=f"{SERVER_HOSTNAME}.local",
-        setup_cert_required=_setup_cert_required(),
-        setup_cert_authorized=_setup_cert_authorized(),
-        certificate_auth_port=str(current_app.config.get("CERT_AUTH_GUI_PORT", "9443")),
+        **setup_template_context(),
     )

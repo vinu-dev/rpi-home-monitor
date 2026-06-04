@@ -4,6 +4,7 @@ Tests for view routes — HTML page serving and redirects.
 """
 
 import os
+import time
 
 import pytest
 
@@ -60,6 +61,41 @@ class TestSetupPage:
         response = client.get("/setup")
         assert response.status_code == 302
         assert "/login" in response.headers["Location"]
+
+    def test_cert_required_setup_shows_secure_gate_without_password_step(
+        self, app, client
+    ):
+        app.config["SETUP_CERT_REQUIRED"] = True
+
+        response = client.get("/setup")
+
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "Admin Certificate Setup" in body
+        assert "var setupCertRequired = true;" in body
+        assert "var setupCertAuthorized = false;" in body
+        assert "Set Admin Password" not in body
+        assert "Admin Certificate Ready" in body
+
+    def test_cert_session_setup_uses_certificate_admin_step(self, app, client):
+        app.config["SETUP_CERT_REQUIRED"] = True
+        with client.session_transaction() as sess:
+            sess["user_id"] = "cert-test"
+            sess["username"] = "cert-test"
+            sess["role"] = "admin"
+            sess["auth_method"] = "client_certificate"
+            sess["cert_profile"] = "owner-admin"
+            sess["created_at"] = time.time()
+            sess["last_active"] = time.time()
+
+        response = client.get("/setup")
+
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "var setupCertRequired = true;" in body
+        assert "var setupCertAuthorized = true;" in body
+        assert "Admin Certificate Ready" in body
+        assert "Set Admin Password" not in body
 
 
 class TestLoginPage:
