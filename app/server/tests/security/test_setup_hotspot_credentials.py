@@ -96,19 +96,21 @@ def test_wifi_repair_wipe_keeps_provisioned_setup_credential():
         assert 'rm -f "$HOTSPOT_PASS_FILE"' not in text
 
 
-def test_hardware_factory_reset_removes_setup_hotspot_credentials():
+def test_hardware_factory_reset_removes_runtime_setup_state():
     text = _read(GPIO_TRIGGER_SCRIPT)
-    assert '"${CONFIG_DIR}/setup-hotspot.psk"' in text
-    assert '"${CONFIG_DIR}/camera-hotspot.psk"' in text
+    assert 'find "$CONFIG_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +' in text
+    assert 'FIRST_BOOT_STAMP="/data/.first-boot-done"' in text
+    assert "backup-snapshots network" in text
+    assert "/etc/home-monitor/trust" in text
 
 
-def test_authenticated_factory_reset_preserves_setup_hotspot_credentials():
+def test_authenticated_server_factory_reset_wipes_setup_hotspot_credential():
     server_reset = _read(REPO_ROOT / "app/server/monitor/services/backup_paths.py")
     camera_reset = _read(REPO_ROOT / "app/camera/camera_streamer/factory_reset.py")
 
     assert (
         "setup_hotspot_password_file"
-        not in server_reset.partition("def resettable_config_files")[2].partition(
+        in server_reset.partition("def resettable_config_files")[2].partition(
             "def resettable_dirs"
         )[0]
     )

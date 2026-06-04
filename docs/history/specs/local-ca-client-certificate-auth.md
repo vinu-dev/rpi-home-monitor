@@ -864,6 +864,13 @@ Phone/laptop joins hotspot
         +-- setup actions allowed by cert role
 ```
 
+Ethernet-first setup is also valid. If the server has a DHCP address on a
+fresh SD card or after factory reset, the operator can open
+`http://<server-ip>/api/v1/setup/wizard` on the LAN instead of joining the
+hotspot. The wizard still requires the admin client certificate before
+sensitive setup actions, defaults to Ethernet, and shuts the setup hotspot down
+after Ethernet setup completes.
+
 ## Request Authentication Flow
 
 ```text
@@ -1544,7 +1551,8 @@ Manual validation rows:
 - Windows laptop client cert login.
 - macOS laptop client cert login.
 - At least one target mobile OS if mobile support is claimed.
-- First boot on setup hotspot with no usable password.
+- First boot on setup hotspot with the factory hotspot password plus an admin
+  client certificate gate.
 - Expired client cert behavior with trusted time.
 - Time-uncertain first boot behavior.
 - Denied role attempts for video, user management, and factory reset.

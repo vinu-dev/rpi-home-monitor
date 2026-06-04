@@ -738,14 +738,8 @@
         <div class="settings-section__title">Factory Reset</div>
         <div class="card">
             <p style="font-size:var(--text-sm); color:var(--color-text-muted); margin-bottom:var(--space-3);">
-                Wipe all configuration, users, certificates, and recordings. The server will restart and present the first-boot setup wizard using the setup hotspot password chosen during setup.
+                Wipe all runtime configuration, users, camera pairings, certificates, recordings, logs, update staging, backup snapshots, and network state. The build-time provisioning CA remains installed, and the server restarts into first-boot setup.
             </p>
-            <div class="form-group">
-                <label style="display:flex; align-items:center; gap:var(--space-2); cursor:pointer;">
-                    <input type="checkbox" x-model="resetKeepRecordings">
-                    <span>Keep recordings</span>
-                </label>
-            </div>
             <template x-if="!resetConfirm">
                 <button class="btn btn--danger" @click="resetConfirm = true">Factory Reset</button>
             </template>
@@ -2848,7 +2842,6 @@ function settingsPage() {
         },
 
         resetConfirm: false,
-        resetKeepRecordings: false,
         // Danger-zone delete-all state (issue #106). Two-step confirm
         // mirrors the factory reset flow so the pattern is familiar.
         deleteAllRecordingsConfirm: false,
@@ -4042,7 +4035,7 @@ function settingsPage() {
         /* --- Factory Reset --- */
         async doFactoryReset() {
             try {
-                await window.HM.api.post('/api/v1/system/factory-reset', { keep_recordings: this.resetKeepRecordings });
+                await window.HM.api.post('/api/v1/system/factory-reset', {});
                 window.HM.toast('Factory reset initiated. Restarting...', 'info');
                 setTimeout(function() { window.location.href = '/'; }, 5000);
             } catch(e) {

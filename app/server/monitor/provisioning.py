@@ -204,7 +204,6 @@ def set_admin_password():
 
     msg, status = current_app.provisioning_service.set_admin_password(
         password=data.get("password", ""),
-        setup_hotspot_password=data.get("setup_hotspot_password", ""),
     )
     if status != 200:
         return jsonify({"error": msg}), status

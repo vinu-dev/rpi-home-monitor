@@ -28,12 +28,6 @@ def _fix(mock_sub):
     mock_sub.SubprocessError = subprocess.SubprocessError
 
 
-def _write_setup_hotspot_password(tmp_path):
-    config_dir = tmp_path / "config"
-    config_dir.mkdir(exist_ok=True)
-    (config_dir / "setup-hotspot.psk").write_text("PerDeviceSetup123\n")
-
-
 @dataclass
 class FakeUser:
     """Minimal user stand-in for store mocking."""
@@ -296,7 +290,7 @@ class TestSaveWifiCredentials:
 class TestSetAdminPassword:
     def test_blocked_after_setup_complete(self, svc, tmp_path):
         (tmp_path / ".setup-done").write_text("done")
-        msg, code = svc.set_admin_password("longenough12", "PerDeviceSetup123")
+        msg, code = svc.set_admin_password("longenough12")
         assert code == 403
 
     def test_too_short_password(self, svc):
@@ -305,34 +299,30 @@ class TestSetAdminPassword:
         assert "12 characters" in msg
 
     def test_exactly_12_chars_accepted(self, svc, store):
-        msg, code = svc.set_admin_password("a" * 12, "PerDeviceSetup123")
+        msg, code = svc.set_admin_password("a" * 12)
         assert code == 200
         store.save_user.assert_called_once()
 
     def test_admin_not_found(self, svc, store):
         store.get_user_by_username.return_value = None
-        msg, code = svc.set_admin_password("longenough12", "PerDeviceSetup123")
+        msg, code = svc.set_admin_password("longenough12")
         assert code == 500
         assert "not found" in msg
 
     def test_password_hashed_and_saved(self, svc, store):
         with patch("monitor.auth.hash_password", return_value="newhash") as mh:
-            msg, code = svc.set_admin_password("securepassword", "PerDeviceSetup123")
+            msg, code = svc.set_admin_password("securepassword")
         assert code == 200
         mh.assert_called_once_with("securepassword")
         saved_user = store.save_user.call_args[0][0]
         assert saved_user.password_hash == "newhash"
         assert saved_user.must_change_password is False
 
-    def test_requires_setup_hotspot_password(self, svc):
-        msg, code = svc.set_admin_password("securepassword", "")
-        assert code == 400
-        assert "hotspot" in msg.lower()
-
-    def test_rejects_factory_default_setup_hotspot_password(self, svc):
+    def test_deprecated_setup_hotspot_password_is_ignored(self, svc, store, tmp_path):
         msg, code = svc.set_admin_password("securepassword", "homemonitor")
-        assert code == 400
-        assert "factory default" in msg
+        assert code == 200
+        assert not (tmp_path / "config" / "setup-hotspot.psk").exists()
+        store.save_user.assert_called_once()
 
 
 # ── _connect_wifi ────────────────────────────────────────────────────
@@ -528,7 +518,6 @@ class TestCompleteSetup:
     def test_success_full_flow(self, mock_socket, mock_sub, svc, tmp_path):
         """Full happy path: connect WiFi via hotspot script, get IP, write stamp."""
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "HomeNet"
         svc._pending_wifi["password"] = "secret123"
 
@@ -555,7 +544,6 @@ class TestCompleteSetup:
     @patch(SUBPROCESS_PATCH)
     def test_wifi_connect_failure_returns_500(self, mock_sub, svc, tmp_path):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
         mock_sub.run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=30)
@@ -568,7 +556,6 @@ class TestCompleteSetup:
     @patch(SUBPROCESS_PATCH)
     def test_wifi_connect_wrong_password(self, mock_sub, svc, tmp_path):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "wrong"
         mock_sub.run.return_value = MagicMock(
@@ -584,7 +571,6 @@ class TestCompleteSetup:
         self, mock_socket, mock_sub, svc, tmp_path
     ):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         mock_socket.gethostname.return_value = "raspberrypi4-64"
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
@@ -604,7 +590,6 @@ class TestCompleteSetup:
     @patch("monitor.services.provisioning_service.socket")
     def test_credentials_cleared_on_success(self, mock_socket, mock_sub, svc, tmp_path):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
         mock_sub.run.side_effect = [
@@ -621,7 +606,6 @@ class TestCompleteSetup:
     @patch(SUBPROCESS_PATCH)
     def test_credentials_not_cleared_on_wifi_failure(self, mock_sub, svc, tmp_path):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
         mock_sub.run.return_value = MagicMock(returncode=1, stderr="generic fail")
@@ -635,7 +619,6 @@ class TestCompleteSetup:
     def test_empty_ip_still_succeeds(self, mock_socket, mock_sub, svc, tmp_path):
         """If IP lookup returns nothing, setup still completes."""
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         svc._pending_wifi["ssid"] = "Net"
         svc._pending_wifi["password"] = "pass"
         mock_sub.run.side_effect = [
@@ -656,7 +639,6 @@ class TestCompleteSetup:
     ):
         """Wired server setup should not require WiFi credentials."""
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         mock_socket.gethostname.return_value = "rpi-divinu"
         mock_sub.run.side_effect = [
             MagicMock(returncode=0, stdout="eth0:ethernet:connected\n"),
@@ -684,7 +666,6 @@ class TestCompleteSetup:
         self, mock_socket, mock_sub, svc, tmp_path
     ):
         _fix(mock_sub)
-        _write_setup_hotspot_password(tmp_path)
         mock_socket.gethostname.return_value = "rpi-divinu"
         mock_sub.run.side_effect = [
             MagicMock(returncode=0, stdout=""),
@@ -698,8 +679,6 @@ class TestCompleteSetup:
         assert not (tmp_path / ".setup-done").exists()
 
     def test_invalid_network_mode_returns_400(self, svc, tmp_path):
-        _write_setup_hotspot_password(tmp_path)
-
         result, err, code = svc.complete_setup(network_mode="cellular")
 
         assert code == 400

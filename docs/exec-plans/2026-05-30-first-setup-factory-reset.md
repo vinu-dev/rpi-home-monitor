@@ -13,11 +13,22 @@ on real devices without touching the operator PC's WiFi.
 
 ## Constraints
 
-- Authenticated GUI factory reset should return the device to setup mode using
-  the setup hotspot password the operator chose during setup.
-- Hardware GPIO reset remains the full wipe path and may remove setup hotspot
-  password files.
+- Authenticated GUI factory reset should return the device to setup mode.
+- Server reset uses the image default setup hotspot credential and preserves
+  the build-time provisioning CA under `/etc/home-monitor/trust`.
+- Camera reset may continue using the camera setup hotspot password the
+  operator chose during camera setup until that flow is redesigned.
+- Hardware GPIO reset remains a full wipe path for runtime state.
 - Device validation must use serial ports and device-side network paths.
+
+## Superseded Server Credential Note
+
+This plan predates the certificate-gated server setup design. Current server
+setup no longer asks for a rotated setup hotspot password, and server factory
+reset now wipes any legacy `/data/config/setup-hotspot.psk` so the server
+returns to the image default hotspot credential. The build-time provisioning CA
+under `/etc/home-monitor/trust` remains installed because a freshly flashed
+server image already contains that trust anchor.
 
 ## Context
 
@@ -29,8 +40,8 @@ on real devices without touching the operator PC's WiFi.
 
 ## Plan
 
-1. Preserve setup hotspot PSK during authenticated factory reset.
-2. Keep hardware GPIO reset wiping setup hotspot PSKs.
+1. Preserve the camera setup hotspot PSK during camera authenticated reset.
+2. Wipe the server setup hotspot PSK during server factory reset.
 3. Update tests and docs for that contract.
 4. Deploy to server and camera.
 5. Validate reset/setup from real devices through serial/device paths.
@@ -56,10 +67,10 @@ on real devices without touching the operator PC's WiFi.
 
 - `pytest -q app/camera/tests/unit/test_privileged_helper.py app/camera/tests/integration/test_wifi_setup.py app/camera/tests/unit/test_factory_reset.py`
   passed on Windows.
-- Server live deploy check: `/opt/monitor/monitor/services/backup_paths.py`
-  excludes `setup-hotspot.psk` from resettable config files; server
-  `setup-hotspot.psk` remains `monitor:monitor 600`; `monitor`,
-  `monitor-privileged-helper`, and `monitor-hotspot.service` are active.
+- Server live deploy check: factory reset wipes legacy
+  `/data/config/setup-hotspot.psk`, preserves `/etc/home-monitor/trust`, and
+  leaves `monitor`, `monitor-privileged-helper`, and `monitor-hotspot.service`
+  active after recovery.
 - Camera live deploy check over `HomeCam-Setup`: setup submission returned
   `{"status":"connecting"}` instead of the previous 500 when
   `/data/config/camera-hotspot.psk` started root-owned.
@@ -89,14 +100,17 @@ on real devices without touching the operator PC's WiFi.
 
 ## Risks
 
-- Preserving the setup hotspot password during GUI reset is intentional, but
-  docs and tests must clearly separate it from hardware reset semantics.
-- Legacy devices without a rotated setup hotspot PSK still fall back to the
-  documented factory setup password until the first setup wizard stores one.
+- Server and camera setup hotspot credential behavior now differs; docs and
+  tests must clearly separate the server certificate-gated setup path from the
+  older camera setup path.
+- Legacy server devices with a rotated setup hotspot PSK return to the
+  documented factory setup password after factory reset.
 
 ## Completion Criteria
 
-- GUI reset on server and camera returns to setup mode and accepts the
-  operator-chosen setup hotspot password.
+- GUI reset on server returns to cert-gated setup with the factory setup
+  hotspot credential and the build-time provisioning CA preserved.
+- GUI reset on camera returns to setup mode and accepts the operator-chosen
+  camera setup hotspot password.
 - Tests and repo rule checks pass or have documented environment blockers.
 - PR to `main` is merged after CI passes.

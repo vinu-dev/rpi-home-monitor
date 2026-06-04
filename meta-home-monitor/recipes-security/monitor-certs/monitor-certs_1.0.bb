@@ -27,7 +27,7 @@ do_install() {
 Description=Generate TLS certificates on first boot
 After=local-fs.target first-boot-setup.service
 Requires=local-fs.target
-Before=nginx.service monitor.service
+Before=nginx.service mediamtx.service monitor.service
 ConditionPathExists=!/data/certs/ca.crt
 
 [Service]

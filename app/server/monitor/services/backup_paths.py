@@ -3,9 +3,8 @@
 Shared path catalogue for server-side mutable configuration.
 
 Config backup/import and factory reset share this catalogue so their path
-inventory is explicit. Factory reset intentionally keeps the operator-chosen
-setup hotspot password: the authenticated admin reset path must not fall back
-to the public first-boot default.
+inventory is explicit. Factory reset removes runtime state under /data but
+does not touch image-installed trust anchors under /etc/home-monitor/trust.
 """
 
 from dataclasses import dataclass
@@ -77,6 +76,10 @@ class BackupPaths:
         return self.data_dir / "network" / "system-connections"
 
     @property
+    def network_dir(self) -> Path:
+        return self.data_dir / "network"
+
+    @property
     def wifi_wiped_marker(self) -> Path:
         return self.data_dir / "network" / ".wifi-wiped"
 
@@ -92,6 +95,7 @@ class BackupPaths:
             self.settings_file,
             self.session_secret_file,
             self.hostname_file,
+            self.setup_hotspot_password_file,
             self.motion_events_file,
             self.alert_read_state_file,
         )
@@ -105,6 +109,8 @@ class BackupPaths:
             self.logs_dir,
             self.tailscale_dir,
             self.ota_dir,
+            self.backup_snapshot_root,
+            self.network_dir,
         )
 
 

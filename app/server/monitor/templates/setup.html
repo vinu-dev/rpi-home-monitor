@@ -678,18 +678,6 @@
                            oninput="validatePasswords()"
                            onkeydown="if(event.key==='Enter')saveAdminPassword()">
                 </div>
-                <div class="input-group">
-                    <label>New setup hotspot password</label>
-                    <input type="password" id="setup-hotspot-password" placeholder="Password for future setup mode"
-                           oninput="validatePasswords()">
-                    <div class="input-hint">Minimum 12 characters. If setup mode returns, reconnect with this password.</div>
-                </div>
-                <div class="input-group">
-                    <label>Confirm setup hotspot password</label>
-                    <input type="password" id="setup-hotspot-password-confirm" placeholder="Confirm setup hotspot password"
-                           oninput="validatePasswords()"
-                           onkeydown="if(event.key==='Enter')saveAdminPassword()">
-                </div>
                 <button class="btn btn-primary" id="btn-admin-save" onclick="saveAdminPassword()" disabled>
                     Next
                 </button>
@@ -753,11 +741,6 @@
                         <span class="review-label">Admin Password</span>
                         <span class="review-value">Changed</span>
                     </div>
-                    <div class="review-item">
-                        <span class="review-label">Setup Hotspot Password</span>
-                        <span class="review-value">Changed</span>
-                    </div>
-
                     <div class="warning-box">
                         <p style="color:#e94560;font-weight:600;">What happens when you tap Apply:</p>
                         <div class="warning-step">
@@ -1118,18 +1101,14 @@
         function validatePasswords() {
             var pw = document.getElementById('admin-password').value;
             var confirm = document.getElementById('admin-password-confirm').value;
-            var setupPw = document.getElementById('setup-hotspot-password').value;
-            var setupConfirm = document.getElementById('setup-hotspot-password-confirm').value;
             var btn = document.getElementById('btn-admin-save');
 
-            btn.disabled = !(pw.length >= 12 && pw === confirm && setupPw.length >= 12 && setupPw === setupConfirm);
+            btn.disabled = !(pw.length >= 12 && pw === confirm);
         }
 
         function saveAdminPassword() {
             var pw = document.getElementById('admin-password').value;
             var confirm = document.getElementById('admin-password-confirm').value;
-            var setupPw = document.getElementById('setup-hotspot-password').value;
-            var setupConfirm = document.getElementById('setup-hotspot-password-confirm').value;
 
             if (pw.length < 12) {
                 showToast('Password must be at least 12 characters', 'error');
@@ -1139,14 +1118,6 @@
                 showToast('Passwords do not match', 'error');
                 return;
             }
-            if (setupPw.length < 12) {
-                showToast('Setup hotspot password must be at least 12 characters', 'error');
-                return;
-            }
-            if (setupPw !== setupConfirm) {
-                showToast('Setup hotspot passwords do not match', 'error');
-                return;
-            }
 
             var btn = document.getElementById('btn-admin-save');
             setButtonLoading(btn, true, 'Saving...');
@@ -1154,7 +1125,7 @@
             fetch(API_BASE + '/admin', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({password: pw, setup_hotspot_password: setupPw})
+                body: JSON.stringify({password: pw})
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {

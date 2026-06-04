@@ -367,7 +367,9 @@ class TestFactoryReset:
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
     @patch("monitor.services.factory_reset_service.FactoryResetService._clear_wifi")
-    def test_keep_recordings_flag(self, mock_wifi, mock_restart, app, logged_in_client):
+    def test_keep_recordings_request_is_ignored_for_factory_reset(
+        self, mock_wifi, mock_restart, app, logged_in_client
+    ):
         import os
 
         rec_dir = app.config["RECORDINGS_DIR"]
@@ -382,8 +384,8 @@ class TestFactoryReset:
             "/api/v1/system/factory-reset", json={"keep_recordings": True}
         )
         assert resp.status_code == 200
-        # Recordings directory must still exist
-        assert os.path.isfile(marker)
+        assert not os.path.isfile(marker)
+        assert not os.path.isdir(rec_dir)
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
@@ -401,7 +403,7 @@ class TestFactoryReset:
             "FACTORY_RESET",
             requesting_user="admin",
             requesting_ip=mock_log.call_args.kwargs.get("requesting_ip", ""),
-            detail="keep_recordings=False",
+            detail="full_wipe=True",
         )
 
 

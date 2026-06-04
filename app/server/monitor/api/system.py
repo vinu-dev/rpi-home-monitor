@@ -500,17 +500,14 @@ def tailscale_apply_config():
 def factory_reset():
     """Wipe all data and return to first-boot state. Admin only.
 
-    Accepts optional JSON body: {"keep_recordings": true}
+    Recordings are always wiped; use backup/export before factory reset if
+    retained evidence is required.
     """
-    body = request.get_json(silent=True) or {}
-    keep_recordings = bool(body.get("keep_recordings", False))
-
     user = session.get("username", "")
     ip = request.remote_addr or ""
 
     svc = current_app.factory_reset_service
     msg, status = svc.execute_reset(
-        keep_recordings=keep_recordings,
         requesting_user=user,
         requesting_ip=ip,
     )

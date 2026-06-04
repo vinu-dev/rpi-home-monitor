@@ -219,9 +219,17 @@ ip addr show eth0
 
 If Ethernet is not available, connect to the setup hotspot **HomeMonitor-Setup**
 using the factory setup password `homemonitor`, then open `http://10.42.0.1`.
-During setup, choose a new setup hotspot password. Authenticated factory reset
-from the web UI preserves that password so you can re-enter setup. Hardware
-GPIO reset removes it and returns the setup hotspot to the factory password.
+Server setup is gated by the admin client certificate and does not ask for a
+new setup hotspot password. Factory reset removes the runtime hotspot PSK if a
+legacy device has one, then returns the server setup hotspot to the factory
+password while keeping the build-time provisioning CA installed.
+
+If Ethernet is connected on a fresh SD card or immediately after factory
+reset, the server may be reachable on both the LAN IP and the setup hotspot.
+Use the LAN setup URL `http://<server-ip>/api/v1/setup/wizard` when you know
+the DHCP address. The wizard defaults to Ethernet; choosing Ethernet completes
+setup without WiFi credentials, writes the setup-complete stamp, and shuts down
+the setup hotspot.
 
 ### 4.3 SSH In (Dev Image Only)
 

@@ -9,7 +9,8 @@ Design:
 - Constructor injection (store, audit, data_dir)
 - Audit log written BEFORE data is wiped (so the event is captured)
 - Subprocess call for service restart (systemd)
-- Does NOT reformat the /data partition — just clears contents
+- Does NOT reformat the /data partition - just clears contents
+- Does NOT touch build-time CA trust anchors in /etc/home-monitor/trust
 """
 
 import logging
@@ -35,13 +36,12 @@ class FactoryResetService:
 
     def execute_reset(
         self,
-        keep_recordings: bool = False,
         requesting_user: str = "",
         requesting_ip: str = "",
     ) -> tuple[str, int]:
         """Perform factory reset.
 
-        Clears all config, certs, and optionally recordings.
+        Clears runtime config, certs, recordings, logs, and pairing state.
         Schedules a service restart after a short delay.
 
         Returns (message, status_code).
@@ -51,26 +51,27 @@ class FactoryResetService:
             "FACTORY_RESET",
             requesting_user=requesting_user,
             requesting_ip=requesting_ip,
-            detail=f"keep_recordings={keep_recordings}",
+            detail="full_wipe=True",
         )
 
         errors = []
 
-        # 1. Remove setup-done stamp (re-enables provisioning wizard)
-        stamp = os.path.join(self._data_dir, ".setup-done")
-        self._safe_remove(stamp, errors)
+        # 1. Remove first-boot/setup stamps so the post-reset boot follows
+        # the same path as a freshly flashed SD card.
+        for stamp_name in (".setup-done", ".first-boot-done"):
+            self._safe_remove(os.path.join(self._data_dir, stamp_name), errors)
 
-        # 2. Clear resettable config files. Keep the config directory itself
-        # so first-boot code can recreate defaults in place. The setup
-        # hotspot password is intentionally preserved for authenticated GUI
-        # reset so the device does not fall back to a public first-boot PSK.
-        for target in self._paths.resettable_config_files:
-            self._safe_remove(str(target), errors)
+        # 2. Clear all runtime config contents. The build-time provisioning CA
+        # lives under /etc/home-monitor/trust and is intentionally outside
+        # this wipe boundary.
+        self._wipe_dir_contents_recursive(
+            str(self._paths.config_dir),
+            "runtime config",
+            errors,
+        )
 
         # 3. Clear mutable state directories shared with backup/import.
         for target in self._paths.resettable_dirs:
-            if target == self._paths.recordings_dir and keep_recordings:
-                continue
             self._safe_rmtree(str(target), errors)
 
         # 4. Clear WiFi credentials via hotspot script (ADR-0013)
@@ -169,6 +170,22 @@ class FactoryResetService:
                     log.debug("Removed %s: %s", label, fname)
             except OSError as exc:
                 log.warning("Failed to remove %s: %s", fpath, exc)
+                errors.append(f"{label}: {exc}")
+
+    def _wipe_dir_contents_recursive(self, dirpath: str, label: str, errors: list):
+        """Remove all files and child directories while preserving dirpath."""
+        if not os.path.isdir(dirpath):
+            return
+        for name in os.listdir(dirpath):
+            path = os.path.join(dirpath, name)
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+                log.debug("Removed %s: %s", label, path)
+            except OSError as exc:
+                log.warning("Failed to remove %s: %s", path, exc)
                 errors.append(f"{label}: {exc}")
 
     @staticmethod

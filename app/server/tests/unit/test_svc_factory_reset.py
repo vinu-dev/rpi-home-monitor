@@ -21,6 +21,8 @@ def data_dir(tmp_path):
         "logs",
         "tailscale",
         "ota",
+        "backup-snapshots",
+        "network/system-connections",
     ]
     for d in dirs:
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
@@ -31,9 +33,13 @@ def data_dir(tmp_path):
     (tmp_path / "config" / "settings.json").write_text("{}")
     (tmp_path / "config" / ".secret_key").write_text("abc123")
     (tmp_path / "config" / "setup-hotspot.psk").write_text("RotatedSetup123\n")
+    (tmp_path / "config" / "cert-users.json").write_text("{}")
+    (tmp_path / "config" / "nested").mkdir()
+    (tmp_path / "config" / "nested" / "state.json").write_text("{}")
 
     # Stamp file
     (tmp_path / ".setup-done").write_text("setup completed\n")
+    (tmp_path / ".first-boot-done").write_text("first boot completed\n")
 
     # Certs
     (tmp_path / "certs" / "ca.crt").write_text("cert")
@@ -50,6 +56,12 @@ def data_dir(tmp_path):
 
     # Logs
     (tmp_path / "logs" / "audit.log").write_text("event\n")
+
+    # Backup and network state
+    (tmp_path / "backup-snapshots" / "snapshot.json").write_text("{}")
+    (tmp_path / "network" / "system-connections" / "home.nmconnection").write_text(
+        "wifi"
+    )
 
     return tmp_path
 
@@ -75,9 +87,10 @@ class TestFactoryReset:
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
-    def test_reset_removes_stamp_file(self, mock_restart, svc, data_dir):
+    def test_reset_removes_stamp_files(self, mock_restart, svc, data_dir):
         svc.execute_reset()
         assert not (data_dir / ".setup-done").exists()
+        assert not (data_dir / ".first-boot-done").exists()
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
@@ -88,9 +101,9 @@ class TestFactoryReset:
         assert not (data_dir / "config" / "users.json").exists()
         assert not (data_dir / "config" / "settings.json").exists()
         assert not (data_dir / "config" / ".secret_key").exists()
-        assert (data_dir / "config" / "setup-hotspot.psk").read_text() == (
-            "RotatedSetup123\n"
-        )
+        assert not (data_dir / "config" / "setup-hotspot.psk").exists()
+        assert not (data_dir / "config" / "cert-users.json").exists()
+        assert not (data_dir / "config" / "nested").exists()
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
@@ -123,15 +136,6 @@ class TestFactoryReset:
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
-    def test_reset_keeps_recordings_when_requested(self, mock_restart, svc, data_dir):
-        svc.execute_reset(keep_recordings=True)
-        assert (
-            data_dir / "recordings" / "cam-001" / "2026-04-12" / "14-00-00.mp4"
-        ).exists()
-
-    @patch(
-        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
-    )
     def test_reset_removes_live_buffer(self, mock_restart, svc, data_dir):
         svc.execute_reset()
         assert not (data_dir / "live").exists()
@@ -156,6 +160,41 @@ class TestFactoryReset:
     def test_reset_removes_ota_staging(self, mock_restart, svc, data_dir):
         svc.execute_reset()
         assert not (data_dir / "ota").exists()
+
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
+    def test_reset_removes_backup_snapshots(self, mock_restart, svc, data_dir):
+        svc.execute_reset()
+        assert not (data_dir / "backup-snapshots").exists()
+
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
+    def test_reset_recreates_wifi_wipe_marker(self, mock_restart, svc, data_dir):
+        svc.execute_reset()
+        assert not (data_dir / "network" / "system-connections").exists()
+        assert (data_dir / "network" / ".wifi-wiped").read_text() == "1\n"
+
+    @patch(
+        "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
+    )
+    def test_reset_does_not_touch_baked_client_ca_trust_anchor(
+        self, mock_restart, svc, data_dir
+    ):
+        trust_anchor = (
+            data_dir.parent
+            / "etc"
+            / "home-monitor"
+            / "trust"
+            / "home-monitor-provisioning-ca.crt"
+        )
+        trust_anchor.parent.mkdir(parents=True)
+        trust_anchor.write_text("public-ca", encoding="utf-8")
+
+        svc.execute_reset()
+
+        assert trust_anchor.read_text(encoding="utf-8") == "public-ca"
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
@@ -190,10 +229,10 @@ class TestAuditLogging:
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"
     )
-    def test_audit_includes_keep_recordings_flag(self, mock_restart, svc, audit):
-        svc.execute_reset(keep_recordings=True)
+    def test_audit_records_full_wipe(self, mock_restart, svc, audit):
+        svc.execute_reset()
         detail = audit.log_event.call_args[1]["detail"]
-        assert "keep_recordings=True" in detail
+        assert detail == "full_wipe=True"
 
     @patch(
         "monitor.services.factory_reset_service.FactoryResetService._schedule_restart"

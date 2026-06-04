@@ -28,6 +28,7 @@ PROVISION_PIN="${GPIO_PROVISION_PIN:-5}"
 RESET_PIN="${GPIO_RESET_PIN:-27}"
 
 SETUP_STAMP="/data/.setup-done"
+FIRST_BOOT_STAMP="/data/.first-boot-done"
 GPIO_BASE="/sys/class/gpio"
 LEDCTL="/usr/bin/home-monitor-ledctl"
 
@@ -76,26 +77,23 @@ wipe_data() {
     # Remove config files (preserve directory)
     CONFIG_DIR="/data/config"
     if [ -d "$CONFIG_DIR" ]; then
-        rm -f "${CONFIG_DIR}/cameras.json" \
-              "${CONFIG_DIR}/users.json" \
-              "${CONFIG_DIR}/settings.json" \
-              "${CONFIG_DIR}/.secret_key" \
-              "${CONFIG_DIR}/setup-hotspot.psk" \
-              "${CONFIG_DIR}/camera-hotspot.psk" \
-              "${CONFIG_DIR}/camera.conf" 2>/dev/null || true
+        find "$CONFIG_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
     fi
 
     # Remove directory trees
-    for DIR in certs live recordings logs tailscale ota; do
+    for DIR in certs live recordings logs tailscale ota backup-snapshots network; do
         if [ -d "/data/${DIR}" ]; then
             rm -rf "/data/${DIR}"
             echo "  Removed /data/${DIR}"
         fi
     done
 
-    # Remove setup stamp
+    # Remove setup/first-boot stamps. Do not touch image-installed trust
+    # anchors under /etc/home-monitor/trust.
     rm -f "$SETUP_STAMP" 2>/dev/null || true
+    rm -f "$FIRST_BOOT_STAMP" 2>/dev/null || true
     echo "  Removed $SETUP_STAMP"
+    echo "  Removed $FIRST_BOOT_STAMP"
 }
 
 # --- Main ---
