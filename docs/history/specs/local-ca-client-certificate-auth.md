@@ -775,6 +775,44 @@ local CA signs CSR offline
 RPI restarts HTTPS with trusted cert
 ```
 
+### Implemented GUI HTTPS Certificate Separation
+
+The passwordless/admin-certificate branch keeps browser HTTPS trust separate
+from camera streaming trust.
+
+```text
+Browser GUI HTTPS:
+  /data/certs/gui-server.crt
+  /data/certs/gui-server.key
+  used by nginx on 443 and 9443
+  optional local-CA-signed certificate installed through setup
+
+Camera RTSPS and camera control:
+  /data/certs/server.crt
+  /data/certs/server.key
+  used by MediaMTX/camera trust paths
+  not replaced by the GUI certificate flow
+```
+
+On first boot and OTA upgrade, `home-monitor-gui-cert-bootstrap.service` copies
+the existing `server.crt` and `server.key` to `gui-server.crt` and
+`gui-server.key` when no GUI certificate exists. This makes the new nginx
+configuration boot-safe while preserving the current camera certificate model.
+
+During certificate-protected setup, the operator may choose an optional
+Trusted Browser Certificate step:
+
+1. RPI generates `/data/certs/gui-server.key` locally.
+2. RPI creates `/data/certs/gui-server.csr` with DNS/IP SANs.
+3. Service laptop downloads the CSR.
+4. The separate private CA generator signs the CSR with `sign-rpi-csr`.
+5. Service laptop uploads only `gui-server.crt` back to the RPI.
+6. RPI validates that the cert matches the local private key, chains to the
+   trusted local CA, has `serverAuth`, has SANs, is time-valid, and then reloads
+   nginx through the privileged helper.
+
+The CA generator must not receive or store `gui-server.key` in this flow.
+
 This workflow is acceptable for lab use if the operator verifies a displayed
 fingerprint over a physical/local channel. It is weaker than pre-provisioning
 because the first browser session cannot be fully authenticated by the local CA.

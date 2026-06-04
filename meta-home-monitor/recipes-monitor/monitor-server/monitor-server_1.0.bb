@@ -24,6 +24,8 @@ SRC_URI = " \
     file://status_led/home-monitor-ledctl \
     file://status_led/home-monitor-led-init.service \
     file://config/home-monitor-firewall.service \
+    file://config/home-monitor-gui-cert-bootstrap.service \
+    file://config/bootstrap-gui-cert.sh \
     file://config/monitor.service \
     file://config/monitor-privileged-helper.service \
     file://config/monitor-avahi-pin.service \
@@ -65,7 +67,7 @@ RDEPENDS:${PN} = " \
 
 inherit systemd useradd
 
-SYSTEMD_SERVICE:${PN} = "home-monitor-firewall.service home-monitor-led-init.service monitor-avahi-pin.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service monitor-hotspot.service"
+SYSTEMD_SERVICE:${PN} = "home-monitor-firewall.service home-monitor-gui-cert-bootstrap.service home-monitor-led-init.service monitor-avahi-pin.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service monitor-hotspot.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # Create monitor system user/group
@@ -105,12 +107,14 @@ do_install() {
     # Hotspot setup script
     install -d ${D}/opt/monitor/scripts
     install -m 0755 ${WORKDIR}/config/monitor-hotspot.sh ${D}/opt/monitor/scripts/monitor-hotspot.sh
+    install -m 0755 ${WORKDIR}/config/bootstrap-gui-cert.sh ${D}/opt/monitor/scripts/bootstrap-gui-cert.sh
     install -d ${D}${bindir}
     install -m 0755 ${WORKDIR}/status_led/home-monitor-ledctl ${D}${bindir}/home-monitor-ledctl
 
     # Systemd services
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/config/home-monitor-firewall.service ${D}${systemd_system_unitdir}/home-monitor-firewall.service
+    install -m 0644 ${WORKDIR}/config/home-monitor-gui-cert-bootstrap.service ${D}${systemd_system_unitdir}/home-monitor-gui-cert-bootstrap.service
     install -m 0644 ${WORKDIR}/config/monitor.service ${D}${systemd_system_unitdir}/monitor.service
     install -m 0644 ${WORKDIR}/config/monitor-privileged-helper.service ${D}${systemd_system_unitdir}/monitor-privileged-helper.service
     install -m 0644 ${WORKDIR}/config/monitor-avahi-pin.service ${D}${systemd_system_unitdir}/monitor-avahi-pin.service
@@ -153,6 +157,7 @@ FILES:${PN} = " \
     /opt/monitor \
     ${bindir}/home-monitor-ledctl \
     ${systemd_system_unitdir}/home-monitor-firewall.service \
+    ${systemd_system_unitdir}/home-monitor-gui-cert-bootstrap.service \
     ${systemd_system_unitdir}/home-monitor-led-init.service \
     ${systemd_system_unitdir}/monitor.service \
     ${systemd_system_unitdir}/monitor-privileged-helper.service \

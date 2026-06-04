@@ -544,15 +544,59 @@
             border-radius: 999px;
             box-shadow: var(--setup-shadow);
         }
+
+        .secure-setup-gate {
+            display: none;
+            width: 100%;
+            max-width: 460px;
+        }
+
+        .secure-setup-gate.visible {
+            display: block;
+        }
+
+        .mono-block {
+            width: 100%;
+            min-height: 140px;
+            padding: 12px;
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 16px;
+            background: #f8fafc;
+            color: var(--setup-text);
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: 0.78rem;
+            resize: vertical;
+        }
+
+        .file-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 16px;
+            background: #fff;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="secure-setup-gate" id="secure-setup-gate">
+        <div class="logo">
+            <div class="logo-icon">&#127909;</div>
+            <div class="logo-text">Home Monitor</div>
+        </div>
+        <div class="card">
+            <h1>Secure setup required</h1>
+            <p id="secure-setup-message">Use an admin certificate to unlock first-time setup.</p>
+            <button class="btn btn-primary" id="btn-secure-setup" onclick="openSecureSetup()">Admin Certificate Setup</button>
+        </div>
+    </div>
+
+    <div class="container" id="setup-wizard-body">
         <div class="progress" id="progress">
             <div class="progress-dot current" data-step="0"></div>
             <div class="progress-dot" data-step="1"></div>
             <div class="progress-dot" data-step="2"></div>
             <div class="progress-dot" data-step="3"></div>
+            <div class="progress-dot" data-step="4"></div>
         </div>
 
         <!-- Step 0: Welcome -->
@@ -572,7 +616,7 @@
         <!-- Step 1: Network -->
         <div class="step" id="step-1">
             <div class="card">
-                <div class="step-label">Step 1 of 3</div>
+                <div class="step-label">Step 1 of 4</div>
                 <h2>Choose Network</h2>
                 <p>Keep the server wired, or connect it to WiFi.</p>
 
@@ -618,7 +662,7 @@
         <!-- Step 2: Admin Password -->
         <div class="step" id="step-2">
             <div class="card">
-                <div class="step-label">Step 2 of 3</div>
+                <div class="step-label">Step 2 of 4</div>
                 <h2>Set Admin Password</h2>
                 <p>Change the default admin password to secure your dashboard.</p>
 
@@ -652,12 +696,53 @@
             </div>
         </div>
 
-        <!-- Step 3: Review & Apply -->
+        <!-- Step 3: Optional GUI HTTPS certificate -->
         <div class="step" id="step-3">
+            <div class="card">
+                <div class="step-label">Step 3 of 4</div>
+                <h2>Trusted Browser Certificate</h2>
+                <p>Optional. Create a CSR here, sign it with your local CA generator, then upload the signed GUI HTTPS certificate. This does not touch camera streaming certificates.</p>
+
+                <div class="review-item">
+                    <span class="review-label">RPI Hostname</span>
+                    <span class="review-value" id="gui-cert-hostname">Loading</span>
+                </div>
+                <div class="review-item">
+                    <span class="review-label">Current GUI Cert</span>
+                    <span class="review-value" id="gui-cert-state">Checking</span>
+                </div>
+
+                <div class="input-group">
+                    <label>Certificate SANs</label>
+                    <input type="text" id="gui-cert-sans" placeholder="rpi.local,192.168.4.1">
+                    <div class="input-hint">Comma-separated DNS names and IP addresses to include in the browser certificate.</div>
+                </div>
+
+                <button class="btn btn-secondary" id="btn-gui-csr" onclick="createGuiCertCsr()">Generate CSR</button>
+
+                <div class="input-group" id="gui-csr-panel" style="display:none;margin-top:16px;">
+                    <label>CSR to sign in local CA generator</label>
+                    <textarea class="mono-block" id="gui-cert-csr" readonly></textarea>
+                    <button class="btn btn-secondary" style="margin-top:8px;" onclick="downloadGuiCertCsr()">Download CSR</button>
+                </div>
+
+                <div class="input-group">
+                    <label>Upload signed GUI server certificate</label>
+                    <input class="file-input" type="file" id="gui-cert-upload" accept=".crt,.pem">
+                    <div class="input-hint">Upload the certificate signed from this CSR. Do not upload the CA private key.</div>
+                </div>
+
+                <button class="btn btn-primary" id="btn-gui-install" onclick="installGuiCertificate()">Install Certificate</button>
+                <button class="btn btn-secondary" onclick="goToStep(4)">Skip</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Review & Apply -->
+        <div class="step" id="step-4">
             <!-- Before applying -->
             <div id="review-panel">
                 <div class="card">
-                    <div class="step-label">Step 3 of 3</div>
+                    <div class="step-label">Step 4 of 4</div>
                     <h2>Review & Apply</h2>
 
                     <div class="review-item">
@@ -753,6 +838,78 @@
         var savedWifiPassword = '';
         var API_BASE = '/api/v1/setup';
         var SERVER_HOSTNAME = '{{ hostname }}';
+        var setupCertRequired = {{ 'true' if setup_cert_required else 'false' }};
+        var setupCertAuthorized = {{ 'true' if setup_cert_authorized else 'false' }};
+        var certificateAuthPort = '{{ certificate_auth_port|e }}';
+        var lastGuiCertCsr = '';
+        var lastGuiCertCsrFilename = 'gui-server.csr';
+
+        document.addEventListener('DOMContentLoaded', initialiseSecureSetup);
+
+        function initialiseSecureSetup() {
+            if (!setupCertRequired || setupCertAuthorized) {
+                showWizard();
+                if (setupCertRequired) {
+                    loadGuiCertStatus();
+                }
+                return;
+            }
+            hideWizard();
+            if (isCertificateSetupUrl()) {
+                establishSetupCertSession();
+            } else {
+                showSecureGate('Use an admin certificate to unlock first-time setup.');
+            }
+        }
+
+        function hideWizard() {
+            document.getElementById('setup-wizard-body').style.display = 'none';
+        }
+
+        function showWizard() {
+            document.getElementById('secure-setup-gate').classList.remove('visible');
+            document.getElementById('setup-wizard-body').style.display = 'block';
+        }
+
+        function showSecureGate(message) {
+            document.getElementById('secure-setup-message').textContent = message;
+            document.getElementById('secure-setup-gate').classList.add('visible');
+        }
+
+        function isCertificateSetupUrl() {
+            return window.location.protocol === 'https:' && String(window.location.port || '443') === String(certificateAuthPort);
+        }
+
+        function openSecureSetup() {
+            var target = new URL(window.location.href);
+            target.protocol = 'https:';
+            target.port = certificateAuthPort;
+            target.pathname = '/api/v1/setup/wizard';
+            target.searchParams.set('cert_login', '1');
+            window.location.href = target.toString();
+        }
+
+        function establishSetupCertSession() {
+            showSecureGate('Checking admin certificate...');
+            fetch('/api/v1/auth/cert/session', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: '{}'
+            })
+            .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+            .then(function(res) {
+                if (res.status === 200) {
+                    setupCertAuthorized = true;
+                    showWizard();
+                    loadGuiCertStatus();
+                } else {
+                    showSecureGate(res.data.error || 'A trusted admin certificate is required.');
+                }
+            })
+            .catch(function() {
+                showSecureGate('Certificate login failed. Use a browser that can present the admin certificate.');
+            });
+        }
 
         function goToStep(step) {
             document.querySelectorAll('.step').forEach(function(el) {
@@ -772,6 +929,9 @@
                 scanWifi();
             }
             if (step === 3) {
+                loadGuiCertStatus();
+            }
+            if (step === 4) {
                 document.getElementById('review-ssid').textContent = savedSSID;
                 updateReviewText();
                 document.getElementById('review-panel').style.display = 'block';
@@ -1070,6 +1230,96 @@
                 document.getElementById('review-panel').style.display = 'none';
                 document.getElementById('done-panel').style.display = 'block';
             });
+        }
+
+        function loadGuiCertStatus() {
+            fetch(API_BASE + '/gui-cert/status')
+                .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+                .then(function(res) {
+                    if (res.status !== 200) {
+                        return;
+                    }
+                    var data = res.data;
+                    document.getElementById('gui-cert-hostname').textContent = data.hostname || SERVER_HOSTNAME || 'Home Monitor';
+                    document.getElementById('gui-cert-state').textContent = data.fallback_active ? 'Fallback' : 'Installed';
+                    document.getElementById('gui-cert-sans').value = (data.suggested_sans || []).join(',');
+                })
+                .catch(function() {});
+        }
+
+        function createGuiCertCsr() {
+            var btn = document.getElementById('btn-gui-csr');
+            var sans = document.getElementById('gui-cert-sans').value
+                .split(',')
+                .map(function(item) { return item.trim(); })
+                .filter(Boolean);
+            setButtonLoading(btn, true, 'Generating...');
+            fetch(API_BASE + '/gui-cert/csr', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sans: sans})
+            })
+            .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+            .then(function(res) {
+                setButtonLoading(btn, false, 'Generate CSR');
+                if (res.status === 200) {
+                    lastGuiCertCsr = res.data.csr_pem || '';
+                    lastGuiCertCsrFilename = res.data.filename || 'gui-server.csr';
+                    document.getElementById('gui-cert-csr').value = lastGuiCertCsr;
+                    document.getElementById('gui-csr-panel').style.display = 'block';
+                    showToast('CSR generated', 'success');
+                } else {
+                    showToast(res.data.error || 'Failed to generate CSR', 'error');
+                }
+            })
+            .catch(function() {
+                setButtonLoading(btn, false, 'Generate CSR');
+                showToast('Failed to generate CSR', 'error');
+            });
+        }
+
+        function downloadGuiCertCsr() {
+            if (!lastGuiCertCsr) return;
+            var blob = new Blob([lastGuiCertCsr], {type: 'application/pkcs10'});
+            var link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = lastGuiCertCsrFilename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function installGuiCertificate() {
+            var input = document.getElementById('gui-cert-upload');
+            if (!input.files || !input.files[0]) {
+                showToast('Choose the signed certificate first', 'error');
+                return;
+            }
+            var btn = document.getElementById('btn-gui-install');
+            var reader = new FileReader();
+            reader.onload = function() {
+                setButtonLoading(btn, true, 'Installing...');
+                fetch(API_BASE + '/gui-cert/install', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({certificate_pem: String(reader.result || '')})
+                })
+                .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
+                .then(function(res) {
+                    setButtonLoading(btn, false, 'Install Certificate');
+                    if (res.status === 200) {
+                        showToast('GUI certificate installed', 'success');
+                        loadGuiCertStatus();
+                        setTimeout(function() { goToStep(4); }, 700);
+                    } else {
+                        showToast(res.data.error || 'Certificate install failed', 'error');
+                    }
+                })
+                .catch(function() {
+                    setButtonLoading(btn, false, 'Install Certificate');
+                    showToast('Certificate install failed', 'error');
+                });
+            };
+            reader.readAsText(input.files[0]);
         }
 
         function escapeHtml(str) {

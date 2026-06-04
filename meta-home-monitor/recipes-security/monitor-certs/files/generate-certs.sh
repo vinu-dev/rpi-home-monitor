@@ -15,6 +15,8 @@ CA_CERT="$CERTS_DIR/ca.crt"
 SERVER_KEY="$CERTS_DIR/server.key"
 SERVER_CERT="$CERTS_DIR/server.crt"
 SERVER_CSR="$CERTS_DIR/server.csr"
+GUI_SERVER_KEY="$CERTS_DIR/gui-server.key"
+GUI_SERVER_CERT="$CERTS_DIR/gui-server.crt"
 
 # Only run if CA doesn't exist yet (first boot)
 if [ -f "$CA_CERT" ]; then
@@ -54,6 +56,15 @@ openssl x509 -req -in "$SERVER_CSR" -CA "$CA_CERT" -CAkey "$CA_KEY" \
 # Cleanup temporary files
 rm -f "$SERVER_CSR" "$SAN_EXT"
 
+# Browser-facing nginx cert starts as a copy of the existing server cert.
+# Later setup can replace gui-server.crt/key with a local-CA-signed GUI cert
+# without touching MediaMTX/camera trust on server.crt/key.
+cp "$SERVER_CERT" "$GUI_SERVER_CERT"
+cp "$SERVER_KEY" "$GUI_SERVER_KEY"
+chmod 644 "$GUI_SERVER_CERT"
+chmod 600 "$GUI_SERVER_KEY"
+
 echo "Certificates generated successfully:"
 echo "  CA:     $CA_CERT"
 echo "  Server: $SERVER_CERT"
+echo "  GUI:    $GUI_SERVER_CERT"

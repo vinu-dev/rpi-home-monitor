@@ -6,6 +6,7 @@ Routes delegate to ProvisioningService — patches target the service module.
 """
 
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 SUBPROCESS_PATCH = "monitor.services.provisioning_service.subprocess"
@@ -106,6 +107,40 @@ class TestSetupStatus:
         response = client.get("/api/v1/setup/status")
         data = response.get_json()
         assert data["setup_complete"] is True
+
+
+class TestSetupCertificateGate:
+    def test_sensitive_setup_endpoint_requires_cert_session_when_enabled(
+        self, app, client
+    ):
+        app.config["SETUP_CERT_REQUIRED"] = True
+
+        response = client.post(
+            "/api/v1/setup/wifi/save",
+            json={"ssid": "test", "password": "secret123"},
+        )
+
+        assert response.status_code == 401
+        assert "certificate" in response.get_json()["error"].lower()
+
+    def test_setup_cert_session_can_create_gui_csr(self, app, client):
+        app.config["SETUP_CERT_REQUIRED"] = True
+        with client.session_transaction() as sess:
+            sess["user_id"] = "cert-test"
+            sess["username"] = "cert-test"
+            sess["role"] = "admin"
+            sess["auth_method"] = "client_certificate"
+            sess["cert_profile"] = "owner-admin"
+            sess["created_at"] = time.time()
+            sess["last_active"] = time.time()
+
+        response = client.post(
+            "/api/v1/setup/gui-cert/csr",
+            json={"sans": ["rpi-test.local", "192.168.4.1"]},
+        )
+
+        assert response.status_code == 200
+        assert "BEGIN CERTIFICATE REQUEST" in response.get_json()["csr_pem"]
 
 
 class TestWifiScan:

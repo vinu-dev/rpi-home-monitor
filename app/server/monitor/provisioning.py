@@ -25,8 +25,10 @@ from flask import (
     render_template,
     request,
     send_file,
+    session,
 )
 
+from monitor.auth import _is_session_valid
 from monitor.services.cert_service import ca_fingerprint_from_file
 
 log = logging.getLogger("monitor.provisioning")
@@ -78,6 +80,8 @@ def _require_setup_incomplete(f):
     def decorated(*args, **kwargs):
         if current_app.provisioning_service.is_setup_complete():
             return jsonify({"error": "Setup already complete"}), 403
+        if not _setup_cert_authorized():
+            return jsonify({"error": "Admin certificate setup session required"}), 401
         ip = request.remote_addr or ""
         if _setup_rate_limited(ip):
             return jsonify({"error": "Too many requests, please wait"}), 429
@@ -86,11 +90,81 @@ def _require_setup_incomplete(f):
     return decorated
 
 
+def _setup_cert_required() -> bool:
+    return bool(current_app.config.get("SETUP_CERT_REQUIRED"))
+
+
+def _setup_cert_authorized() -> bool:
+    if not _setup_cert_required():
+        return True
+    if not _is_session_valid():
+        return False
+    if session.get("auth_method") != "client_certificate":
+        return False
+    return session.get("role") == "admin" or session.get("cert_profile") in {
+        "owner-admin",
+        "setup-provisioner",
+    }
+
+
+def _gui_cert_status_payload() -> dict:
+    status = current_app.gui_certificate_service.status()
+    return {
+        "installed": status.installed,
+        "fallback_active": status.fallback_active,
+        "certificate_path": status.certificate_path,
+        "key_path": status.key_path,
+        "csr_path": status.csr_path,
+        "hostname": status.hostname,
+        "machine_id": status.machine_id,
+        "suggested_sans": status.suggested_sans,
+        "fingerprint": status.fingerprint,
+        "subject": status.subject,
+        "issuer": status.issuer,
+        "not_valid_after": status.not_valid_after,
+    }
+
+
 @provisioning_bp.route("/status", methods=["GET"])
 def setup_status():
     """Return current setup state."""
     result = current_app.provisioning_service.get_status()
     return jsonify(result), 200
+
+
+@provisioning_bp.route("/gui-cert/status", methods=["GET"])
+@_require_setup_incomplete
+def gui_cert_status():
+    """Return browser-facing GUI HTTPS certificate status."""
+    return jsonify(_gui_cert_status_payload()), 200
+
+
+@provisioning_bp.route("/gui-cert/csr", methods=["POST"])
+@_require_setup_incomplete
+def gui_cert_csr():
+    """Create/download a CSR for the RPI GUI HTTPS certificate."""
+    data = request.get_json(silent=True) or {}
+    try:
+        pem, filename = current_app.gui_certificate_service.create_csr(
+            common_name=str(data.get("common_name") or ""),
+            sans=data.get("sans") if isinstance(data.get("sans"), list) else None,
+            rotate_key=bool(data.get("rotate_key")),
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"csr_pem": pem, "filename": filename}), 200
+
+
+@provisioning_bp.route("/gui-cert/install", methods=["POST"])
+@_require_setup_incomplete
+def gui_cert_install():
+    """Install a local-CA-signed GUI HTTPS certificate for nginx."""
+    data = request.get_json(silent=True) or {}
+    cert_pem = str(data.get("certificate_pem") or "")
+    ok, error = current_app.gui_certificate_service.install_certificate(cert_pem)
+    if not ok:
+        return jsonify({"error": error}), 400
+    return jsonify({"message": "GUI HTTPS certificate installed"}), 200
 
 
 @provisioning_bp.route("/wifi/scan", methods=["GET"])
@@ -192,4 +266,10 @@ def setup_wizard():
     """Serve the setup wizard HTML page."""
     from monitor.services.provisioning_service import SERVER_HOSTNAME
 
-    return render_template("setup.html", hostname=f"{SERVER_HOSTNAME}.local")
+    return render_template(
+        "setup.html",
+        hostname=f"{SERVER_HOSTNAME}.local",
+        setup_cert_required=_setup_cert_required(),
+        setup_cert_authorized=_setup_cert_authorized(),
+        certificate_auth_port=str(current_app.config.get("CERT_AUTH_GUI_PORT", "9443")),
+    )

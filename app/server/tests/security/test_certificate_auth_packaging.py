@@ -37,6 +37,9 @@ def test_server_image_packages_staged_public_ca_and_nginx_snippet():
     assert "file://config/nginx-client-cert.d/provisioning-client-ca.conf" in recipe
     assert "${sysconfdir}/home-monitor/trust/home-monitor-provisioning-ca.crt" in recipe
     assert "${sysconfdir}/nginx/client-cert.d/provisioning-client-ca.conf" in recipe
+    assert "file://config/bootstrap-gui-cert.sh" in recipe
+    assert "file://config/home-monitor-gui-cert-bootstrap.service" in recipe
+    assert "home-monitor-gui-cert-bootstrap.service" in recipe
 
 
 def test_nginx_uses_baked_client_ca_trust_anchor():
@@ -54,6 +57,16 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
     assert "ssl_verify_client on;" in snippet
 
 
+def test_nginx_uses_separate_gui_certificate_without_touching_mediamtx():
+    nginx = _read("app/server/config/nginx-monitor.conf")
+    mediamtx = _read("meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.yml")
+
+    assert "ssl_certificate     /data/certs/gui-server.crt;" in nginx
+    assert "ssl_certificate_key /data/certs/gui-server.key;" in nginx
+    assert "serverCert: /data/certs/server.crt" in mediamtx
+    assert "serverKey: /data/certs/server.key" in mediamtx
+
+
 def test_nginx_keeps_normal_gui_on_main_https_listener():
     nginx = _read("app/server/config/nginx-monitor.conf")
 
@@ -68,6 +81,7 @@ def test_certificate_listener_only_handles_admin_certificate_login_exchange():
     cert_listener = nginx.split("listen 9443 ssl;", 1)[1]
     assert "location = /api/v1/auth/cert/session" in cert_listener
     assert "location = /login" in cert_listener
+    assert "location ^~ /api/v1/setup/" in cert_listener
     assert "location / {\n        return 302 https://$host$request_uri;" in cert_listener
     assert "location ~ ^/live/" not in cert_listener
     assert "location ~ ^/clips/" not in cert_listener
@@ -127,6 +141,7 @@ def test_packaged_monitor_defaults_to_hybrid_auth():
     assert "Environment=MONITOR_AUTH_MODE=mixed" in unit
     assert "Environment=MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN=1" in unit
     assert "Environment=MONITOR_CERT_AUTH_ENFORCE_TIME=1" in unit
+    assert "Environment=MONITOR_SETUP_CERT_REQUIRED=1" in unit
 
 
 def test_rpi_repo_does_not_contain_ca_generator_project():

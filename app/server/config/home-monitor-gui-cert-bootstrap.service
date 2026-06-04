@@ -1,0 +1,11 @@
+[Unit]
+Description=Home Monitor GUI TLS certificate bootstrap
+After=local-fs.target monitor-certs.service
+Before=nginx.service monitor.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/scripts/bootstrap-gui-cert.sh
+
+[Install]
+WantedBy=multi-user.target

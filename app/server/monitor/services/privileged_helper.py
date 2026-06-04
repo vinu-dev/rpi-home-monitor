@@ -473,6 +473,15 @@ def _op_led_set(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(cmd, timeout=10, nonzero_ok=True)
 
 
+def _op_nginx_reload(payload: dict[str, Any]) -> dict[str, Any]:
+    test = _run_command(["nginx", "-t"], timeout=10)
+    reload_result = _run_command(["nginx", "-s", "reload"], timeout=10)
+    return {
+        "test": test.get("stdout", "") or test.get("stderr", ""),
+        "reload": reload_result.get("stdout", "") or reload_result.get("stderr", ""),
+    }
+
+
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(["systemctl", "reboot"], timeout=15)
 
@@ -500,6 +509,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "ota.install": _op_ota_install,
     "ota.repair_storage": _op_ota_repair_storage,
     "led.set": _op_led_set,
+    "nginx.reload": _op_nginx_reload,
     "system.reboot": _op_system_reboot,
 }
 

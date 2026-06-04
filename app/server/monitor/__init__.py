@@ -32,6 +32,7 @@ from monitor.services.data_protection import DataProtectionService
 from monitor.services.diagnostics_bundle import DiagnosticsBundleService
 from monitor.services.discovery import DiscoveryService
 from monitor.services.factory_reset_service import FactoryResetService
+from monitor.services.gui_certificate_service import GuiCertificateService
 from monitor.services.hmac_replay_guard import HmacReplayGuard
 from monitor.services.login_rate_limiter import LoginRateLimiter
 from monitor.services.loop_recorder import LoopRecorder
@@ -187,6 +188,9 @@ def create_app(config=None):
             "/etc/home-monitor/trust/home-monitor-provisioning-ca.crt",
         ),
         CERT_AUTH_GUI_PORT=os.environ.get("MONITOR_CERT_AUTH_GUI_PORT", "9443"),
+        SETUP_CERT_REQUIRED=_config_flag(
+            os.environ.get("MONITOR_SETUP_CERT_REQUIRED"),
+        ),
         CLIP_DURATION_SECONDS=180,
         STORAGE_THRESHOLD_PERCENT=90,
         SESSION_TIMEOUT_MINUTES=60,
@@ -450,6 +454,11 @@ def _init_services(app):
             app.config.get("CERT_AUTH_ENFORCE_TIME"),
             default=True,
         ),
+        trust_ca_path=app.config.get("CERT_AUTH_TRUST_CA_PATH"),
+    )
+    app.gui_certificate_service = GuiCertificateService(
+        certs_dir=app.config["CERTS_DIR"],
+        audit=app.audit,
         trust_ca_path=app.config.get("CERT_AUTH_TRUST_CA_PATH"),
     )
 

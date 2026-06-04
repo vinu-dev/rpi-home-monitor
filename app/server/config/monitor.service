@@ -39,6 +39,7 @@ Environment=LOG_LEVEL=INFO
 Environment=MONITOR_AUTH_MODE=mixed
 Environment=MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN=1
 Environment=MONITOR_CERT_AUTH_ENFORCE_TIME=1
+Environment=MONITOR_SETUP_CERT_REQUIRED=1
 
 # Security: nftables firewall (default DROP, private nets only) + HTTPS
 # Note: systemd ProtectSystem/ProtectHome/ProtectKernel* directives create

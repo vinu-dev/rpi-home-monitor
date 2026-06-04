@@ -172,6 +172,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/server/config/nginx-monitor.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/nftables-server.conf" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/home-monitor-firewall.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/home-monitor-gui-cert-bootstrap.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/app/server/config/bootstrap-gui-cert.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-privileged-helper.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/server/config/monitor-avahi-pin.service" "$host" "$SERVER_STAGE"
@@ -214,6 +216,15 @@ deploy_server() {
         python3 -m compileall -q /opt/monitor/monitor
         # Deploy updated nginx config and reload (non-fatal if nginx is not running)
         if [ -f '$SERVER_STAGE/nginx-monitor.conf' ]; then
+            mkdir -p /data/certs
+            if [ ! -f /data/certs/gui-server.crt ] && [ -f /data/certs/server.crt ]; then
+                cp /data/certs/server.crt /data/certs/gui-server.crt
+                chmod 0644 /data/certs/gui-server.crt
+            fi
+            if [ ! -f /data/certs/gui-server.key ] && [ -f /data/certs/server.key ]; then
+                cp /data/certs/server.key /data/certs/gui-server.key
+                chmod 0600 /data/certs/gui-server.key
+            fi
             cp '$SERVER_STAGE/nginx-monitor.conf' /etc/nginx/sites-enabled/monitor.conf
             nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
         fi
@@ -224,6 +235,8 @@ deploy_server() {
         mkdir -p /opt/monitor/scripts
         cp '$SERVER_STAGE/monitor-hotspot.sh' /opt/monitor/scripts/monitor-hotspot.sh
         chmod 0755 /opt/monitor/scripts/monitor-hotspot.sh
+        cp '$SERVER_STAGE/bootstrap-gui-cert.sh' /opt/monitor/scripts/bootstrap-gui-cert.sh
+        chmod 0755 /opt/monitor/scripts/bootstrap-gui-cert.sh
         cp '$SERVER_STAGE/swupdate-check.sh' /opt/monitor/scripts/swupdate-check.sh
         cp '$SERVER_STAGE/first-boot-setup.sh' /opt/monitor/scripts/first-boot-setup.sh
         cp '$SERVER_STAGE/luks-first-boot.sh' /opt/monitor/scripts/luks-first-boot.sh
@@ -237,6 +250,7 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor.service' /etc/systemd/system/monitor.service
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         cp '$SERVER_STAGE/home-monitor-firewall.service' /etc/systemd/system/home-monitor-firewall.service
+        cp '$SERVER_STAGE/home-monitor-gui-cert-bootstrap.service' /etc/systemd/system/home-monitor-gui-cert-bootstrap.service
         cp '$SERVER_STAGE/monitor-avahi-pin.service' /etc/systemd/system/monitor-avahi-pin.service
         cp '$SERVER_STAGE/monitor-avahi-pin.timer' /etc/systemd/system/monitor-avahi-pin.timer
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
@@ -277,8 +291,9 @@ deploy_server() {
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable home-monitor-firewall.service home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-firewall.service home-monitor-gui-cert-bootstrap.service home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
         systemctl restart home-monitor-firewall.service
+        systemctl restart home-monitor-gui-cert-bootstrap.service
         systemctl start monitor-avahi-pin.timer >/dev/null 2>&1 || true
         systemctl restart monitor-avahi-pin.service >/dev/null 2>&1 || true
     "
