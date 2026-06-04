@@ -72,6 +72,17 @@ def test_common_camera_bundle_picker_cannot_be_left_disabled():
     assert "input.disabled = false;" in text
 
 
+def test_common_camera_bundle_upload_visible_without_paired_cameras():
+    """Admins can stage a reusable camera bundle before any camera is paired."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    start = text.index('class="card ota-common-bundle"')
+    common_bundle_opening = text[start : text.index(">", start) + 1]
+
+    assert "x-show" not in common_bundle_opening
+    assert "uploadCameraLibraryBundle" in text
+
+
 def test_ota_install_buttons_lock_across_server_and_camera_updates():
     """Install starts are mutually exclusive; staging uploads remain separate."""
     text = SETTINGS_HTML.read_text(encoding="utf-8")
