@@ -4,6 +4,7 @@
 from pathlib import Path
 
 APP_JS = Path(__file__).resolve().parents[2] / "monitor" / "static" / "js" / "app.js"
+BASE_HTML = Path(__file__).resolve().parents[2] / "monitor" / "templates" / "base.html"
 SETTINGS_HTML = (
     Path(__file__).resolve().parents[2] / "monitor" / "templates" / "settings.html"
 )
@@ -17,6 +18,26 @@ def test_api_error_reader_hides_html_startup_bodies():
     assert "looksLikeHtml" in text
     assert "Server is restarting; try again in a moment." in text
     assert "Server returned an HTML page instead of API data." in text
+
+
+def test_api_retries_transient_get_failures_only():
+    """Startup reload noise should not break read-only page boot calls."""
+    text = APP_JS.read_text(encoding="utf-8")
+
+    assert "var GET_RETRIES = 2;" in text
+    assert "method === 'GET' ? GET_RETRIES : 0" in text
+    assert "function _requestAttempt(method, url, body, retriesRemaining)" in text
+    assert "function _isRetryableResponse(method, status)" in text
+    assert "status === 502 || status === 503 || status === 504" in text
+    assert "method === 'GET' &&" in text
+    assert "method !== 'GET' && _csrfToken" in text
+
+
+def test_app_js_asset_has_cache_buster():
+    """Browsers must fetch new shared JS after OTA or dev deploy."""
+    text = BASE_HTML.read_text(encoding="utf-8")
+
+    assert "filename='js/app.js', v=" in text
 
 
 def test_server_ota_install_treats_restart_fallback_as_rebooting():

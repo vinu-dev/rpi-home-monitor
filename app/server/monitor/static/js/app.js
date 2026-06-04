@@ -11,6 +11,8 @@
 
     var _csrfToken = '';
     var _user = null;
+    var GET_RETRIES = 2;
+    var RETRY_DELAY_MS = 1200;
 
     /* ============================================================
        API — fetch wrapper with credentials and CSRF
@@ -34,6 +36,11 @@
     };
 
     function _request(method, url, body) {
+        var retries = method === 'GET' ? GET_RETRIES : 0;
+        return _requestAttempt(method, url, body, retries);
+    }
+
+    function _requestAttempt(method, url, body, retriesRemaining) {
         var opts = {
             method: method,
             credentials: 'same-origin',
@@ -51,6 +58,11 @@
         }
 
         return fetch(url, opts).catch(function() {
+            if (retriesRemaining > 0) {
+                return _delay(RETRY_DELAY_MS).then(function() {
+                    return _requestAttempt(method, url, body, retriesRemaining - 1);
+                });
+            }
             return Promise.reject(new Error('Server is unreachable; it may be restarting.'));
         }).then(function(resp) {
             if (resp.status === 401) {
@@ -64,12 +76,27 @@
 
             return _readResponseBody(resp).then(function(data) {
                 if (!resp.ok) {
+                    if (_isRetryableResponse(method, resp.status) && retriesRemaining > 0) {
+                        return _delay(RETRY_DELAY_MS).then(function() {
+                            return _requestAttempt(method, url, body, retriesRemaining - 1);
+                        });
+                    }
                     var msg = data.error || data.message || 'Request failed';
                     return Promise.reject(new Error(msg));
                 }
                 return data;
             });
         });
+    }
+
+    function _delay(ms) {
+        return new Promise(function(resolve) {
+            setTimeout(resolve, ms);
+        });
+    }
+
+    function _isRetryableResponse(method, status) {
+        return method === 'GET' && (status === 502 || status === 503 || status === 504);
     }
 
     function _readResponseBody(resp) {
