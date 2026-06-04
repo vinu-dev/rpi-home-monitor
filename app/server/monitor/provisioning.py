@@ -115,6 +115,10 @@ def _gui_cert_status_payload() -> dict:
         "certificate_path": status.certificate_path,
         "key_path": status.key_path,
         "csr_path": status.csr_path,
+        "browser_chain_path": status.browser_chain_path,
+        "server_ca_csr_path": status.server_ca_csr_path,
+        "server_ca_local_cert_path": status.server_ca_local_cert_path,
+        "browser_chain_installed": status.browser_chain_installed,
         "hostname": status.hostname,
         "machine_id": status.machine_id,
         "suggested_sans": status.suggested_sans,
@@ -164,6 +168,31 @@ def gui_cert_csr():
     except (OSError, ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"csr_pem": pem, "filename": filename}), 200
+
+
+@provisioning_bp.route("/gui-cert/server-ca-csr", methods=["POST"])
+@_require_setup_incomplete
+def gui_cert_server_ca_csr():
+    """Create/download a CSR for the RPI server CA cross-sign certificate."""
+    try:
+        pem, filename = current_app.gui_certificate_service.create_server_ca_csr()
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"csr_pem": pem, "filename": filename}), 200
+
+
+@provisioning_bp.route("/gui-cert/server-ca-install", methods=["POST"])
+@_require_setup_incomplete
+def gui_cert_server_ca_install():
+    """Install a local-CA-signed RPI server CA certificate for browser trust."""
+    data = request.get_json(silent=True) or {}
+    cert_pem = str(data.get("certificate_pem") or "")
+    ok, error = current_app.gui_certificate_service.install_server_ca_certificate(
+        cert_pem
+    )
+    if not ok:
+        return jsonify({"error": error}), 400
+    return jsonify({"message": "Browser trust chain installed"}), 200
 
 
 @provisioning_bp.route("/gui-cert/install", methods=["POST"])

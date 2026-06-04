@@ -235,6 +235,15 @@ deploy_server() {
                 cp /data/certs/server.key /data/certs/gui-server.key
                 chmod 0600 /data/certs/gui-server.key
             fi
+            if [ -f /data/certs/server.crt ]; then
+                if [ -f /data/certs/server-ca-local.crt ]; then
+                    cat /data/certs/server.crt /data/certs/server-ca-local.crt > /data/certs/server-browser-chain.crt.tmp
+                    mv /data/certs/server-browser-chain.crt.tmp /data/certs/server-browser-chain.crt
+                elif [ ! -f /data/certs/server-browser-chain.crt ]; then
+                    cp /data/certs/server.crt /data/certs/server-browser-chain.crt
+                fi
+                chmod 0644 /data/certs/server-browser-chain.crt
+            fi
             cp '$SERVER_STAGE/nginx-monitor.conf' /etc/nginx/sites-enabled/monitor.conf
             nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
         fi

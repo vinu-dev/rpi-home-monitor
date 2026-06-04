@@ -705,18 +705,18 @@
             <div class="card">
                 <div class="step-label">Step 3 of 4</div>
                 <h2>Trusted Browser Certificate</h2>
-                <p>Optional. Create a CSR here, sign it with your local CA generator, then upload the signed GUI HTTPS certificate. This does not touch camera streaming certificates.</p>
+                <p>Optional. Create a CSR here, sign this RPI server CA with your local CA generator, then upload the signed certificate. This keeps camera pairing on the existing server cert while letting browsers trust the same URL.</p>
 
                 <div class="review-item">
                     <span class="review-label">RPI Hostname</span>
                     <span class="review-value" id="gui-cert-hostname">Loading</span>
                 </div>
                 <div class="review-item">
-                    <span class="review-label">Current GUI Cert</span>
+                    <span class="review-label">Browser Trust Chain</span>
                     <span class="review-value" id="gui-cert-state">Checking</span>
                 </div>
 
-                <div class="input-group">
+                <div class="input-group" style="display:none;">
                     <label>Certificate SANs</label>
                     <input type="text" id="gui-cert-sans" placeholder="rpi.local,192.168.4.1">
                     <div class="input-hint">Comma-separated DNS names and IP addresses to include in the browser certificate.</div>
@@ -725,15 +725,15 @@
                 <button class="btn btn-secondary" id="btn-gui-csr" onclick="createGuiCertCsr()">Generate CSR</button>
 
                 <div class="input-group" id="gui-csr-panel" style="display:none;margin-top:16px;">
-                    <label>CSR to sign in local CA generator</label>
+                    <label>RPI server CA CSR to sign in local CA generator</label>
                     <textarea class="mono-block" id="gui-cert-csr" readonly></textarea>
                     <button class="btn btn-secondary" style="margin-top:8px;" onclick="downloadGuiCertCsr()">Download CSR</button>
                 </div>
 
                 <div class="input-group">
-                    <label>Upload signed GUI server certificate</label>
+                    <label>Upload signed RPI server CA certificate</label>
                     <input class="file-input" type="file" id="gui-cert-upload" accept=".crt,.pem">
-                    <div class="input-hint">Upload the certificate signed from this CSR. Do not upload the CA private key.</div>
+                    <div class="input-hint">Upload the CA certificate signed from this CSR. Do not upload any private key.</div>
                 </div>
 
                 <button class="btn btn-primary" id="btn-gui-install" onclick="installGuiCertificate()">Install Certificate</button>
@@ -841,7 +841,7 @@
         var setupCertAuthorized = {{ 'true' if setup_cert_authorized else 'false' }};
         var certificateAuthPort = '{{ certificate_auth_port|e }}';
         var lastGuiCertCsr = '';
-        var lastGuiCertCsrFilename = 'gui-server.csr';
+        var lastGuiCertCsrFilename = 'server-ca.csr';
 
         document.addEventListener('DOMContentLoaded', initialiseSecureSetup);
 
@@ -1243,7 +1243,7 @@
                     }
                     var data = res.data;
                     document.getElementById('gui-cert-hostname').textContent = data.hostname || SERVER_HOSTNAME || 'Home Monitor';
-                    document.getElementById('gui-cert-state').textContent = data.fallback_active ? 'Fallback' : 'Installed';
+                    document.getElementById('gui-cert-state').textContent = data.browser_chain_installed ? 'Installed' : 'Camera cert only';
                     document.getElementById('gui-cert-sans').value = (data.suggested_sans || []).join(',');
                 })
                 .catch(function() {});
@@ -1251,25 +1251,21 @@
 
         function createGuiCertCsr() {
             var btn = document.getElementById('btn-gui-csr');
-            var sans = document.getElementById('gui-cert-sans').value
-                .split(',')
-                .map(function(item) { return item.trim(); })
-                .filter(Boolean);
             setButtonLoading(btn, true, 'Generating...');
-            fetch(API_BASE + '/gui-cert/csr', {
+            fetch(API_BASE + '/gui-cert/server-ca-csr', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sans: sans})
+                body: JSON.stringify({})
             })
             .then(function(res) { return res.json().then(function(d) { return {status: res.status, data: d}; }); })
             .then(function(res) {
                 setButtonLoading(btn, false, 'Generate CSR');
                 if (res.status === 200) {
                     lastGuiCertCsr = res.data.csr_pem || '';
-                    lastGuiCertCsrFilename = res.data.filename || 'gui-server.csr';
+                    lastGuiCertCsrFilename = res.data.filename || 'server-ca.csr';
                     document.getElementById('gui-cert-csr').value = lastGuiCertCsr;
                     document.getElementById('gui-csr-panel').style.display = 'block';
-                    showToast('CSR generated', 'success');
+                    showToast('RPI server CA CSR generated', 'success');
                 } else {
                     showToast(res.data.error || 'Failed to generate CSR', 'error');
                 }
@@ -1300,7 +1296,7 @@
             var reader = new FileReader();
             reader.onload = function() {
                 setButtonLoading(btn, true, 'Installing...');
-                fetch(API_BASE + '/gui-cert/install', {
+                fetch(API_BASE + '/gui-cert/server-ca-install', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({certificate_pem: String(reader.result || '')})
@@ -1309,7 +1305,7 @@
                 .then(function(res) {
                     setButtonLoading(btn, false, 'Install Certificate');
                     if (res.status === 200) {
-                        showToast('GUI certificate installed', 'success');
+                        showToast('Browser trust chain installed', 'success');
                         loadGuiCertStatus();
                         setTimeout(function() { goToStep(4); }, 700);
                     } else {

@@ -526,6 +526,34 @@ def _op_camera_sign_client_cert(payload: dict[str, Any]) -> dict[str, Any]:
     return {"cert_path": client_cert, "serial": serial}
 
 
+def _op_server_ca_create_csr(payload: dict[str, Any]) -> dict[str, Any]:
+    ca_cert = posixpath.join(CERTS_DIR, "ca.crt")
+    ca_key = posixpath.join(CERTS_DIR, "ca.key")
+    ca_csr = posixpath.join(CERTS_DIR, "server-ca.csr")
+    if not os.path.isfile(ca_cert):
+        raise HelperRequestError("RPI server CA certificate not found")
+    if not os.path.isfile(ca_key):
+        raise HelperRequestError("RPI server CA private key not found")
+
+    _run_command(
+        [
+            "openssl",
+            "x509",
+            "-x509toreq",
+            "-in",
+            ca_cert,
+            "-signkey",
+            ca_key,
+            "-out",
+            ca_csr,
+        ],
+        timeout=30,
+    )
+    _make_monitor_readable(ca_csr, mode=0o644)
+    with open(ca_csr, encoding="utf-8") as handle:
+        return {"csr_pem": handle.read(), "csr_path": ca_csr}
+
+
 def _op_nginx_reload(payload: dict[str, Any]) -> dict[str, Any]:
     test = _run_command(["nginx", "-t"], timeout=10)
     reload_result = _run_command(["nginx", "-s", "reload"], timeout=10)
@@ -581,6 +609,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "ota.repair_storage": _op_ota_repair_storage,
     "led.set": _op_led_set,
     "camera.sign_client_cert": _op_camera_sign_client_cert,
+    "server_ca.create_csr": _op_server_ca_create_csr,
     "nginx.reload": _op_nginx_reload,
     "system.reboot": _op_system_reboot,
 }

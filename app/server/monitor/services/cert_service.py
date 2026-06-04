@@ -14,6 +14,7 @@ import hashlib
 import logging
 import os
 import secrets
+import socket
 import ssl
 import subprocess
 import threading
@@ -230,6 +231,10 @@ class CertService:
             if result.returncode != 0:
                 return False, f"CSR generation failed: {result.stderr.strip()}"
 
+            san_path = os.path.join(self._certs_dir, "server-san.cnf")
+            with open(san_path, "w", encoding="utf-8") as handle:
+                handle.write(_server_san_extfile())
+
             # Sign with CA (5-year validity = 1825 days)
             result = subprocess.run(
                 [
@@ -249,17 +254,27 @@ class CertService:
                     "-days",
                     "1825",
                     "-sha256",
+                    "-extfile",
+                    san_path,
                 ],
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
             if result.returncode != 0:
+                try:
+                    os.remove(san_path)
+                except OSError:
+                    pass
                 return False, f"Signing failed: {result.stderr.strip()}"
 
             # Clean up CSR
             try:
                 os.remove(csr_path)
+            except OSError:
+                pass
+            try:
+                os.remove(san_path)
             except OSError:
                 pass
 
@@ -367,6 +382,33 @@ class CertService:
 def _new_certificate_serial() -> str:
     """Return an OpenSSL-compatible positive random certificate serial."""
     return f"0x{secrets.randbits(159) or 1:X}"
+
+
+def _server_san_extfile() -> str:
+    names = {
+        "home-monitor",
+        "home-monitor.local",
+        "rpi-divinu",
+        "rpi-divinu.local",
+        "localhost",
+    }
+    hostname = (socket.gethostname() or "").split(".", 1)[0]
+    if hostname:
+        names.add(hostname)
+        names.add(f"{hostname}.local")
+
+    ips = {"127.0.0.1", "192.168.4.1"}
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith(("127.", "169.254.")):
+                ips.add(ip)
+    except OSError:
+        pass
+
+    san_parts = [f"DNS:{name}" for name in sorted(names)]
+    san_parts.extend(f"IP:{ip}" for ip in sorted(ips))
+    return f"subjectAltName={','.join(san_parts)}\nextendedKeyUsage=serverAuth\n"
 
 
 def _apply_server_key_permissions(path: str) -> None:

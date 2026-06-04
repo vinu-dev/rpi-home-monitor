@@ -35,6 +35,10 @@ class GuiCertificateStatus:
     certificate_path: str
     key_path: str
     csr_path: str
+    browser_chain_path: str
+    server_ca_csr_path: str
+    server_ca_local_cert_path: str
+    browser_chain_installed: bool
     hostname: str
     machine_id: str
     suggested_sans: list[str]
@@ -71,6 +75,26 @@ class GuiCertificateService:
     @property
     def gui_csr_path(self) -> Path:
         return self._certs_dir / "gui-server.csr"
+
+    @property
+    def server_ca_csr_path(self) -> Path:
+        return self._certs_dir / "server-ca.csr"
+
+    @property
+    def server_ca_local_cert_path(self) -> Path:
+        return self._certs_dir / "server-ca-local.crt"
+
+    @property
+    def server_browser_chain_path(self) -> Path:
+        return self._certs_dir / "server-browser-chain.crt"
+
+    @property
+    def server_ca_cert_path(self) -> Path:
+        return self._certs_dir / "ca.crt"
+
+    @property
+    def server_ca_key_path(self) -> Path:
+        return self._certs_dir / "ca.key"
 
     @property
     def camera_server_cert_path(self) -> Path:
@@ -112,6 +136,10 @@ class GuiCertificateService:
             certificate_path=str(self.gui_cert_path),
             key_path=str(self.gui_key_path),
             csr_path=str(self.gui_csr_path),
+            browser_chain_path=str(self.server_browser_chain_path),
+            server_ca_csr_path=str(self.server_ca_csr_path),
+            server_ca_local_cert_path=str(self.server_ca_local_cert_path),
+            browser_chain_installed=self.server_ca_local_cert_path.exists(),
             hostname=_hostname(),
             machine_id=_machine_id(),
             suggested_sans=self.suggested_sans(),
@@ -224,18 +252,68 @@ class GuiCertificateService:
                 return False, f"certificate installed but nginx reload failed: {error}"
         return True, ""
 
-    def reload_nginx(self) -> tuple[bool, str]:
-        helper_disabled = os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") == "1"
-        helper_required = (
-            os.name == "posix"
-            and not helper_disabled
-            and (
-                privileged.should_use_helper()
-                or _is_unprivileged_process()
-                or privileged.is_helper_available()
-            )
+    def create_server_ca_csr(self) -> tuple[str, str]:
+        """Create a CSR for the RPI server CA public key."""
+        if not self.server_ca_cert_path.exists():
+            raise FileNotFoundError("RPI server CA certificate is missing")
+        if not self.server_ca_key_path.exists():
+            raise FileNotFoundError("RPI server CA private key is missing")
+
+        if _helper_required():
+            data = privileged.request("server_ca.create_csr", timeout=30)
+            pem = str(data.get("csr_pem") or "")
+            if not pem:
+                raise RuntimeError("privileged helper did not return a CSR")
+            return pem, self.server_ca_csr_path.name
+
+        self._run_server_ca_csr_command()
+        return (
+            self.server_ca_csr_path.read_text(encoding="utf-8"),
+            self.server_ca_csr_path.name,
         )
-        if helper_required:
+
+    def install_server_ca_certificate(self, certificate_pem: str) -> tuple[bool, str]:
+        pem = str(certificate_pem or "").strip().encode("utf-8")
+        if not pem:
+            return False, "certificate PEM is required"
+        try:
+            cert = _load_first_cert(pem)
+            if cert is None:
+                return False, "certificate PEM could not be parsed"
+            server_ca = x509.load_pem_x509_certificate(
+                self.server_ca_cert_path.read_bytes()
+            )
+        except FileNotFoundError:
+            return False, "RPI server CA certificate is missing"
+        except (OSError, ValueError, TypeError) as exc:
+            return False, f"certificate material could not be read: {exc}"
+
+        error = self._validate_server_ca_cross_sign(cert, server_ca)
+        if error:
+            return False, error
+
+        _atomic_write(self.server_ca_local_cert_path, pem + b"\n", mode=0o644)
+        try:
+            self.server_ca_csr_path.unlink()
+        except FileNotFoundError:
+            pass
+        self._write_browser_chain()
+        self._log(
+            "GUI_BROWSER_CHAIN_INSTALLED",
+            detail=f"server_ca_fingerprint={_fingerprint(cert)}",
+        )
+
+        if self._nginx_reload:
+            ok, error = self.reload_nginx()
+            if not ok:
+                return (
+                    False,
+                    f"browser chain installed but nginx reload failed: {error}",
+                )
+        return True, ""
+
+    def reload_nginx(self) -> tuple[bool, str]:
+        if _helper_required():
             try:
                 privileged.request("nginx.reload", timeout=20)
                 return True, ""
@@ -330,6 +408,77 @@ class GuiCertificateService:
         except OSError:
             return False
 
+    def _run_server_ca_csr_command(self) -> None:
+        result = subprocess.run(
+            [
+                "openssl",
+                "x509",
+                "-x509toreq",
+                "-in",
+                str(self.server_ca_cert_path),
+                "-signkey",
+                str(self.server_ca_key_path),
+                "-out",
+                str(self.server_ca_csr_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                result.stderr.strip() or "failed to create RPI server CA CSR"
+            )
+        self.server_ca_csr_path.chmod(0o644)
+
+    def _validate_server_ca_cross_sign(self, cert, server_ca) -> str:
+        if cert.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ) != server_ca.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ):
+            return "certificate does not match this RPI server CA public key"
+
+        try:
+            basic = cert.extensions.get_extension_for_oid(
+                ExtensionOID.BASIC_CONSTRAINTS
+            ).value
+        except x509.ExtensionNotFound:
+            return "certificate is missing CA constraints"
+        if not basic.ca:
+            return "certificate is not a CA certificate"
+
+        try:
+            key_usage = cert.extensions.get_extension_for_oid(
+                ExtensionOID.KEY_USAGE
+            ).value
+        except x509.ExtensionNotFound:
+            key_usage = None
+        if key_usage is not None and not key_usage.key_cert_sign:
+            return "certificate is not valid for signing certificate chains"
+
+        now = datetime.now(UTC)
+        if now < cert.not_valid_before_utc:
+            return "certificate is not valid yet"
+        if now > cert.not_valid_after_utc:
+            return "certificate has expired"
+
+        ca_cert, error = self._trusted_ca()
+        if error:
+            return error
+        return _verify_issued_by_trusted_ca(cert, ca_cert)
+
+    def _write_browser_chain(self) -> None:
+        if not self.camera_server_cert_path.exists():
+            raise FileNotFoundError("RPI server certificate is missing")
+        chain = self.camera_server_cert_path.read_bytes().rstrip() + b"\n"
+        if self.server_ca_local_cert_path.exists():
+            chain += self.server_ca_local_cert_path.read_bytes().strip() + b"\n"
+        _atomic_write(self.server_browser_chain_path, chain, mode=0o644)
+
     def _log(self, event: str, *, detail: str = "") -> None:
         if self._audit is None:
             return
@@ -358,6 +507,19 @@ def _atomic_write(path: Path, data: bytes, *, mode: int) -> None:
 
 def _is_unprivileged_process() -> bool:
     return hasattr(os, "geteuid") and os.geteuid() != 0
+
+
+def _helper_required() -> bool:
+    helper_disabled = os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") == "1"
+    return (
+        os.name == "posix"
+        and not helper_disabled
+        and (
+            privileged.should_use_helper()
+            or _is_unprivileged_process()
+            or privileged.is_helper_available()
+        )
+    )
 
 
 def _load_first_cert(pem: bytes) -> x509.Certificate | None:

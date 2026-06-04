@@ -11,6 +11,7 @@ from monitor.services.cert_service import (
     EXPIRY_WARNING_DAYS,
     CertService,
     _apply_server_key_permissions,
+    _server_san_extfile,
 )
 
 
@@ -163,6 +164,16 @@ class TestRenewServerCert:
         )
         assert "-set_serial" in sign_cmd
         assert "-CAcreateserial" not in sign_cmd
+        assert "-extfile" in sign_cmd
+
+    def test_renewal_san_profile_includes_server_browser_names(self):
+        extfile = _server_san_extfile()
+
+        assert "DNS:rpi-divinu.local" in extfile
+        assert "DNS:rpi-divinu" in extfile
+        assert "DNS:home-monitor.local" in extfile
+        assert "IP:192.168.4.1" in extfile
+        assert "extendedKeyUsage=serverAuth" in extfile
 
     @patch("monitor.services.cert_service.subprocess.run")
     def test_renew_logs_audit(self, mock_run, svc):

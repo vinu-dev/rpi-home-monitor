@@ -59,6 +59,66 @@ def _sign_csr(csr_pem, ca_key, ca_cert, *, server_auth=True):
     )
 
 
+def _server_ca_files(tmp_path):
+    certs_dir = tmp_path / "certs"
+    certs_dir.mkdir(exist_ok=True)
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.now(UTC)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "RPI Server CA")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    (certs_dir / "ca.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (certs_dir / "ca.key").write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    (certs_dir / "server.crt").write_text("SERVER CERT\n", encoding="utf-8")
+    return key, cert, certs_dir
+
+
+def _sign_server_ca(server_ca_cert, ca_key, ca_cert, *, key=None):
+    now = datetime.now(UTC)
+    public_key = key.public_key() if key is not None else server_ca_cert.public_key()
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(server_ca_cert.subject)
+        .issuer_name(ca_cert.subject)
+        .public_key(public_key)
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=False,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .sign(ca_key, hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+
+
 def test_create_csr_keeps_private_key_on_rpi(tmp_path):
     _, _, ca_path = _ca(tmp_path)
     svc = GuiCertificateService(
@@ -115,6 +175,43 @@ def test_install_rejects_certificate_without_server_auth(tmp_path):
 
     assert ok is False
     assert "extended key usage" in error
+
+
+def test_install_server_ca_cross_sign_builds_browser_chain(tmp_path):
+    ca_key, ca_cert, ca_path = _ca(tmp_path)
+    _, server_ca_cert, certs_dir = _server_ca_files(tmp_path)
+    svc = GuiCertificateService(
+        certs_dir=str(certs_dir),
+        trust_ca_path=str(ca_path),
+        nginx_reload=False,
+    )
+    cert_pem = _sign_server_ca(server_ca_cert, ca_key, ca_cert)
+
+    ok, error = svc.install_server_ca_certificate(cert_pem)
+
+    assert ok is True
+    assert error == ""
+    assert (certs_dir / "server-ca-local.crt").read_text(encoding="utf-8")
+    chain = (certs_dir / "server-browser-chain.crt").read_text(encoding="utf-8")
+    assert "SERVER CERT" in chain
+    assert "BEGIN CERTIFICATE" in chain
+
+
+def test_install_server_ca_cross_sign_rejects_other_rpi_key(tmp_path):
+    ca_key, ca_cert, ca_path = _ca(tmp_path)
+    _, server_ca_cert, certs_dir = _server_ca_files(tmp_path)
+    other_key = ec.generate_private_key(ec.SECP256R1())
+    svc = GuiCertificateService(
+        certs_dir=str(certs_dir),
+        trust_ca_path=str(ca_path),
+        nginx_reload=False,
+    )
+    cert_pem = _sign_server_ca(server_ca_cert, ca_key, ca_cert, key=other_key)
+
+    ok, error = svc.install_server_ca_certificate(cert_pem)
+
+    assert ok is False
+    assert "does not match this RPI server CA public key" in error
 
 
 def test_reload_uses_helper_when_socket_available_without_env(tmp_path, monkeypatch):

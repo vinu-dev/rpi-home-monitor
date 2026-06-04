@@ -96,13 +96,29 @@ def test_nginx_uses_separate_gui_certificate_without_touching_mediamtx():
 
     main_listener = nginx.split("listen 443 ssl;", 1)[1].split("listen 9443 ssl;", 1)[0]
     cert_listener = nginx.split("listen 9443 ssl;", 1)[1]
-    assert "ssl_certificate     /data/certs/server.crt;" in main_listener
+    assert "ssl_certificate     /data/certs/server-browser-chain.crt;" in main_listener
     assert "ssl_certificate_key /data/certs/server.key;" in main_listener
     assert "ssl_certificate     /data/certs/gui-server.crt;" not in main_listener
     assert "ssl_certificate     /data/certs/gui-server.crt;" in cert_listener
     assert "ssl_certificate_key /data/certs/gui-server.key;" in cert_listener
     assert "serverCert: /data/certs/server.crt" in mediamtx
     assert "serverKey: /data/certs/server.key" in mediamtx
+
+
+def test_server_cert_generation_keeps_browser_chain_and_camera_cert_separate():
+    script = _read(
+        "meta-home-monitor/recipes-security/monitor-certs/files/generate-certs.sh"
+    )
+    deploy = _read("scripts/deploy-dev-app.sh")
+
+    assert 'SERVER_CHAIN_CERT="$CERTS_DIR/server-browser-chain.crt"' in script
+    assert 'SERVER_LOCAL_CA_CERT="$CERTS_DIR/server-ca-local.crt"' in script
+    assert "DNS:rpi-divinu.local" in script
+    assert "IP:192.168.4.1" in script
+    assert "server_cert_has_required_sans" in script
+    assert "build_browser_chain" in script
+    assert "/data/certs/server-browser-chain.crt" in deploy
+    assert "/data/certs/server-ca-local.crt" in deploy
 
 
 def test_nginx_keeps_normal_gui_on_main_https_listener():
