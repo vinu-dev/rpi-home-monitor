@@ -20,26 +20,26 @@
          surfaces. -->
     <template x-if="isAdmin">
         <span style="display:contents;">
-            <button class="settings-tab" :class="{ active: tab === 'system' }" @click="tab = 'system'">System</button>
-            <button class="settings-tab" :class="{ active: tab === 'network' }" @click="tab = 'network'">Network</button>
-            <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="tab = 'tailscale'">Tailscale</button>
-            <button class="settings-tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">Users</button>
-            <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSessions()">Security</button>
-            <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="tab = 'recording'">Recording</button>
-            <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="tab = 'storage'">Storage</button>
-            <button class="settings-tab" :class="{ active: tab === 'webhooks' }" @click="tab = 'webhooks'; loadWebhooks()">Webhooks</button>
-            <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="tab = 'updates'; loadOtaStatus()">Updates</button>
+            <button class="settings-tab" :class="{ active: tab === 'system' }" @click="selectSettingsTab('system')">System</button>
+            <button class="settings-tab" :class="{ active: tab === 'network' }" @click="selectSettingsTab('network')">Network</button>
+            <button class="settings-tab" :class="{ active: tab === 'tailscale' }" @click="selectSettingsTab('tailscale')">Tailscale</button>
+            <button class="settings-tab" :class="{ active: tab === 'users' }" @click="selectSettingsTab('users')">Users</button>
+            <button class="settings-tab" :class="{ active: tab === 'security' }" @click="selectSettingsTab('security')">Security</button>
+            <button class="settings-tab" :class="{ active: tab === 'recording' }" @click="selectSettingsTab('recording')">Recording</button>
+            <button class="settings-tab" :class="{ active: tab === 'storage' }" @click="selectSettingsTab('storage')">Storage</button>
+            <button class="settings-tab" :class="{ active: tab === 'webhooks' }" @click="selectSettingsTab('webhooks')">Webhooks</button>
+            <button class="settings-tab" :class="{ active: tab === 'updates' }" @click="selectSettingsTab('updates')">Updates</button>
         </span>
     </template>
-    <button class="settings-tab" :class="{ active: tab === 'account' }" @click="tab = 'account'; loadTotpStatus()">Account</button>
+    <button class="settings-tab" :class="{ active: tab === 'account' }" @click="selectSettingsTab('account')">Account</button>
     <template x-if="!isAdmin">
-        <button class="settings-tab" :class="{ active: tab === 'security' }" @click="tab = 'security'; loadSessions()">Security</button>
+        <button class="settings-tab" :class="{ active: tab === 'security' }" @click="selectSettingsTab('security')">Security</button>
     </template>
     <!-- Notifications tab is per-user — visible to admins AND viewers
          (#129, ADR-0027). Each user manages their own browser-
          notification opt-in here; admins additionally see the
          camera-level defaults inside the panel. -->
-    <button class="settings-tab" :class="{ active: tab === 'notifications' }" @click="tab = 'notifications'; loadNotificationPrefs()">Notifications</button>
+    <button class="settings-tab" :class="{ active: tab === 'notifications' }" @click="selectSettingsTab('notifications')">Notifications</button>
 </div>
 
 <label class="settings-section-picker">
@@ -2883,11 +2883,35 @@ function settingsPage() {
         },
 
         runTabLoaders(tabId) {
-            if (tabId === 'updates' && this.isAdmin) { this.loadOtaStatus(); }
-            if (tabId === 'security') { this.loadSessions(); }
-            if (tabId === 'webhooks' && this.isAdmin) { this.loadWebhooks(); }
             if (tabId === 'account') { this.loadTotpStatus(); }
+            if (tabId === 'security') { this.loadSessions(); }
             if (tabId === 'notifications') { this.loadNotificationPrefs(); }
+            if (!this.isAdmin) return;
+
+            if (tabId === 'system') {
+                this.loadSettings();
+                this.loadSystemInfo();
+                this.loadTimeStatus();
+                this.loadRestartSchedules();
+                this.loadTimeHealth();
+            }
+            if (tabId === 'network') {
+                this.loadWifi();
+                this.loadNetworkInterfaces();
+            }
+            if (tabId === 'tailscale') { this.loadTailscale(); }
+            if (tabId === 'users') { this.loadUsers(); }
+            if (tabId === 'recording') { this.loadRecordingCameras(); }
+            if (tabId === 'storage') {
+                this.loadStorageStatus();
+                this.scanUsb();
+            }
+            if (tabId === 'webhooks') {
+                this.loadWebhooks();
+                this.loadOffsiteBackup();
+                this.loadBackupSnapshots();
+            }
+            if (tabId === 'updates') { this.loadOtaStatus(); }
         },
 
         selectSettingsTab(tabId) {
@@ -2902,7 +2926,7 @@ function settingsPage() {
             }
         },
 
-        applyHashTab() {
+        applyHashTab(loadTab) {
             // Honour a URL fragment like /settings#storage so status-strip
             // deep-links (/settings#system, /settings#storage etc.) open
             // directly on the correct tab instead of bouncing the user
@@ -2911,7 +2935,9 @@ function settingsPage() {
             var frag = (window.location.hash || '').replace('#','').toLowerCase();
             if (frag && validTabs.indexOf(frag) !== -1) {
                 this.tab = frag;
-                this.runTabLoaders(frag);
+                if (loadTab !== false) {
+                    this.runTabLoaders(frag);
+                }
                 window.setTimeout(function() {
                     var active = document.querySelector('.settings-tabs .settings-tab.active');
                     if (active && active.scrollIntoView) {
@@ -2965,13 +2991,13 @@ function settingsPage() {
                 return;
             }
 
-            if (!this.applyHashTab()) {
+            if (!this.applyHashTab(false)) {
                 var validTabs = this.settingsNavItems().map(function(item) { return item.id; });
                 if (validTabs.indexOf(this.tab) === -1) {
                     this.tab = validTabs[0] || 'account';
                 }
             }
-            window.addEventListener('hashchange', () => this.applyHashTab());
+            window.addEventListener('hashchange', () => this.applyHashTab(true));
 
             this.loadSystemInfo();
             this.loadTimeStatus();
@@ -2979,17 +3005,6 @@ function settingsPage() {
 
             if (this.isAdmin) {
                 await this.loadSettings();
-                this.loadUsers();
-                this.loadWifi();
-                this.loadStorageStatus();
-                this.loadOffsiteBackup();
-                this.scanUsb();
-                this.loadNetworkInterfaces();
-                this.loadTailscale();
-                this.loadRecordingCameras();
-                this.loadRestartSchedules();
-                this.loadWebhooks();
-                this.loadBackupSnapshots();
                 this.loadTimeHealth();
                 if (!this._timeHealthTimer) {
                     var self = this;
@@ -2998,6 +3013,7 @@ function settingsPage() {
                     }, 30000);
                 }
             }
+            this.runTabLoaders(this.tab);
         },
 
         /* --- Recording (ADR-0017) --- */

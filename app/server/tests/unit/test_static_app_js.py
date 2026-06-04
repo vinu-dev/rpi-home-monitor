@@ -109,6 +109,33 @@ def test_settings_boot_waits_for_shared_app_before_loading_panels():
     assert "await this.loadSettings();" in text
 
 
+def test_settings_boot_does_not_scan_unopened_tabs():
+    """Opening System settings must not trigger unrelated panel APIs."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    boot_start = text.index("async boot()")
+    boot_end = text.index("/* --- Recording", boot_start)
+    boot_block = text[boot_start:boot_end]
+
+    for forbidden in [
+        "this.loadWifi();",
+        "this.loadStorageStatus();",
+        "this.loadOffsiteBackup();",
+        "this.scanUsb();",
+        "this.loadNetworkInterfaces();",
+        "this.loadTailscale();",
+        "this.loadRecordingCameras();",
+        "this.loadWebhooks();",
+        "this.loadBackupSnapshots();",
+        "this.loadOtaStatus();",
+    ]:
+        assert forbidden not in boot_block
+
+    assert "this.runTabLoaders(this.tab);" in boot_block
+    assert "if (tabId === 'storage')" in text
+    assert "this.scanUsb();" in text
+
+
 def test_server_ota_install_treats_restart_fallback_as_rebooting():
     """The OTA card should keep polling when nginx reports startup JSON."""
     text = SETTINGS_HTML.read_text(encoding="utf-8")
