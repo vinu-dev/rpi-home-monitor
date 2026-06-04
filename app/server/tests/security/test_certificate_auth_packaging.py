@@ -1,5 +1,5 @@
 # REQ: SWR-001, SWR-034, SWR-046; RISK: RISK-002, RISK-019; SEC: SC-001, SC-017, SC-018; TEST: TC-032, TC-043
-"""Packaging guards for certificate-only GUI login image wiring."""
+"""Packaging guards for hybrid password + certificate admin login wiring."""
 
 from pathlib import Path
 
@@ -54,17 +54,23 @@ def test_nginx_uses_baked_client_ca_trust_anchor():
     assert "ssl_verify_client on;" in snippet
 
 
-def test_nginx_redirects_gui_pages_to_certificate_listener_without_moving_api():
+def test_nginx_keeps_normal_gui_on_main_https_listener():
     nginx = _read("app/server/config/nginx-monitor.conf")
 
-    assert (
-        "location ~ ^/(dashboard|live|recordings|events|alerts|logs|settings|shares|help/network-fallback)/?$"
-        in nginx
-    )
-    assert "return 302 https://$host:9443$request_uri;" in nginx
-    assert nginx.index("location ~ ^/(dashboard|live") < nginx.index(
-        "location ^~ /api/"
-    )
+    assert "return 302 https://$host:9443$request_uri;" not in nginx
+    assert "location ^~ /api/" in nginx
+    assert "location / {\n        proxy_pass http://127.0.0.1:5000;" in nginx
+
+
+def test_certificate_listener_only_handles_admin_certificate_login_exchange():
+    nginx = _read("app/server/config/nginx-monitor.conf")
+
+    cert_listener = nginx.split("listen 9443 ssl;", 1)[1]
+    assert "location = /api/v1/auth/cert/session" in cert_listener
+    assert "location = /login" in cert_listener
+    assert "location / {\n        return 302 https://$host$request_uri;" in cert_listener
+    assert "location ~ ^/live/" not in cert_listener
+    assert "location ~ ^/clips/" not in cert_listener
 
 
 def test_server_firewall_allows_certificate_gui_port():
@@ -115,10 +121,10 @@ def test_server_image_enables_firewall_at_boot():
     )
 
 
-def test_packaged_monitor_defaults_to_certificate_auth():
+def test_packaged_monitor_defaults_to_hybrid_auth():
     unit = _read("app/server/config/monitor.service")
 
-    assert "Environment=MONITOR_AUTH_MODE=certificate" in unit
+    assert "Environment=MONITOR_AUTH_MODE=mixed" in unit
     assert "Environment=MONITOR_CERT_AUTH_ALLOW_PROFILE_LOGIN=1" in unit
     assert "Environment=MONITOR_CERT_AUTH_ENFORCE_TIME=1" in unit
 

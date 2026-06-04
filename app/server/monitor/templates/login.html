@@ -5,12 +5,14 @@
 {% block title %}Login - Home Monitor{% endblock %}
 
 {% block content %}
-{% set certificate_only = auth_mode == 'certificate' %}
+{% set certificate_enabled = auth_mode in ['certificate', 'mixed'] %}
+{% set password_enabled = auth_mode in ['password', 'mixed'] %}
+{% set certificate_only = certificate_enabled and not password_enabled %}
 <div class="login-page">
     <div class="login-card">
         <div class="login-card__title">Home Monitor</div>
         <div class="login-card__subtitle">
-            {% if certificate_only %}Certificate required{% else %}Sign in to your dashboard{% endif %}
+            {% if certificate_only %}Certificate required{% elif certificate_enabled %}Sign in as a user or administrator{% else %}Sign in to your dashboard{% endif %}
         </div>
 
         {% if logged_out %}
@@ -19,16 +21,24 @@
         <div class="login-card__error" id="login-error"></div>
 
         <form id="login-form" autocomplete="on">
-            {% if certificate_only %}
+            {% if certificate_enabled %}
             <div id="certificate-step">
                 <button type="button" class="btn btn--primary btn--full" id="btn-cert-login">
-                    Continue with Certificate
+                    Admin Certificate Login
                 </button>
+                {% if certificate_only %}
                 <p class="forgot-password--minimal">
                     Password sign-in is disabled on this device.
                 </p>
+                {% else %}
+                <p class="forgot-password--minimal">
+                    Use this only for setup, recovery, and user management.
+                </p>
+                {% endif %}
             </div>
-            {% else %}
+            {% endif %}
+
+            {% if password_enabled %}
             <div id="password-step">
                 <div class="form-group">
                     <label for="login-username">Username</label>
@@ -95,13 +105,19 @@
     var btnBackLogin = document.getElementById('btn-back-login');
     var challengeToken = '';
 
-    if (authMode === 'certificate') {
+    var certificateEnabled = authMode === 'certificate' || authMode === 'mixed';
+    var passwordEnabled = authMode === 'password' || authMode === 'mixed';
+
+    if (certificateEnabled) {
         if (btnCertLogin) {
             btnCertLogin.addEventListener('click', tryCertificateLogin);
         }
         if (!shouldUseCertificatePort() && wantsCertificateLogin()) {
             tryCertificateLogin();
         }
+    }
+
+    if (!passwordEnabled) {
         return;
     }
 
@@ -140,7 +156,7 @@
                 }
                 window.HM.auth.setCsrfToken(data.csrf_token);
                 window.HM.auth.setUser(data.user);
-                window.location.href = '/dashboard';
+                window.location.href = normalPortUrl('/dashboard');
             })
             .catch(function(err) {
                 showError(err.message || 'Login failed. Please check your credentials.');
@@ -171,7 +187,7 @@
         }).then(function(data) {
             window.HM.auth.setCsrfToken(data.csrf_token);
             window.HM.auth.setUser(data.user);
-            window.location.href = '/dashboard';
+            window.location.href = normalPortUrl('/dashboard');
         }).catch(function(err) {
             showError(err.message || 'Authentication code rejected.');
         });
@@ -192,13 +208,13 @@
             .then(function(data) {
                 window.HM.auth.setCsrfToken(data.csrf_token);
                 window.HM.auth.setUser(data.user);
-                window.location.href = '/dashboard';
+                window.location.href = normalPortUrl('/dashboard');
             })
             .catch(function(err) {
                 showError(err.message || 'A trusted client certificate is required.');
                 if (btnCertLogin) {
                     btnCertLogin.disabled = false;
-                    btnCertLogin.textContent = 'Try Certificate Again';
+                    btnCertLogin.textContent = 'Try Admin Certificate Again';
                 }
             });
     }
@@ -244,6 +260,15 @@
             btnCertLogin.textContent = 'Opening certificate login...';
         }
         window.location.replace(target.toString());
+    }
+
+    function normalPortUrl(path) {
+        var target = new URL(window.location.href);
+        target.pathname = path;
+        target.search = '';
+        target.hash = '';
+        target.port = '';
+        return target.toString();
     }
 })();
 </script>
