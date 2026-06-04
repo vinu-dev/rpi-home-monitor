@@ -442,6 +442,13 @@ class TestGenerateClientCert:
 
         # Verify openssl was called (at least genkey, req, x509, serial read)
         assert mock_run.call_count >= 4
+        sign_cmd = next(
+            cmd
+            for cmd in (call.args[0] for call in mock_run.call_args_list)
+            if cmd[:3] == ["openssl", "x509", "-req"]
+        )
+        assert "-set_serial" in sign_cmd
+        assert "-CAcreateserial" not in sign_cmd
 
     @patch("monitor.services.pairing_service.subprocess.run")
     def test_returns_error_on_openssl_failure(self, mock_run, svc, certs_dir):

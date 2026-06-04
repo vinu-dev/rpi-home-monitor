@@ -343,7 +343,8 @@ class PairingService:
                     str(ca_cert),
                     "-CAkey",
                     str(ca_key),
-                    "-CAcreateserial",
+                    "-set_serial",
+                    _new_certificate_serial(),
                     "-out",
                     str(client_cert),
                     "-days",
@@ -426,3 +427,8 @@ class PairingService:
             self._audit.log_event(event, user=user, ip=ip, detail=detail)
         except Exception as e:
             log.warning("Audit log failed: %s", e)
+
+
+def _new_certificate_serial() -> str:
+    """Return an OpenSSL-compatible positive random certificate serial."""
+    return f"0x{secrets.randbits(159) or 1:X}"

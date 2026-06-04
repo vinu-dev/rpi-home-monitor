@@ -225,12 +225,17 @@ class GuiCertificateService:
         return True, ""
 
     def reload_nginx(self) -> tuple[bool, str]:
-        use_helper = privileged.should_use_helper() or (
+        helper_disabled = os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") == "1"
+        helper_required = (
             os.name == "posix"
-            and os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") != "1"
-            and privileged.is_helper_available()
+            and not helper_disabled
+            and (
+                privileged.should_use_helper()
+                or _is_unprivileged_process()
+                or privileged.is_helper_available()
+            )
         )
-        if use_helper:
+        if helper_required:
             try:
                 privileged.request("nginx.reload", timeout=20)
                 return True, ""
@@ -349,6 +354,10 @@ def _atomic_write(path: Path, data: bytes, *, mode: int) -> None:
             os.unlink(tmp_name)
         except FileNotFoundError:
             pass
+
+
+def _is_unprivileged_process() -> bool:
+    return hasattr(os, "geteuid") and os.geteuid() != 0
 
 
 def _load_first_cert(pem: bytes) -> x509.Certificate | None:

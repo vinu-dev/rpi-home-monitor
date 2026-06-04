@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
+from monitor.services import privileged
 from monitor.services.gui_certificate_service import GuiCertificateService
 
 
@@ -179,3 +180,40 @@ def test_reload_respects_disable_helper_flag(tmp_path, monkeypatch):
     assert error == ""
     request.assert_not_called()
     assert run.call_count == 2
+
+
+def test_reload_unprivileged_posix_requires_helper(tmp_path, monkeypatch):
+    svc = GuiCertificateService(certs_dir=str(tmp_path / "certs"))
+    monkeypatch.setattr(
+        "monitor.services.gui_certificate_service.privileged.should_use_helper",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "monitor.services.gui_certificate_service.privileged.is_helper_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "monitor.services.gui_certificate_service.os.name",
+        "posix",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "monitor.services.gui_certificate_service.os.geteuid",
+        lambda: 1000,
+        raising=False,
+    )
+    monkeypatch.delenv("MONITOR_DISABLE_PRIVILEGED_HELPER", raising=False)
+
+    with (
+        patch(
+            "monitor.services.gui_certificate_service.privileged.request",
+            side_effect=privileged.PrivilegedHelperError("helper missing"),
+        ) as request,
+        patch("monitor.services.gui_certificate_service.subprocess.run") as run,
+    ):
+        ok, error = svc.reload_nginx()
+
+    assert ok is False
+    assert "helper missing" in error
+    request.assert_called_once_with("nginx.reload", timeout=20)
+    run.assert_not_called()

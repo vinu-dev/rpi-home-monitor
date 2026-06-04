@@ -13,6 +13,7 @@ Design patterns:
 import hashlib
 import logging
 import os
+import secrets
 import ssl
 import subprocess
 import threading
@@ -235,7 +236,8 @@ class CertService:
                     self.ca_cert_path,
                     "-CAkey",
                     self.ca_key_path,
-                    "-CAcreateserial",
+                    "-set_serial",
+                    _new_certificate_serial(),
                     "-out",
                     self.server_cert_path,
                     "-days",
@@ -345,3 +347,8 @@ class CertService:
                 self._audit.log_event(event, user=user, ip=ip, detail=detail)
             except Exception:
                 pass
+
+
+def _new_certificate_serial() -> str:
+    """Return an OpenSSL-compatible positive random certificate serial."""
+    return f"0x{secrets.randbits(159) or 1:X}"
