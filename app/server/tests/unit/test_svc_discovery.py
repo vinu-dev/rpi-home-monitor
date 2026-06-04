@@ -388,6 +388,54 @@ class TestMdnsBrowser:
             assert ok is False
             assert "mDNS browser is not running" in message
 
+    def test_refresh_mdns_cache_reports_unavailable_without_browser(self, app):
+        """Background mDNS refresh is explicit when the browser is unavailable."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            ok, message = svc.refresh_mdns_cache()
+
+            assert ok is False
+            assert "mDNS browser is not running" in message
+
+    def test_refresh_mdns_cache_replays_cached_mdns_services(self, app):
+        """Periodic refresh must keep pending cameras fresh without Scan."""
+        with app.app_context():
+            import sys
+
+            svc = DiscoveryService(app.store, app.audit)
+            svc._zeroconf = MagicMock()
+            svc._mdns_services_seen.add(
+                (
+                    "_rtsp._tcp.local.",
+                    "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+                )
+            )
+            fake_outgoing = MagicMock()
+            mock_zeroconf_mod = MagicMock()
+            mock_zeroconf_mod.DNSOutgoing = MagicMock(return_value=fake_outgoing)
+            mock_zeroconf_mod.DNSQuestion = MagicMock(return_value="question")
+
+            original = sys.modules.get("zeroconf")
+            sys.modules["zeroconf"] = mock_zeroconf_mod
+            try:
+                with patch.object(svc, "_handle_mdns_service") as handle:
+                    ok, message = svc.refresh_mdns_cache()
+            finally:
+                if original is None:
+                    sys.modules.pop("zeroconf", None)
+                else:
+                    sys.modules["zeroconf"] = original
+
+            handle.assert_called_once_with(
+                svc._zeroconf,
+                "_rtsp._tcp.local.",
+                "HomeMonitor Camera (cam-abc123)._rtsp._tcp.local.",
+            )
+            fake_outgoing.add_question.assert_called_once_with("question")
+            svc._zeroconf.send.assert_called_once_with(fake_outgoing)
+            assert ok is True
+            assert message == ""
+
     def test_trigger_scan_replays_cached_mdns_services(self, app):
         """Manual Scan must rediscover a deleted camera already in mDNS cache."""
         with app.app_context():

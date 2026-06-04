@@ -298,16 +298,19 @@ class DiscoveryService:
             log.info("mDNS browser stopped")
 
     def trigger_scan(self) -> tuple[bool, str]:
-        """Request an immediate mDNS PTR query (for manual Scan button).
+        """Request an immediate mDNS refresh for the manual Scan button."""
+        return self.refresh_mdns_cache(reason="manual")
+
+    def refresh_mdns_cache(self, *, reason: str = "periodic") -> tuple[bool, str]:
+        """Replay known mDNS services and send a fresh PTR query.
 
         The background ServiceBrowser already runs continuously and discovers
-        cameras as they appear. This method sends an extra PTR query so that
-        newly powered-on cameras are detected faster when the user clicks Scan.
+        cameras as they appear. This method sends an extra PTR query and
+        replays cached service names so newly powered-on or recently deleted
+        cameras are visible without waiting for another mDNS callback.
 
-        Returns (ok, message). Manual scan is only meaningful when the
-        zeroconf browser is running; otherwise the caller should surface a
-        visible operator error instead of showing an empty list as if a scan
-        really happened.
+        Returns (ok, message). Manual callers surface the message; background
+        callers can ignore it because the browser keeps running if healthy.
         """
         if self._zeroconf is None:
             message = (
@@ -315,13 +318,14 @@ class DiscoveryService:
                 "is not running. Check python-zeroconf packaging and monitor "
                 "startup logs."
             )
-            log.warning("mDNS browser not running — scan request ignored")
+            log.warning("mDNS browser not running - %s refresh ignored", reason)
             return False, message
 
         # Reprocess services already known to zeroconf before sending the fresh
         # PTR query. When an admin deletes a camera, the service can remain in
         # zeroconf's cache and no Added/Updated callback fires on the next
-        # manual Scan. Replaying the cached service names makes Scan idempotent:
+        # refresh. Replaying the cached service names makes discovery
+        # idempotent:
         # if the camera is still advertising, it is recreated as pending; if
         # the cache entry has expired, get_service_info() returns no info.
         for cached_type, cached_name in list(self._mdns_services_seen):
@@ -338,10 +342,10 @@ class DiscoveryService:
             out = DNSOutgoing(0)  # flags=0 → standard query
             out.add_question(DNSQuestion(_MDNS_SERVICE_TYPE, type_ptr, class_in))
             self._zeroconf.send(out)
-            log.debug("Sent manual mDNS PTR query for %s", _MDNS_SERVICE_TYPE)
+            log.debug("Sent %s mDNS PTR query for %s", reason, _MDNS_SERVICE_TYPE)
         except Exception as exc:
             # Non-fatal: background browser already handles discovery
-            log.debug("Manual mDNS PTR query failed (non-fatal): %s", exc)
+            log.debug("%s mDNS PTR query failed (non-fatal): %s", reason, exc)
         return True, ""
 
     # -------------------------------------------------------------------------

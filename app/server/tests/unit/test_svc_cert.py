@@ -10,6 +10,7 @@ import pytest
 from monitor.services.cert_service import (
     EXPIRY_WARNING_DAYS,
     CertService,
+    _apply_server_key_permissions,
 )
 
 
@@ -305,6 +306,54 @@ class TestStartStop:
         svc.start()
         svc.stop()
         assert not svc._running
+
+
+class TestServerKeyPermissions:
+    """Server mTLS key must remain private but readable for monitor control."""
+
+    @patch("monitor.services.cert_service.os.chmod")
+    @patch("monitor.services.cert_service.os.chown", create=True)
+    @patch("monitor.services.cert_service.os.geteuid", return_value=0, create=True)
+    @patch("monitor.services.cert_service.os.path.isfile", return_value=True)
+    def test_root_sets_monitor_group_and_group_read(
+        self,
+        _mock_isfile,
+        _mock_geteuid,
+        mock_chown,
+        mock_chmod,
+    ):
+        fake_grp = MagicMock()
+        fake_grp.getgrnam.return_value.gr_gid = 4242
+
+        with patch("monitor.services.cert_service.grp", fake_grp):
+            _apply_server_key_permissions("/data/certs/server.key")
+
+        mock_chown.assert_called_once_with("/data/certs/server.key", 0, 4242)
+        mock_chmod.assert_called_once_with("/data/certs/server.key", 0o640)
+
+    @patch("monitor.services.cert_service.os.chmod")
+    @patch("monitor.services.cert_service.os.path.isfile", return_value=False)
+    def test_missing_key_is_noop(self, _mock_isfile, mock_chmod):
+        _apply_server_key_permissions("/data/certs/server.key")
+
+        mock_chmod.assert_not_called()
+
+    @patch("monitor.services.cert_service.os.chmod")
+    @patch("monitor.services.cert_service.os.stat")
+    @patch("monitor.services.cert_service.os.geteuid", return_value=1000, create=True)
+    @patch("monitor.services.cert_service.os.path.isfile", return_value=True)
+    def test_non_owner_does_not_try_to_chmod_root_key(
+        self,
+        _mock_isfile,
+        _mock_geteuid,
+        mock_stat,
+        mock_chmod,
+    ):
+        mock_stat.return_value.st_uid = 0
+
+        _apply_server_key_permissions("/data/certs/server.key")
+
+        mock_chmod.assert_not_called()
 
 
 class TestAuditFailureResilience:

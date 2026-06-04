@@ -854,10 +854,21 @@ def _start_staleness_checker(app):
         import time
 
         reap_counter = 0
+        mdns_refresh_counter = 0
         while True:
             try:
                 with app.app_context():
                     app.discovery_service.check_offline()
+                    # Every ~30s, refresh zeroconf's known services so
+                    # pending/unpaired cameras stay visible without requiring
+                    # an operator to press Scan after each page load.
+                    mdns_refresh_counter += 1
+                    if mdns_refresh_counter >= 3:
+                        mdns_refresh_counter = 0
+                        try:
+                            app.discovery_service.refresh_mdns_cache()
+                        except AttributeError:
+                            pass
                     # Every ~60s (6 ticks at 10s), sweep for orphaned motion
                     # events — a camera started one and went dark before
                     # sending "end". Closes anything open > 10 min so the UI

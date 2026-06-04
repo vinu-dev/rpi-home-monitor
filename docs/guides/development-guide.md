@@ -585,7 +585,7 @@ When changing one, check if the others need updating:
 | OTA signing private key | `~/.monitor-keys/ota-signing.key` on build machine | Build operator only |
 | OTA signing public cert | Embedded in rootfs (`/etc/swupdate-public.crt`) | All devices (read-only) |
 | CA private key | `/data/certs/ca.key` on server | Server process only (0600) |
-| Server TLS key | `/data/certs/server.key` on server | nginx process (0640) |
+| Server TLS key | `/data/certs/server.key` on server | root plus `monitor` group for nginx, MediaMTX, camera control, and camera OTA mTLS (0640) |
 | Camera client keys | `/data/certs/client.key` on each camera | Camera process only (0600) |
 | User passwords | `/data/config/users.json` (bcrypt hashed) | Server process only (0640) |
 | WiFi passwords | NetworkManager system-connections | Root only |

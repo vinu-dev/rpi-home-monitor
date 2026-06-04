@@ -1,9 +1,8 @@
 [Unit]
-Description=Generate TLS certificates on first boot
+Description=Generate or repair Home Monitor TLS certificates
 After=local-fs.target first-boot-setup.service
 Requires=local-fs.target
 Before=nginx.service mediamtx.service monitor.service
-ConditionPathExists=!/data/certs/ca.crt
 
 [Service]
 Type=oneshot

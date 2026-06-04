@@ -45,10 +45,34 @@ def test_server_image_packages_staged_public_ca_and_nginx_snippet():
 def test_dev_deploy_installs_certificate_generation_service():
     deploy = _read("scripts/deploy-dev-app.sh")
 
+    assert "-o ConnectTimeout=30" in deploy
     assert "monitor-certs.service" in deploy
     assert "generate-certs.sh" in deploy
     assert "/etc/systemd/system/monitor-certs.service" in deploy
     assert "monitor-certs.service monitor-hotspot.service" in deploy
+
+
+def test_dev_deploy_preserves_camera_server_key_permissions():
+    deploy = _read("scripts/deploy-dev-app.sh")
+
+    assert "chown root:monitor /data/certs/server.key" in deploy
+    assert "chmod 0640 /data/certs/server.key" in deploy
+    assert "chown root:root /data/certs/ca.key" in deploy
+    assert "chmod 0600 /data/certs/ca.key" in deploy
+    assert (
+        "chown -R monitor:monitor /data/config /data/recordings "
+        "/data/live /data/logs /data/certs"
+    ) not in deploy
+
+
+def test_server_image_and_deploy_do_not_expose_rpcbind():
+    distro = _read("meta-home-monitor/conf/distro/home-monitor.conf")
+    deploy = _read("scripts/deploy-dev-app.sh")
+
+    assert "    nfs \\" not in distro
+    assert "rpcbind.service rpcbind.socket" in deploy
+    assert "systemctl disable --now rpcbind.service rpcbind.socket" in deploy
+    assert "systemctl mask rpcbind.service rpcbind.socket" in deploy
 
 
 def test_nginx_uses_baked_client_ca_trust_anchor():

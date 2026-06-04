@@ -146,7 +146,7 @@ if id monitor >/dev/null 2>&1; then
     echo "Setting ownership for monitor user (server)"
     chown monitor:monitor /data
     chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs
-    chown -R monitor:monitor /data/certs
+    chown monitor:monitor /data/certs /data/certs/cameras
 fi
 
 if id camera >/dev/null 2>&1; then

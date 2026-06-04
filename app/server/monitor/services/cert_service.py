@@ -20,6 +20,11 @@ import threading
 import time
 from datetime import UTC, datetime
 
+try:
+    import grp
+except ImportError:  # pragma: no cover - Windows test hosts do not provide grp.
+    grp = None
+
 log = logging.getLogger("monitor.cert-service")
 
 # Check interval: weekly (in seconds)
@@ -105,6 +110,7 @@ class CertService:
 
     def start(self):
         """Start background cert monitoring thread."""
+        self.ensure_server_key_permissions()
         self._running = True
         self._thread = threading.Thread(
             target=self._check_loop, daemon=True, name="cert-check"
@@ -258,7 +264,7 @@ class CertService:
                 pass
 
             # Set permissions
-            os.chmod(key_path, 0o600)
+            self.ensure_server_key_permissions()
 
             self._warning_logged = False
             log.info("Server certificate renewed (5-year validity)")
@@ -292,6 +298,15 @@ class CertService:
             "days_remaining": days,
             "needs_renewal": self.needs_renewal,
         }
+
+    def ensure_server_key_permissions(self):
+        """Keep server mTLS key readable by monitor group, not world-readable.
+
+        nginx and MediaMTX use the same server key, and the monitor process
+        also needs it for camera control/OTA mTLS. Root-owned 0640 with group
+        monitor is the intended boundary.
+        """
+        _apply_server_key_permissions(self.server_key_path)
 
     def _check_loop(self):
         """Background loop: check cert expiry periodically."""
@@ -352,3 +367,26 @@ class CertService:
 def _new_certificate_serial() -> str:
     """Return an OpenSSL-compatible positive random certificate serial."""
     return f"0x{secrets.randbits(159) or 1:X}"
+
+
+def _apply_server_key_permissions(path: str) -> None:
+    if not os.path.isfile(path):
+        return
+    try:
+        euid = os.geteuid() if hasattr(os, "geteuid") else None
+        if euid == 0:
+            if grp is None:
+                log.warning("grp module missing; cannot chgrp %s", path)
+            else:
+                try:
+                    monitor_gid = grp.getgrnam("monitor").gr_gid
+                    os.chown(path, 0, monitor_gid)
+                except KeyError:
+                    log.warning("monitor group missing; cannot chgrp %s", path)
+            os.chmod(path, 0o640)
+        elif euid is None or os.stat(path).st_uid == euid:
+            os.chmod(path, 0o640)
+        else:
+            log.debug("Skipping chmod for non-owned server key %s", path)
+    except OSError as exc:
+        log.warning("Failed to apply server key permissions to %s: %s", path, exc)

@@ -44,7 +44,7 @@ SERVER_STAGE="/tmp/codex-deploy-server"
 CAMERA_STAGE="/tmp/codex-deploy-camera"
 SSH_OPTS=(
     -o StrictHostKeyChecking=accept-new
-    -o ConnectTimeout=10
+    -o ConnectTimeout=30
 )
 
 usage() {
@@ -219,6 +219,14 @@ deploy_server() {
         # Deploy updated nginx config and reload (non-fatal if nginx is not running)
         if [ -f '$SERVER_STAGE/nginx-monitor.conf' ]; then
             mkdir -p /data/certs
+            if [ -f /data/certs/server.key ]; then
+                chown root:monitor /data/certs/server.key 2>/dev/null || true
+                chmod 0640 /data/certs/server.key
+            fi
+            if [ -f /data/certs/ca.key ]; then
+                chown root:root /data/certs/ca.key 2>/dev/null || true
+                chmod 0600 /data/certs/ca.key
+            fi
             if [ ! -f /data/certs/gui-server.crt ] && [ -f /data/certs/server.crt ]; then
                 cp /data/certs/server.crt /data/certs/gui-server.crt
                 chmod 0644 /data/certs/gui-server.crt
@@ -231,8 +239,18 @@ deploy_server() {
             nginx -t 2>/dev/null && nginx -s reload 2>/dev/null || true
         fi
         id -u monitor >/dev/null 2>&1 || useradd -r -d /opt/monitor -s /bin/false -U monitor
-        mkdir -p /data/config /data/recordings /data/live /data/logs /data/certs
-        chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs /data/certs
+        mkdir -p /data/config /data/recordings /data/live /data/logs /data/certs /data/certs/cameras /data/certs/status
+        chown -R monitor:monitor /data/config /data/recordings /data/live /data/logs
+        chown monitor:monitor /data/certs /data/certs/cameras /data/certs/status 2>/dev/null || true
+        chmod 0750 /data/certs /data/certs/cameras /data/certs/status
+        if [ -f /data/certs/server.key ]; then
+            chown root:monitor /data/certs/server.key 2>/dev/null || true
+            chmod 0640 /data/certs/server.key
+        fi
+        if [ -f /data/certs/ca.key ]; then
+            chown root:root /data/certs/ca.key 2>/dev/null || true
+            chmod 0600 /data/certs/ca.key
+        fi
         mkdir -p /opt/scripts
         mkdir -p /opt/monitor/scripts
         cp '$SERVER_STAGE/monitor-hotspot.sh' /opt/monitor/scripts/monitor-hotspot.sh
@@ -295,6 +313,8 @@ deploy_server() {
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
+        systemctl disable --now rpcbind.service rpcbind.socket 2>/dev/null || true
+        systemctl mask rpcbind.service rpcbind.socket 2>/dev/null || true
         systemctl enable home-monitor-firewall.service home-monitor-gui-cert-bootstrap.service home-monitor-led-init.service gpio-trigger.service monitor-certs.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
         systemctl restart home-monitor-firewall.service
         systemctl restart home-monitor-gui-cert-bootstrap.service
