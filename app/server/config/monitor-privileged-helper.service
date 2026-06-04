@@ -24,7 +24,7 @@ RuntimeDirectoryMode=0750
 # and the unprivileged Flask process see the selected recording disk. systemd's
 # ProtectKernel* filesystem protections also create a namespace on this image,
 # which makes the helper report success for mounts that the app cannot see.
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SYS_TIME CAP_SYS_BOOT CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SYS_TIME CAP_SYS_BOOT CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
 ProtectHome=false
 PrivateMounts=false
 ProtectKernelTunables=false

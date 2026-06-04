@@ -45,6 +45,7 @@ def test_helper_unit_is_the_only_root_service_in_boundary():
         "/usr/bin/python3 -m monitor.services.privileged_helper"
     ]
     assert "CAP_SYS_ADMIN" in data["CapabilityBoundingSet"][0]
+    assert "CAP_NET_BIND_SERVICE" in data["CapabilityBoundingSet"][0]
     assert data["ProtectHome"] == ["false"]
     assert data["PrivateMounts"] == ["false"]
     assert data["ProtectKernelTunables"] == ["false"]
