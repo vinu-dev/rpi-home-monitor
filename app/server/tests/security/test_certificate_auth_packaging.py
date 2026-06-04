@@ -42,6 +42,15 @@ def test_server_image_packages_staged_public_ca_and_nginx_snippet():
     assert "home-monitor-gui-cert-bootstrap.service" in recipe
 
 
+def test_dev_deploy_installs_certificate_generation_service():
+    deploy = _read("scripts/deploy-dev-app.sh")
+
+    assert "monitor-certs.service" in deploy
+    assert "generate-certs.sh" in deploy
+    assert "/etc/systemd/system/monitor-certs.service" in deploy
+    assert "monitor-certs.service monitor-hotspot.service" in deploy
+
+
 def test_nginx_uses_baked_client_ca_trust_anchor():
     nginx = _read("app/server/config/nginx-monitor.conf")
     snippet = _read("app/server/config/nginx-client-cert.d/provisioning-client-ca.conf")
@@ -82,7 +91,9 @@ def test_certificate_listener_only_handles_admin_certificate_login_exchange():
     assert "location = /api/v1/auth/cert/session" in cert_listener
     assert "location = /login" in cert_listener
     assert "location ^~ /api/v1/setup/" in cert_listener
-    assert "location / {\n        return 302 https://$host$request_uri;" in cert_listener
+    assert (
+        "location / {\n        return 302 https://$host$request_uri;" in cert_listener
+    )
     assert "location ~ ^/live/" not in cert_listener
     assert "location ~ ^/clips/" not in cert_listener
 

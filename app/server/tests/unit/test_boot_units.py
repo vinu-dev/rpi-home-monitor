@@ -19,12 +19,16 @@ def test_mediamtx_does_not_wait_for_network_online():
 
 
 def test_monitor_certs_runs_before_services_that_need_runtime_certs():
-    text = _read(
+    unit = _read(
+        "meta-home-monitor/recipes-security/monitor-certs/files/monitor-certs.service"
+    )
+    recipe = _read(
         "meta-home-monitor/recipes-security/monitor-certs/monitor-certs_1.0.bb"
     )
 
-    assert "ConditionPathExists=!/data/certs/ca.crt" in text
-    assert "Before=nginx.service mediamtx.service monitor.service" in text
+    assert "file://monitor-certs.service" in recipe
+    assert "ConditionPathExists=!/data/certs/ca.crt" in unit
+    assert "Before=nginx.service mediamtx.service monitor.service" in unit
 
 
 def test_tailscale_daemon_does_not_pull_wait_online():

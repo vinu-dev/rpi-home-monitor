@@ -187,6 +187,8 @@ deploy_server() {
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-ledctl" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/app/shared/status_led/home-monitor-led-init.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-support/swupdate/files/swupdate-check.sh" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-security/monitor-certs/files/monitor-certs.service" "$host" "$SERVER_STAGE"
+    copy_file "$REPO_ROOT/meta-home-monitor/recipes-security/monitor-certs/files/generate-certs.sh" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.service" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.yml" "$host" "$SERVER_STAGE"
     copy_file "$REPO_ROOT/meta-home-monitor/recipes-connectivity/tailscale/files/tailscaled.service" "$host" "$SERVER_STAGE"
@@ -238,9 +240,10 @@ deploy_server() {
         cp '$SERVER_STAGE/bootstrap-gui-cert.sh' /opt/monitor/scripts/bootstrap-gui-cert.sh
         chmod 0755 /opt/monitor/scripts/bootstrap-gui-cert.sh
         cp '$SERVER_STAGE/swupdate-check.sh' /opt/monitor/scripts/swupdate-check.sh
+        cp '$SERVER_STAGE/generate-certs.sh' /opt/monitor/scripts/generate-certs.sh
         cp '$SERVER_STAGE/first-boot-setup.sh' /opt/monitor/scripts/first-boot-setup.sh
         cp '$SERVER_STAGE/luks-first-boot.sh' /opt/monitor/scripts/luks-first-boot.sh
-        chmod 0755 /opt/monitor/scripts/swupdate-check.sh /opt/monitor/scripts/first-boot-setup.sh /opt/monitor/scripts/luks-first-boot.sh
+        chmod 0755 /opt/monitor/scripts/swupdate-check.sh /opt/monitor/scripts/generate-certs.sh /opt/monitor/scripts/first-boot-setup.sh /opt/monitor/scripts/luks-first-boot.sh
         cp '$SERVER_STAGE/gpio-trigger.sh' /opt/scripts/gpio-trigger.sh
         chmod 0755 /opt/scripts/gpio-trigger.sh
         cp '$SERVER_STAGE/status_led.py' /opt/monitor/monitor/status_led.py
@@ -251,6 +254,7 @@ deploy_server() {
         cp '$SERVER_STAGE/monitor-privileged-helper.service' /etc/systemd/system/monitor-privileged-helper.service
         cp '$SERVER_STAGE/home-monitor-firewall.service' /etc/systemd/system/home-monitor-firewall.service
         cp '$SERVER_STAGE/home-monitor-gui-cert-bootstrap.service' /etc/systemd/system/home-monitor-gui-cert-bootstrap.service
+        cp '$SERVER_STAGE/monitor-certs.service' /etc/systemd/system/monitor-certs.service
         cp '$SERVER_STAGE/monitor-avahi-pin.service' /etc/systemd/system/monitor-avahi-pin.service
         cp '$SERVER_STAGE/monitor-avahi-pin.timer' /etc/systemd/system/monitor-avahi-pin.timer
         cp '$SERVER_STAGE/monitor-hotspot.service' /etc/systemd/system/monitor-hotspot.service
@@ -291,7 +295,7 @@ deploy_server() {
         systemctl mask systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl reset-failed systemd-networkd-wait-online.service 2>/dev/null || true
         systemctl daemon-reload
-        systemctl enable home-monitor-firewall.service home-monitor-gui-cert-bootstrap.service home-monitor-led-init.service gpio-trigger.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
+        systemctl enable home-monitor-firewall.service home-monitor-gui-cert-bootstrap.service home-monitor-led-init.service gpio-trigger.service monitor-certs.service monitor-hotspot.service monitor-avahi-pin.timer monitor-privileged-helper.service monitor.service >/dev/null 2>&1 || true
         systemctl restart home-monitor-firewall.service
         systemctl restart home-monitor-gui-cert-bootstrap.service
         systemctl start monitor-avahi-pin.timer >/dev/null 2>&1 || true

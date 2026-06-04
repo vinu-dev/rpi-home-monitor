@@ -1,0 +1,14 @@
+[Unit]
+Description=Generate TLS certificates on first boot
+After=local-fs.target first-boot-setup.service
+Requires=local-fs.target
+Before=nginx.service mediamtx.service monitor.service
+ConditionPathExists=!/data/certs/ca.crt
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/scripts/generate-certs.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
