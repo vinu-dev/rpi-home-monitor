@@ -70,8 +70,13 @@ def test_nginx_uses_separate_gui_certificate_without_touching_mediamtx():
     nginx = _read("app/server/config/nginx-monitor.conf")
     mediamtx = _read("meta-home-monitor/recipes-multimedia/mediamtx/files/mediamtx.yml")
 
-    assert "ssl_certificate     /data/certs/gui-server.crt;" in nginx
-    assert "ssl_certificate_key /data/certs/gui-server.key;" in nginx
+    main_listener = nginx.split("listen 443 ssl;", 1)[1].split("listen 9443 ssl;", 1)[0]
+    cert_listener = nginx.split("listen 9443 ssl;", 1)[1]
+    assert "ssl_certificate     /data/certs/server.crt;" in main_listener
+    assert "ssl_certificate_key /data/certs/server.key;" in main_listener
+    assert "ssl_certificate     /data/certs/gui-server.crt;" not in main_listener
+    assert "ssl_certificate     /data/certs/gui-server.crt;" in cert_listener
+    assert "ssl_certificate_key /data/certs/gui-server.key;" in cert_listener
     assert "serverCert: /data/certs/server.crt" in mediamtx
     assert "serverKey: /data/certs/server.key" in mediamtx
 
