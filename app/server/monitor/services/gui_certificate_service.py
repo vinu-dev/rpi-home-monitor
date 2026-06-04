@@ -92,7 +92,11 @@ class GuiCertificateService:
 
     def status(self) -> GuiCertificateStatus:
         self.ensure_fallback()
-        cert = _load_first_cert(self.gui_cert_path.read_bytes()) if self.gui_cert_path.exists() else None
+        cert = (
+            _load_first_cert(self.gui_cert_path.read_bytes())
+            if self.gui_cert_path.exists()
+            else None
+        )
         fingerprint = ""
         subject = ""
         issuer = ""
@@ -221,7 +225,12 @@ class GuiCertificateService:
         return True, ""
 
     def reload_nginx(self) -> tuple[bool, str]:
-        if privileged.should_use_helper():
+        use_helper = privileged.should_use_helper() or (
+            os.name == "posix"
+            and os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") != "1"
+            and privileged.is_helper_available()
+        )
+        if use_helper:
             try:
                 privileged.request("nginx.reload", timeout=20)
                 return True, ""
@@ -245,7 +254,10 @@ class GuiCertificateService:
                 check=False,
             )
             if reload_result.returncode != 0:
-                return False, reload_result.stderr.strip() or reload_result.stdout.strip()
+                return (
+                    False,
+                    reload_result.stderr.strip() or reload_result.stdout.strip(),
+                )
             return True, ""
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
             return False, str(exc)
@@ -301,7 +313,10 @@ class GuiCertificateService:
 
     def _is_fallback_active(self) -> bool:
         try:
-            if not self.gui_cert_path.exists() or not self.camera_server_cert_path.exists():
+            if (
+                not self.gui_cert_path.exists()
+                or not self.camera_server_cert_path.exists()
+            ):
                 return False
             return (
                 self.gui_cert_path.read_bytes()
