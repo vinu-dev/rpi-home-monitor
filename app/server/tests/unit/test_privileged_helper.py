@@ -651,6 +651,67 @@ def test_led_set_rejects_unlisted_state_and_role():
         )
 
 
+def test_camera_sign_client_cert_builds_allowlisted_command(monkeypatch):
+    fake_pwd = MagicMock()
+    fake_pwd.getpwnam.return_value.pw_uid = 996
+    fake_grp = MagicMock()
+    fake_grp.getgrnam.return_value.gr_gid = 994
+    monkeypatch.setattr(helper, "pwd", fake_pwd)
+    monkeypatch.setattr(helper, "grp", fake_grp)
+    monkeypatch.setattr(helper.secrets, "randbits", lambda _bits: 0xABC123)
+
+    request = {
+        "operation": "camera.sign_client_cert",
+        "payload": {"camera_id": "cam-001", "days": 1825},
+    }
+    with (
+        patch.object(helper.os.path, "isfile", return_value=True),
+        patch.object(
+            helper,
+            "_run_command",
+            side_effect=[{"returncode": 0}, {"stdout": "serial=ABC123\n"}],
+        ) as run,
+        patch.object(helper.os, "chown", create=True) as chown,
+        patch.object(helper.os, "chmod") as chmod,
+    ):
+        data = helper.handle_request(helper.json.dumps(request).encode("utf-8"))
+
+    assert data == {
+        "cert_path": "/data/certs/cameras/cam-001.crt",
+        "serial": "ABC123",
+    }
+    sign_cmd = run.call_args_list[0].args[0]
+    assert sign_cmd == [
+        "openssl",
+        "x509",
+        "-req",
+        "-in",
+        "/data/certs/cameras/cam-001.csr",
+        "-CA",
+        "/data/certs/ca.crt",
+        "-CAkey",
+        "/data/certs/ca.key",
+        "-set_serial",
+        "0xABC123",
+        "-out",
+        "/data/certs/cameras/cam-001.crt",
+        "-days",
+        "1825",
+    ]
+    assert "-CAcreateserial" not in sign_cmd
+    chown.assert_called_once_with("/data/certs/cameras/cam-001.crt", 996, 994)
+    chmod.assert_called_once_with("/data/certs/cameras/cam-001.crt", 0o644)
+
+
+def test_camera_sign_client_cert_rejects_bad_camera_id():
+    request = {
+        "operation": "camera.sign_client_cert",
+        "payload": {"camera_id": "../cam", "days": 1825},
+    }
+    with pytest.raises(helper.HelperRequestError, match="camera id"):
+        helper.handle_request(helper.json.dumps(request).encode("utf-8"))
+
+
 def test_set_socket_permissions_tolerates_missing_monitor_group():
     fake_grp = MagicMock()
     fake_grp.getgrnam.side_effect = KeyError("monitor")

@@ -13,6 +13,7 @@ import logging
 import os
 import posixpath
 import re
+import secrets
 import signal
 import socket
 import subprocess
@@ -45,6 +46,7 @@ LABEL_RE = re.compile(r"^[A-Za-z0-9_. -]{1,32}$")
 CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 OTA_PUBLIC_KEY = "/etc/swupdate-public.crt"
 OTA_DIR = "/data/ota"
+CERTS_DIR = "/data/certs"
 LEDCTL = "/usr/bin/home-monitor-ledctl"
 LED_STATES = {
     "boot",
@@ -181,9 +183,14 @@ def _validate_recordings_repair_target(payload: dict[str, Any]) -> str:
     camera_id = str(payload.get("camera_id") or "").strip()
     if not camera_id:
         return recordings_dir
+    return posixpath.join(recordings_dir, _validate_camera_id(camera_id))
+
+
+def _validate_camera_id(value: Any) -> str:
+    camera_id = _as_text(value, max_len=128)
     if not CAMERA_ID_RE.fullmatch(camera_id):
         raise HelperRequestError("camera id is invalid")
-    return posixpath.join(recordings_dir, camera_id)
+    return camera_id
 
 
 def _op_recording_storage_repair_permissions(payload: dict[str, Any]) -> dict[str, Any]:
@@ -473,6 +480,52 @@ def _op_led_set(payload: dict[str, Any]) -> dict[str, Any]:
     return _run_command(cmd, timeout=10, nonzero_ok=True)
 
 
+def _op_camera_sign_client_cert(payload: dict[str, Any]) -> dict[str, Any]:
+    camera_id = _validate_camera_id(payload.get("camera_id"))
+    try:
+        days = int(payload.get("days") or 1825)
+    except (TypeError, ValueError) as exc:
+        raise HelperRequestError("certificate validity days is invalid") from exc
+    if days < 1 or days > 3650:
+        raise HelperRequestError("certificate validity days is invalid")
+
+    cameras_dir = posixpath.join(CERTS_DIR, "cameras")
+    client_csr = posixpath.join(cameras_dir, f"{camera_id}.csr")
+    client_cert = posixpath.join(cameras_dir, f"{camera_id}.crt")
+    ca_cert = posixpath.join(CERTS_DIR, "ca.crt")
+    ca_key = posixpath.join(CERTS_DIR, "ca.key")
+    if not os.path.isfile(client_csr):
+        raise HelperRequestError("camera CSR not found")
+
+    _run_command(
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            client_csr,
+            "-CA",
+            ca_cert,
+            "-CAkey",
+            ca_key,
+            "-set_serial",
+            _new_certificate_serial(),
+            "-out",
+            client_cert,
+            "-days",
+            str(days),
+        ],
+        timeout=30,
+    )
+    serial_result = _run_command(
+        ["openssl", "x509", "-in", client_cert, "-serial", "-noout"],
+        timeout=10,
+    )
+    _make_monitor_readable(client_cert, mode=0o644)
+    serial = str(serial_result.get("stdout") or "").strip().split("=")[-1]
+    return {"cert_path": client_cert, "serial": serial}
+
+
 def _op_nginx_reload(payload: dict[str, Any]) -> dict[str, Any]:
     test = _run_command(["nginx", "-t"], timeout=10)
     reload_result = _run_command(["nginx", "-s", "reload"], timeout=10)
@@ -480,6 +533,24 @@ def _op_nginx_reload(payload: dict[str, Any]) -> dict[str, Any]:
         "test": test.get("stdout", "") or test.get("stderr", ""),
         "reload": reload_result.get("stdout", "") or reload_result.get("stderr", ""),
     }
+
+
+def _make_monitor_readable(path: str, *, mode: int) -> None:
+    if pwd is None or grp is None:
+        return
+    try:
+        uid = pwd.getpwnam("monitor").pw_uid
+        gid = grp.getgrnam("monitor").gr_gid
+        os.chown(path, uid, gid)
+        os.chmod(path, mode)
+    except (KeyError, PermissionError, OSError) as exc:
+        raise HelperRequestError(
+            f"could not hand certificate to monitor: {exc}"
+        ) from exc
+
+
+def _new_certificate_serial() -> str:
+    return f"0x{secrets.randbits(159) or 1:X}"
 
 
 def _op_system_reboot(payload: dict[str, Any]) -> dict[str, Any]:
@@ -509,6 +580,7 @@ OPERATIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "ota.install": _op_ota_install,
     "ota.repair_storage": _op_ota_repair_storage,
     "led.set": _op_led_set,
+    "camera.sign_client_cert": _op_camera_sign_client_cert,
     "nginx.reload": _op_nginx_reload,
     "system.reboot": _op_system_reboot,
 }

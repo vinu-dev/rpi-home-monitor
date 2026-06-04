@@ -21,6 +21,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from monitor.services import privileged
 from monitor.services.audit import CAMERA_PAIRING_SECRET_ROTATED
 from monitor.services.camera_trust import (
     persist_pinned_status_cert,
@@ -332,25 +333,7 @@ class PairingService:
             )
 
             # Sign with CA (5 years = 1825 days)
-            self._run_openssl(
-                [
-                    "openssl",
-                    "x509",
-                    "-req",
-                    "-in",
-                    str(client_csr),
-                    "-CA",
-                    str(ca_cert),
-                    "-CAkey",
-                    str(ca_key),
-                    "-set_serial",
-                    _new_certificate_serial(),
-                    "-out",
-                    str(client_cert),
-                    "-days",
-                    "1825",
-                ]
-            )
+            self._sign_client_cert(camera_id, client_csr, ca_cert, ca_key, client_cert)
 
             # Read serial
             result = subprocess.run(
@@ -381,6 +364,9 @@ class PairingService:
         except subprocess.CalledProcessError as e:
             log.error("OpenSSL command failed: %s", e.stderr)
             return None, f"OpenSSL error: {e.stderr}"
+        except privileged.PrivilegedHelperError as e:
+            log.error("Privileged helper signing failed: %s", e)
+            return None, f"Privileged helper error: {e}"
         except OSError as e:
             log.error("File operation failed: %s", e)
             return None, str(e)
@@ -388,6 +374,35 @@ class PairingService:
             # Clean up CSR
             if client_csr.exists():
                 client_csr.unlink()
+
+    def _sign_client_cert(self, camera_id, client_csr, ca_cert, ca_key, client_cert):
+        if _should_use_signing_helper():
+            privileged.request(
+                "camera.sign_client_cert",
+                {"camera_id": camera_id, "days": 1825},
+                timeout=45,
+            )
+            return
+
+        self._run_openssl(
+            [
+                "openssl",
+                "x509",
+                "-req",
+                "-in",
+                str(client_csr),
+                "-CA",
+                str(ca_cert),
+                "-CAkey",
+                str(ca_key),
+                "-set_serial",
+                _new_certificate_serial(),
+                "-out",
+                str(client_cert),
+                "-days",
+                "1825",
+            ]
+        )
 
     def _run_openssl(self, cmd):
         """Run an openssl command, raising on failure."""
@@ -432,3 +447,20 @@ class PairingService:
 def _new_certificate_serial() -> str:
     """Return an OpenSSL-compatible positive random certificate serial."""
     return f"0x{secrets.randbits(159) or 1:X}"
+
+
+def _should_use_signing_helper() -> bool:
+    helper_disabled = os.environ.get("MONITOR_DISABLE_PRIVILEGED_HELPER") == "1"
+    return (
+        os.name == "posix"
+        and not helper_disabled
+        and (
+            privileged.should_use_helper()
+            or _is_unprivileged_process()
+            or privileged.is_helper_available()
+        )
+    )
+
+
+def _is_unprivileged_process() -> bool:
+    return hasattr(os, "geteuid") and os.geteuid() != 0

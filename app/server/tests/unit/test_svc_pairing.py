@@ -451,6 +451,46 @@ class TestGenerateClientCert:
         assert "-CAcreateserial" not in sign_cmd
 
     @patch("monitor.services.pairing_service.subprocess.run")
+    def test_uses_privileged_helper_for_signing_when_required(
+        self, mock_run, svc, certs_dir
+    ):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "serial=ABC123\n"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        cameras_dir = certs_dir / "cameras"
+        (cameras_dir / "cam-001.crt").write_text("GENERATED CERT")
+        (cameras_dir / "cam-001.key").write_text("GENERATED KEY")
+
+        with (
+            patch(
+                "monitor.services.pairing_service._should_use_signing_helper",
+                return_value=True,
+            ),
+            patch(
+                "monitor.services.pairing_service.privileged.request",
+                return_value={},
+            ) as request,
+        ):
+            cert_data, error = svc._generate_client_cert("cam-001")
+
+        assert error == ""
+        assert cert_data["serial"] == "ABC123"
+        request.assert_called_once_with(
+            "camera.sign_client_cert",
+            {"camera_id": "cam-001", "days": 1825},
+            timeout=45,
+        )
+        sign_cmds = [
+            cmd
+            for cmd in (call.args[0] for call in mock_run.call_args_list)
+            if cmd[:3] == ["openssl", "x509", "-req"]
+        ]
+        assert sign_cmds == []
+
+    @patch("monitor.services.pairing_service.subprocess.run")
     def test_returns_error_on_openssl_failure(self, mock_run, svc, certs_dir):
         mock_result = MagicMock()
         mock_result.returncode = 1
