@@ -2860,21 +2860,6 @@ function settingsPage() {
         // filter and inspect the full event stream.
 
         settingsNavItems() {
-            if (!this.currentUser) {
-                return [
-                    { id: 'system', label: 'System' },
-                    { id: 'network', label: 'Network' },
-                    { id: 'tailscale', label: 'Tailscale' },
-                    { id: 'users', label: 'Users' },
-                    { id: 'security', label: 'Security' },
-                    { id: 'recording', label: 'Recording' },
-                    { id: 'storage', label: 'Storage' },
-                    { id: 'webhooks', label: 'Webhooks' },
-                    { id: 'updates', label: 'Updates' },
-                    { id: 'account', label: 'Account' },
-                    { id: 'notifications', label: 'Notifications' },
-                ];
-            }
             if (!this.isAdmin) {
                 return [
                     { id: 'account', label: 'Account' },
@@ -2938,12 +2923,47 @@ function settingsPage() {
             return false;
         },
 
+        waitForSharedApp() {
+            if (window.HM && window.HM.api && window.HM.auth) {
+                return Promise.resolve();
+            }
+            return new Promise(function(resolve, reject) {
+                var attempts = 0;
+                function check() {
+                    if (window.HM && window.HM.api && window.HM.auth) {
+                        resolve();
+                        return;
+                    }
+                    attempts += 1;
+                    if (attempts > 100) {
+                        reject(new Error('Shared app runtime did not initialise'));
+                        return;
+                    }
+                    window.setTimeout(check, 50);
+                }
+                check();
+            });
+        },
+
+        reportBootError(message, error) {
+            if (window.console && console.warn) {
+                console.warn(message, error);
+            }
+            if (window.HM && window.HM.toast) {
+                window.HM.toast(message, 'error');
+            }
+        },
+
         async boot() {
             try {
+                await this.waitForSharedApp();
                 await window.HM.auth.getMe();
                 this.currentUser = window.HM.auth.getUser();
                 this.isAdmin = this.currentUser && this.currentUser.role === 'admin';
-            } catch(e) {}
+            } catch(e) {
+                this.reportBootError('Failed to initialise settings', e);
+                return;
+            }
 
             if (!this.applyHashTab()) {
                 var validTabs = this.settingsNavItems().map(function(item) { return item.id; });
@@ -2958,7 +2978,7 @@ function settingsPage() {
             this.loadTotpStatus();
 
             if (this.isAdmin) {
-                this.loadSettings();
+                await this.loadSettings();
                 this.loadUsers();
                 this.loadWifi();
                 this.loadStorageStatus();

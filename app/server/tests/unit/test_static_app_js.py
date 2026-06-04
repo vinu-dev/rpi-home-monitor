@@ -82,11 +82,31 @@ def test_api_get_network_retry_returns_response_once():
     subprocess.run(["node", "-e", script], check=True)
 
 
+def test_api_reader_tolerates_already_parsed_retry_data():
+    """Defensive guard: parsed retry data must not be read as a Response."""
+    text = APP_JS.read_text(encoding="utf-8")
+
+    assert "typeof resp.text !== 'function'" in text
+    assert "typeof resp.json !== 'function'" in text
+    assert "return Promise.resolve(resp || {});" in text
+
+
 def test_app_js_asset_has_cache_buster():
     """Browsers must fetch new shared JS after OTA or dev deploy."""
     text = BASE_HTML.read_text(encoding="utf-8")
 
     assert "filename='js/app.js', v=" in text
+
+
+def test_settings_boot_waits_for_shared_app_before_loading_panels():
+    """Settings must not run admin loaders before auth/API are available."""
+    text = SETTINGS_HTML.read_text(encoding="utf-8")
+
+    assert "waitForSharedApp()" in text
+    assert "Shared app runtime did not initialise" in text
+    assert "Failed to initialise settings" in text
+    assert "await this.waitForSharedApp();" in text
+    assert "await this.loadSettings();" in text
 
 
 def test_server_ota_install_treats_restart_fallback_as_rebooting():

@@ -104,6 +104,9 @@
     }
 
     function _readResponseBody(resp) {
+        if (!resp || typeof resp.text !== 'function' || typeof resp.json !== 'function') {
+            return Promise.resolve(resp || {});
+        }
         var headers = resp && resp.headers;
         var contentType = '';
         if (headers && typeof headers.get === 'function') {
