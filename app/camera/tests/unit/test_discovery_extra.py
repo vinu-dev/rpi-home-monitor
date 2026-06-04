@@ -7,15 +7,57 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from camera_streamer.discovery import VERSION, DiscoveryService
+from camera_streamer.discovery import DiscoveryService
 
 
 class TestDiscoveryResolution:
     """Test discovery TXT record details."""
 
-    def test_version_string(self):
-        """Version should be set."""
-        assert VERSION == "1.0.0"
+    def test_version_txt_uses_runtime_release_version(self, camera_config):
+        """TXT record should publish the Yocto image version, not package metadata."""
+        with (
+            patch("camera_streamer.discovery.release_version", return_value="1.8.2"),
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
+            proc = MagicMock()
+            proc.poll.return_value = None
+            mock_popen.side_effect = [proc, proc]
+
+            svc = DiscoveryService(camera_config)
+            svc.start()
+            args = mock_popen.call_args_list[0][0][0]
+            assert "version=1.8.2" in args
+            svc.stop()
+
+    def test_empty_runtime_release_version_omits_version_txt(self, camera_config):
+        """Do not advertise a fake firmware version if /etc/os-release is unreadable."""
+        with (
+            patch("camera_streamer.discovery.release_version", return_value=""),
+            patch("subprocess.Popen") as mock_popen,
+            patch(
+                "camera_streamer.discovery.wifi.get_hostname", return_value="cam-test"
+            ),
+            patch(
+                "camera_streamer.discovery.wifi.get_ip_address",
+                return_value="192.168.1.50",
+            ),
+        ):
+            proc = MagicMock()
+            proc.poll.return_value = None
+            mock_popen.side_effect = [proc, proc]
+
+            svc = DiscoveryService(camera_config)
+            svc.start()
+            args = mock_popen.call_args_list[0][0][0]
+            assert not any(arg.startswith("version=") for arg in args)
+            svc.stop()
 
     def test_resolution_in_txt(self, camera_config):
         """TXT record should include resolution."""

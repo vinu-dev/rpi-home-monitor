@@ -31,12 +31,23 @@ import subprocess
 import time
 
 from camera_streamer import wifi
+from camera_streamer.release_version import release_version
 
 log = logging.getLogger("camera-streamer.discovery")
 
 SERVICE_TYPE = "_rtsp._tcp"
 SERVICE_PORT = 8554
-VERSION = "1.0.0"
+
+
+def _advertised_version() -> str:
+    """Return the product version to publish in the mDNS TXT record.
+
+    Heartbeats and camera status already use release_version(), which reads
+    /etc/os-release VERSION_ID from the Yocto image. Discovery must use the
+    same source; otherwise unpaired cameras show a misleading hard-coded
+    firmware version before heartbeat pairing starts.
+    """
+    return release_version().strip()
 
 
 class DiscoveryService:
@@ -89,15 +100,20 @@ class DiscoveryService:
         # avahi-publish-service runs in foreground — keeps advertising
         # until killed
         service_name = f"HomeMonitor Camera ({camera_id})"
+        version = _advertised_version()
+        txt_records = [
+            f"id={camera_id}",
+            f"resolution={resolution}",
+            f"paired={paired}",
+        ]
+        if version:
+            txt_records.insert(1, f"version={version}")
         cmd = [
             "avahi-publish-service",
             service_name,
             SERVICE_TYPE,
             str(SERVICE_PORT),
-            f"id={camera_id}",
-            f"version={VERSION}",
-            f"resolution={resolution}",
-            f"paired={paired}",
+            *txt_records,
         ]
 
         try:
