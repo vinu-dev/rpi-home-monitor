@@ -27,6 +27,19 @@ def test_build_script_stamps_image_and_swu_from_same_version():
     assert image_override_pos < metadata_rebuild_pos < bitbake_pos
 
 
+def test_build_script_stages_public_ca_before_any_bitbake_parse():
+    text = BUILD_SH.read_text(encoding="utf-8")
+
+    stage_pos = text.index(
+        "    stage_provisioning_ca",
+        text.index('stage_image_version_override "$builddir" "$BUILD_VERSION"'),
+    )
+    metadata_rebuild_pos = text.index("    rebuild_version_metadata", stage_pos)
+    image_bitbake_pos = text.index('bitbake "$image"')
+
+    assert stage_pos < metadata_rebuild_pos < image_bitbake_pos
+
+
 def test_distro_conf_consumes_generated_build_version_before_version_file():
     distro_conf = (
         REPO_ROOT / "meta-home-monitor" / "conf" / "distro" / "home-monitor.conf"

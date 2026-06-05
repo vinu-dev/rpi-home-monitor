@@ -105,6 +105,8 @@ stage_local_ota_cert() {
 }
 
 stage_provisioning_ca() {
+    # BitBake parses recipes globally, so the server recipe's local
+    # public CA input must exist before any target-specific build runs.
     "$YOCTO_DIR/scripts/stage-provisioning-ca.sh"
 }
 
@@ -232,9 +234,7 @@ build_image() {
     cp "$YOCTO_DIR/config/bblayers.conf" "$builddir/conf/bblayers.conf"
     stage_image_version_override "$builddir" "$BUILD_VERSION"
     stage_local_ota_cert "$configdir" "$builddir"
-    case "$image" in
-        home-monitor-image-*) stage_provisioning_ca ;;
-    esac
+    stage_provisioning_ca
     rebuild_version_metadata
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"

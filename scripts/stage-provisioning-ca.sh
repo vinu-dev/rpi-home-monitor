@@ -4,7 +4,9 @@
 #
 # This script does not generate CA material. The CA generator is a separate
 # private project. Copy/export only the public CA certificate into
-# local-secrets/provisioning-ca/ before building server images.
+# local-secrets/provisioning-ca/ before running Yocto builds. BitBake
+# parses recipes globally, so camera-only builds also need this public
+# file staged even though the camera image does not package it.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
