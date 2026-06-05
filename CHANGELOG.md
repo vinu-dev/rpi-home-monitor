@@ -6,6 +6,72 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.9.0] - 2026-06-05
+
+Certificate-auth release line. This release is built from the
+`release/cert-auth` branch and is intentionally separate from the normal
+`main` release train. It exists so operators can test and use local
+certificate-based administration without merging the feature set into the
+mainline product yet.
+
+### Added
+- **Admin certificate sign-in for the server GUI** lets trusted operator
+  laptops and phones authenticate with a client certificate signed by the
+  operator's local Home Monitor CA instead of using a shared admin password.
+- **Dedicated certificate-login listener** keeps human admin certificate login
+  separate from the existing camera pairing, heartbeat, streaming, and control
+  paths so camera mTLS behavior is not weakened.
+- **First-setup certificate session support** lets the setup wizard require an
+  admin certificate session before applying WiFi, account, and certificate
+  setup actions.
+- **Build-time provisioning CA staging** installs only the local CA public
+  certificate into the RPI image from the ignored local staging path. CA private
+  keys remain outside this repository and outside the device image.
+- **Optional browser HTTPS certificate setup** lets an operator generate an RPI
+  GUI server CSR during setup, sign it with the local CA, and upload the signed
+  certificate so browsers can trust the local GUI after the CA public root is
+  installed on the client device.
+- **Certificate-auth setup and operations documentation** explains the local CA
+  model, certificate profiles, setup workflow, browser trust, factory reset
+  behavior, and testing steps.
+
+### Changed
+- **Admin password sign-in is no longer the primary admin path** on this release
+  line. Admin certificate login is the intended secure path for setup and
+  administration; password users remain available for non-admin or operator
+  managed access where configured.
+- **Factory reset now preserves the provisioned CA trust anchor** while clearing
+  runtime setup, users, camera pairings, and local runtime state so reset
+  behaves like a fresh SD card that still contains the build-provisioned trust
+  root.
+- **Camera pairing PINs are bound to the expected camera source** so a PIN shown
+  for one discovered camera cannot be accepted by a different camera.
+
+### Fixed
+- **Camera control trust after GUI certificate setup** keeps the shared server
+  certificate valid for both TLS server authentication and camera-control client
+  authentication. This prevents cameras from rejecting server control calls
+  after certificate regeneration.
+- **Certificate-related camera warnings** no longer mislabel server certificate
+  rejection as "camera identity changed"; true camera identity mismatch remains
+  a re-pair condition.
+- **Build version stamping for cert-auth images** forces version metadata to
+  rebuild so `/etc/os-release`, `/etc/sw-versions`, the GUI, and SWUpdate bundle
+  version stay aligned.
+
+### Operator notes
+- This release should be installed only on devices that are intended to follow
+  the `release/cert-auth` line.
+- Install a valid client `.p12` certificate on the admin laptop or phone before
+  relying on certificate-only admin login.
+- Install the local CA public certificate as a trusted root on browsers that
+  should trust the optional RPI GUI HTTPS certificate.
+- Do not upload CA private keys to the RPI. The RPI image stores only public
+  trust material and device/server private keys that belong to that device.
+- Existing camera streaming and camera/server pairing are preserved; do not
+  replace the camera/MediaMTX trust path unless doing a planned camera trust
+  migration.
+
 ## [1.8.0] — 2026-06-02
 
 Feature and reliability release for homes where Ethernet and WiFi can both be
