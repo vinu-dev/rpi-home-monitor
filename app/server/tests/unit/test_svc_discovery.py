@@ -70,6 +70,12 @@ class TestReportCamera:
             camera = app.store.get_camera("cam-001")
             camera.status = "online"
             camera.streaming = True
+            camera.cert_serial = "ABC123"
+            camera.pairing_secret = "ab" * 32
+            camera.status_cert_fingerprint = "fp"
+            camera.paired_at = "2026-06-05T12:00:00Z"
+            camera.rtsp_url = "rtsp://127.0.0.1:8554/cam-001"
+            camera.config_sync = "synced"
             app.store.save_camera(camera)
 
             svc.report_camera("cam-001", "192.168.1.50", paired=False)
@@ -77,6 +83,37 @@ class TestReportCamera:
             camera = app.store.get_camera("cam-001")
             assert camera.status == "pending"
             assert camera.streaming is False
+            assert camera.cert_serial == ""
+            assert camera.pairing_secret == ""
+            assert camera.status_cert_fingerprint == ""
+            assert camera.paired_at is None
+            assert camera.rtsp_url == ""
+            assert camera.config_sync == "unknown"
+
+    def test_paired_false_clears_stale_trust_when_already_pending(self, app):
+        """A camera can already be pending but still carry stale trust fields
+        from a previous paired state; paired=false must clear those too."""
+        with app.app_context():
+            svc = DiscoveryService(app.store, app.audit)
+            svc.report_camera("cam-001", "192.168.1.50")
+            camera = app.store.get_camera("cam-001")
+            camera.status = "pending"
+            camera.cert_serial = "ABC123"
+            camera.pairing_secret = "ab" * 32
+            camera.status_cert_fingerprint = "fp"
+            camera.paired_at = "2026-06-05T12:00:00Z"
+            camera.rtsp_url = "rtsp://127.0.0.1:8554/cam-001"
+            app.store.save_camera(camera)
+
+            svc.report_camera("cam-001", "192.168.1.50", paired=False)
+
+            camera = app.store.get_camera("cam-001")
+            assert camera.status == "pending"
+            assert camera.cert_serial == ""
+            assert camera.pairing_secret == ""
+            assert camera.status_cert_fingerprint == ""
+            assert camera.paired_at is None
+            assert camera.rtsp_url == ""
 
     def test_paired_none_preserves_online(self, app):
         """paired=None (heartbeat, /pair/register, legacy) must not disturb an

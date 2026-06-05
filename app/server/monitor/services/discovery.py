@@ -118,13 +118,29 @@ class DiscoveryService:
                 camera.last_seen = now
                 if firmware_version:
                     camera.firmware_version = firmware_version
-                if paired is False and camera.status != "pending":
+                if paired is False:
                     # Camera explicitly told us it is not paired — override
                     # any stale "online" status so the UI stops showing it
-                    # as a working camera. Clear streaming flag too.
+                    # as a working camera. Clear stale trust/liveness state too;
+                    # the next successful PIN exchange will issue fresh material.
+                    had_stale_pairing = bool(
+                        camera.status != "pending"
+                        or camera.streaming
+                        or camera.cert_serial
+                        or camera.pairing_secret
+                        or camera.status_cert_fingerprint
+                        or camera.paired_at
+                        or camera.rtsp_url
+                    )
                     camera.status = "pending"
                     camera.streaming = False
-                    if self._audit:
+                    camera.cert_serial = ""
+                    camera.pairing_secret = ""
+                    camera.status_cert_fingerprint = ""
+                    camera.paired_at = None
+                    camera.rtsp_url = ""
+                    camera.config_sync = "unknown"
+                    if had_stale_pairing and self._audit:
                         self._audit.log_event(
                             "CAMERA_UNPAIRED_DETECTED",
                             detail=(

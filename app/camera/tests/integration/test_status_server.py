@@ -1,6 +1,7 @@
 # REQ: SWR-048; RISK: RISK-009; SEC: SC-009; TEST: TC-045
 """Tests for camera_streamer.status_server — session management + system helpers."""
 
+import json
 import os
 import ssl
 import time
@@ -33,6 +34,7 @@ from camera_streamer.status_server import (
     _login_attempt_lock,
     _login_attempts,
     _login_retry_after,
+    _make_status_handler,
     _record_failed_login,
     _reset_login_attempts,
     _server_probe_host,
@@ -525,3 +527,52 @@ class TestPairPageTemplate:
             .replace("{{SERVER_INPUT_DISPLAY}}", "none")
         )
         assert "display:none" in html
+
+
+class TestPairFlow:
+    """Pair/re-pair behavior from the camera status endpoint."""
+
+    def test_failed_repair_keeps_existing_pairing_state(self):
+        config = MagicMock()
+        config.camera_id = "cam-351ad8ee"
+        config.server_https_url = "https://rpi-divinu.local"
+
+        pairing = MagicMock()
+        pairing.is_paired = True
+        pairing.exchange.return_value = (
+            False,
+            "Pairing PIN is for a different camera",
+        )
+
+        handler_cls = _make_status_handler(
+            config,
+            stream_manager=None,
+            status_server=MagicMock(),
+            wifi_interface="wlan0",
+            thermal_path=None,
+            pairing_manager=pairing,
+        )
+        handler = handler_cls.__new__(handler_cls)
+        handler.headers = {"Content-Type": "application/json"}
+        responses = []
+        handler._json_response = lambda data, code=200, headers=None: responses.append(
+            (data, code)
+        )
+
+        handler._handle_pair(
+            json.dumps(
+                {
+                    "pin": "790426",
+                    "server_url": "https://rpi-divinu.local",
+                    "ca_fingerprint": "",
+                }
+            ).encode()
+        )
+
+        pairing.reset_local_state.assert_not_called()
+        pairing.exchange.assert_called_once_with(
+            "790426",
+            "https://rpi-divinu.local",
+            expected_ca_fingerprint="",
+        )
+        assert responses == [({"error": "Pairing PIN is for a different camera"}, 400)]

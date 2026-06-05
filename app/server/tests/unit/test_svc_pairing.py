@@ -124,6 +124,7 @@ class TestInitiatePairing:
         pending = svc._pending_pairings["cam-001"]
         assert pending["attempts"] == 0
         assert pending["expires_at"] > time.time()
+        assert pending["expected_ip"] == "192.168.1.50"
 
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_logs_audit_event(self, mock_gen, svc, store, audit):
@@ -193,6 +194,40 @@ class TestExchangeCerts:
         assert status == 403
         assert "Invalid PIN" in error
         assert result is None
+
+    def test_rejects_exchange_from_wrong_camera_ip(self, svc, store, audit):
+        self._setup_pending(svc, store, pin="123456")
+        svc._pending_pairings["cam-001"]["expected_ip"] = "192.168.1.50"
+
+        result, error, status = svc.exchange_certs(
+            "123456",
+            "cam-001",
+            ip="192.168.1.99",
+        )
+
+        assert status == 403
+        assert result is None
+        assert error == "Pairing PIN is for a different camera"
+        assert svc._pending_pairings["cam-001"]["attempts"] == 0
+        assert any(
+            call.args[0] == "PAIRING_FAILED"
+            and "expected 192.168.1.50" in call.kwargs["detail"]
+            for call in audit.log_event.call_args_list
+        )
+
+    def test_accepts_exchange_from_expected_camera_ip(self, svc, store):
+        self._setup_pending(svc, store, pin="123456")
+        svc._pending_pairings["cam-001"]["expected_ip"] = "192.168.1.50"
+
+        result, error, status = svc.exchange_certs(
+            "123456",
+            "cam-001",
+            ip="::ffff:192.168.1.50",
+        )
+
+        assert status == 200
+        assert error == ""
+        assert result["client_cert"] == "CLIENT CERT"
 
     def test_returns_429_after_max_attempts(self, svc, store, audit):
         self._setup_pending(svc, store, pin="123456")

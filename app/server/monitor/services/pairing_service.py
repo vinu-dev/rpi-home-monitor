@@ -13,6 +13,7 @@ Design patterns:
 - Fail-Silent (audit failures don't break operations)
 """
 
+import ipaddress
 import logging
 import os
 import secrets
@@ -35,6 +36,20 @@ log = logging.getLogger("monitor.pairing_service")
 PIN_EXPIRY_SECONDS = 300  # 5 minutes
 PIN_MAX_ATTEMPTS = 3
 PIN_DIGITS = 6
+
+
+def _normalise_ip(value: str) -> str:
+    """Return a comparable IP string, handling IPv4-mapped IPv6 remotes."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    try:
+        parsed = ipaddress.ip_address(candidate)
+    except ValueError:
+        return candidate
+    if parsed.version == 6 and parsed.ipv4_mapped:
+        return str(parsed.ipv4_mapped)
+    return str(parsed)
 
 
 class PairingService:
@@ -97,6 +112,7 @@ class PairingService:
             "pin": pin,
             "expires_at": time.time() + PIN_EXPIRY_SECONDS,
             "attempts": 0,
+            "expected_ip": camera.ip or "",
             "cert_data": cert_data,
         }
 
@@ -125,6 +141,17 @@ class PairingService:
         if time.time() > pending["expires_at"]:
             del self._pending_pairings[camera_id]
             return None, "Pairing PIN has expired", 410
+
+        expected_ip = pending.get("expected_ip", "")
+        if expected_ip and ip and _normalise_ip(expected_ip) != _normalise_ip(ip):
+            self._log_audit(
+                "PAIRING_FAILED",
+                "",
+                ip,
+                f"pairing request for camera {camera_id} came from {ip}, "
+                f"expected {expected_ip}",
+            )
+            return None, "Pairing PIN is for a different camera", 403
 
         # Rate limiting
         pending["attempts"] += 1
