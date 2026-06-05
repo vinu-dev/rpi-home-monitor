@@ -11,12 +11,20 @@ def test_build_script_stamps_image_and_swu_from_same_version():
     assert 'version="$BUILD_VERSION"' in text
     assert 'local image_version="${version#v}"' in text
     assert 'HOME_MONITOR_BUILD_VERSION = "$image_version"' in text
+    assert "rebuild_version_metadata()" in text
+    assert "bitbake os-release -c cleansstate" in text
+    assert "bitbake sw-versions -c cleansstate" in text
 
     image_override_pos = text.index(
         'stage_image_version_override "$builddir" "$BUILD_VERSION"'
     )
+    metadata_rebuild_pos = text.index(
+        "    rebuild_version_metadata",
+        image_override_pos,
+    )
     bitbake_pos = text.index('bitbake "$image"')
     assert image_override_pos < bitbake_pos
+    assert image_override_pos < metadata_rebuild_pos < bitbake_pos
 
 
 def test_distro_conf_consumes_generated_build_version_before_version_file():

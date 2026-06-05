@@ -164,6 +164,15 @@ EOF
     echo ">>> Setting image HOME_MONITOR_BUILD_VERSION = \"$image_version\" in $build_conf"
 }
 
+rebuild_version_metadata() {
+    # These recipes stamp DISTRO_VERSION into runtime files. Force them out of
+    # sstate for each explicit build version so cached metadata cannot drift
+    # from the SWU version.
+    echo ">>> Forcing version metadata recipes to rebuild"
+    bitbake os-release -c cleansstate
+    bitbake sw-versions -c cleansstate
+}
+
 # --- Clone Yocto layers ---
 clone_layer() {
     local url=$1 dir=$2 branch=$3
@@ -226,6 +235,7 @@ build_image() {
     case "$image" in
         home-monitor-image-*) stage_provisioning_ca ;;
     esac
+    rebuild_version_metadata
 
     sed -i "s/^BB_NUMBER_THREADS.*/BB_NUMBER_THREADS = \"$NCPU\"/" "$builddir/conf/local.conf"
     sed -i "s/^PARALLEL_MAKE.*/PARALLEL_MAKE = \"-j $NCPU\"/" "$builddir/conf/local.conf"
