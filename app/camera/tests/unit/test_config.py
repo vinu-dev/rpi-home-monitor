@@ -137,6 +137,7 @@ class TestConfigManager:
 
         # Turn OFF the test escape hatch so the real guard runs.
         monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+        monkeypatch.setattr(ConfigManager, "_is_data_persisted", lambda self: False)
 
         mgr = ConfigManager(data_dir=str(data_dir))
         mgr._default_path = str(default_path)
@@ -179,9 +180,12 @@ class TestConfigManager:
         assert mgr._is_data_persisted() is True
 
     def test_is_data_persisted_detects_same_device(self, data_dir, monkeypatch):
-        """Without the env flag, tmp_path (same device as /) must
-        report as NOT persisted."""
+        """Without the env flag, same-device data paths are not persisted."""
         monkeypatch.setenv("CAMERA_SKIP_MOUNT_CHECK", "0")
+        monkeypatch.setattr(
+            "camera_streamer.config.os.stat",
+            lambda path: type("Stat", (), {"st_dev": 1234})(),
+        )
         mgr = ConfigManager(data_dir=str(data_dir))
         assert mgr._is_data_persisted() is False
 
