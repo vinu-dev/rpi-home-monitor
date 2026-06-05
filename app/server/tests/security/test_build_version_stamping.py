@@ -1,3 +1,4 @@
+# REQ: SWR-046; RISK: RISK-019; SEC: SC-018; TEST: TC-043
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

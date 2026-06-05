@@ -1,3 +1,4 @@
+# REQ: SWR-034, SWR-043; RISK: RISK-002, RISK-019; SEC: SC-017; TEST: TC-032, TC-040
 """GUI HTTPS certificate CSR and install service.
 
 The camera/MediaMTX certificate remains ``server.crt``/``server.key``.

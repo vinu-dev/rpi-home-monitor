@@ -1,4 +1,5 @@
 #!/bin/sh
+# REQ: SWR-034, SWR-043; RISK: RISK-002, RISK-019; SEC: SC-017; TEST: TC-032, TC-040
 # Ensure nginx has browser-facing GUI TLS files without touching MediaMTX.
 set -eu
 
