@@ -469,7 +469,11 @@ class TestGenerateClientCert:
         (cameras_dir / "cam-001.crt").write_text("GENERATED CERT")
         (cameras_dir / "cam-001.key").write_text("GENERATED KEY")
 
-        cert_data, error = svc._generate_client_cert("cam-001")
+        with patch(
+            "monitor.services.pairing_service._should_use_signing_helper",
+            return_value=False,
+        ):
+            cert_data, error = svc._generate_client_cert("cam-001")
         assert error == ""
         assert cert_data["cert"] == "GENERATED CERT"
         assert cert_data["key"] == "GENERATED KEY"

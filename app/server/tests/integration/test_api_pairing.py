@@ -67,7 +67,7 @@ class TestInitiatePairing:
     @patch("monitor.services.pairing_service.PairingService._generate_client_cert")
     def test_returns_pin_on_success(self, mock_gen, app, logged_in_client):
         client = logged_in_client()
-        _add_camera(app)
+        cam = _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CERT", "key": "KEY", "serial": "ABC123"},
             "",
@@ -210,7 +210,7 @@ class TestExchangeCerts:
     def test_full_pairing_flow(self, mock_gen, app, logged_in_client):
         """End-to-end: initiate as admin, exchange as camera."""
         client = logged_in_client()
-        _add_camera(app)
+        cam = _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CLIENT CERT", "key": "CLIENT KEY", "serial": "ABC123"},
             "",
@@ -225,6 +225,7 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             resp = camera_client.post(
                 "/api/v1/pair/exchange",
+                environ_overrides={"REMOTE_ADDR": cam.ip},
                 json={
                     "pin": pin,
                     "camera_id": "cam-001",
@@ -263,6 +264,7 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             camera_client.post(
                 "/api/v1/pair/exchange",
+                environ_overrides={"REMOTE_ADDR": cam.ip},
                 json={
                     "pin": pin,
                     "camera_id": "cam-001",
@@ -295,6 +297,7 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             camera_client.post(
                 "/api/v1/pair/exchange",
+                environ_overrides={"REMOTE_ADDR": cam.ip},
                 json={
                     "pin": pin,
                     "camera_id": "cam-001",
@@ -308,7 +311,7 @@ class TestExchangeCerts:
     def test_wrong_pin_rejected(self, mock_gen, app, logged_in_client):
         """Wrong PIN returns 403."""
         client = logged_in_client()
-        _add_camera(app)
+        cam = _add_camera(app)
         mock_gen.return_value = (
             {"cert": "CERT", "key": "KEY", "serial": "S"},
             "",
@@ -318,6 +321,7 @@ class TestExchangeCerts:
         with app.test_client() as camera_client:
             resp = camera_client.post(
                 "/api/v1/pair/exchange",
+                environ_overrides={"REMOTE_ADDR": cam.ip},
                 json={"pin": "000000", "camera_id": "cam-001"},
             )
             assert resp.status_code == 403

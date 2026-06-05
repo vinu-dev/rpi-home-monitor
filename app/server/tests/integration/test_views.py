@@ -500,7 +500,7 @@ class TestAlertCenterUI:
         response = client.get("/settings")
         assert response.status_code == 200
         body = response.get_data(as_text=True)
-        assert "tab = 'security'" in body
+        assert "selectSettingsTab('security')" in body
         assert "tab === 'security'" in body
         assert "/api/v1/sessions" in body
         # The retired inline audit table never comes back.
