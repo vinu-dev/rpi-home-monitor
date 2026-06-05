@@ -18,6 +18,7 @@ import pytest
 from monitor.services.camera_control_client import (
     CERT_MISMATCH_ERROR,
     CONTROL_PORT,
+    SERVER_CLIENT_CERT_REJECTED_ERROR,
     CameraControlClient,
 )
 from monitor.services.camera_trust import (
@@ -185,6 +186,24 @@ class TestCameraControlClientUnit:
 
         assert result is None
         assert err == "camera control port unreachable (firmware mismatch?)"
+
+    def test_server_client_cert_rejection_is_not_camera_identity_loss(
+        self, client_factory
+    ):
+        client, pins, _audit, certs_dir = client_factory()
+        pinned_cert = _read_tls_fixture("camera-valid.crt")
+        pins["cam-001"] = status_cert_fingerprint_from_pem(pinned_cert)
+        persist_pinned_status_cert(str(certs_dir), "cam-001", pinned_cert)
+
+        with patch.object(
+            client,
+            "_verified_request",
+            side_effect=ssl.SSLError("ssl/tls alert unsupported certificate"),
+        ):
+            result, err = client.get_config("10.0.0.1", camera_id="cam-001")
+
+        assert result is None
+        assert err == SERVER_CLIENT_CERT_REJECTED_ERROR
 
     def test_verified_request_uses_custom_control_port(self, data_dir):
         certs_dir = data_dir / "certs"
@@ -511,6 +530,27 @@ class TestCameraServiceWithControl:
 
             camera = app.store.get_camera("cam-abc123")
             assert camera.config_sync == "trust_lost"
+
+    def test_update_marks_pending_when_server_client_cert_rejected(
+        self, app, cameras_json
+    ):
+        with app.app_context():
+            mock_control = MagicMock()
+            mock_control.set_config.return_value = (
+                None,
+                SERVER_CLIENT_CERT_REJECTED_ERROR,
+            )
+            app.camera_service._control = mock_control
+
+            app.camera_service.update(
+                "cam-abc123",
+                {"fps": 15},
+                user="admin",
+                ip="127.0.0.1",
+            )
+
+            camera = app.store.get_camera("cam-abc123")
+            assert camera.config_sync == "pending"
 
     def test_update_marks_synced_on_push_success(self, app, cameras_json):
         with app.app_context():

@@ -57,7 +57,10 @@ write_server_san_ext() {
     done
     {
         printf "subjectAltName=%s\n" "$san"
-        printf "extendedKeyUsage=serverAuth\n"
+        # server.crt is intentionally dual-use in the existing camera trust
+        # design: MediaMTX presents it to cameras, and the server presents it
+        # as a client certificate to camera control port 8443.
+        printf "extendedKeyUsage=serverAuth,clientAuth\n"
     } > "$san_ext"
 }
 
@@ -76,9 +79,12 @@ build_browser_chain() {
 server_cert_has_required_sans() {
     [ -f "$SERVER_CERT" ] || return 1
     sans="$(openssl x509 -in "$SERVER_CERT" -noout -ext subjectAltName 2>/dev/null || true)"
+    eku="$(openssl x509 -in "$SERVER_CERT" -noout -ext extendedKeyUsage 2>/dev/null || true)"
     printf "%s" "$sans" | grep -q "DNS:rpi-divinu.local" || return 1
     printf "%s" "$sans" | grep -q "DNS:rpi-divinu" || return 1
     printf "%s" "$sans" | grep -q "IP Address:192.168.4.1" || return 1
+    printf "%s" "$eku" | grep -q "TLS Web Server Authentication" || return 1
+    printf "%s" "$eku" | grep -q "TLS Web Client Authentication" || return 1
     return 0
 }
 

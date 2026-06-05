@@ -28,6 +28,9 @@ log = logging.getLogger("monitor.camera_control_client")
 # Timeout for control API requests (seconds)
 REQUEST_TIMEOUT = 15
 CONTROL_PORT = 8443
+SERVER_CLIENT_CERT_REJECTED_ERROR = (
+    "Server certificate rejected by camera - repair server certificate"
+)
 CERT_MISMATCH_ERROR = "Camera certificate mismatch — re-pair required"
 
 
@@ -354,6 +357,8 @@ class CameraControlClient:
                 path,
                 exc,
             )
+            if _is_client_cert_rejected_by_camera(exc):
+                return None, SERVER_CLIENT_CERT_REJECTED_ERROR
             if self._pinned_fingerprint(camera_id):
                 return None, CERT_MISMATCH_ERROR
             return None, f"Camera unreachable: {exc}"
@@ -387,3 +392,13 @@ def _is_control_port_unreachable(reason) -> bool:
     }:
         return True
     return "connection refused" in str(reason).lower()
+
+
+def _is_client_cert_rejected_by_camera(reason) -> bool:
+    """Detect TLS alerts raised by the camera against the server client cert."""
+    text = str(reason).lower()
+    return (
+        "unsupported certificate" in text
+        or "unknown ca" in text
+        or "certificate required" in text
+    )

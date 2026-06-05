@@ -112,6 +112,8 @@ def test_server_cert_generation_keeps_browser_chain_and_camera_cert_separate():
     )
     deploy = _read("scripts/deploy-dev-app.sh")
 
+    assert "extendedKeyUsage=serverAuth,clientAuth" in script
+    assert "TLS Web Client Authentication" in script
     assert 'SERVER_CHAIN_CERT="$CERTS_DIR/server-browser-chain.crt"' in script
     assert 'SERVER_LOCAL_CA_CERT="$CERTS_DIR/server-ca-local.crt"' in script
     assert "DNS:rpi-divinu.local" in script

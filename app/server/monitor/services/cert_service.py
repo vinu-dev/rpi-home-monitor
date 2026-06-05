@@ -408,7 +408,12 @@ def _server_san_extfile() -> str:
 
     san_parts = [f"DNS:{name}" for name in sorted(names)]
     san_parts.extend(f"IP:{ip}" for ip in sorted(ips))
-    return f"subjectAltName={','.join(san_parts)}\nextendedKeyUsage=serverAuth\n"
+    # server.crt is used by both MediaMTX as a server cert and camera control
+    # as the server's client cert, so it must be valid for both TLS roles.
+    return (
+        f"subjectAltName={','.join(san_parts)}\n"
+        "extendedKeyUsage=serverAuth,clientAuth\n"
+    )
 
 
 def _apply_server_key_permissions(path: str) -> None:

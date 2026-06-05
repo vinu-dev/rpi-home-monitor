@@ -173,7 +173,7 @@ class TestRenewServerCert:
         assert "DNS:rpi-divinu" in extfile
         assert "DNS:home-monitor.local" in extfile
         assert "IP:192.168.4.1" in extfile
-        assert "extendedKeyUsage=serverAuth" in extfile
+        assert "extendedKeyUsage=serverAuth,clientAuth" in extfile
 
     @patch("monitor.services.cert_service.subprocess.run")
     def test_renew_logs_audit(self, mock_run, svc):
