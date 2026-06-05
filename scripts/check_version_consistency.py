@@ -13,10 +13,12 @@ Surfaces checked:
 1. ``VERSION`` — the source of truth. Must exist, be one line, and
    match a strict semver shape (``X.Y.Z``).
 
-2. ``meta-home-monitor/conf/distro/home-monitor.conf`` — must read
-   ``DISTRO_VERSION`` from the same ``VERSION`` file (we look for the
-   ``${@open(...)/../VERSION}`` expression rather than a hardcoded
-   string, so a hand-edit that bypasses the SSOT fails the check).
+2. ``meta-home-monitor/conf/distro/home-monitor.conf`` — must derive
+   ``DISTRO_VERSION`` from either the generated
+   ``HOME_MONITOR_BUILD_VERSION`` override or the same ``VERSION`` file
+   (we look for the ``${@...VERSION...}`` expression rather than a
+   hardcoded string, so a hand-edit that bypasses the SSOT fails the
+   check).
 
 3. ``CHANGELOG.md`` — must contain a ``## [X.Y.Z]`` header that
    matches ``VERSION``. ``[Unreleased]`` is allowed alongside.
@@ -55,10 +57,11 @@ DISTRO_DYNAMIC_RE = re.compile(
     # Accepts any ``${@open(...VERSION...).read().strip()}`` expression
     # where the path argument resolves to the repo-root VERSION file —
     # currently via ``HOME_MONITOR_LAYERDIR`` (set in
-    # ``meta-home-monitor/conf/layer.conf``), but the regex stays
-    # tolerant so a refactor to a different bbvar doesn't fail this
-    # check by name alone.
-    r"DISTRO_VERSION\s*:?=\s*\"\$\{@open\(.+VERSION.+\)\.read\(\)\.strip\(\)\}\""
+    # ``meta-home-monitor/conf/layer.conf``). The expression may also
+    # consult HOME_MONITOR_BUILD_VERSION first; ad-hoc builds use that
+    # generated local.conf value so runtime image version and SWU
+    # metadata remain in lockstep.
+    r"DISTRO_VERSION\s*:?=\s*\"\$\{@.+VERSION.+\}\""
 )
 CHANGELOG_HEADER_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]")
 
@@ -87,8 +90,8 @@ def check_distro_conf() -> None:
         actual = match.group(0) if match else "(no DISTRO_VERSION assignment found)"
         fail(
             f"{DISTRO_CONF.relative_to(REPO)} must derive DISTRO_VERSION from "
-            f"the repo-root VERSION file via "
-            f"``${{@open(d.getVar('LAYERDIR') + '/../VERSION').read().strip()}}``\n"
+            f"HOME_MONITOR_BUILD_VERSION or the repo-root VERSION file via "
+            f"``${{@...open(...VERSION...).read().strip()}}``\n"
             f"  current: {actual}"
         )
 
