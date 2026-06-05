@@ -99,8 +99,9 @@ def test_nginx_uses_separate_gui_certificate_without_touching_mediamtx():
     assert "ssl_certificate     /data/certs/server-browser-chain.crt;" in main_listener
     assert "ssl_certificate_key /data/certs/server.key;" in main_listener
     assert "ssl_certificate     /data/certs/gui-server.crt;" not in main_listener
-    assert "ssl_certificate     /data/certs/gui-server.crt;" in cert_listener
-    assert "ssl_certificate_key /data/certs/gui-server.key;" in cert_listener
+    assert "ssl_certificate     /data/certs/server-browser-chain.crt;" in cert_listener
+    assert "ssl_certificate_key /data/certs/server.key;" in cert_listener
+    assert "ssl_certificate     /data/certs/gui-server.crt;" not in cert_listener
     assert "serverCert: /data/certs/server.crt" in mediamtx
     assert "serverKey: /data/certs/server.key" in mediamtx
 
