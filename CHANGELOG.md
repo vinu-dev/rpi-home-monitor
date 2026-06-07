@@ -6,6 +6,27 @@ All notable changes to RPi Home Monitor are documented here.
 
 (Nothing yet — next release will land here.)
 
+## [1.9.1] - 2026-06-07
+
+Patch release for the certificate-auth release line. This release is built
+from the `release/cert-auth` branch and remains intentionally separate from
+the normal `main` release train.
+
+### Fixed
+- **Mobile dark-mode readability for the server GUI** now uses opaque dark
+  operational surfaces and high-contrast text tokens on phones. This fixes
+  unreadable dashboard camera cards, event rows, live camera details, and
+  login form labels when the browser is in dark mode.
+- **Server GUI stylesheet cache busting** now forces browsers to fetch the
+  patched control-panel stylesheet after upgrading from `v1.9.0`.
+
+### Operator notes
+- This is a UI readability patch only; it does not change certificate-auth,
+  camera pairing, streaming, OTA signing, or CA trust behavior.
+- Do not publish admin `.p12` files, CA private keys, or other private key
+  material with this release. Public release artifacts may include only public
+  trust material, as in `v1.9.0`.
+
 ## [1.9.0] - 2026-06-05
 
 Certificate-auth release line. This release is built from the

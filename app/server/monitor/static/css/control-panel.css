@@ -4586,3 +4586,109 @@ textarea {
         max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     }
 }
+
+/* Mobile dark-mode readability guard. The aurora pass keeps the page dark on
+   phones, so operational surfaces need opaque panels and light text tokens. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-surface: rgba(13, 23, 39, 0.96);
+        --color-surface-alt: rgba(20, 32, 52, 0.98);
+        --color-surface-strong: #17243a;
+        --color-border: rgba(203, 213, 225, 0.22);
+        --color-border-strong: rgba(226, 232, 240, 0.34);
+        --color-text: #f8fbff;
+        --color-text-muted: #c6d3e4;
+        --color-text-dim: #9fb0c6;
+    }
+
+    .card,
+    .settings-section,
+    .login-card,
+    .modal-card,
+    .empty-state,
+    .events-feed,
+    .tile,
+    .camera-card,
+    .alerts-filters,
+    .alert-row,
+    .event-row,
+    .camera-info {
+        background: linear-gradient(180deg, rgba(17, 27, 45, 0.98), rgba(8, 16, 30, 0.96)) !important;
+        border-color: var(--color-border) !important;
+        color: var(--color-text);
+    }
+
+    .event-row:nth-child(even) {
+        background: linear-gradient(180deg, rgba(21, 32, 52, 0.98), rgba(10, 18, 34, 0.96)) !important;
+    }
+
+    .event-row__trigger,
+    .event-row__camera,
+    .camera-card__name,
+    .camera-info__value,
+    .login-card__title,
+    .form-input,
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    input[type="datetime-local"],
+    select,
+    textarea {
+        color: var(--color-text) !important;
+    }
+
+    .event-row__time,
+    .event-row__duration,
+    .camera-card__location,
+    .camera-card__last-seen,
+    .camera-card__health,
+    .camera-card__meta,
+    .camera-info__label,
+    .login-card__subtitle,
+    .forgot-password--minimal,
+    .form-group label,
+    .text-muted {
+        color: var(--color-text-muted) !important;
+    }
+
+    .camera-card__details,
+    .camera-card__details summary,
+    .camera-card__details-toggle,
+    .camera-card__details-grid {
+        background: rgba(23, 36, 58, 0.96) !important;
+        color: var(--color-text-muted) !important;
+        border-color: rgba(203, 213, 225, 0.18) !important;
+    }
+
+    .camera-card__details-grid dd {
+        color: var(--color-text) !important;
+    }
+
+    .form-input,
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    input[type="datetime-local"],
+    select,
+    textarea {
+        background: rgba(10, 18, 34, 0.96) !important;
+        border-color: rgba(203, 213, 225, 0.28) !important;
+    }
+
+    .form-input::placeholder,
+    input::placeholder,
+    textarea::placeholder {
+        color: #8294ad !important;
+        opacity: 1;
+    }
+
+    .btn--secondary,
+    .chip,
+    .settings-tab {
+        background: rgba(23, 36, 58, 0.96) !important;
+        border-color: rgba(203, 213, 225, 0.22) !important;
+        color: var(--color-text) !important;
+    }
+}
